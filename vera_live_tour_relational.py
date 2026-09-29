@@ -264,6 +264,10 @@ def load_state(conn) -> tuple[dict[str, Any] | None, int]:
     if not meta:
         return None, 0
     state = deepcopy(meta["payload"] if isinstance(meta["payload"], dict) else json.loads(meta["payload"]))
+    # Resource cutover may store durable retry receipts in indexed rows.
+    from vera_live_tour_receipts import enabled_in, all_sql
+    if enabled_in(state):
+        state["idempotency"] = conn.execute(text("SELECT " + all_sql())).scalar_one()
     for collection in RESOURCE_COLLECTIONS:
         state[collection] = []
     for kind, table_name in RESOURCE_TABLES.items():

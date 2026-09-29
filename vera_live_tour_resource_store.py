@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy import text
 import vera_live_tour_relational as relational
 import vera_resource_concurrency as concurrency
+import vera_live_tour_receipts as receipt_store
 
 FENCE = 'vera:live-tour:resource-fence:v1'
 INDEPENDENT = frozenset({'start', 'start_room', 'update_appointment', 'set_vip', 'add_minutes', 'booking', 'multi_booking', 'update_booking', 'cancel_booking', 'restart_booking', 'complete', 'set_shift', 'set_work_status', 'start_break', 'end_break', 'replace_service', 'add_service', 'move_pending', 'finish_to_pending', 'checkout', 'quick_checkout', 'pending_update', 'pending_delete', 'paid_invoice_update', 'paid_invoice_delete', 'combo_purchase', 'combo_import'})
@@ -118,19 +119,21 @@ def read(conn, collections=None, *, payment_key=None, receipt_key=None, profile=
             continue
         projection = 'payload'
         if payment_key is not None and name == 'invoices':
-            projection = f"""CASE WHEN resource_id=(SELECT payload->'idempotency'->:payment_key->'result'->'invoice'->>'id'
+            projection = f"""CASE WHEN resource_id=(SELECT ({receipt_store.entry_sql('payment_key')})->'result'->'invoice'->>'id'
                 FROM {relational.META_TABLE} WHERE singleton=1) THEN payload
                 ELSE jsonb_build_object('id',resource_id,'bill_no',payload->'bill_no') END"""
         elif payment_key is not None and name == 'invoice_changes':
             projection = "jsonb_build_object('id',resource_id,'before',jsonb_build_object('bill_no',payload->'before'->'bill_no'))"
         arms.append(f"SELECT '{name}' AS kind,resource_id,ordinal,{projection} AS payload,aggregate_revision FROM {table} WHERE deleted_at IS NULL")
-    meta_payload = "payload" if collections is None else "payload - 'idempotency'"
+    meta_payload = (f"CASE WHEN payload->>'{receipt_store.MARKER}'='true' THEN payload || jsonb_build_object('idempotency',{receipt_store.all_sql()}) ELSE payload END"
+                    if collections is None else "payload - 'idempotency'")
     if receipt_key is not None:
         params['receipt_key'] = receipt_key
-        meta_payload = """(payload - 'idempotency') || jsonb_build_object('idempotency',
-            CASE WHEN (payload->'idempotency') ? :receipt_key
-            THEN jsonb_build_object(:receipt_key,payload->'idempotency'->:receipt_key)
-            ELSE '{}'::jsonb END)"""
+        receipt = receipt_store.entry_sql('receipt_key')
+        meta_payload = f"""(payload - 'idempotency') || jsonb_build_object('idempotency',
+            CASE WHEN ({receipt}) IS NOT NULL
+            THEN jsonb_build_object(:receipt_key,({receipt}))
+            ELSE '{{}}'::jsonb END)"""
     arms.append(f"SELECT '_meta','',0,{meta_payload},aggregate_revision FROM {relational.META_TABLE} WHERE singleton=1")
     statement = text(' UNION ALL '.join(arms))
     rows = (conn.execute(statement, params) if params else conn.execute(statement)).mappings().all()
@@ -289,7 +292,7 @@ def write(conn, before, after, actor):
             raise HTTPException(409, 'Cấu hình đã đổi. Hãy làm mới rồi thử lại.')
     # Allocate the publication revision at commit time. The short metadata row
     # lock also orders commits, avoiding a missed revision from sequence gaps.
-    changes = {key: value for key, value in after_meta.items() if before_meta.get(key) != value and key != 'idempotency'}
+    changes = {key: value for key, value in after_meta.items() if before_meta.get(key) != value and key not in {'idempotency', receipt_store.MARKER}}
     business_day = changes.pop('business_date', None) if not conn.info.get('live_tour_exclusive', True) else None
     # Two disjoint actions can straddle the cutoff and publish in reverse order.
     # Merge the day in the existing atomic publication UPDATE, without another
@@ -297,7 +300,8 @@ def write(conn, before, after, actor):
     business_day_patch = " || jsonb_build_object('business_date',GREATEST(COALESCE(payload->>'business_date',''),CAST(:business_day AS text)))" if business_day is not None else ''
     receipts = {key: value for key, value in after_meta.get('idempotency', {}).items() if before_meta.get('idempotency', {}).get(key) != value}
     removed_receipts = sorted(set(before_meta.get('idempotency', {})) - set(after_meta.get('idempotency', {})))
-    receipt_patch = " || jsonb_build_object('idempotency',(COALESCE(payload->'idempotency','{}'::jsonb) - CAST(:removed_receipts AS text[])) || CAST(:receipts AS jsonb))" if receipts or removed_receipts else ''
+    row_receipts = receipt_store.enabled_in(before_meta)
+    receipt_patch = " || jsonb_build_object('idempotency',(COALESCE(payload->'idempotency','{}'::jsonb) - CAST(:removed_receipts AS text[])) || CAST(:receipts AS jsonb))" if not row_receipts and (receipts or removed_receipts) else ''
     configuration_patch = " || jsonb_build_object('_configuration_revision',aggregate_revision+1)" if conn.info.get('live_tour_exclusive', True) and not isinstance(before, _AreaSnapshot) else ''
     revision = int(conn.execute(text(f"""
         UPDATE {relational.META_TABLE}
@@ -306,6 +310,8 @@ def write(conn, before, after, actor):
         WHERE singleton=1 RETURNING aggregate_revision
     """), {'patch': relational._json(changes), 'business_day': business_day,
            'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
+    if row_receipts:
+        receipt_store.write_changes(conn, receipts, removed_receipts)
     ordinal_updates = {}
     deleted = {}
     upserts = {}

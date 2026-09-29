@@ -18,6 +18,9 @@ def run(conn, rollback=False):
     conn.execute(text('SELECT pg_advisory_xact_lock(hashtext(:key))'), {'key':'vera:v2:live_tour:state'})
     resources.lock(conn)
     if rollback:
+        import vera_live_tour_receipts as receipts
+        if receipts.ready(conn):
+            receipts.migrate(conn, rollback=True)
         state, revision, _ = resources.read(conn)
         state.pop('_resource_ready', None)
         # Old releases do not understand the resource-mode invalidation marker.

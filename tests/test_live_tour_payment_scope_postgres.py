@@ -14,8 +14,8 @@ from test_live_tour_backend import NOW, payable_employee
 from test_live_tour_resource_postgres import database
 
 
-@pytest.fixture
-def payments(database, monkeypatch):
+@pytest.fixture(params=['inline', 'rows'])
+def payments(database, monkeypatch, request):
     class Identity(BaseModel):
         employee_username: str = 'admin'
         full_name: str = 'Test operator'
@@ -40,6 +40,10 @@ def payments(database, monkeypatch):
         seeded['audit'] = [{'id':f'audit-{i}','detail':{'note':'unchanged'}} for i in range(8)]
         seeded['idempotency'] = {f'old-key-{i}':{'action':'checkout','status':'completed','result':{'invoice':deepcopy(row)}} for i,row in enumerate(seeded['invoices'])}
         revision = store.write(conn, before, seeded, 'fixture')
+        if request.param == 'rows':
+            import vera_live_tour_receipts as receipts
+            receipts.migrate(conn)
+            revision = store.read(conn)[1]
     app = FastAPI()
     live.install_live_tour_routes(app, engine_instance=lambda:database,
         current_identity=lambda:Identity(), require_feature=lambda *args:None,

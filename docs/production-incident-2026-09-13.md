@@ -1802,3 +1802,34 @@ transport bằng dữ liệu giả. Kiểm tra mở trực tiếp/từ menu, d�
 lọc có/không có kết quả, xóa lọc, hồ sơ miễn yêu cầu, hồ sơ đủ không có quận,
 làm mới và chuyển trang. Bổ sung vào CI. Xác minh production sau deploy vẫn
 phải kiểm tra thao tác lọc đã gây lỗi, phiên bản frontend và hai health gate.
+
+
+## 29-09-2026: Live Tour metadata receipt archive dominates mutation writes
+
+Read-only diagnostic run `36128412508`, rerun job `109323304150`, verified
+production release `7fe9b8123da6744a8b03adc9fe7a869bc6659b16`. Maintenance status
+run `36542715447` reported active/resource_ready. Metadata JSON text was
+10,879,007 bytes, including 10,867,707 bytes of idempotency receipts. Three
+slow-log samples after this deploy were: multi_booking 1,178.62 ms total /
+973.85 ms write; multi_booking 1,541.41 / 1,323.16; finish_room 1,302.53 /
+1,086.13. The write phase therefore occupied about 83–86% of these samples.
+These are thresholded slow logs (>=500 ms or error), not unbiased latency
+percentiles, and exclude authentication and final HTTP serialization. No start
+sample after this exact deployment was observed. No speedup is established yet.
+
+The proposed fix moves durable replay receipts from the metadata JSON to the
+previously reserved `vera_live_tour_mutation` table, one row per idempotency key.
+Ordinary mutations update only changed receipts in the existing caller-owned
+transaction, retaining resource locks, publication ordering, authorization and
+financial retry semantics. Full reads/backups reconstruct the archive; scoped
+reads use the primary key. No financial receipts expire. A database guard rejects
+old inline writers after cutover instead of allowing silent duplicate execution.
+
+Migration is explicit, not part of deployment: `optimize_receipts` stops writers,
+verifies a private backup and both session fences, compares complete canonical
+state before/after, restarts the exact release and verifies receipt-format health.
+`restore_receipts` exports the latest rows back, including writes since cutover.
+Full resource rollback also exports receipts first. Failure recovery uses current
+data, never a stale financial snapshot. See `docs/live-tour-receipt-rows.md`.
+This entry describes code and isolated validation; production optimization has
+not been activated by this change.
