@@ -27,7 +27,7 @@ class UploadRejected(EnrollmentError):
     pass
 
 
-def fields(body, *, only=None):
+def fields(body, *, only=None, ignore=()):
     if len(body.encode('utf-8')) > device.MAX_RESPONSE_BYTES:
         raise EnrollmentError('invalid_response', 'Phản hồi máy vượt giới hạn.')
     result = {}
@@ -35,6 +35,8 @@ def fields(body, *, only=None):
         # Login firmware repeats unrelated capability flags with different
         # values. Ignore only fields the login caller explicitly does not use.
         if only is not None and key not in only:
+            continue
+        if key in ignore:
             continue
         if key in result:
             raise EnrollmentError('invalid_response', 'Máy trả trường dữ liệu bị trùng.')
@@ -112,7 +114,9 @@ class FaceGateEnrollmentClient:
             'endtime': '2099-12-31/23:59:59', 'utype': '3', 'sequence': '1',
             'beginno': '0', 'reqcount': '1000',
             'sessionid': str(secrets.randbelow(90000000) + 10000000),
-        }))
+        }), ignore={'LIST.uRFIdCardNum'})
+        # Firmware emits this unused, unindexed RFID field once per profile.
+        # Keep indexed identity/reference fields and list counts strict.
         items = {}
         for key, val in value.items():
             match = re.fullmatch(r'LIST.ITEM(\d+)\.(\w+)', key)

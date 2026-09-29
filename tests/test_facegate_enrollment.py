@@ -151,3 +151,43 @@ def test_login_still_rejects_duplicate_decision_fields(monkeypatch, key, second)
 def test_other_protocol_responses_remain_strict(key):
     response = body(**{key: 1}).replace('</html>', f'\nroot.{key}=2</html>')
     with pytest.raises(fg.EnrollmentError, match='trùng'): fg.fields(response)
+
+
+def rfid_roster(rows):
+    response = roster(rows)
+    for i in range(len(rows)):
+        response = response.replace(f'root.LIST.ITEM{i}.uid=',
+                                    f'root.LIST.uRFIdCardNum=0\nroot.LIST.ITEM{i}.uid=')
+    return response
+
+
+def test_roster_reads_all_56_profiles_with_repeated_unused_rfid(monkeypatch):
+    rows = [dict(profile(), uid=str(i+1), utext=f'vera:{i}') for i in range(56)]
+    c, session = client(monkeypatch, [rfid_roster(rows)])
+    assert c.profiles() == [{k: str(v) for k, v in row.items()} for row in rows]
+    assert len(session.calls) == 1 and session.calls[0][0] == 'GET'
+
+
+@pytest.mark.parametrize('key,value', [
+    ('ERR.no', '0'), ('LIST.totalcount', '2'), ('LIST.rspcount', '2'),
+    ('LIST.ITEM0.uid', '123'), ('LIST.ITEM0.uname', 'Test Staff'),
+    ('LIST.ITEM0.utext', 'vera:token'), ('LIST.ITEM0.dwfiletype', '0'),
+    ('LIST.ITEM0.dwfileindex', '0'), ('LIST.ITEM0.dwfilepos', '14680064'),
+])
+def test_rfid_roster_still_rejects_duplicate_critical_fields(monkeypatch, key, value):
+    response = rfid_roster([profile(), dict(profile(), uid='124')])
+    response = response.replace('</html>', f'\nroot.{key}={value}</html>')
+    c, _ = client(monkeypatch, [response])
+    with pytest.raises(fg.EnrollmentError, match='trùng'): c.profiles()
+
+
+def test_rfid_exception_is_scoped_to_roster():
+    with pytest.raises(fg.EnrollmentError, match='trùng'):
+        fg.fields(rfid_roster([profile(), dict(profile(), uid='124')]))
+
+
+def test_exact_readback_after_roster_with_repeated_rfid(monkeypatch):
+    p = profile()
+    c, _ = client(monkeypatch, [rfid_roster([p, dict(p, uid='124', utext='other')]),
+                               body(**{'LIST.'+k: v for k, v in p.items()})])
+    assert c.verify('Test Staff', 'vera:token', REF)['profile_id'] == 123
