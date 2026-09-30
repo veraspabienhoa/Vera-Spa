@@ -14,7 +14,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
   const query = freeSearch ? searchValue : localQuery
   const [open, setOpen] = useState(false)
   const [index, setIndex] = useState(0)
-  const [position, setPosition] = useState({ left: 0, top: 0, width: 240 })
+  const [position, setPosition] = useState({ left: 0, top: 0, width: 240, zIndex: 2200 })
   useEffect(() => { if (!typing.current) setQuery(selected?.label || ''); typing.current = false }, [value, selected?.label])
   const matches = options.filter((option) => filterOption ? filterOption(option, query) : searchTextMatches([option.label, option.detail], query))
   const activeIndex = Math.min(index, Math.max(0, matches.length - 1))
@@ -30,6 +30,13 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
     const place = () => {
       const rect = input.current?.getBoundingClientRect()
       if (!rect) return
+      // The menu is portaled to body, outside the modal's stacking context.
+      // Keep it above its own trigger's ancestors instead of below the backdrop.
+      let zIndex = 2200
+      for (let ancestor = input.current; ancestor; ancestor = ancestor.parentElement) {
+        const layer = Number.parseInt(window.getComputedStyle(ancestor).zIndex, 10)
+        if (Number.isFinite(layer)) zIndex = Math.max(zIndex, layer + 1)
+      }
       const view = window.visualViewport
       const width = view?.width || window.innerWidth, height = view?.height || window.innerHeight
       const top = view?.offsetTop || 0, left = view?.offsetLeft || 0
@@ -40,7 +47,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
       const menuWidth = Math.min(Math.max(rect.width, 240), width - 16)
       setPosition({ left: Math.max(left + 8, Math.min(rect.left, left + width - menuWidth - 8)),
         top: Math.max(top + 8, Math.min(side.current === 'above' ? rect.top - menuHeight - 4 : rect.bottom + 4, top + height - menuHeight - 8)),
-        width: menuWidth, maxHeight: menuHeight })
+        width: menuWidth, maxHeight: menuHeight, zIndex })
     }
     const schedule = () => { window.cancelAnimationFrame(frame); frame = window.requestAnimationFrame(place) }
     place()
@@ -74,7 +81,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); if (!freeSearch) setQuery(selected?.label || '') }
         if (event.key === 'Enter' && open) { event.preventDefault(); if (matches[activeIndex]) choose(matches[activeIndex]) }
       }}/>
-    {open && !disabled && createPortal(<div ref={menu} className="tour-search-popup tour-search-scroll" style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight }} onMouseDown={(event) => event.preventDefault()}>
+    {open && !disabled && createPortal(<div ref={menu} className="tour-search-popup tour-search-scroll" style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight, zIndex: position.zIndex }} onMouseDown={(event) => event.preventDefault()}>
       <div role="listbox" id={`${id}-options`} aria-label={label}>
         {!required && <button data-ui-key="u-54261a9bf95d" type="button" tabIndex={-1} role="option" aria-selected={!value} onClick={() => { if (freeSearch) onSearch?.(''); choose({ value: '', label: '' }) }}>{emptyLabel}</button>}
         {matches.map((item, i) => {
