@@ -117,6 +117,13 @@ def process(conn, *, now=None):
         if not username or username not in mapped or row.get('employee_role') not in {'nhanvien', 'leader', 'letan', 'locker', 'tapvu', 'support'}:
             continue
         lock_transition(conn, [('leave_employee', username)], legacy_keys=['vera:phase4:leave_primary'])
+        # A reviewed/revoked event is still a completed decision for this day.
+        # Never re-create a penalty that management deliberately removed.
+        prior = conn.execute(text('SELECT id FROM vera_auto_check_event WHERE work_date=:day AND employee_name=:name AND source=:source LIMIT 1'),
+                             {'day': day, 'name': username, 'source': SOURCE}).mappings().first()
+        if prior:
+            result['skipped'] += 1
+            continue
         leaves = conn.execute(text('SELECT employee_name,leave_reason FROM leave_records WHERE leave_date=:day'), {'day': day}).mappings().all()
         leave_names = {auto_check._norm(r['employee_name']) for r in leaves
                        if 'di tre' not in auto_check._norm(r['leave_reason'])}

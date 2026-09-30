@@ -97,6 +97,7 @@ def scenario(monkeypatch):
         def __init__(self, rows): self.rows = rows
         def mappings(self): return self
         def all(self): return self.rows
+        def first(self): return None
         def one(self): return {'id': 7, 'leave_record_uid': 'uid', 'penalty': state.saved[-1]['reason_item']['penalty']}
     class Conn:
         def execute(self, query, params=None): return Result(state.leaves)
@@ -172,3 +173,14 @@ def test_real_penalty_transaction_rollback_and_replay(database, scenario, monkey
         assert conn.execute(text('SELECT penalty FROM leave_records')).scalar() == 123000
         assert conn.execute(text('SELECT count(*) FROM test_absence_outbox')).scalar() == 1
         assert conn.execute(text('SELECT employee_notified_at IS NOT NULL FROM vera_auto_check_event')).scalar()
+
+
+def test_manual_reversal_is_not_recreated(database, scenario, monkeypatch):
+    s = scenario
+    with database.begin() as conn:
+        REAL_SCHEMA(conn)
+        conn.execute(text("INSERT INTO vera_auto_check_event(event_key,work_date,employee_name,reason,source,status) VALUES('reviewed',:day,'Test',:reason,:source,'revoked')"),
+                     {'day': s.now.date(), 'reason': rule.REASONS[0], 'source': rule.SOURCE})
+        # No leave table is needed: a reviewed decision stops before any write.
+        assert rule.process(conn, now=s.now)['added'] == 0
+        assert not s.saved and not s.notices
