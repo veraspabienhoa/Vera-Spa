@@ -46,3 +46,9 @@ def test_workflow_default_is_strict_and_activation_never_defers():
     assert 'if: ${{ inputs.defer_attendance_freshness && !inputs.retire_timesoft }}' in workflow
     for gate in ['Verify exact production commit and health', 'Verify active release and production schemas', 'Verify public frontend commit and entry document']:
         assert gate in workflow
+
+
+def test_deployment_policy_changes_publish_matching_frontend_revision():
+    workflow = Path('.github/workflows/vera-web-v2-pages.yml').read_text()
+    assert "- '.github/workflows/deploy-vps.yml'" in workflow
+    assert "- 'vera_vps_deferred_attendance_check.py'" in workflow

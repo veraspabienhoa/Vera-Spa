@@ -6,6 +6,8 @@ on:
     paths:
       - 'web-v2/**'
       - '.github/workflows/vera-web-v2-pages.yml'
+      - '.github/workflows/deploy-vps.yml'
+      - 'vera_vps_deferred_attendance_check.py'
   workflow_dispatch:
 
 permissions:
