@@ -477,8 +477,15 @@ def _clear_permission_cache() -> None:
 
 def _permission_payload(conn) -> dict[str, Any]:
     now = time.monotonic()
+    # A rename/reused username must not inherit stale grants in another worker.
+    revision = conn.execute(text("""
+        SELECT revision FROM vera_app_setting
+        WHERE category='authorization' AND setting_key='feature_permissions'
+        LIMIT 1
+    """)).scalar_one_or_none()
     with _permission_cache_lock:
-        if now - float(_permission_cache["loaded_at"] or 0) <= _PERMISSION_CACHE_SECONDS:
+        if (now - float(_permission_cache["loaded_at"] or 0) <= _PERMISSION_CACHE_SECONDS
+                and _permission_cache.get("revision") == revision):
             return dict(_permission_cache["payload"])
         payload = conn.execute(text("""
             SELECT value_json
@@ -487,7 +494,7 @@ def _permission_payload(conn) -> dict[str, Any]:
             LIMIT 1
         """)).scalar_one_or_none()
         payload = payload if isinstance(payload, dict) else {}
-        _permission_cache.update({"loaded_at": time.monotonic(), "payload": dict(payload)})
+        _permission_cache.update({"loaded_at": time.monotonic(), "payload": dict(payload), "revision": revision})
         return dict(payload)
 
 

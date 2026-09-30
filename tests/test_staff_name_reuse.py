@@ -47,6 +47,8 @@ def setup(database):
 
 def test_reuse_separates_old_profile_device_and_permissions(database, monkeypatch):
     row = setup(database)
+    # Exercise the real revocation SQL against this test's isolated schema.
+    monkeypatch.setattr('vera_web_v2_local_auth.SESSION_STORE_TABLE', 'vera_app_setting')
     with database.begin() as conn:
         identity = reuse.prepare_reuse(conn, [row], 'New', norm, 'Admin')
         assert str(UUID(identity)) == identity and identity != local_auth_user_id('New')
@@ -97,3 +99,35 @@ def test_nested_settings_block_unsafe_facegate_inheritance(database):
         with database.begin() as conn:
             reuse.prepare_reuse(conn, [row], 'New', norm, 'Admin')
     assert exc.value.status_code == 409
+
+
+def test_permission_cache_reloads_when_another_worker_retires_name():
+    import ast
+    import threading
+    import time
+    from pathlib import Path
+    tree = ast.parse(Path('vera_web_v2_api.py').read_text())
+    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_permission_payload')
+    cache = {'loaded_at': time.monotonic(), 'revision': 1,
+             'payload': {'accounts': [{'target': 'New', 'allowed': True}]}}
+    namespace = {'Any': object, 'time': time, 'text': text,
+                 '_permission_cache_lock': threading.Lock(),
+                 '_permission_cache': cache, '_PERMISSION_CACHE_SECONDS': 60}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), '<permission-cache>', 'exec'), namespace)
+
+    class Connection:
+        calls = 0
+        def execute(self, statement):
+            self.calls += 1
+            value = 2 if 'SELECT revision' in str(statement) else {'accounts': [{'target': 'retired-old', 'allowed': True}]}
+            class Result:
+                def scalar_one_or_none(self):
+                    return value
+            return Result()
+
+    conn = Connection()
+    result = namespace['_permission_payload'](conn)
+    assert result['accounts'][0]['target'] == 'retired-old'
+    assert conn.calls == 2
+    namespace['_permission_payload'](conn)
+    assert conn.calls == 3  # Same revision reuses the payload, but verifies revision.
