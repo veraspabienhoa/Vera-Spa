@@ -1963,3 +1963,22 @@ operator action because it would resume TimeSoft network access.
 - The supplied screenshot shows a weekend reason created on Saturday 26-09-2026 for Tuesday 29-09-2026. No production record or audit log was read: the specific submission path is not confirmed, and no historical record has been rewritten.
 - The user explicitly extended quick shift assignment to quanly and letan. FaceID device controls and capture endpoints are limited to admin/quanly, with the gallery rendering the five latest complete images. Quota checks use the current Vietnam calendar month independently of the list filter.
 - This is a source change, not evidence of deployment or production verification.
+
+
+## 30-09-2026 — Optional deferral of attendance freshness for unrelated deployment
+
+Read-only GitHub logs for Deploy VPS Production #619 (36642002476), release
+5f3813f6, show failure in the source inspect gate: FaceGate remained selected,
+TimeSoft network disabled, but cache age was 19633 seconds at 05:52 +07.
+The schedule installer verified its entry. Exact-release and both health checks
+passed later; this does not prove device connectivity or attendance readiness.
+
+The operator explicitly asks to temporarily defer FaceGate checks and continue
+all outstanding work outside attendance. Add a dispatch option defaulting false.
+When selected without a new source activation, deployment checks only the existing
+active FaceGate policy, emits a freshness-deferral warning and keeps all commit,
+schema, auth/business-health and frontend gates. Missing/malformed/future policy
+fails closed. If source activation is selected, full verification remains required.
+This performs no device I/O, database writes, source switch, cache publication or
+payroll/penalty changes. Freshness/readiness are explicitly unverified.
+Production use of this new dispatch option is not yet verified.
