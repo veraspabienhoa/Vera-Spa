@@ -369,7 +369,7 @@ export default function WorkSchedulePage({ user }) {
 
   const role = String(user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
-  const roleCanEdit = ['admin', 'quanly'].includes(role)
+  const roleCanEdit = ['admin', 'quanly'].includes(role) || (role === 'letan' && department === 'letan')
   const canEdit = roleCanEdit && availableDepartments.includes(department)
   const canEditCombo = ['admin', 'quanly', 'letan'].includes(role) && availableDepartments.includes(department)
   const ownUsername = String(user?.employee_username || '').trim().toLowerCase()

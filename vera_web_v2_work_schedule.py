@@ -250,6 +250,16 @@ def _actor(ident: Any) -> str:
     return str(getattr(ident, "employee_username", "") or getattr(ident, "email", "") or "web_v2")
 
 
+def _can_edit_schedule(ident: Any, department: str) -> bool:
+    role = _role(ident)
+    return role in {"admin", "quanly"} or (role == "letan" and department == "letan")
+
+
+def _require_schedule_editor(ident: Any, department: str) -> None:
+    if not _can_edit_schedule(ident, department):
+        raise HTTPException(403, "Bạn không có quyền sắp xếp lịch làm việc của bộ phận này.")
+
+
 def _require_combo_editor(ident: Any) -> None:
     if _role(ident) not in COMBO_EDITOR_ROLES:
         raise HTTPException(403, "Chỉ Admin, Lễ tân hoặc Quản lý được cập nhật bảng bán combo.")
@@ -758,7 +768,7 @@ def install_work_schedule_routes(
             "shift_definitions": shift_definitions,
             "rows": [dict(row) for row in rows],
             "employees": employees,
-            "can_edit": _role(ident) in {"admin", "quanly"},
+            "can_edit": _can_edit_schedule(ident, dep),
             "allowed_departments": allowed_departments,
             "assignment_mode": "daily",
             "display_mode": "selected_month_all_days",
@@ -813,9 +823,8 @@ def install_work_schedule_routes(
         department: str = Query(...),
         ident=Depends(current_identity),
     ):
-        if _role(ident) not in {"admin", "quanly"}:
-            raise HTTPException(403, "Chỉ Admin hoặc Quản lý được Import lịch làm việc.")
         dep = department.strip().lower()
+        _require_schedule_editor(ident, dep)
         if dep not in WORK_SCHEDULE_FEATURES:
             raise HTTPException(400, "Bộ phận không hợp lệ.")
         if end < start or (end - start).days > 62:
@@ -1189,8 +1198,9 @@ def install_work_schedule_routes(
 
     @app.put("/v2/work-schedule")
     def save_work_schedule(body: ScheduleSave, ident=Depends(current_identity)):
-        if _role(ident) not in {"admin", "quanly"}:
-            raise HTTPException(403, "Chỉ Admin hoặc Quản lý được sắp xếp lịch làm việc.")
+        _require_schedule_editor(ident, "letan")
+        for row in body.rows:
+            _require_schedule_editor(ident, row.department)
         actor = _actor(ident)
 
         unique_keys: set[tuple[date, str]] = set()
@@ -1198,6 +1208,7 @@ def install_work_schedule_routes(
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
             shift_definitions = _load_shift_definitions(conn)
+            reception_employees = {str(item["username"]).strip() for item in _employee_catalog(conn, "letan")} if _role(ident) == "letan" else None
             for row in body.rows:
                 key = (row.work_date, row.employee_username.strip())
                 if key in unique_keys:
@@ -1205,11 +1216,13 @@ def install_work_schedule_routes(
                 unique_keys.add(key)
                 if not _allowed_department(conn, ident, row.department, feature_allowed):
                     raise HTTPException(403, f"Bạn không có quyền sửa lịch {row.department}.")
+                if reception_employees is not None and row.employee_username.strip() not in reception_employees:
+                    raise HTTPException(403, "Chỉ được sắp xếp lịch cho nhân viên thuộc bộ phận Lễ tân.")
                 start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time = _validate_row(row, shift_definitions)
                 normalized_rows.append((row, start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time))
 
             for row, start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time in normalized_rows:
-                conn.execute(text("""
+                result = conn.execute(text("""
                     INSERT INTO vera_work_schedule(
                         work_date, employee_username, employee_name, department,
                         shift_code, overtime_shift, start_time, end_time,
@@ -1243,6 +1256,7 @@ def install_work_schedule_routes(
                         combo_note=EXCLUDED.combo_note,
                         updated_by=EXCLUDED.updated_by,
                         updated_at=NOW()
+                    WHERE (:reception_only = false OR vera_work_schedule.department = 'letan')
                 """), {
                     "work_date": row.work_date,
                     "employee_username": row.employee_username.strip(),
@@ -1262,7 +1276,10 @@ def install_work_schedule_routes(
                     "combo_ticket": row.combo_ticket.strip() if row.combo_sold and row.department in {"quanly", "letan"} else "",
                     "combo_note": row.combo_note.strip() if row.combo_sold and row.department in {"quanly", "letan"} else "",
                     "updated_by": actor,
+                    "reception_only": _role(ident) == "letan",
                 })
+                if result.rowcount == 0:
+                    raise HTTPException(403, "Không thể ghi đè lịch của bộ phận khác.")
 
         return {"ok": True, "saved": len(normalized_rows), "message": "Đã lưu lịch làm việc theo từng ngày."}
 
@@ -1272,20 +1289,20 @@ def install_work_schedule_routes(
         employee_username: str = Query(..., min_length=1),
         ident=Depends(current_identity),
     ):
-        if _role(ident) not in {"admin", "quanly"}:
-            raise HTTPException(403, "Chỉ Admin hoặc Quản lý được xóa lịch làm việc.")
+        _require_schedule_editor(ident, "letan")
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
             existing = conn.execute(text("""
                 SELECT department FROM vera_work_schedule
                 WHERE work_date=:work_date AND employee_username=:employee_username
             """), {"work_date": work_date, "employee_username": employee_username.strip()}).mappings().first()
-            if existing and not _allowed_department(conn, ident, str(existing.get("department") or ""), feature_allowed):
+            if existing and (not _can_edit_schedule(ident, str(existing.get("department") or "")) or not _allowed_department(conn, ident, str(existing.get("department") or ""), feature_allowed)):
                 raise HTTPException(403, "Bạn không có quyền xóa lịch làm việc của bộ phận này.")
             result = conn.execute(text("""
                 DELETE FROM vera_work_schedule
                 WHERE work_date=:work_date AND employee_username=:employee_username
-            """), {"work_date": work_date, "employee_username": employee_username.strip()})
+                  AND (:reception_only = false OR department = 'letan')
+            """), {"work_date": work_date, "employee_username": employee_username.strip(), "reception_only": _role(ident) == "letan"})
         return {"ok": True, "deleted": int(result.rowcount or 0)}
 
     app.state.work_schedule_installed = True
