@@ -1,5 +1,6 @@
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
+import PayrollObligationTable from '../components/PayrollObligationTable'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
@@ -76,18 +77,6 @@ function recalculate(row) {
 
 function isNonPositive(row) {
   return Number(row?.['Số tiền thực nhận'] || 0) <= 0
-}
-
-function ObligationGroup({ group }) {
-  const isNegative = group.type === 'Âm thực nhận'
-  const summary = group.summary || []
-  const details = group.details || []
-  return <div className="payroll-obligation-group">
-    <h3>{isNegative ? '🔴 Nợ do Thực nhận âm' : '⏭️ Nghĩa vụ Vi phạm Admin chủ động tạm hoãn'}</h3>
-    <div className="responsive-data-table"><table data-ui-key="u-0ce98523f8d6"><thead><tr><th data-ui-key="u-9243e5d76744" data-ui-label-default="Tên nhân viên"><UiCustomText uiKey="u-9243e5d76744">Tên nhân viên</UiCustomText></th><th data-ui-key="u-cfc4df9087f5">{isNegative ? 'Tổng còn nợ' : 'Tổng tạm hoãn'}</th><th data-ui-key="u-f1945ce7cce5">{isNegative ? 'Số kỳ còn nợ' : 'Số kỳ tạm hoãn'}</th><th data-ui-key="u-db415a7bca0a">{isNegative ? 'Kỳ nợ gần nhất' : 'Kỳ tạm hoãn gần nhất'}</th><th data-ui-key="u-2ec24143de2a" data-ui-label-default="Bắt đầu trừ từ"><UiCustomText uiKey="u-2ec24143de2a">Bắt đầu trừ từ</UiCustomText></th></tr></thead><tbody>{summary.map((item) => <tr key={`${group.type}-${item.employee_name}`}><td>{item.employee_name}</td><td>{money(item.total)}</td><td className="center">{item.period_count}</td><td>{item.latest_period}</td><td>{item.due_from}</td></tr>)}</tbody></table></div>
-    {!summary.length && <div className="setup-note">Không có khoản đang mở.</div>}
-    {details.length > 0 && <details className="payroll-obligation-details"><summary>🔎 Xem chi tiết từng kỳ ({details.length})</summary><div className="responsive-data-table"><table data-ui-key="u-c38e433e7cf0"><thead><tr><th data-ui-key="u-e49b6cd26844" data-ui-label-default="Tên nhân viên"><UiCustomText uiKey="u-e49b6cd26844">Tên nhân viên</UiCustomText></th><th data-ui-key="u-820c941c1de2" data-ui-label-default="Số tiền"><UiCustomText uiKey="u-820c941c1de2">Số tiền</UiCustomText></th><th data-ui-key="u-258f689339cf" data-ui-label-default="Kỳ phát sinh từ"><UiCustomText uiKey="u-258f689339cf">Kỳ phát sinh từ</UiCustomText></th><th data-ui-key="u-00b2bf07008a" data-ui-label-default="Kỳ phát sinh đến"><UiCustomText uiKey="u-00b2bf07008a">Kỳ phát sinh đến</UiCustomText></th><th data-ui-key="u-cfd8bd47bbae" data-ui-label-default="Bắt đầu trừ từ"><UiCustomText uiKey="u-cfd8bd47bbae">Bắt đầu trừ từ</UiCustomText></th><th data-ui-key="u-3504ca240e92" data-ui-label-default="Nội dung"><UiCustomText uiKey="u-3504ca240e92">Nội dung</UiCustomText></th><th data-ui-key="u-333847b835fe" data-ui-label-default="Trạng thái"><UiCustomText uiKey="u-333847b835fe">Trạng thái</UiCustomText></th></tr></thead><tbody>{details.map((item, index) => <tr key={`${group.type}-${item.employee_name}-${item.period_start}-${index}`}><td>{item.employee_name}</td><td>{money(item.amount)}</td><td>{item.period_start}</td><td>{item.period_end}</td><td>{item.due_from}</td><td>{item.content}</td><td>{item.status}</td></tr>)}</tbody></table></div></details>}
-  </div>
 }
 
 export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onTabChange }) {
@@ -626,7 +615,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
 
     {canManageObligations && <section data-ui-key="u-ee60725600e2" className="panel">
       <div data-ui-key="u-a2e96dc0ba72" className="panel-title-row"><div><h2>NGHĨA VỤ VI PHẠM</h2><p>Khoản còn mở sẽ tự đưa vào “Nợ vi phạm kỳ trước” khi đến ngày bắt đầu trừ. Vi phạm được Admin chuyển kỳ sẽ xuất hiện ở đây.</p></div></div>
-      <div className="payroll-obligation-groups">{obligationGroups.map((group) => <ObligationGroup key={group.type} group={group} />)}</div>
+      <div className="payroll-obligation-groups"><PayrollObligationTable groups={obligationGroups} /></div>
       <form className="payroll-obligation-form" onSubmit={addObligation}><label>Nhân viên<input required list="payroll-employee-options" disabled={isBusy} value={obligationForm.employee_name} onChange={(event) => setObligationForm({ ...obligationForm, employee_name: event.target.value })} /></label><label>Số tiền<VeraMoneyInput required disabled={isBusy} value={obligationForm.amount} onChange={(event) => setObligationForm({ ...obligationForm, amount: event.target.value })} /></label><label>Bắt đầu trừ từ<VeraDateInput required aria-label="Bắt đầu trừ từ" disabled={isBusy} value={obligationForm.due_from} onChange={(event) => setObligationForm({ ...obligationForm, due_from: event.target.value })} /></label><label>Nội dung<input required disabled={isBusy} value={obligationForm.content} onChange={(event) => setObligationForm({ ...obligationForm, content: event.target.value })} /></label><button data-ui-key="u-ef6cecfbc3c8" data-ui-label-default="Thêm nghĩa vụ" className="primary-button" disabled={isBusy}><Plus size={16} /><UiCustomText uiKey="u-ef6cecfbc3c8"> Thêm nghĩa vụ</UiCustomText></button></form>
       <datalist id="payroll-employee-options">{Array.from(new Set([...(history.employees || []), ...draftRows.map((row) => row['Tên Hệ thống'])])).map((name) => <option key={name}>{name}</option>)}</datalist>
       <div className="responsive-data-table"><table data-ui-key="u-88b22ce94dc4"><thead><tr><th data-ui-key="u-c41b23c731b8" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-c41b23c731b8">Nhân viên</UiCustomText></th><th data-ui-key="u-c137193f9c1f" data-ui-label-default="Số tiền"><UiCustomText uiKey="u-c137193f9c1f">Số tiền</UiCustomText></th><th data-ui-key="u-a0b622925d7b" data-ui-label-default="Bắt đầu trừ"><UiCustomText uiKey="u-a0b622925d7b">Bắt đầu trừ</UiCustomText></th><th data-ui-key="u-f61aa83079f9" data-ui-label-default="Nội dung"><UiCustomText uiKey="u-f61aa83079f9">Nội dung</UiCustomText></th><th data-ui-key="u-3e6cecc0cf08"></th></tr></thead><tbody>{obligations.map((item) => <tr key={item.id}><td>{item.employee_name}</td><td>{money(item.amount)}</td><td>{item.due_from}</td><td>{item.content}</td><td><button data-ui-key="u-70d68318aba0" data-ui-label-default="Xóa" className="danger-button compact" disabled={isBusy} onClick={() => removeObligation(item.id)}><Trash2 size={14} /><UiCustomText uiKey="u-70d68318aba0"> Xóa</UiCustomText></button></td></tr>)}</tbody></table></div>
