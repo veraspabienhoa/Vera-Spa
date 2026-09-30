@@ -9,7 +9,7 @@ from test_online_booking import payload, client, signature, SECRET
 
 
 def test_durable_dedup_and_conflicting_replay(database):
-    original = booking.WebsiteRequest(**payload())
+    original = booking.WebsiteRequest(**payload(phone='', service='', requested_staff='AN AN'))
     with database.begin() as conn: booking.ensure_schema(conn)
     def send(_):
         with database.begin() as conn: return booking.ingest(conn, original)
@@ -21,6 +21,8 @@ def test_durable_dedup_and_conflicting_replay(database):
     assert exc.value.status_code == 409
     with database.begin() as conn:
         assert conn.execute(text('SELECT count(*) FROM vera_online_booking')).scalar_one() == 1
+        row = conn.execute(text('SELECT phone,service,requested_staff FROM vera_online_booking')).mappings().one()
+        assert row == {'phone': '', 'service': '', 'requested_staff': 'AN AN'}
 
 
 def test_real_receive_pagination_ack_and_revision(database, monkeypatch):
@@ -45,6 +47,26 @@ def test_real_receive_pagination_ack_and_revision(database, monkeypatch):
     confirmed = api.get('/v2/online-bookings?status=confirmed').json()
     assert confirmed['total'] == 1 and confirmed['rows'][0]['note'] == 'Đã gọi'
     assert api.get('/v2/online-bookings?kind=contact').json()['total'] == 0
+
+
+def test_receive_calls_staff_appointment_writer_only_for_today(database, monkeypatch):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    monkeypatch.setenv('VERA_WEBSITE_WEBHOOK_SECRET', SECRET)
+    today = datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')).date()
+    calls = []
+    api = client(engine=database, appointment_writer=lambda *args: calls.append(args) or {'applied': True})
+    same_day = payload(appointment_date=today.isoformat(), requested_staff='AN AN')
+    body = json.dumps(same_day).encode()
+    response = api.post('/v2/integrations/website/requests', content=body, headers=signature(body))
+    assert response.status_code == 200 and response.json()['staff_appointment']['applied'] is True
+    assert calls == [('AN AN', today, same_day['appointment_time'])]
+
+    next_day = payload(appointment_date=(today + timedelta(days=1)).isoformat(), requested_staff='AN AN')
+    body = json.dumps(next_day).encode()
+    response = api.post('/v2/integrations/website/requests', content=body, headers=signature(body))
+    assert response.status_code == 200 and 'staff_appointment' not in response.json()
+    assert len(calls) == 1
 
 
 def test_listing_filters_dates_before_pagination_and_uses_vietnam_contact_day(database):

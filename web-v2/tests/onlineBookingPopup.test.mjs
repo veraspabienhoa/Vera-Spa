@@ -41,7 +41,10 @@ test('unauthorized roles do not fetch; contact does not invent an appointment',a
     w.rows=[{id:2,kind:'contact',customer_name:'Test',phone:'0900000000',message:'Xin tư vấn'}]
     await w.mount({id:'a',role:'admin'})
     assert.ok(w.document.body.textContent.includes('Xin tư vấn'))
-    assert.equal((w.document.body.textContent.match(/Chưa cung cấp/g)||[]).length,4)
+    const details=Object.fromEntries([...w.document.querySelectorAll('dl dt')].map(term=>[term.textContent,term.nextElementSibling.textContent]))
+    for (const label of ['Ngày hẹn','Giờ hẹn','Dịch vụ','Số khách','Yêu cầu nhân viên']) {
+      assert.equal(details[label],'Chưa cung cấp',label)
+    }
     await w.mount({id:'a',role:'admin',must_change_password:true})
     assert.equal(w.document.querySelector('aside'),null)
   } finally {await w.unmount();w.close()}

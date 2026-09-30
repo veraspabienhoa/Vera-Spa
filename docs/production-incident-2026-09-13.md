@@ -2076,3 +2076,23 @@ fallback or an invented fine. No historical repair or production writes performe
 Operator clarified half-day absence equivalents: Về sớm KHÔNG phép on weekdays,
 Về sớm CUỐI TUẦN KHÔNG phép on Saturday/Sunday. Select those exact existing
 catalog rules and their configured penalty/day values; do not invent a new rule.
+
+## 30-09-2026: optional employee request from public booking (code change)
+
+The operator requests an optional **Yêu cầu nhân viên** field above **Lời nhắn**
+on the public booking form, listing only employees currently marked Đi làm in
+the Live Tour roster. Booking service and phone are also optional; contact-form
+phone remains required. For a booking dated today in Asia/Ho_Chi_Minh, the
+selected employee's Live Tour Lịch hẹn value receives `YC HH:MM`. The backend
+rechecks the roster under the existing Live Tour lock before writing. Requests
+for later dates remain in the booking inbox and do not modify the board.
+Website-added YC suffixes are tracked separately and removed at the next daily
+rollover, preserving the other appointment text.
+
+This intentionally adds the narrowly scoped Live Tour write that the original
+booking-inbox implementation did not perform. It does not assign a worker,
+service, room or invoice. The request is recorded in the inbox independently;
+Live Tour marking is a follow-up operation after that commit. These are source
+changes only: production API/plugin deployment, secret configuration and
+readback are still pending. No customer booking was submitted and no production
+Live Tour row was changed during implementation.

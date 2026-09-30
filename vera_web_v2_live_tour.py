@@ -3456,6 +3456,9 @@ def _state_response(
                                   paid_invoice_view=can_paid_invoice_view, customers_view=can_customers_view) if can_history_view else []
     public_break_events = _redact_customer_pii(state["break_events"]) if can_history_view else []
     public_employees = deepcopy(visible) if customer_pii else _redact_customer_pii(visible)
+    for employee in public_employees:
+        employee.pop("_website_booking_appointment_day", None)
+        employee.pop("_website_booking_appointment_values", None)
     public_reports = _report_rows_with_combo_kind(state) if can_reports_view else []
     if not customer_pii:
         public_reports = _redact_customer_pii(public_reports)
@@ -4621,6 +4624,64 @@ def install_live_tour_routes(
         # First bootstrap is the only request-path projection and happens once.
         acquire_state_lock(conn, STATE_LOCK)
         return read_state(conn, now)
+
+    def website_booking_staff():
+        now = datetime.now(timezone)
+        with engine_instance().begin() as conn:
+            state, _ = read_board(conn, now)
+        employees = [
+            {"value": str(row.get("username") or row.get("name") or "").strip(),
+             "label": str(row.get("name") or row.get("username") or "").strip()}
+            for row in state.get("employees", [])
+            if row.get("roster_eligible") is not False
+            and _norm(row.get("work_status")) == "di lam"
+            and (row.get("username") or row.get("name"))
+        ]
+        employees.sort(key=lambda item: _norm(item["label"]))
+        return {"date": now.astimezone(VN_TZ).date().isoformat(), "employees": employees}
+
+    def record_website_booking_appointment(employee_username, appointment_date, appointment_time):
+        now = datetime.now(timezone)
+        if appointment_date != now.astimezone(VN_TZ).date():
+            return {"applied": False, "reason": "not_today"}
+        wanted = _norm(employee_username)
+        if not wanted:
+            return {"applied": False, "reason": "staff_not_selected"}
+        with engine_instance().begin() as conn:
+            if resource_store.enabled():
+                resource_store.lock(conn)
+            else:
+                acquire_state_lock(conn, STATE_LOCK)
+            state, revision = read_state(conn, now, for_update=True)
+            employee = next((row for row in state["employees"]
+                             if wanted in {_norm(row.get("username")), _norm(row.get("name"))}), None)
+            if (not employee or employee.get("roster_eligible") is False
+                    or _norm(employee.get("work_status")) != "di lam"):
+                return {"applied": False, "reason": "staff_no_longer_working"}
+
+            token = f"YC {appointment_time}"
+            day = appointment_date.isoformat()
+            previous_day = str(employee.get("_website_booking_appointment_day") or "")
+            values = list(employee.get("_website_booking_appointment_values") or []) if previous_day == day else []
+            current = str(employee.get("appointment") or "").strip()
+            if token not in values:
+                addition = f" · {token}" if current else token
+                if len(current) + len(addition) > 200:
+                    return {"applied": False, "reason": "appointment_field_full"}
+                previous = deepcopy(state)
+                employee["appointment"] = current + addition
+                values.append(token)
+                employee["_website_booking_appointment_day"] = day
+                employee["_website_booking_appointment_values"] = values
+                _audit(state, "website_booking_appointment", {
+                    "employee_id": employee["id"], "appointment_date": day,
+                    "appointment_time": appointment_time,
+                }, "website_booking", now)
+                _write_state_compat(conn, state, revision, "website_booking", previous_state=previous)
+        return {"applied": True, "employee": str(employee.get("username") or employee.get("name") or "")}
+
+    app.state.website_booking_staff_provider = website_booking_staff
+    app.state.website_booking_appointment_writer = record_website_booking_appointment
 
     def permissions(conn, ident) -> dict[str, bool]:
         viewer_bank = None

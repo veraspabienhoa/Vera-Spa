@@ -26,6 +26,39 @@ function vera_ob_install() {
     ) $charset;");
     if (!wp_next_scheduled('vera_ob_deliver')) { wp_schedule_event(time() + 10, 'vera_ob_minute', 'vera_ob_deliver'); }
 }
+
+add_action('rest_api_init', function () {
+    register_rest_route('vera/v1', '/booking-staff', array(
+        'methods' => 'GET',
+        'permission_callback' => '__return_true',
+        'callback' => function () {
+            if (!defined('VERA_WEBSITE_WEBHOOK_SECRET') || strlen(VERA_WEBSITE_WEBHOOK_SECRET) < 32) {
+                return new WP_Error('booking_staff_unavailable', 'Danh sách nhân viên chưa sẵn sàng.', array('status' => 503));
+            }
+            $timestamp = (string) time();
+            $signature = hash_hmac('sha256', $timestamp . '.', VERA_WEBSITE_WEBHOOK_SECRET);
+            $response = wp_remote_get('https://api.veraspa.vn/v2/integrations/website/booking-staff', array(
+                'timeout' => 5, 'redirection' => 0, 'sslverify' => true,
+                'headers' => array('X-Vera-Timestamp' => $timestamp, 'X-Vera-Signature' => $signature),
+            ));
+            if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+                return new WP_Error('booking_staff_unavailable', 'Chưa tải được danh sách nhân viên đang đi làm.', array('status' => 503));
+            }
+            $data = json_decode(wp_remote_retrieve_body($response), true);
+            if (!is_array($data) || !isset($data['employees']) || !is_array($data['employees'])) {
+                return new WP_Error('booking_staff_unavailable', 'Danh sách nhân viên không hợp lệ.', array('status' => 503));
+            }
+            $employees = array();
+            foreach ($data['employees'] as $employee) {
+                if (!is_array($employee) || !is_string($employee['value'] ?? null) || !is_string($employee['label'] ?? null)) { continue; }
+                $value = sanitize_text_field($employee['value']);
+                $label = sanitize_text_field($employee['label']);
+                if ($value !== '' && $label !== '') { $employees[] = array('value' => $value, 'label' => $label); }
+            }
+            return rest_ensure_response(array('date' => sanitize_text_field((string) ($data['date'] ?? '')), 'employees' => $employees));
+        },
+    ));
+});
 add_filter('cron_schedules', function ($schedules) {
     $schedules['vera_ob_minute'] = array('interval' => 60, 'display' => 'Vera booking: every minute');
     return $schedules;
@@ -65,17 +98,21 @@ function vera_ob_capture($form, &$abort, $submission) {
         'appointment_time' => $booking ? vera_ob_value($posted, 'checkbox-444') : null,
         'service' => $booking ? vera_ob_value($posted, 'menu-396') : '',
         'guests' => $booking ? (int) vera_ob_value($posted, 'number-999') : null,
+        'requested_staff' => $booking ? vera_ob_value($posted, 'requested-staff') : '',
         'message' => vera_ob_value($posted, $booking ? 'booking-message' : 'text-750'),
     );
     $digits = preg_replace('/\D/', '', $payload['phone']);
+    $phone_valid = $payload['phone'] === '' || (
+        preg_match('/^\+?[0-9 () .-]+$/', $payload['phone']) && strlen($digits) >= 9 && strlen($digits) <= 15
+        && strlen($payload['phone']) <= 20
+    );
     $valid = mb_strlen($payload['customer_name']) >= 1 && mb_strlen($payload['customer_name']) <= 100
-        && preg_match('/^\+?[0-9 () .-]+$/', $payload['phone']) && strlen($digits) >= 9 && strlen($digits) <= 15
-        && strlen($payload['phone']) <= 20 && mb_strlen($payload['message']) <= 4000;
+        && $phone_valid && mb_strlen($payload['requested_staff']) <= 100 && mb_strlen($payload['message']) <= 4000;
     if ($booking) {
         $valid = $valid && preg_match('/^([01][0-9]|2[0-3]):[0-5][0-9]$/', $payload['appointment_time'])
-            && $payload['service'] !== '' && mb_strlen($payload['service']) <= 500
+            && mb_strlen($payload['service']) <= 500
             && $payload['guests'] >= 1 && $payload['guests'] <= 50;
-    } else { $valid = $valid && $payload['message'] !== ''; }
+    } else { $valid = $valid && $payload['phone'] !== '' && $payload['message'] !== ''; }
     if (!$valid) {
         $abort = true;
         $submission->set_response('Thông tin chưa hợp lệ. Vui lòng kiểm tra tên, số điện thoại và nội dung.');
