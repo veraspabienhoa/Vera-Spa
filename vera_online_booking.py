@@ -35,6 +35,8 @@ class WebsiteRequest(BaseModel):
     @field_validator('phone')
     @classmethod
     def phone_format(cls, value):
+        if not value:
+            return value
         if not re.fullmatch(r'\+?[0-9 () .-]+', value) or not 9 <= len(re.sub(r'\D', '', value)) <= 15:
             raise ValueError('Invalid phone')
         return value
@@ -50,6 +52,7 @@ class WebsiteRequest(BaseModel):
 
 class ManualBookingRequest(WebsiteRequest):
     kind: Literal['booking'] = 'booking'
+    phone: str = Field(default='', max_length=20)
 
 
 class InboxUpdate(BaseModel):
