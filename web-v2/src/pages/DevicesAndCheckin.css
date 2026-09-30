@@ -36,9 +36,14 @@
 .device-mobile-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .device-mobile-actions label{display:grid;gap:5px;min-width:0;font-weight:700}
 .device-mobile-actions input,.device-mobile-actions select{max-width:100%;min-width:0;border:1px solid #8cae9a;border-radius:9px;padding:9px;background:white;color:#183e30}
-.device-mobile-preview{display:block;max-width:min(100%,560px);max-height:55vh;margin:12px 0;border-radius:16px;background:#162920}
+.device-mobile-camera-facing{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;margin:14px auto 0;max-width:560px}
+.device-mobile-camera-facing>span{color:#5f6e67;font-size:12px;font-weight:800}
+.device-mobile-camera-facing button{min-width:132px}
+.device-mobile-camera-frame{position:relative;display:flex;justify-content:center;align-items:center;width:min(100%,560px);min-height:120px;margin:12px auto;overflow:hidden;border-radius:16px;background:#162920}
+.device-mobile-preview{display:block;width:100%;max-height:55vh;object-fit:contain}
+.device-mobile-camera-frame>span{position:absolute;inset:0;display:grid;place-items:center;background:#162920a8;color:#fff;font-weight:700}
 .device-mobile-records{display:grid;gap:8px;max-height:400px;overflow-y:auto}
 .device-mobile-records article{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px;border:1px solid #bdd9c5;border-radius:12px;background:white}
 .device-mobile-records article img{display:block;border-radius:8px}
 .device-mobile-records article small{color:#4d6b59}
-@media(max-width:700px){.device-mobile-actions{grid-template-columns:1fr}.device-mobile-station{padding:12px}.device-mobile-station .device-actions{display:flex;flex-wrap:wrap;gap:7px}}
+@media(max-width:700px){.device-mobile-actions{grid-template-columns:1fr}.device-mobile-station{padding:12px}.device-mobile-station .device-actions{display:flex;flex-wrap:wrap;gap:7px}.device-mobile-camera-facing{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.device-mobile-camera-facing>span{grid-column:1/-1;text-align:center}.device-mobile-camera-facing button{min-width:0;width:100%}}
