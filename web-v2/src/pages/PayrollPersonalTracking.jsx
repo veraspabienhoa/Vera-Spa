@@ -1,3 +1,5 @@
+import PayrollAccumulationTable from '../components/PayrollAccumulationTable'
+import { accumulationRows } from '../lib/payrollAccumulationRows'
 import StableFeedback from '../components/StableFeedback'
 import usePageRefresh from '../lib/usePageRefresh'
 import UiToolbar from '../components/UiToolbar'
@@ -113,7 +115,7 @@ function AdminTrackingTable({ rows, emptyText, editable = false, onAdd, onEdit, 
   </div>
 }
 
-export default function PayrollPersonalTracking({ user, standalone = false }) {
+export default function PayrollPersonalTracking({ user, standalone = false, unified = false, refunds = [], formerEmployees = [], onRemoveRefund, disabled = false, children }) {
   usePageRefresh(() => sectionOpen && load(), () => Boolean(busy || busyEmployee))
   const role = String(user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
@@ -123,7 +125,7 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
   const [busyEmployee, setBusyEmployee] = useState('')
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [sectionOpen, setSectionOpen] = useState(!isAdmin)
+  const [sectionOpen, setSectionOpen] = useState(unified || !isAdmin)
   const [completedOpen, setCompletedOpen] = useState(false)
 
   const load = async () => {
@@ -174,11 +176,11 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
   }, [canUsePersonalTracking, isAdmin, sectionOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const visible = useMemo(() => {
-    const rows = (data?.employees || []).filter((item) => trackedRoles.has(String(item.role || '').toLowerCase()))
+    const rows = unified ? accumulationRows(data?.employees || [], formerEmployees, refunds) : (data?.employees || []).filter((item) => trackedRoles.has(String(item.role || '').toLowerCase()))
     const needle = searchKey(search)
     if (!needle) return rows
     return rows.filter((item) => searchTextMatches([item.employee_name, item.full_name, item.role], needle))
-  }, [data, search])
+  }, [data, search, unified, formerEmployees, refunds])
 
   const activeRows = useMemo(() => visible.filter((item) => !item.completed && Number(item.remaining || 0) > 0), [visible])
   const completedRows = useMemo(() => visible.filter((item) => item.completed || Number(item.remaining || 0) <= 0), [visible])
@@ -208,7 +210,7 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
 
     <section data-ui-key="u-5dda7820be54" className="panel payroll-personal-section">
       <div data-ui-key="u-814461590659" className="payroll-personal-heading">
-        <div><h2>{isAdmin ? 'THEO DÕI TÍCH LŨY NHÂN VIÊN' : 'TÍCH LŨY & NGHĨA VỤ VI PHẠM CỦA TÔI'}</h2><p>{isAdmin ? 'Chỉ theo dõi Leader và Nhân viên. Admin có thể thêm, sửa hoặc xóa số tiền Tích lũy ở nhóm đang còn đóng.' : 'Hiển thị số tiền Tích lũy hiện tại và Nghĩa vụ Vi phạm đang mở.'}</p></div>
+        <div><h2>{isAdmin ? unified ? 'TÍCH LŨY VÀ HOÀN TRẢ NHÂN VIÊN' : 'THEO DÕI TÍCH LŨY NHÂN VIÊN' : 'TÍCH LŨY & NGHĨA VỤ VI PHẠM CỦA TÔI'}</h2><p>{isAdmin ? 'Chỉ theo dõi Leader và Nhân viên. Admin có thể thêm, sửa hoặc xóa số tiền Tích lũy ở nhóm đang còn đóng.' : 'Hiển thị số tiền Tích lũy hiện tại và Nghĩa vụ Vi phạm đang mở.'}</p></div>
         <UiToolbar data-ui-key="u-bdb11366d99a" className="payroll-personal-heading-actions">
           {isAdmin && <button data-ui-key="u-757f2d641bd8" className="secondary-button" type="button" onClick={() => setSectionOpen((value) => !value)}>{sectionOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>} {sectionOpen ? 'Ẩn' : 'Hiện'}</button>}
           {sectionOpen && !standalone && <button data-ui-key="u-fb93e571f9ff" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/><UiCustomText uiKey="u-fb93e571f9ff"> Làm mới</UiCustomText></button>}
@@ -221,7 +223,11 @@ export default function PayrollPersonalTracking({ user, standalone = false }) {
         <StableFeedback>{error && <div className="error-box">{error}</div>}</StableFeedback>
         {busy && !data && <div className="setup-note">Đang tải số liệu Tích lũy…</div>}
 
-        {isAdmin ? <>
+        {unified && isAdmin ? <>
+          {children}
+          <label className="payroll-personal-search"><Search size={16}/><ClearableSearchInput type="search" value={search} placeholder="Tìm nhân viên" onChange={(event) => setSearch(event.target.value)} /></label>
+          <PayrollAccumulationTable rows={visible} onAdd={addAccumulation} onEdit={editAccumulation} onDelete={deleteAccumulation} onRemoveRefund={onRemoveRefund} busyEmployee={busyEmployee} disabled={disabled || busy} />
+        </> : isAdmin ? <>
           <div className="payroll-personal-metrics">
             <div className="payroll-personal-metric"><span>LEADER / NHÂN VIÊN</span><strong>{Number(totals.employee_count || 0).toLocaleString('vi-VN')}</strong></div>
             <div className="payroll-personal-metric"><span>TỔNG ĐÃ ĐÓNG TÍCH LŨY</span><strong>{money(totals.paid_total)}</strong></div>
