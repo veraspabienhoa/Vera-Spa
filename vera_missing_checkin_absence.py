@@ -163,11 +163,19 @@ def process(conn, *, now=None):
         if not eligible_schedule(row, now=now, synced=synced, policy=policy, mapped=mapped, checked=checked, leave_names=leave_names):
             result['skipped'] += 1
             continue
+        # A registered full-day absence already records the missing check-in.
+        # Preserve its identity, ordinal and penalty, even alongside a late row.
+        if any(auto_check._norm(r['leave_reason']) == auto_check._norm(REASONS[day.weekday() >= 5]) for r in leaves):
+            result['skipped'] += 1
+            continue
         half_day = any(permitted_late(r['leave_reason']) for r in leaves)
         item = absence_item(catalog, day, half_day)
         if not item:
             result['skipped'] += 1
             result.setdefault('review_required', []).append({'employee': username, 'reason': 'missing_half_day_official_reason' if half_day else 'missing_official_reason'})
+            continue
+        if any(auto_check._norm(r['leave_reason']) == auto_check._norm(item['name']) for r in leaves):
+            result['skipped'] += 1
             continue
         # Re-read after the employee/leave lock, immediately before any deletion
         # or penalty. A newer scan or incomplete refresh cancels the operation.
