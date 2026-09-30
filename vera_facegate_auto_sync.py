@@ -41,6 +41,10 @@ def archive_days():
         try:
             with engine.begin() as conn:
                 reports = publish(conn, today - timedelta(days=1), today)
+            from vera_missing_checkin_absence import process as process_absences
+            with engine.begin() as conn:
+                absence_result = process_absences(conn)
+            print(json.dumps({'absence_rule': absence_result}))
         finally:
             engine.dispose()
         print(json.dumps({'ok': True, 'source': 'facegate', 'published': reports}))

@@ -27,6 +27,7 @@ CATALOG = (
     ("long_leave_requests", "Đơn Phép năm / Làm đẹp / Nghỉ việc", "Báo ngay cho Admin khi nhân viên gửi một trong ba loại đơn.", "Admin", "Thông báo đẩy"),
     ("admin_daily_summary", "Báo cáo thay đổi hằng ngày", "Tổng hợp các thay đổi của hệ thống trong 24 giờ gửi cho Admin.", "Admin", "Thông báo đẩy"),
     ("auto_penalty", "Phạt tự động", "Thông báo khi hệ thống tự động ghi nhận một khoản phạt.", "Nhân viên, quản lý", "Thông báo đẩy"),
+    ("missing_checkin_absence", "Tự động nghỉ không phép · Ca 1 / Ca 2", "Đã ghi nghỉ không phép sau 15:00 Ca 1 hoặc 17:00 Ca 2; mức phạt theo Nội quy ngày thường/cuối tuần.", "Đúng nhân viên, lễ tân, quản lý, admin", "Hệ thống, popup và thông báo đẩy"),
     ("missing_checkin", "Thiếu chấm công FaceID", "Cảnh báo nhân viên có lịch làm nhưng chưa chấm công đúng hạn.", "Nhân viên, lễ tân, quản lý, admin", "Popup và thông báo đẩy"),
     ("attendance_break", "Nghỉ giữa ca", "Cảnh báo đến giờ nghỉ, sắp hết giờ hoặc quá giờ nghỉ giữa ca.", "Nhân viên, lễ tân, quản lý", "Trong ứng dụng, thông báo đẩy"),
     ("live_tour_queue", "Hàng đợi Live Tour", "Cảnh báo hàng đợi đồng bộ Live Tour lỗi, quá tải hoặc đã phục hồi.", "Admin", "Thông báo đẩy"),

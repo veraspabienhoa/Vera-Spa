@@ -1,3 +1,4 @@
+import MissingCheckinAbsenceRules from './MissingCheckinAbsenceRules'
 import LeaveQueuePolicyRules from './LeaveQueuePolicyRules'
 import StableFeedback from '../components/StableFeedback'
 import StableDataRegion from '../components/StableDataRegion'
@@ -453,6 +454,8 @@ export default function RulesPage() {
         <p className="page-subtitle" style={{ marginTop: 10 }}>Ví dụ: ngưỡng 5 phút thì trễ 4 phút không phạt; trễ từ 5 phút trở lên mới phạt.</p>
       </section>
 
+      {data?.missing_checkin_absence_policy && <MissingCheckinAbsenceRules key={data.missing_checkin_absence_policy.revision}
+        policy={data.missing_checkin_absence_policy} canEdit={data.can_edit_leave_queue_policy === true} />}
       {data?.leave_queue_policy && <LeaveQueuePolicyRules key={data.leave_queue_policy.revision}
         policy={data.leave_queue_policy} canEdit={data.can_edit_leave_queue_policy === true} />}
 

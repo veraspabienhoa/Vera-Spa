@@ -16,7 +16,7 @@ GROUPS = {
     'leave_watch': ['group:watchers'],
 }
 NATIVE_SOURCES = frozenset(GROUPS) | {
-    'training_completed', 'training_cycle', 'auto_penalty', 'missing_checkin',
+    'training_completed', 'training_cycle', 'auto_penalty', 'missing_checkin', 'missing_checkin_absence',
     'attendance_break', 'birthday', 'profile_completion', 'live_tour_booking',
 }
 
@@ -26,9 +26,9 @@ def native_audience(conn, source, payload, usernames=None, account_ids=None):
         return None
     recipients = list(GROUPS.get(source, []))
     names = set(usernames or [])
-    if source in {'auto_penalty', 'missing_checkin'}:
+    if source in {'auto_penalty', 'missing_checkin', 'missing_checkin_absence'}:
         names.add(str(payload.get('employee') or ''))
-        if source == 'missing_checkin':
+        if source in {'missing_checkin', 'missing_checkin_absence'}:
             recipients += ['group:admin', 'group:quanly', 'group:letan']
         elif payload.get('department'):
             # The producer has already checked the department notification switch.

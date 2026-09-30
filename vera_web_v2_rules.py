@@ -8,6 +8,7 @@ rules while the migration is in progress.
 from __future__ import annotations
 
 import vera_live_tour_leave_queue_policy as leave_queue_policy
+import vera_missing_checkin_absence as absence_policy
 import hashlib
 from io import BytesIO
 import json
@@ -644,6 +645,8 @@ def install_rules_routes(
     identity_type: type,
     vn_tz,
 ) -> None:
+    absence_policy.install_routes(app, engine_instance=engine_instance,
+        current_identity=current_identity, require_feature=require_feature, identity_type=identity_type)
     leave_queue_policy.install_routes(app, engine_instance=engine_instance,
         current_identity=current_identity, require_feature=require_feature, identity_type=identity_type)
 
@@ -662,6 +665,7 @@ def install_rules_routes(
             "daily_quota": daily_quota,
             "late_threshold": late_threshold,
             "leave_queue_policy": leave_queue_policy.load_policy(conn),
+            "missing_checkin_absence_policy": absence_policy.load_policy(conn),
             "can_edit_leave_queue_policy": is_admin,
             "weekend_unpaid_nth_penalty": weekend_unpaid_nth_penalty,
             "employee_self_service_policy": employee_self_service_policy,
