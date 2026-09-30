@@ -147,3 +147,22 @@ def test_booking_window_exact_boundary_crosses_vietnam_midnight(database, minute
             SELECT count(*) FROM b WHERE """ + predicate), dict(now=now, status=status,
             day=appointment.date(), time=appointment.strftime('%H:%M'))).scalar_one()
         assert count == expected
+
+
+@pytest.mark.parametrize('role', ['letan', 'quanly'])
+def test_booking_edit_delete_keeps_replay_from_resurrecting(database, role):
+    api = client(role, engine=database, working_staff_provider=lambda: {'employees':[{'value':'AN AN','label':'An An'}]})
+    original = payload(requested_staff='AN AN')
+    created = api.post('/v2/online-bookings', json=original)
+    assert created.status_code == 200
+    booking_id = created.json()['id']
+    edited = {**original, 'appointment_time':'19:30', 'message':'Updated'}
+    changed = api.patch(f'/v2/online-bookings/{booking_id}', json={'status':'confirmed','revision':0,'booking':edited})
+    assert changed.status_code == 200 and changed.json()['revision'] == 1
+    assert api.get('/v2/online-bookings').json()['rows'][0]['appointment_time'] == '19:30'
+    assert api.request('DELETE',f'/v2/online-bookings/{booking_id}',json={'revision':0}).status_code == 409
+    assert api.request('DELETE',f'/v2/online-bookings/{booking_id}',json={'revision':1}).status_code == 200
+    assert api.get('/v2/online-bookings').json()['total'] == 0
+    assert api.get('/v2/online-bookings/unread').json()['rows'] == []
+    assert api.post('/v2/online-bookings',json=original).json()['duplicate']
+    assert api.get('/v2/online-bookings').json()['total'] == 0
