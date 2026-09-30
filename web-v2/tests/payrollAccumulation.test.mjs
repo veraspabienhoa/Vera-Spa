@@ -1,0 +1,55 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {createRequire} from 'node:module'
+import {build} from 'esbuild'
+import React,{act} from 'react'
+import {JSDOM} from 'jsdom'
+import {accumulationRows} from '../src/lib/payrollAccumulationRows.js'
+
+test('accumulation tab follows history and combines completed, active and former staff in one table',async t=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',pretendToBeVisual:true}),requests=[],NativeDate=Date
+  const globals={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true,
+  Date:class extends NativeDate{constructor(...args){super(...(args.length?args:['2026-09-30T09:00:00Z']))}},
+  fetch:async url=>{
+   const u=new URL(url);requests.push(u)
+   const employees=[{employee_name:'A',role:'nhanvien',target:1000000,paid_total:200000,remaining:800000,periods:[]},{employee_name:'B',role:'leader',target:1000000,paid_total:1000000,remaining:0,completed:true,periods:[]}]
+   const body=u.pathname.endsWith('/personal-tracking')?{employees}:u.pathname.endsWith('/accumulation-refunds')?{employees:[{employee_name:'C',employment_status:'Đã nghỉ việc'}],refunds:[{id:'r1',employee_name:'C',amount:500000,start:'2026-09-16',end:'2026-09-30',note:'Hoàn trả'}]}:u.pathname.endsWith('/history')?{records:[],batches:[],employees:[]}:{}
+   return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}})
+  }}
+ const saved=Object.fromEntries(Object.keys(globals).map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]))
+ for(const[k,v]of Object.entries(globals))Object.defineProperty(globalThis,k,{value:v,configurable:true})
+ let root
+ t.after(async()=>{if(root)await act(()=>root.unmount());dom.window.close();for(const[k,v]of Object.entries(saved)){if(v)Object.defineProperty(globalThis,k,v);else delete globalThis[k]}})
+ const built=await build({stdin:{contents:`import React,{useState} from 'react';import Page from './src/pages/PayrollPageEnhanced';export default function Wrapper({user}){const [tab,setTab]=useState('calculate');return <Page user={user} activeTab={tab} onTabChange={setTab}/>}`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react-dom','react/jsx-runtime'],loader:{'.css':'empty'},define:{'import.meta.env':'{"VITE_VERA_API_BASE_URL":"https://api.invalid"}'},plugins:[{name:'auth',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const getCurrentSession=async()=>({access_token:"synthetic"});export const isSupabaseConfigured=false;export const refreshCurrentSession=getCurrentSession;export const supabase=null'}))}}]})
+ const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),mod,mod.exports)
+ const {createRoot}=await import('react-dom/client');root=createRoot(document.getElementById('root'))
+ await act(async()=>root.render(React.createElement(mod.exports.default,{user:{role:'admin'}})))
+ const tabs=[...document.querySelectorAll('[role="tab"]')]
+ assert.deepEqual(tabs.map(tab=>tab.textContent.trim()),['Tính lương','Lịch sử bảng lương','Tích lũy & Hoàn trả'])
+ assert.equal(document.querySelector('[aria-label="Tích lũy và hoàn trả nhân viên"]'),null)
+ await act(async()=>tabs[2].click())
+ const table=document.querySelector('[aria-label="Tích lũy và hoàn trả nhân viên"]')
+ assert.ok(table)
+ assert.equal(document.querySelectorAll('.payroll-personal-tracking table').length,1)
+ assert.equal(table.querySelectorAll('tbody > tr').length,3)
+ assert.ok(table.textContent.includes('Đã hoàn thành đóng'))
+ assert.ok(table.textContent.includes('Đang còn đóng'))
+ assert.ok(table.textContent.includes('Đã nghỉ việc'))
+ assert.ok(table.textContent.includes('500.000đ'))
+ assert.ok(table.textContent.includes('16-09-2026'))
+ assert.ok(table.querySelector('tfoot').textContent.includes('1.200.000đ'))
+ assert.ok(document.querySelector('.payroll-refund-form'))
+ const completed=[...table.querySelectorAll('tbody > tr')].find(row=>row.textContent.startsWith('B'))
+ assert.equal(completed.querySelectorAll('button').length,0)
+ await act(async()=>tabs[0].click())
+ assert.equal(document.querySelector('[aria-label="Tích lũy và hoàn trả nhân viên"]'),null)
+})
+test('refunds are grouped per employee without changing paid balances or sources',()=>{
+ const employees=[{employee_name:'A',role:'nhanvien',paid_total:300000,remaining:700000}]
+ const refunds=[{id:'1',employee_name:'A',amount:100000},{id:'2',employee_name:'A',amount:200000},{id:'3',employee_name:'C',amount:50000}]
+ const before=JSON.stringify({employees,refunds})
+ const rows=accumulationRows(employees,[{employee_name:'C',employment_status:'Đã nghỉ việc'}],refunds)
+ assert.equal(rows.length,2);assert.equal(rows[0].paid_total,300000);assert.equal(rows[0].configuredRefund,300000)
+ assert.equal(rows[1].hasTracking,false);assert.equal(rows[1].configuredRefund,50000)
+ assert.equal(JSON.stringify({employees,refunds}),before)
+})
