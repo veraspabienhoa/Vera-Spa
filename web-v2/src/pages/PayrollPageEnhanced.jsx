@@ -5,6 +5,7 @@ import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
+import { currentPayrollPeriod } from '../lib/payrollPeriod'
 import { ArrowRightCircle, CheckCircle2, Download, Edit3, Mail, Plus, RefreshCw, Save, Search, Settings2, Trash2, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -15,11 +16,6 @@ import './PayrollPageEnhanced.css'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + 'đ'
-const currentMonth = () => {
-  const date = new Date()
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-}
-const currentPeriodNo = () => new Date().getDate() <= 15 ? 1 : 2
 const periodDates = (month, periodNo) => {
   const [year, monthNumber] = month.split('-').map(Number)
   const startDay = periodNo === 1 ? 1 : 16
@@ -96,8 +92,9 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const [employee, setEmployee] = useState('')
   const [history, setHistory] = useState({ records: [], batches: [], employees: [] })
   const [savedBatches, setSavedBatches] = useState([])
-  const [month, setMonth] = useState(currentMonth())
-  const [periodNo, setPeriodNo] = useState(currentPeriodNo())
+  const [initialPeriod] = useState(currentPayrollPeriod)
+  const [month, setMonth] = useState(initialPeriod.month)
+  const [periodNo, setPeriodNo] = useState(initialPeriod.periodNo)
   const [draft, setDraft] = useState(null)
   const [draftSearch, setDraftSearch] = useState('')
   const [draftNonPositiveOnly, setDraftNonPositiveOnly] = useState(false)
@@ -117,7 +114,6 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const [notice, setNotice] = useState(null)
   const [emailProgress, setEmailProgress] = useState(null)
   const historyRequest = useRef(0)
-  const [autoOpenLatestDraft, setAutoOpenLatestDraft] = useState(true)
 
   const run = async (key, callback) => {
     setBusy(key); setNotice(null)
@@ -167,7 +163,6 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     const reopen = (event) => {
       const result = event.detail || {}
       if (!result.draft || !result.month || !result.period_no) return
-      setAutoOpenLatestDraft(false)
       setMonth(String(result.month))
       setPeriodNo(Number(result.period_no))
       setDraft(result.draft)
@@ -186,19 +181,10 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     setDraft(null)
     setDraftSearch('')
     setSelected([])
-    veraApi.payrollDraft(month, periodNo, autoOpenLatestDraft)
+    veraApi.payrollDraft(month, periodNo)
       .then((result) => {
         if (!active) return
         const saved = result.draft || null
-        if (result.fallback_used && saved) {
-          setMonth(result.selected_month)
-          setPeriodNo(Number(result.selected_period_no))
-          setNotice({
-            type: 'success',
-            message: `Kỳ hiện tại chưa có dữ liệu. Đã tự mở bản nháp gần nhất: ${saved.period_label}.`,
-          })
-        }
-        setAutoOpenLatestDraft(false)
         setDraft(saved)
         setSelected((saved?.rows || []).map((row) => row['Tên Hệ thống']))
         if (Number(saved?.removed_employee_count || 0) > 0) {
@@ -212,7 +198,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
         if (active) setNotice({ type: 'error', message: error.message })
       })
     return () => { active = false }
-  }, [autoOpenLatestDraft, canCalculate, month, periodNo])
+  }, [canCalculate, month, periodNo])
 
   const historyTotal = useMemo(() => history.records.reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [history.records])
   const historyRowKey = (item, index) => `${item['Mã bản lưu'] || ''}:${item['Tên Hệ thống'] || ''}:${index}`
@@ -438,7 +424,6 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
 
   const reopenSavedPayroll = (batchId) => run(`reopen-${batchId}`, async () => {
     const result = await enhancementRequest(`/v2/payroll/saved-batches/${encodeURIComponent(batchId)}/edit`, { method: 'POST' })
-    setAutoOpenLatestDraft(false)
     setMonth(String(result.month))
     setPeriodNo(Number(result.period_no))
     setDraft(result.draft)
@@ -564,8 +549,8 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     {canCalculate && <section data-ui-key="u-856731095818" className="panel payroll-calculate-panel">
       <div data-ui-key="u-7722410132ee" className="panel-title-row"><div><h2>TÍNH BẢNG LƯƠNG</h2><p>Kỳ 1 là 01–15; Kỳ 2 là 16–cuối tháng. Nợ vi phạm đủ ngày bắt đầu trừ sẽ tự cộng vào “Nợ vi phạm kỳ trước”.</p></div></div>
       <UiToolbar data-ui-key="u-8d0f10645723" className="data-toolbar">
-        <label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={(event) => { setAutoOpenLatestDraft(false); setMonth(event.target.value) }} /></label>
-        <label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={(event) => { setAutoOpenLatestDraft(false); setPeriodNo(Number(event.target.value)) }}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label>
+        <label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={(event) => { setMonth(event.target.value) }} /></label>
+        <label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={(event) => { setPeriodNo(Number(event.target.value)) }}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label>
         <button data-ui-key="u-fa0f02dfbb3f" className="primary-button" onClick={calculate} disabled={isBusy}><WalletCards size={16} /> {busy === 'calculate' ? 'Đang tính…' : 'Tính lương từ TIP'}</button>
       </UiToolbar>
       <UiToolbar data-ui-key="u-d77fe86a944d" className="payroll-draft-toolbar">
