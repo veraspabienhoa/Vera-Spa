@@ -48,3 +48,5 @@ The HMAC signs `unix_timestamp + '.' + exact_raw_json_body` using SHA-256; heade
 - On CF7 invalid submissions, a page-scoped accessible popup lists the required booking fields still missing. Closing it returns focus to the first invalid field and scrolls that field into view.
 - Source for the active WordPress Code Snippets entry is integrations/wordpress/booking-form-ux.php. Keep it synchronized with the entry named "Booking - giao diện mobile và popup thông tin thiếu".
 - These website changes are maintained independently from the online-booking inbox integration above; no backend/API changes are required.
+- The phone number remains required on public veraspa.vn/booking/. In app.veraspa.vn manual Booking online, the phone field is optional.
+- On Live Tour, when upcoming bookings exist, the Booking online sắp tới dialog opens at the next quarter-hour boundary and repeats every 15 minutes while eligible staff are on Live Tour.
