@@ -1,5 +1,6 @@
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
+import PayrollPersonalTracking from './PayrollPersonalTracking'
 import PayrollObligationTable from '../components/PayrollObligationTable'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
@@ -543,6 +544,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     <UiToolbar data-ui-key="u-a39c42009c7e" className="payroll-main-tabs" role="tablist" aria-label="Lương KTV">
       <button data-ui-key="u-6a99f7168de5" data-ui-label-default="Tính lương" type="button" role="tab" aria-selected={activeTab === 'calculate'} className={activeTab === 'calculate' ? 'active' : ''} onClick={() => onTabChange?.('calculate')}><UiCustomText uiKey="u-6a99f7168de5">Tính lương</UiCustomText></button>
       <button data-ui-key="u-5f140dee458d" data-ui-label-default="Lịch sử bảng lương" type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => onTabChange?.('history')}><UiCustomText uiKey="u-5f140dee458d">Lịch sử bảng lương</UiCustomText></button>
+      {isAdmin && <button type="button" role="tab" aria-selected={activeTab === 'accumulation'} className={activeTab === 'accumulation' ? 'active' : ''} onClick={() => onTabChange?.('accumulation')}>Tích lũy &amp; Hoàn trả</button>}
     </UiToolbar>
     <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
 
@@ -628,8 +630,9 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
       </div>
     </section>}
 
-    {isAdmin && canEditConfig && <section data-ui-key="u-5e001ef9c559" className="panel payroll-accumulation-refund-panel">
-      <div data-ui-key="u-ca54a8269f5a" className="panel-title-row"><div><h2>HOÀN TRẢ TIỀN TÍCH LŨY – NHÂN VIÊN NGHỈ VIỆC</h2><p>Admin nhập thủ công; khoản hoàn trả được cộng đúng vào kỳ đang chọn và không khấu trừ Tích lũy thêm trong kỳ đó.</p></div></div>
+    {isAdmin && canEditConfig && activeTab === 'accumulation' && <PayrollPersonalTracking user={user} unified refunds={accumulationRefunds} formerEmployees={formerEmployees} onRemoveRefund={removeAccumulationRefund} disabled={isBusy}>
+      <p>Hoàn trả cho nhân viên nghỉ việc được cộng vào kỳ đã chọn. Cài đặt hoàn trả hiển thị riêng với tiền tích lũy đã đóng.</p>
+      <div className="data-toolbar"><label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={event => setMonth(event.target.value)} /></label><label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={event => setPeriodNo(Number(event.target.value))}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label></div>
       <form className="payroll-refund-form" onSubmit={addAccumulationRefund}>
         <label>Nhân viên nghỉ việc<select required disabled={isBusy} value={refundForm.employee_name} onChange={(event) => setRefundForm({ ...refundForm, employee_name: event.target.value })}><option value="">-- Chọn nhân viên --</option>{formerEmployees.map((item) => <option key={item.employee_name} value={item.employee_name}>{item.employee_name} · {item.employment_status}</option>)}</select></label>
         <label>Số tiền hoàn trả<VeraMoneyInput required disabled={isBusy} value={refundForm.amount} onChange={(event) => setRefundForm({ ...refundForm, amount: event.target.value })} /></label>
@@ -637,9 +640,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
         <label>Ghi chú<input required disabled={isBusy} value={refundForm.note} onChange={(event) => setRefundForm({ ...refundForm, note: event.target.value })} /></label>
         <button data-ui-key="u-f13f9df7891c" data-ui-label-default="Lưu hoàn trả" className="primary-button" disabled={isBusy || !formerEmployees.length}><Plus size={16} /><UiCustomText uiKey="u-f13f9df7891c"> Lưu hoàn trả</UiCustomText></button>
       </form>
-      <div className="responsive-data-table payroll-setting-table"><table data-ui-key="u-5e626342f477"><thead><tr><th data-ui-key="u-45edeaaeb45a" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-45edeaaeb45a">Nhân viên</UiCustomText></th><th data-ui-key="u-05074d7af8ac" data-ui-label-default="Số tiền"><UiCustomText uiKey="u-05074d7af8ac">Số tiền</UiCustomText></th><th data-ui-key="u-5f3f8bdc9bb5" data-ui-label-default="Kỳ áp dụng"><UiCustomText uiKey="u-5f3f8bdc9bb5">Kỳ áp dụng</UiCustomText></th><th data-ui-key="u-a44294fb2bcd" data-ui-label-default="Ghi chú"><UiCustomText uiKey="u-a44294fb2bcd">Ghi chú</UiCustomText></th><th data-ui-key="u-b53e5e7ab290"></th></tr></thead><tbody>{accumulationRefunds.map((item) => <tr key={item.id}><td><strong>{item.employee_name}</strong></td><td>{money(item.amount)}</td><td>{item.period_label || `${item.start} – ${item.end}`}</td><td>{item.note}</td><td><button data-ui-key="u-7dba73d76d99" data-ui-label-default="Xóa" type="button" className="danger-button compact" disabled={isBusy} onClick={() => removeAccumulationRefund(item.id)}><Trash2 size={14} /><UiCustomText uiKey="u-7dba73d76d99"> Xóa</UiCustomText></button></td></tr>)}</tbody></table></div>
       {!formerEmployees.length && <div className="setup-note">Chưa có nhân viên ở trạng thái Tạm thời nghỉ việc hoặc Đã nghỉ việc.</div>}
-      {!accumulationRefunds.length && <div className="setup-note">Chưa có khoản hoàn trả tích lũy được cài đặt.</div>}
-    </section>}
+    </PayrollPersonalTracking>}
   </div>
 }

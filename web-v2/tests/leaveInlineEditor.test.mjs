@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,16 @@ import { createRoot } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import { LETAN_REASON_GROUPS, canEditLeaveRecord, canDeleteLeaveRecord, canChangeLeaveReason } from '../src/lib/leaveRecordPermissions.js'
 import { requestPageRefresh } from '../src/lib/usePageRefresh.js'
+
+// These UI scenarios need a stable business day. A live clock can put the
+// Vietnamese day in October while the UTC runner's month is still September.
+const NativeDate = globalThis.Date
+const fixtureNow = NativeDate.parse('2026-09-17T05:00:00Z')
+globalThis.Date = class extends NativeDate {
+  constructor(...args) { super(...(args.length ? args : [fixtureNow])) }
+  static now() { return fixtureNow }
+}
+after(() => { globalThis.Date = NativeDate })
 
 const require = createRequire(import.meta.url)
 const built = await build({
