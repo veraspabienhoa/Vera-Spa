@@ -90,3 +90,20 @@ def test_upcoming_excludes_past_and_closed_before_pagination(database):
     assert [row['id'] for row in first['rows'] + second['rows']] == expected
     assert api.patch(f"/v2/online-bookings/{expected[0]}", json={'status':'handled','revision':0}).status_code == 200
     assert api.get('/v2/online-bookings?upcoming=true').json()['total'] == 29
+
+
+@pytest.mark.parametrize('role', ['admin', 'quanly', 'letan'])
+def test_manual_booking_is_durable_and_retry_does_not_duplicate(database, role):
+    api = client(role=role, engine=database)
+    data = payload()
+    first = api.post('/v2/online-bookings', json=data)
+    assert first.status_code == 200
+    replay = api.post('/v2/online-bookings', json=data)
+    assert replay.status_code == 200 and replay.json()['duplicate']
+    assert replay.json()['id'] == first.json()['id']
+    rows = api.get('/v2/online-bookings').json()['rows']
+    assert len(rows) == 1 and rows[0]['updated_by'] == 'test'
+    assert rows[0]['customer_name'] == data['customer_name']
+    assert rows[0]['status'] == 'new'
+    assert api.post('/v2/online-bookings', json={**data, 'guests':3}).status_code == 409
+    assert api.post('/v2/online-bookings', json={**data, 'kind':'contact'}).status_code == 422

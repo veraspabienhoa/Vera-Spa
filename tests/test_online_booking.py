@@ -59,7 +59,7 @@ def client(role='admin', engine=None, locked=False):
 
 @pytest.mark.parametrize('role,locked', [('nhanvien',False), ('leader',False), ('admin',True)])
 @pytest.mark.parametrize('method,path,body', [
-    ('GET','/v2/online-bookings',None), ('GET','/v2/online-bookings/unread',None),
+    ('GET','/v2/online-bookings',None), ('POST','/v2/online-bookings',payload()), ('GET','/v2/online-bookings/unread',None),
     ('POST','/v2/online-bookings/1/seen',None), ('PATCH','/v2/online-bookings/1', {'status':'handled','revision':0}),
 ])
 def test_all_inbox_routes_deny_unauthorized_before_database(role, locked, method, path, body):
