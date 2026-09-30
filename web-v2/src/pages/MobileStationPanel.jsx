@@ -25,6 +25,8 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
   const [employee, setEmployee] = useState('')
   const [barcode, setBarcode] = useState('')
   const [camera, setCamera] = useState(false)
+  const [facingMode, setFacingMode] = useState('environment')
+  const [cameraStarting, setCameraStarting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [records, setRecords] = useState(null)
@@ -51,20 +53,29 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
   }, [])
 
   useEffect(() => {
-    if (!camera) return undefined
+    if (!camera) { setCameraStarting(false); return undefined }
     let active = true
+    const video = videoRef.current
+    setCameraStarting(true)
+    setMessage('')
     const start = async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('Trình duyệt cần hỗ trợ Camera và HTTPS.')
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } } })
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 } } })
         if (!active) { stream.getTracks().forEach(track => track.stop()); return }
         streamRef.current = stream
-        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play() }
+        if (video) { video.srcObject = stream; await video.play() }
       } catch (cause) { if (active) setMessage(cause.message || 'Không mở được Camera.') }
+      finally { if (active) setCameraStarting(false) }
     }
     void start()
-    return () => { active = false; streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = null }
-  }, [camera])
+    return () => {
+      active = false
+      streamRef.current?.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+      if (video) video.srcObject = null
+    }
+  }, [camera, facingMode])
 
   const photo = () => new Promise((resolve, reject) => {
     const video = videoRef.current
@@ -154,9 +165,14 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
       <label>Mã cần quét<input value={barcode} onChange={event => setBarcode(event.target.value)} maxLength={256} placeholder="Mã QR hoặc barcode"/></label>
     </div>
     <div className="device-actions">{canRegister && <button type="button" className="secondary-button" disabled={busy} onClick={registerPhone}><Smartphone size={16}/>Đăng ký điện thoại này</button>}<button type="button" className="secondary-button" onClick={() => setCamera(value => !value)}><Camera size={16}/>{camera ? 'Tắt camera' : 'Bật camera'}</button></div>
-    {camera && <video ref={videoRef} playsInline muted className="device-mobile-preview"/>}
+    <div className="device-mobile-camera-facing" role="group" aria-label="Lựa chọn camera trước hoặc camera sau">
+      <span>Chọn camera</span>
+      <button type="button" aria-pressed={facingMode === 'user'} className={facingMode === 'user' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('user')} disabled={cameraStarting || busy}><Camera size={16}/> Camera trước</button>
+      <button type="button" aria-pressed={facingMode === 'environment'} className={facingMode === 'environment' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('environment')} disabled={cameraStarting || busy}><Camera size={16}/> Camera sau</button>
+    </div>
+    {camera && <div className="device-mobile-camera-frame"><video ref={videoRef} playsInline muted autoPlay className="device-mobile-preview" style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }}/>{cameraStarting && <span role="status">Đang mở camera…</span>}</div>}
     <div className="device-actions">
-      <button type="button" className="secondary-button" disabled={busy || !camera} onClick={() => submit('photo')}>Chụp & gửi ảnh</button>
+      <button type="button" className="secondary-button" disabled={busy || !camera || cameraStarting} onClick={() => submit('photo')}>Chụp & gửi ảnh</button>
       <button type="button" className="secondary-button" disabled={busy} onClick={() => submit('scan')}><ScanLine size={16}/>{barcode.trim() ? 'Lưu mã' : 'Quét mã'}</button>
       <button type="button" className="primary-button" disabled={busy || !camera || !employee.trim()} onClick={() => submit('checkin')}>Gửi chấm công có ảnh</button>
     </div>
