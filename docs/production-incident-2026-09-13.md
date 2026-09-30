@@ -1987,9 +1987,9 @@ Production use of this new dispatch option is not yet verified.
 
 Yêu cầu mới thay thế cơ chế chờ check-in/quay lại ở các mục 27–28/09:
 chỉ xử lý chung một lần/ngày tại mốc 03:00 giờ Việt Nam, dựa trên lịch nghỉ
-ngày liền trước. Áp dụng đúng bảy lý do: Về sớm CÓ phép, Về sớm KHÔNG phép,
+ngày liền trước. Áp dụng đúng tám lý do: Về sớm CÓ phép, Về sớm KHÔNG phép,
 Về sớm CUỐI TUẦN CÓ phép, Về sớm CUỐI TUẦN KHÔNG phép, Về sớm phát sinh,
-Nghỉ KHÔNG phép, Nghỉ CUỐI TUẦN KHÔNG phép. Không đưa đi trễ hoặc các lý do
+Leader về sớm về sớm theo chính sách (bổ sung lúc 13:06 ngày 30/09), Nghỉ KHÔNG phép, Nghỉ CUỐI TUẦN KHÔNG phép. Không đưa đi trễ hoặc các lý do
 bệnh vào danh sách này bằng so khớp tiền tố.
 
 Scheduler hiện hữu thức tại mốc 03:00; worker lưu dấu ngày đã chạy cùng giao

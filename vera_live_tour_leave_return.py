@@ -7,7 +7,8 @@ from vera_web_v2_live_tour_roster import key
 MARKER = 'unexcused_leave_return'
 DAILY_MARKER = 'leave_queue_0300_v1'
 EARLY = {'ve som co phep', 've som khong phep', 've som cuoi tuan co phep',
-         've som cuoi tuan khong phep', 've som phat sinh'}
+         've som cuoi tuan khong phep', 've som phat sinh',
+         'leader ve som ve som theo chinh sach'}
 UNEXCUSED = {'nghi khong phep', 'nghi cuoi tuan khong phep'}
 
 
@@ -48,7 +49,7 @@ def prepare_daily(state, now):
 
 
 def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, time_key, history_leaves=None):
-    """Apply yesterday's seven reasons once, without waiting for a check-in.
+    """Apply yesterday's eight reasons once, without waiting for a check-in.
 
     The scheduler targets 03:00. A delayed/retried worker catches up once under
     the existing transaction lock. There is no per-employee return trigger.

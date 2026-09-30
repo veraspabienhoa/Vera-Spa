@@ -15,6 +15,7 @@ DAY = NOW.replace(year=2026, month=9, day=27, hour=12, minute=0)
 UNEXCUSED_REASONS = [
     'Về sớm CÓ phép', 'Về sớm KHÔNG phép', 'Về sớm CUỐI TUẦN CÓ phép',
     'Về sớm CUỐI TUẦN KHÔNG phép', 'Về sớm phát sinh',
+    'Leader về sớm về sớm theo chính sách',
     'Nghỉ KHÔNG phép', 'Nghỉ CUỐI TUẦN KHÔNG phép',
 ]
 
@@ -76,7 +77,7 @@ def test_batch_at_0300_without_checkin_and_never_repeated(manual, reason):
 @pytest.mark.parametrize('reason', ['Nghỉ CÓ phép', 'Nghỉ phát sinh', 'Nghỉ phép năm',
     'Đi trễ KHÔNG phép', 'Đi trễ CUỐI TUẦN KHÔNG phép',
     'Về sớm bệnh có giấy khám hoặc được quản lý duyệt'])
-def test_only_seven_exact_reasons(reason):
+def test_only_eight_exact_reasons(reason):
     state = fixture()
     project(state, DAY)
     project(state, DAY + timedelta(days=1), records=leaves(reason))
