@@ -1032,6 +1032,7 @@ export default function LeaveRegistrationPage({ user }) {
               <RefreshCw size={15} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-4c4154cfd167"> Làm mới
             </UiCustomText></button>
           </div>
+          <div className="leave-list-controls">
           <UiToolbar data-ui-key="u-673fd5d1a86a" className="list-actions">
               {role === 'admin' && <button data-ui-key="u-ac98242f10d4" type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
               {canEditVisibleRecord && <button data-ui-key="u-1ce6547689e1" data-ui-label-default="Lưu sửa" type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /><UiCustomText uiKey="u-1ce6547689e1"> Lưu sửa</UiCustomText></button>}
@@ -1097,6 +1098,7 @@ export default function LeaveRegistrationPage({ user }) {
               {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
             </datalist>
           </UiToolbar>
+          </div>
           <div className="table-wrap leave-list-wrap" aria-busy={loadState.records === 'loading'}>
             <table data-ui-key="u-1d60b99a3b6d" className={`leave-records-table ${canViewPenalty ? 'with-penalty' : 'without-penalty'}`}>
               <colgroup>
