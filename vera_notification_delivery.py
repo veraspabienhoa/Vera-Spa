@@ -110,7 +110,7 @@ def enqueue(conn, source_key, payload, event_key=None, *, default_usernames=None
         audience = native_audience(conn, source_key, payload, default_usernames, default_accounts)
         if audience is not None:
             rules.append({'key': 'native:' + source_key, 'source_key': source_key,
-                          'recipients': audience, 'channels': ['in_app', 'push'],
+                          'recipients': audience, 'channels': (['in_app', 'popup', 'push'] if source_key == 'missing_checkin_absence' else ['in_app', 'push']),
                           'custom': False, 'native': True, 'enabled': is_enabled(conn, source_key)})
             # Training retains its native detail records and popup compatibility.
             handled = source_key not in {'training_completed', 'training_cycle'}

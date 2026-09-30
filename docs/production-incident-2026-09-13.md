@@ -2015,3 +2015,29 @@ API kiểm tra cả quyền sửa Nội quy và role Admin, khóa cập nhật c
 revision để chặn ghi đè cấu hình cũ. Mỗi thao tác lưu ngay, ghi updated_by;
 worker đọc cấu hình tại lượt chạy, lưu revision đã áp dụng trong dấu ngày.
 Thay cấu hình sau lượt đã xử lý không kích hoạt lại ngày đó, không sửa mức phạt.
+
+## 30-09-2026: tự ghi nghỉ không phép sau mốc Ca 1 / Ca 2
+
+Operator requests current-day automatic absence after (strictly greater than)
+15:00 Ca 1 / 17:00 Ca 2, weekday/weekend catalog penalties and employee notices.
+The complete FaceGate archive refresh invokes this rule with a caller-owned
+transaction, separate from cache publication. Raw evidence must be nonempty,
+complete, no more than five minutes old and synchronized after the cutoff;
+unresolved identities suppress the batch. Only active scheduled, mapped,
+participating employees without scans qualify. Existing non-late leave records
+are preserved; late registration still requires attendance by the cutoff.
+
+Admin can disable the rule or either shift in Nội quy. Default is enabled per
+operator instruction. It processes today's date only, with normal restart retry;
+no historical backfill. Official reason/penalty is selected for the actual VN
+weekday (Saturday/Sunday use the weekend reason), using existing progressive
+penalty rules. No catalog fallback or new hardcoded amount. Existing leave and
+Auto Check unique events prevent repeat penalties. Later arrival does not silently
+erase a committed absence; management must review/adjust it.
+
+Leave/event/notification outbox are atomic. The new notification family has native
+employee + reception + management + admin audiences and in_app/popup/push channels.
+Disabling notifications does not disable the business rule. Generic penalty
+notification is handed off to this outbox once, avoiding a duplicate notification
+or bypass of its settings. No network I/O or nested pool connection under locks.
+Deployment and actual production behavior are not yet verified.
