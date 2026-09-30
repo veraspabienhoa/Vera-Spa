@@ -2059,3 +2059,20 @@ block reuse pending explicit separation; this change does not claim unrestricted
 reuse of all historical names. No automatic financial-history migration or raw
 FaceGate evidence rewriting is performed. A failed creation rolls retirement
 back. Deployment/production creation has not been verified.
+
+## 30-09-2026: two-hour absence grace and replacement
+
+Operator screenshots show Linh Đan with both unpermitted late and full-day
+absence penalties. The absence cutoff now waits two hours after the existing
+15:00/17:00 required arrival anchors (17:00/19:00 VN). Immediately before writes,
+read complete fresh FaceGate evidence again under the employee leave lock.
+Replace only same-employee/day unpermitted rows; archive complete originals and
+supersede their automatic events transactionally with the new absence. Failure
+or duplicate rolls removal back. Preserve permitted registrations. Permitted
+late requires a unique official half-day unpermitted catalog reason for the
+actual weekday/weekend; missing/ambiguous catalog means review, never full-day
+fallback or an invented fine. No historical repair or production writes performed.
+
+Operator clarified half-day absence equivalents: Về sớm KHÔNG phép on weekdays,
+Về sớm CUỐI TUẦN KHÔNG phép on Saturday/Sunday. Select those exact existing
+catalog rules and their configured penalty/day values; do not invent a new rule.

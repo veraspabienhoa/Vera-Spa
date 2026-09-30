@@ -17,7 +17,7 @@ REAL_SCHEMA = rule.auto_check.ensure_schema
 POLICY = dict(enabled=True, ca1_enabled=True, ca2_enabled=True, revision=0)
 
 
-@pytest.mark.parametrize('shift,hour', [('Ca 1', 15), ('Ca 2', 17)])
+@pytest.mark.parametrize('shift,hour', [('Ca 1', 17), ('Ca 2', 19)])
 def test_strict_cutoff_and_sync_after_cutoff(shift, hour):
     cutoff = datetime(2026, 9, 30, hour, tzinfo=VN_TZ)
     row = dict(employee_username='Test', employee_name='Test', shift_code=shift)
@@ -70,7 +70,7 @@ def scenario(monkeypatch):
     import vera_missing_checkin_notifications as alerts
     import vera_resource_concurrency as locks
     import vera_notification_delivery as delivery
-    now = datetime(2026, 9, 30, 17, 1, tzinfo=VN_TZ)
+    now = datetime(2026, 9, 30, 19, 1, tzinfo=VN_TZ)
     data = dict(rows=[{'EmployeeName': 'Other'}], events=[], issues=[],
                 index={'ref': {'username': 'Test'}},
                 syncs=[{'work_date': now.date().isoformat(), 'last_synced_at': now.isoformat()}])
@@ -87,6 +87,7 @@ def scenario(monkeypatch):
     monkeypatch.setattr(rule.auto_check, 'ensure_schema', lambda *args: None)
     catalog = {rule.auto_check._norm(reason): {'name': reason, 'penalty': amount} for reason, amount in zip(rule.REASONS, (123000, 456000))}
     monkeypatch.setattr(rule.auto_check, 'load_catalog', lambda conn: catalog)
+    state.catalog = catalog
     def save(conn, **kwargs):
         state.saved.append(kwargs)
         state.leaves.append(dict(employee_name='Test', leave_reason=kwargs['reason_item']['name']))
@@ -97,10 +98,15 @@ def scenario(monkeypatch):
         def __init__(self, rows): self.rows = rows
         def mappings(self): return self
         def all(self): return self.rows
-        def first(self): return None
+        def first(self): return self.rows[0] if self.rows else None
         def one(self): return {'id': 7, 'leave_record_uid': 'uid', 'penalty': state.saved[-1]['reason_item']['penalty']}
     class Conn:
-        def execute(self, query, params=None): return Result(state.leaves)
+        def execute(self, query, params=None):
+            if 'SELECT id FROM vera_auto_check_event' in str(query):
+                return Result([{'id': 7}] if state.saved else [])
+            return Result(state.leaves)
+        def begin_nested(self):
+            return SimpleNamespace(commit=lambda: None, rollback=lambda: None)
     state.conn = Conn()
     return state
 
@@ -138,7 +144,11 @@ def test_no_writes_without_reliable_absence(scenario, condition):
 def test_registered_late_still_requires_checkin(scenario):
     s = scenario
     s.leaves.append({'employee_name': 'Test', 'leave_reason': 'Đi trễ CÓ phép'})
+    half = {'name': 'Về sớm KHÔNG phép', 'days': 0.5, 'penalty': 60000}
+    s.catalog[rule.auto_check._norm(half['name'])] = half
     assert rule.process(s.conn, now=s.now)['added'] == 1
+    assert s.saved[0]['reason_item'] == half
+    assert s.leaves[0]['leave_reason'] == 'Đi trễ CÓ phép'
 
 
 def test_real_penalty_transaction_rollback_and_replay(database, scenario, monkeypatch):
@@ -184,3 +194,54 @@ def test_manual_reversal_is_not_recreated(database, scenario, monkeypatch):
         # No leave table is needed: a reviewed decision stops before any write.
         assert rule.process(conn, now=s.now)['added'] == 0
         assert not s.saved and not s.notices
+
+
+def test_half_day_missing_catalog_never_falls_back_to_full_day(scenario):
+    s = scenario
+    s.leaves.append({'employee_name': 'Test', 'leave_reason': 'Đi trễ CÓ phép'})
+    result = rule.process(s.conn, now=s.now)
+    assert result['added'] == 0
+    assert result['review_required'][0]['reason'] == 'missing_half_day_official_reason'
+    assert not s.saved and not s.notices
+
+
+def test_checkin_arriving_before_final_write_cancels_penalty(scenario, monkeypatch):
+    import vera_facegate_attendance as fg
+    from copy import deepcopy
+    s = scenario
+    fresh = deepcopy(s.data)
+    fresh['rows'].append({'EmployeeName': 'Test'})
+    reads = iter([s.data, fresh])
+    monkeypatch.setattr(fg, 'project_evidence', lambda *args: next(reads))
+    assert rule.process(s.conn, now=s.now)['added'] == 0
+    assert not s.saved and not s.notices
+
+
+def test_half_day_weekend_uses_own_catalog_amount():
+    weekday = {'name': 'Về sớm KHÔNG phép', 'days': 0.5, 'penalty': 123}
+    weekend = {'name': 'Về sớm CUỐI TUẦN KHÔNG phép', 'days': 0.5, 'penalty': 456}
+    catalog = {rule.auto_check._norm(item['name']): item for item in (weekday, weekend)}
+    assert rule.absence_item(catalog, date(2026, 9, 30), True) == weekday
+    assert rule.absence_item(catalog, date(2026, 10, 3), True) == weekend
+
+
+def test_unpermitted_replacement_archives_and_rolls_back(database):
+    with database.begin() as conn:
+        REAL_SCHEMA(conn)
+        conn.execute(text('CREATE TABLE leave_records(record_uid text,leave_date date,employee_name text,leave_reason text,penalty numeric)'))
+        conn.execute(text("INSERT INTO leave_records VALUES('old', '2026-09-30','Test','Đi trễ KHÔNG phép',400000), ('approved','2026-09-30','Test','Đi trễ CÓ phép',0)"))
+        conn.execute(text("INSERT INTO vera_auto_check_event(event_key,work_date,employee_name,reason,source,status,leave_record_uid) VALUES('late','2026-09-30','Test','Đi trễ KHÔNG phép','old','added','old')"))
+    def replace(conn):
+        rows = conn.execute(text("SELECT * FROM leave_records WHERE record_uid='old' FOR UPDATE")).mappings().all()
+        rule.replace_unpermitted(conn, rows, day=date(2026,9,30), username='Test', target_reason=rule.REASONS[0])
+    with pytest.raises(RuntimeError):
+        with database.begin() as conn:
+            replace(conn)
+            raise RuntimeError('new absence failed')
+    with database.begin() as conn:
+        assert conn.execute(text('SELECT count(*) FROM leave_records')).scalar() == 2
+        replace(conn)
+    with database.connect() as conn:
+        assert conn.execute(text('SELECT record_uid FROM leave_records')).scalar() == 'approved'
+        assert conn.execute(text('SELECT status FROM vera_auto_check_event')).scalar() == 'superseded'
+        assert conn.execute(text("SELECT replaced_rows->0->>'penalty' FROM vera_absence_replacement_audit")).scalar() == '400000'
