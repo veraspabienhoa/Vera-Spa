@@ -1,3 +1,4 @@
+import ManualOnlineBooking from './ManualOnlineBooking'
 import { useEffect, useState } from 'react'
 import EmployeeProfileModal from './EmployeeProfileModal'
 import { RequestCard } from '../pages/OnlineBookingPage'
@@ -5,7 +6,8 @@ import { canViewOnlineBookings } from '../lib/onlineBookings'
 import { veraApi } from '../lib/api'
 import { formatVeraDate } from '../lib/veraDate'
 
-export default function UpcomingOnlineBookings({ user, onClose }) {
+export default function UpcomingOnlineBookings({ user, onClose, services = [] }) {
+  const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState(null)
   const [page, setPage] = useState(1)
   const [version, setVersion] = useState(0)
@@ -28,9 +30,10 @@ export default function UpcomingOnlineBookings({ user, onClose }) {
   }, [allowed, page, version])
   if (!allowed) return null
   // Only one focus trap is mounted; returning from details restores the list.
+  if (creating) return <ManualOnlineBooking services={services} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setPage(1); reload() }}/>
   if (selected) return <RequestCard key={`${selected.id}:${selected.revision}`} row={selected} reload={reload} onClose={() => setSelected(null)}/>
   return <EmployeeProfileModal labelledBy="upcoming-booking-title" className="upcoming-booking-modal" onClose={onClose}>
-    <header><h2 id="upcoming-booking-title">Booking online sắp tới</h2><button onClick={onClose}>Đóng</button></header>
+    <header><h2 id="upcoming-booking-title">Booking online sắp tới</h2><div className="online-booking-actions"><button onClick={() => setCreating(true)}>Thêm Lịch đặt Booking</button><button onClick={onClose}>Đóng</button></div></header>
     <p>Lịch từ thời điểm hiện tại (giờ Việt Nam), mới nhận hoặc đã xác nhận. Xếp lịch gần nhất trước.</p>
     <button disabled={busy} onClick={reload}>Làm mới</button>
     {error && <p role="alert">{error}</p>}

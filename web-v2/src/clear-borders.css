@@ -338,3 +338,15 @@ body .online-booking-page .online-booking-periods button:focus-visible{outline:2
 .staff-page .staff-list-search .staff-heading-search { width:100%; max-width:none; margin:0; }
 .staff-page .staff-list-search > * { min-width:0; max-width:100%; }
 @media (max-width:600px) { .staff-page .staff-list-search { grid-template-columns:minmax(0,1fr); } }
+
+@media screen {
+  body .online-booking-popup { background: #fff3c4; }
+  body .online-booking-popup button { background: #205440; color: #fff; border-radius: 12px; }
+  body .live-tour-page .tour-room-share-tools .upcoming-booking-button { background: #fff3c4; color: #173e32; border-color: #b59535; }
+}
+.manual-booking-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; min-width:0; }
+.manual-booking-form > label { display:grid; gap:6px; min-width:0; }
+.manual-booking-form :is(input,select,textarea) { width:100%; min-width:0; max-width:100%; box-sizing:border-box; padding:10px; border-radius:10px; }
+.manual-booking-form .wide { grid-column:1/-1; }
+.manual-booking-form textarea { min-height:90px; }
+@media(max-width:600px) { .manual-booking-form { grid-template-columns:minmax(0,1fr); } }

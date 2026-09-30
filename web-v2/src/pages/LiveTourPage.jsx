@@ -1484,7 +1484,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const panelActions = usePanelActions({exportData, openModal, openCustomerHistory, copyBoardImage, executeAction, confirmExpired, previewExpired, removeCatalogItem})
 
   return <div className="feature-page tour-page live-tour-page">
-    {onlineBookingsOpen && canViewOnlineBookings(user) && <UpcomingOnlineBookings user={user} onClose={() => setOnlineBookingsOpen(false)}/>}
+    {onlineBookingsOpen && canViewOnlineBookings(user) && <UpcomingOnlineBookings services={data.services || []} user={user} onClose={() => setOnlineBookingsOpen(false)}/>}
     <style>{appearanceCss}</style>
     <style>{`
       .live-tour-page{--live-tour-section-gap:10px;gap:var(--live-tour-section-gap)}.page-wrap.live-tour-page-wrap{padding-top:0;padding-bottom:0}.live-tour-page>.setup-note{padding:6px 9px;font-size:9px}

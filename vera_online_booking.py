@@ -45,6 +45,10 @@ class WebsiteRequest(BaseModel):
         return self
 
 
+class ManualBookingRequest(WebsiteRequest):
+    kind: Literal['booking'] = 'booking'
+
+
 class InboxUpdate(BaseModel):
     status: Literal['new', 'confirmed', 'handled', 'cancelled']
     note: str = Field(default='', max_length=2000)
@@ -136,6 +140,17 @@ def install_online_booking_routes(app, *, engine_instance, current_identity):
                 ensure_schema(conn)
                 return ingest(conn, payload)
         return await run_in_threadpool(save)
+
+    @app.post('/v2/online-bookings')
+    def create_manual_booking(payload: ManualBookingRequest, ident=Depends(authorized)):
+        actor = str(getattr(ident, 'employee_username', '') or getattr(ident, 'auth_user_id', '') or ident.role)
+        with engine_instance().begin() as conn:
+            ensure_schema(conn)
+            result = ingest(conn, payload)
+            if not result['duplicate']:
+                conn.execute(text('UPDATE vera_online_booking SET updated_by=:actor WHERE id=:id'),
+                             {'actor': actor, 'id': result['id']})
+        return result
 
     @app.get('/v2/online-bookings')
     def listing(page: int = Query(1, ge=1, le=100000), limit: int = Query(25, ge=1, le=100),
