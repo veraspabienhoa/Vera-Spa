@@ -251,7 +251,11 @@ test('new room-booking rows copy the first service once and remain independently
       const label = [...document.querySelectorAll('label')].find(item => item.textContent === 'Dịch vụ *')
       return document.getElementById(label.htmlFor)
     }
-    await act(() => serviceInput().focus())
+    await act(async () => {
+      serviceInput().focus()
+      await new Promise(resolve => window.requestAnimationFrame(resolve))
+    })
+    assert.equal(document.activeElement, serviceInput())
     await act(() => document.querySelector('[role="option"]').click())
     assert.equal(serviceInput().value, '90 Tiêu chuẩn')
     await act(() => document.querySelector('.tour-multi-add').click())
