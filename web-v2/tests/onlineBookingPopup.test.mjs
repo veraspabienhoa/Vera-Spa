@@ -9,7 +9,7 @@ const built = await build({
   bundle:true, write:false, format:'iife', jsx:'automatic', loader:{'.css':'empty'},
   plugins:[{name:'mock-api',setup(b){
     b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}))
-    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={liveTourCollection:async(panel,params)=>{window.lookup=params.search;return {data:{customers:[{id:'c1',name:'Khách Mẫu',phone:'0900000001'}]}}},createOnlineBooking:async body=>{window.sent.push(body);if(window.fail)throw Error('Mất kết nối');return {ok:true}},updateOnlineBooking:async(id,body)=>{if(window.fail)throw Error('Xung đột cập nhật');window.updated={id,...body};window.rows=[];return {ok:true}},onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
+    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={onlineBookingStaff:async()=>({employees:[{value:'AN AN',label:'An An'}]}),deleteOnlineBooking:async(id,revision)=>{if(window.fail)throw Error('Xung đột xóa');window.deleted={id,revision};window.rows=[];return {ok:true}},liveTourCollection:async(panel,params)=>{window.lookup=params.search;return {data:{customers:[{id:'c1',name:'Khách Mẫu',phone:'0900000001'}]}}},createOnlineBooking:async body=>{window.sent.push(body);if(window.fail)throw Error('Mất kết nối');return {ok:true}},updateOnlineBooking:async(id,body)=>{if(window.fail)throw Error('Xung đột cập nhật');window.updated={id,...body};window.rows=[];return {ok:true}},onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
   }}],
 })
 async function mount(role='letan') {
@@ -158,6 +158,11 @@ test('manual booking searches customer phone, fills both fields, retries with sa
   const service=w.document.querySelector('select')
   await change(service,service.options[1].value)
   await change(w.document.querySelector('input[type="time"]'),'14:00')
+  const staffLabel=[...w.document.querySelectorAll('label')].find(label=>label.textContent==='Yêu cầu')
+  const staff=w.document.getElementById(staffLabel.htmlFor)
+  assert.ok(staff.compareDocumentPosition(w.document.querySelector('textarea'))&w.Node.DOCUMENT_POSITION_FOLLOWING)
+  await w.act(async()=>staff.click())
+  await w.act(async()=>[...w.document.querySelectorAll('[role="option"]')].find(option=>option.textContent==='An An').click())
   const submit=()=>w.act(async()=>w.document.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})))
   w.fail=true;await submit()
   assert.ok(w.document.querySelector('[role="alert"]'))
@@ -166,5 +171,31 @@ test('manual booking searches customer phone, fills both fields, retries with sa
   assert.equal(w.sent[0].event_id,w.sent[1].event_id)
   assert.equal(w.sent[1].customer_name,'Khách Mẫu')
   assert.equal(w.sent[1].phone,'0900000001')
+  assert.equal(w.sent[1].requested_staff,'AN AN')
+ }finally{await w.unmount();w.close()}
+})
+
+for(const role of ['letan','quanly']) test(`${role} edits and deletes booking with revision checks`,async()=>{
+ const dom=await mount(role),w=dom.window
+ try{
+  await w.mountUpcoming({role})
+  const button=text=>[...w.document.querySelectorAll('button')].find(b=>b.textContent===text)
+  await w.act(async()=>button('Chi tiết').click())
+  await w.act(async()=>button('Sửa lịch hẹn').click())
+  assert.equal(w.document.querySelectorAll('[role="dialog"]').length,1)
+  const time=w.document.querySelector('input[type="time"]')
+  await w.act(async()=>{Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(time,'19:30');time.dispatchEvent(new w.Event('input',{bubbles:true}))})
+  await w.act(async()=>w.document.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})))
+  assert.equal(w.updated.revision,0);assert.equal(w.updated.booking.appointment_time,'19:30')
+  w.rows=[{id:2,kind:'booking',customer_name:'Khách B',appointment_date:'2026-10-01',appointment_time:'19:30',service:'VIP',guests:1,status:'new',note:'',revision:3}]
+  await w.act(async()=>button('Làm mới').click())
+  await w.act(async()=>button('Chi tiết').click())
+  w.confirm=()=>true;w.fail=true
+  await w.act(async()=>button('Xóa lịch hẹn').click())
+  assert.ok(w.document.querySelector('[role="alert"]'))
+  w.fail=false
+  await w.act(async()=>button('Xóa lịch hẹn').click())
+  assert.equal(w.deleted.id,2);assert.equal(w.deleted.revision,3)
+  assert.ok(w.document.body.textContent.includes('Không có lịch hẹn'))
  }finally{await w.unmount();w.close()}
 })

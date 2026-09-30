@@ -1,3 +1,4 @@
+import ManualOnlineBooking from '../components/ManualOnlineBooking'
 import { useEffect, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
@@ -9,7 +10,14 @@ import { canViewOnlineBookings } from '../lib/onlineBookings'
 import './OnlineBookingPage.css'
 
 const statuses = { new: 'Mới nhận', confirmed: 'Đã xác nhận', handled: 'Đã xử lý', cancelled: 'Đã hủy' }
-export function RequestCard({ row, reload, onClose }) {
+export function RequestCard({ row, reload, onClose, services = [] }) {
+  const [editing, setEditing] = useState(false)
+  const remove = async () => {
+    if (!window.confirm('Xóa lịch hẹn online này?')) return
+    setBusy(true); setError('')
+    try { await veraApi.deleteOnlineBooking(row.id, row.revision); window.dispatchEvent(new Event('vera-online-bookings-changed')); onClose(); reload() }
+    catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
   const [status, setStatus] = useState(row.status)
   const [note, setNote] = useState(row.note)
   const [busy, setBusy] = useState(false)
@@ -23,6 +31,7 @@ export function RequestCard({ row, reload, onClose }) {
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
+  if (editing) return <ManualOnlineBooking services={services} booking={row} onClose={() => setEditing(false)} onSaved={() => { onClose(); reload() }} />
   return <EmployeeProfileModal labelledBy="online-booking-modal-title" className="online-booking-modal" busy={busy} onClose={onClose}><article className="online-booking-card">
     <header><h2 id="online-booking-modal-title">Đặt lịch</h2><button disabled={busy} onClick={onClose} aria-label="Đóng Đặt lịch">Đóng</button></header>
     <header><strong>#{row.id} · {row.kind === 'booking' ? 'Đặt lịch' : 'Liên hệ'}</strong><span>{formatVeraDateTime(row.created_at)}</span></header>
@@ -30,6 +39,7 @@ export function RequestCard({ row, reload, onClose }) {
     <div className="online-booking-actions"><label>Trạng thái<select value={status} onChange={e => setStatus(e.target.value)}>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>
     <label>Ghi chú xử lý<textarea value={note} maxLength={2000} onChange={e => setNote(e.target.value)}/></label>
     {row.updated_by && <small>Cập nhật: {row.updated_by} · {formatVeraDateTime(row.updated_at)}</small>}
+    {row.kind === 'booking' && <div className="online-booking-actions"><button disabled={busy} onClick={() => setEditing(true)}>Sửa lịch hẹn</button><button className="danger-button" disabled={busy} onClick={remove}>Xóa lịch hẹn</button></div>}
     {error && <p role="alert">{error}</p>}
     <button disabled={busy || (status === row.status && note === row.note)} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button>
   </article></EmployeeProfileModal>

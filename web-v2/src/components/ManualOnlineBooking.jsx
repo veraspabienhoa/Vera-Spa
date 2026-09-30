@@ -6,8 +6,16 @@ import { veraApi } from '../lib/api'
 import { bookingDateRange } from '../lib/bookingDateRange'
 import { catalogIsAvailable } from '../lib/serviceCatalog'
 
-export default function ManualOnlineBooking({ services, onClose, onSaved }) {
-  const [draft, setDraft] = useState({ service: '', guests: 1, appointment_date: bookingDateRange('today').date_from, appointment_time: '', customer_name: '', phone: '', message: '' })
+export default function ManualOnlineBooking({ services = [], booking, onClose, onSaved }) {
+  const [draft, setDraft] = useState({ service: '', guests: 1, appointment_date: bookingDateRange('today').date_from, appointment_time: '', customer_name: '', phone: '', requested_staff: '', message: '', ...(booking ? Object.fromEntries(['service', 'guests', 'appointment_date', 'appointment_time', 'customer_name', 'phone', 'requested_staff', 'message'].map(key => [key, booking[key] ?? ''])) : {}) })
+  const [staff, setStaff] = useState([])
+  const [staffError, setStaffError] = useState('')
+  const [staffLoading, setStaffLoading] = useState(true)
+  useEffect(() => {
+    let active = true
+    veraApi.onlineBookingStaff().then(result => { if (active) setStaff(result.employees || []) }).catch(err => { if (active) setStaffError(err.message) }).finally(() => { if (active) setStaffLoading(false) })
+    return () => { active = false }
+  }, [])
   const [query, setQuery] = useState('')
   const [customers, setCustomers] = useState([])
   const [lookupError, setLookupError] = useState('')
@@ -37,7 +45,9 @@ export default function ManualOnlineBooking({ services, onClose, onSaved }) {
     submitting.current = true; setBusy(true); setError('')
     eventId.current ||= crypto.randomUUID()
     try {
-      await veraApi.createOnlineBooking({ ...draft, event_id: eventId.current, kind: 'booking' })
+      const payload = { ...draft, event_id: eventId.current, kind: 'booking' }
+      if (booking) await veraApi.updateOnlineBooking(booking.id, { status: booking.status, note: booking.note || '', revision: booking.revision, booking: payload })
+      else await veraApi.createOnlineBooking(payload)
       window.dispatchEvent(new Event('vera-online-bookings-changed'))
       onSaved()
     } catch (err) { setError(err.message) }
@@ -48,24 +58,26 @@ export default function ManualOnlineBooking({ services, onClose, onSaved }) {
     <header><h2 id="manual-booking-title">ĐẶT LỊCH - BOOKING</h2><button disabled={busy} onClick={onClose}>Đóng</button></header>
     <p>Nhập thông tin khách mới hoặc tìm khách đã có bằng tên hay số điện thoại.</p>
     <form className="manual-booking-form" onSubmit={save}>
-      <label className="wide">Dịch vụ *<select aria-label="Dịch vụ" required disabled={busy} value={draft.service} onChange={event => set('service', event.target.value)}>
-        <option value="">Chọn dịch vụ</option>{catalog.map(row => {
+      <label className="wide">Dịch vụ<select aria-label="Dịch vụ" disabled={busy} value={draft.service} onChange={event => set('service', event.target.value)}>
+        <option value="">Chưa chọn dịch vụ</option>{draft.service && !catalog.some(row => `${row.name}${row.duration ? ` · ${row.duration} phút` : ''}${row.price != null ? ` · ${Number(row.price).toLocaleString('vi-VN')}đ` : ''}` === draft.service) && <option value={draft.service}>{draft.service}</option>}{catalog.map(row => {
           const label = `${row.name}${row.duration ? ` · ${row.duration} phút` : ''}${row.price != null ? ` · ${Number(row.price).toLocaleString('vi-VN')}đ` : ''}`
           return <option key={row.id} value={label}>{label}</option>
         })}
       </select></label>
       <label className="wide">Số khách *<input aria-label="Số khách" type="number" required min="1" max="50" step="1" disabled={busy} value={draft.guests} onChange={event => set('guests', event.target.value === '' ? '' : Number(event.target.value))}/></label>
-      <label>Ngày đến *<VeraDateInput aria-label="Ngày đến" required disabled={busy} min={bookingDateRange('today').date_from} value={draft.appointment_date} onChange={event => set('appointment_date', event.target.value)}/></label>
-      <label>Giờ đến mong muốn *<input aria-label="Giờ đến mong muốn" type="time" required disabled={busy} value={draft.appointment_time} onChange={event => set('appointment_time', event.target.value)}/></label>
+      <label>Ngày đến *<VeraDateInput aria-label="Ngày đến" required disabled={busy} min={booking ? undefined : bookingDateRange('today').date_from} value={draft.appointment_date} onChange={event => set('appointment_date', event.target.value)}/></label>
+      <label>Giờ đến mong muốn *<input aria-label="Giờ đến mong muốn" type="time" step="900" required disabled={busy} value={draft.appointment_time} onChange={event => set('appointment_time', event.target.value)}/></label>
       {['customer_name', 'phone'].map(field => {
         const label = field === 'phone' ? 'Số điện thoại' : 'Tên khách hàng'
         const required = field === 'customer_name'
         return <LiveTourSearchSelect key={field} label={required ? `${label} *` : label} placeholder={`Nhập ${label.toLowerCase()}`} required={required} disabled={busy} value="" searchValue={draft[field]} onSearch={value => { set(field, value); setQuery(value) }} onChange={choose} filterOption={() => true} options={customers.map(row => ({ value: row.id, label: field === 'phone' ? row.phone : row.name, detail: field === 'phone' ? row.name : row.phone }))}/>
       })}
       {lookupError && <p className="wide" role="status">Chưa tra cứu được khách hàng: {lookupError}. Bạn vẫn có thể nhập thông tin khách.</p>}
+      <LiveTourSearchSelect className="wide" label="Yêu cầu" placeholder={staffLoading ? 'Đang tải nhân viên…' : 'Tìm và chọn nhân viên đi làm hôm nay'} disabled={busy || staffLoading || Boolean(staffError)} value={draft.requested_staff} onChange={value => set('requested_staff', value)} options={staff}/>
+      {staffError && <p className="wide" role="status">Chưa tải được nhân viên: {staffError}</p>}
       <label className="wide">Lời nhắn<textarea aria-label="Lời nhắn" maxLength={4000} disabled={busy} value={draft.message} onChange={event => set('message', event.target.value)}/></label>
       {error && <p className="wide" role="alert">{error}</p>}
-      <div className="online-booking-actions wide"><button type="button" disabled={busy} onClick={onClose}>Đóng</button><button type="submit" disabled={busy || !catalog.length}>{busy ? 'Đang lưu…' : 'Lưu lịch đặt Booking'}</button></div>
+      <div className="online-booking-actions wide"><button type="button" disabled={busy} onClick={onClose}>Đóng</button><button type="submit" disabled={busy || (Boolean(draft.requested_staff) && (staffLoading || Boolean(staffError)))}>{busy ? 'Đang lưu…' : booking ? 'Lưu thay đổi' : 'Lưu lịch đặt Booking'}</button></div>
     </form>
   </EmployeeProfileModal>
 }

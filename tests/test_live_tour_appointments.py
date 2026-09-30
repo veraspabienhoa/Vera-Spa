@@ -199,3 +199,26 @@ def test_invalid_appointment_never_mutates_state(monkeypatch, overrides):
     before = deepcopy(shared)
     assert client.post("/v2/live-tour/action", json=request_body(**overrides)).status_code in {400, 404, 428}
     assert shared == before
+
+
+def test_online_booking_edit_delete_reconciles_only_owned_tokens():
+    a = employee('e1', 'An An')
+    a.update(username='AN AN', work_status='Đi làm', roster_eligible=True, appointment='Khách riêng · YC 19:30 · YC 19:30', _website_booking_appointment_day='2026-10-01', _website_booking_appointment_values=['YC 19:30'])
+    b = employee('e2', 'B')
+    b.update(username='B', work_status='Đi làm', roster_eligible=True, appointment='')
+    state = state_with(a, b)
+    live._sync_online_booking_requests(state, [{'requested_staff':'B','appointment_time':'20:00'},{'requested_staff':'B','appointment_time':'20:00'}], '2026-10-01')
+    assert a['appointment'] == 'Khách riêng · YC 19:30'
+    assert b['appointment'] == 'YC 20:00'
+    assert live._sync_online_booking_requests(state, [{'requested_staff':'B','appointment_time':'20:00'}], '2026-10-01') == 0
+    live._sync_online_booking_requests(state, [], '2026-10-01')
+    assert b['appointment'] == ''
+    assert a['appointment'] == 'Khách riêng · YC 19:30'
+
+
+def test_online_booking_projection_excludes_leave_and_keeps_other_booking_time():
+    a = employee('e1', 'A')
+    a.update(username='A', work_status='Nghỉ phép', roster_eligible=False, appointment='Khách riêng')
+    state = state_with(a)
+    live._sync_online_booking_requests(state, [{'requested_staff':'A','appointment_time':'19:30'}], '2026-10-01')
+    assert a['appointment'] == 'Khách riêng'

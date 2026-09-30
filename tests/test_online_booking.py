@@ -74,7 +74,7 @@ def client(role='admin', engine=None, locked=False, working_staff_provider=None,
 
 @pytest.mark.parametrize('role,locked', [('nhanvien',False), ('leader',False), ('admin',True)])
 @pytest.mark.parametrize('method,path,body', [
-    ('GET','/v2/online-bookings',None), ('POST','/v2/online-bookings',payload()), ('GET','/v2/online-bookings/unread',None),
+    ('GET','/v2/online-bookings',None), ('GET','/v2/online-bookings/staff',None), ('DELETE','/v2/online-bookings/1',{'revision':0}), ('POST','/v2/online-bookings',payload()), ('GET','/v2/online-bookings/unread',None),
     ('POST','/v2/online-bookings/1/seen',None), ('PATCH','/v2/online-bookings/1', {'status':'handled','revision':0}),
 ])
 def test_all_inbox_routes_deny_unauthorized_before_database(role, locked, method, path, body):
@@ -105,3 +105,54 @@ def test_listing_rejects_invalid_calendar_and_reversed_range_before_database():
     api = client()
     assert api.get('/v2/online-bookings?date_from=2026-02-30').status_code == 422
     assert api.get('/v2/online-bookings?date_from=2026-10-02&date_to=2026-10-01').status_code == 422
+
+
+@pytest.mark.parametrize('role', ['admin', 'letan', 'quanly'])
+def test_internal_staff_lookup_reuses_current_working_roster(role):
+    response = client(role, working_staff_provider=lambda: {'date':'2026-10-01','employees':[{'value':'AN AN','label':'An An'}]}).get('/v2/online-bookings/staff')
+    assert response.status_code == 200
+    assert response.json()['employees'] == [{'value':'AN AN','label':'An An'}]
+
+
+def test_invalid_staff_is_rejected_before_booking_database():
+    api = client('letan', working_staff_provider=lambda: {'employees':[]})
+    response = api.post('/v2/online-bookings', json=payload(requested_staff='off-work'))
+    assert response.status_code == 422
+    response = api.patch('/v2/online-bookings/1', json={'status':'new','revision':0,'booking':payload(requested_staff='off-work')})
+    assert response.status_code == 422
+
+
+def test_booking_mutations_sync_only_after_their_transaction_commits(monkeypatch):
+    from contextlib import contextmanager
+    active = []
+    calls = []
+    class Result:
+        def __init__(self, row): self.row = row
+        def mappings(self): return self
+        def first(self): return self.row
+    class Connection:
+        def execute(self, statement, params=None):
+            if str(statement).startswith('SELECT kind,revision'):
+                return Result({'kind':'booking','revision':0})
+            return Result({'id':1,'revision':1})
+    class Engine:
+        @contextmanager
+        def begin(self):
+            active.append(True)
+            try: yield Connection()
+            finally: active.pop()
+    monkeypatch.setattr(booking, 'ensure_schema', lambda conn: None)
+    monkeypatch.setattr(booking, 'ingest', lambda conn, body: {'id':1,'duplicate':False})
+    app = FastAPI()
+    ident = SimpleNamespace(role='letan', must_change_password=False, auth_user_id='test', employee_username='test')
+    def sync():
+        assert not active
+        calls.append('sync')
+        return {'applied':True}
+    app.state.online_booking_appointment_sync = sync
+    booking.install_online_booking_routes(app, engine_instance=Engine, current_identity=lambda: ident)
+    api = TestClient(app)
+    assert api.post('/v2/online-bookings',json=payload()).status_code == 200
+    assert api.patch('/v2/online-bookings/1',json={'status':'confirmed','revision':0}).status_code == 200
+    assert api.request('DELETE','/v2/online-bookings/1',json={'revision':0}).status_code == 200
+    assert calls == ['sync','sync','sync']

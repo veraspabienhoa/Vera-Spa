@@ -1,4 +1,4 @@
-"""Signed website inbox, independent of Live Tour state and its locks."""
+"""Signed booking inbox with Live Tour synchronization after inbox commits."""
 from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
@@ -58,10 +58,15 @@ class ManualBookingRequest(WebsiteRequest):
     phone: str = Field(default='', max_length=20)
 
 
+class BookingDelete(BaseModel):
+    revision: int = Field(ge=0)
+
+
 class InboxUpdate(BaseModel):
     status: Literal['new', 'confirmed', 'handled', 'cancelled']
     note: str = Field(default='', max_length=2000)
     revision: int = Field(ge=0)
+    booking: ManualBookingRequest | None = None
 
 
 def verify_signature(body, timestamp, signature, secret, now=None):
@@ -78,6 +83,7 @@ def ensure_schema(conn):
     conn.execute(text("SELECT pg_advisory_xact_lock(726409291)"))
     if conn.execute(text("SELECT to_regclass('vera_online_booking')")).scalar_one_or_none():
         conn.execute(text("ALTER TABLE vera_online_booking ADD COLUMN IF NOT EXISTS requested_staff text NOT NULL DEFAULT ''"))
+        conn.execute(text("ALTER TABLE vera_online_booking ADD COLUMN IF NOT EXISTS deleted boolean NOT NULL DEFAULT false"))
         return
     conn.execute(text('''CREATE TABLE IF NOT EXISTS vera_online_booking (
       id bigserial PRIMARY KEY, event_id uuid UNIQUE NOT NULL, fingerprint text NOT NULL,
@@ -89,6 +95,7 @@ def ensure_schema(conn):
       note text NOT NULL DEFAULT '', revision integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
       updated_by text NOT NULL DEFAULT '')'''))
+    conn.execute(text("ALTER TABLE vera_online_booking ADD COLUMN IF NOT EXISTS deleted boolean NOT NULL DEFAULT false"))
     conn.execute(text('CREATE INDEX IF NOT EXISTS vera_online_booking_status_idx ON vera_online_booking(status,id)'))
     conn.execute(text('CREATE INDEX IF NOT EXISTS vera_online_booking_date_idx ON vera_online_booking(appointment_date,id)'))
     conn.execute(text("ALTER TABLE vera_online_booking ADD COLUMN IF NOT EXISTS requested_staff text NOT NULL DEFAULT ''"))
@@ -134,6 +141,29 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
             raise HTTPException(403, 'Chỉ Admin, Quản lý và Lễ tân được xem Booking online.')
         return ident
 
+    def validate_staff(payload):
+        if not payload.requested_staff:
+            return
+        if not working_staff_provider:
+            raise HTTPException(503, 'Danh sách nhân viên đi làm chưa sẵn sàng.')
+        available = working_staff_provider().get('employees', [])
+        if payload.requested_staff not in {row.get('value') for row in available}:
+            raise HTTPException(422, 'Nhân viên yêu cầu không đi làm hoặc đang nghỉ phép hôm nay. Hãy chọn lại.')
+
+    def sync_appointments(payload=None):
+        sync = getattr(app.state, 'online_booking_appointment_sync', None)
+        if sync:
+            return sync()
+        if payload and payload.requested_staff and payload.appointment_date == datetime.now(VN_TZ).date() and appointment_writer:
+            return appointment_writer(payload.requested_staff, payload.appointment_date, payload.appointment_time)
+        return None
+
+    @app.get('/v2/online-bookings/staff')
+    def staff(ident=Depends(authorized)):
+        if not working_staff_provider:
+            raise HTTPException(503, 'Danh sách nhân viên đi làm chưa sẵn sàng.')
+        return working_staff_provider()
+
     @app.post('/v2/integrations/website/requests')
     async def receive(request: Request):
         body = bytearray()
@@ -159,10 +189,9 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
         appointment_result = None
         if (payload.kind == 'booking' and payload.requested_staff and payload.appointment_date
                 and payload.appointment_date == datetime.now(VN_TZ).date()
-                and appointment_writer):
+                and (appointment_writer or getattr(app.state, 'online_booking_appointment_sync', None))):
             appointment_result = await run_in_threadpool(
-                appointment_writer, payload.requested_staff, payload.appointment_date,
-                payload.appointment_time,
+                sync_appointments, payload,
             )
         return {**result, **({'staff_appointment': appointment_result} if appointment_result is not None else {})}
 
@@ -177,6 +206,7 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
 
     @app.post('/v2/online-bookings')
     def create_manual_booking(payload: ManualBookingRequest, ident=Depends(authorized)):
+        validate_staff(payload)
         actor = str(getattr(ident, 'employee_username', '') or getattr(ident, 'auth_user_id', '') or ident.role)
         with engine_instance().begin() as conn:
             ensure_schema(conn)
@@ -184,7 +214,8 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
             if not result['duplicate']:
                 conn.execute(text('UPDATE vera_online_booking SET updated_by=:actor WHERE id=:id'),
                              {'actor': actor, 'id': result['id']})
-        return result
+        appointment_result = sync_appointments(payload)
+        return {**result, 'staff_appointment': appointment_result}
 
     @app.get('/v2/online-bookings')
     def listing(page: int = Query(1, ge=1, le=100000), limit: int = Query(25, ge=1, le=100),
@@ -194,7 +225,7 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
                 ident=Depends(authorized)):
         if date_from and date_to and date_from > date_to:
             raise HTTPException(422, 'Ngày kết thúc phải từ ngày bắt đầu trở đi.')
-        where = "WHERE (:status='' OR b.status=:status) AND (:kind='' OR b.kind=:kind) AND (:q='' OR b.customer_name ILIKE :search OR b.phone ILIKE :search)"
+        where = "WHERE NOT b.deleted AND (:status='' OR b.status=:status) AND (:kind='' OR b.kind=:kind) AND (:q='' OR b.customer_name ILIKE :search OR b.phone ILIKE :search)"
         where += " AND (CAST(:date_from AS date) IS NULL OR COALESCE(b.appointment_date,(b.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)>=CAST(:date_from AS date)) AND (CAST(:date_to AS date) IS NULL OR COALESCE(b.appointment_date,(b.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)<=CAST(:date_to AS date))"
         if upcoming:
             where += " AND " + UPCOMING_WINDOW_SQL
@@ -211,7 +242,7 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
         with engine_instance().begin() as conn:
             ensure_schema(conn)
             rows = conn.execute(text(f'''SELECT {PUBLIC_COLUMNS} FROM vera_online_booking b
-              WHERE b.status='new' AND NOT EXISTS(SELECT 1 FROM vera_online_booking_seen s
+              WHERE NOT b.deleted AND b.status='new' AND NOT EXISTS(SELECT 1 FROM vera_online_booking_seen s
                 WHERE s.booking_id=b.id AND s.actor=:actor) ORDER BY b.id LIMIT 20'''),
                 {'actor': ident.auth_user_id}).mappings().all()
         return {'rows': [dict(row) for row in rows]}
@@ -227,13 +258,33 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
 
     @app.patch('/v2/online-bookings/{booking_id}')
     def update(booking_id: int, payload: InboxUpdate, ident=Depends(authorized)):
+        if payload.booking:
+            validate_staff(payload.booking)
         with engine_instance().begin() as conn:
             ensure_schema(conn)
-            row = conn.execute(text('''UPDATE vera_online_booking SET status=:status,note=:note,
-              revision=revision+1,updated_at=now(),updated_by=:actor WHERE id=:id AND revision=:revision
-              RETURNING id,revision'''), {**payload.model_dump(), 'id': booking_id, 'actor': ident.employee_username}).mappings().first()
-            if not row:
+            current = conn.execute(text('SELECT kind,revision FROM vera_online_booking WHERE id=:id AND NOT deleted FOR UPDATE'), {'id': booking_id}).mappings().first()
+            if not current or current['revision'] != payload.revision:
                 raise HTTPException(409, 'Yêu cầu đã thay đổi. Hãy tải lại trước khi lưu.')
+            if payload.booking and current['kind'] != 'booking':
+                raise HTTPException(422, 'Chỉ sửa thông tin lịch hẹn cho yêu cầu đặt lịch.')
+            params = {'status': payload.status, 'note': payload.note, 'revision': payload.revision, 'id': booking_id, 'actor': ident.employee_username}
+            fields = ''
+            if payload.booking:
+                editable = payload.booking.model_dump(exclude={'event_id', 'kind'})
+                params.update(editable)
+                fields = ''.join(f'{key}=:{key},' for key in editable)
+            row = conn.execute(text(f"UPDATE vera_online_booking SET {fields}status=:status,note=:note,revision=revision+1,updated_at=now(),updated_by=:actor WHERE id=:id AND revision=:revision AND NOT deleted RETURNING id,revision"), params).mappings().first()
+        sync_appointments(payload.booking)
+        return dict(row)
+
+    @app.delete('/v2/online-bookings/{booking_id}')
+    def delete(booking_id: int, payload: BookingDelete, ident=Depends(authorized)):
+        with engine_instance().begin() as conn:
+            ensure_schema(conn)
+            row = conn.execute(text("UPDATE vera_online_booking SET deleted=true,status='cancelled',revision=revision+1,updated_at=now(),updated_by=:actor WHERE id=:id AND revision=:revision AND NOT deleted RETURNING id,revision"), {'id': booking_id, 'revision': payload.revision, 'actor': ident.employee_username}).mappings().first()
+            if not row:
+                raise HTTPException(409, 'Yêu cầu đã thay đổi. Hãy tải lại trước khi xóa.')
+        sync_appointments()
         return dict(row)
 
     app.state.online_booking_installed = True

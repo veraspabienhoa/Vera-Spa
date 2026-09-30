@@ -31,7 +31,7 @@ export default function UpcomingOnlineBookings({ user, onClose, services = [] })
   if (!allowed) return null
   // Only one focus trap is mounted; returning from details restores the list.
   if (creating) return <ManualOnlineBooking services={services} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setPage(1); reload() }}/>
-  if (selected) return <RequestCard key={`${selected.id}:${selected.revision}`} row={selected} reload={reload} onClose={() => setSelected(null)}/>
+  if (selected) return <RequestCard key={`${selected.id}:${selected.revision}`} row={selected} services={services} reload={reload} onClose={() => setSelected(null)}/>
   return <EmployeeProfileModal labelledBy="upcoming-booking-title" className="upcoming-booking-modal" onClose={onClose}>
     <header>
       <h2 id="upcoming-booking-title">Booking online sắp tới</h2>
