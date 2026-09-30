@@ -1573,7 +1573,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <span className="tour-room-segment-button tour-room-share-control"><span>{selectedRoomKey ? `${areaLabel(selectedRoom)} · ${selectedRoomRecords.length} nhân viên` : `Đã chọn ${selectedIds.size} nhân viên`}</span></span>
               <button data-ui-key="u-d35850857f8b" type="button" className="tour-room-segment-button tour-room-share-control" onClick={copySelectedSummary}><ClipboardCopy size={14}/><span>Sao chép</span></button>
               <button data-ui-key="u-7ad8ab09af4b" type="button" className="tour-room-segment-button tour-room-share-control" onClick={shareSelectedSummary}><Share2 size={14}/><span>Chia sẻ</span></button>
-              {canViewOnlineBookings(user) && <button type="button" className="tour-room-segment-button tour-room-share-control" aria-haspopup="dialog" onClick={() => setOnlineBookingsOpen(true)}>Booking online sắp tới</button>}
+              {canViewOnlineBookings(user) && <button type="button" className="tour-room-segment-button tour-room-share-control upcoming-booking-button" aria-haspopup="dialog" onClick={() => setOnlineBookingsOpen(true)}><span>Booking online sắp tới</span></button>}
             </div>
           </div>
           <div className="tour-room-grid" style={{ '--room-columns': Math.max(1, Math.ceil(displayedRooms.length / 2)) }}>

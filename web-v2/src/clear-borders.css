@@ -328,3 +328,8 @@ body .online-booking-page .online-booking-periods button:focus-visible{outline:2
 .upcoming-booking-list { display: grid; gap: 12px; min-width: 0; }
 .upcoming-booking-list > article { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px; border: 2px solid #587561; border-radius: 12px; overflow-wrap: anywhere; }
 .upcoming-booking-list button { justify-self: start; }
+
+.live-tour-page .tour-room-share-tools { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+@media (max-width: 700px) {
+  .live-tour-page .tour-room-share-tools .upcoming-booking-button { grid-column: 1 / -1; }
+}
