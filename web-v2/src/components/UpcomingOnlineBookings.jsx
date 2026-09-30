@@ -34,11 +34,10 @@ export default function UpcomingOnlineBookings({ user, onClose, services = [] })
   if (selected) return <RequestCard key={`${selected.id}:${selected.revision}`} row={selected} reload={reload} onClose={() => setSelected(null)}/>
   return <EmployeeProfileModal labelledBy="upcoming-booking-title" className="upcoming-booking-modal" onClose={onClose}>
     <header><h2 id="upcoming-booking-title">Booking online sắp tới</h2><div className="online-booking-actions"><button onClick={() => setCreating(true)}>Thêm Lịch đặt Booking</button><button onClick={onClose}>Đóng</button></div></header>
-    <p>Lịch từ thời điểm hiện tại (giờ Việt Nam), mới nhận hoặc đã xác nhận. Xếp lịch gần nhất trước.</p>
     <button disabled={busy} onClick={reload}>Làm mới</button>
     {error && <p role="alert">{error}</p>}
     {busy ? <p role="status">Đang tải…</p> : !error && <>
-      <p>{result.total} lịch sắp tới</p>
+      <p>{result.total} lịch hẹn</p>
       <div className="upcoming-booking-list">{result.rows.map(row => <article key={row.id}>
         <strong>#{row.id} · {row.customer_name}</strong>
         <span>{formatVeraDate(row.appointment_date)} · {row.appointment_time}</span>
@@ -46,7 +45,7 @@ export default function UpcomingOnlineBookings({ user, onClose, services = [] })
         <span>{row.status === 'confirmed' ? 'Đã xác nhận' : 'Mới nhận'}</span>
         <button aria-haspopup="dialog" onClick={() => setSelected(row)}>Chi tiết</button>
       </article>)}</div>
-      {!result.rows.length && <p>Không có booking online sắp tới.</p>}
+      {!result.rows.length && <p>Không có lịch hẹn trong khoảng thời gian này.</p>}
     </>}
     <nav className="online-booking-actions" aria-label="Phân trang booking sắp tới">
       <button disabled={busy || page <= 1} onClick={() => setPage(value => value - 1)}>Trước</button>

@@ -103,6 +103,9 @@ for (const role of ['admin','quanly','letan']) test(`upcoming ${role}: filter, d
  try {
   await w.mountUpcoming({role})
   assert.equal(w.lastParams.upcoming,true)
+  assert.ok(!w.document.body.textContent.includes('Lịch từ thời điểm hiện tại'))
+  assert.ok(!w.document.body.textContent.includes('Xếp lịch gần nhất trước.'))
+  assert.ok(w.document.body.textContent.includes('1 lịch hẹn'))
   const button=text=>[...w.document.querySelectorAll('button')].find(b=>b.textContent===text)
   await w.act(async()=>button('Chi tiết').click())
   assert.equal(w.document.querySelectorAll('[role="dialog"]').length,1)
@@ -116,7 +119,7 @@ for (const role of ['admin','quanly','letan']) test(`upcoming ${role}: filter, d
   await w.act(async()=>button('Lưu').click())
   assert.equal(w.updated.revision,0);assert.equal(w.updated.status,'handled')
   assert.equal(w.document.querySelectorAll('[role="dialog"]').length,1)
-  assert.ok(w.document.body.textContent.includes('Không có booking online sắp tới'))
+  assert.ok(w.document.body.textContent.includes('Không có lịch hẹn trong khoảng thời gian này'))
  }finally{await w.unmount();w.close()}
 })
 test('upcoming does not load or render for other roles',async()=>{
