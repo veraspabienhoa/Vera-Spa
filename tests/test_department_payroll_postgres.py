@@ -95,6 +95,39 @@ def test_combo_is_count_times_100000_with_cutoff_and_excluded_employees(database
         event.remove(database,'before_cursor_execute',capture)
 
 
+@pytest.mark.parametrize('source', ['schedule', 'attendance'])
+def test_named_departments_and_no_salary_flag_are_excluded_from_all_payroll_catalogs(database, client, source):
+    http, _ = client
+    with database.begin() as conn:
+        for name, role, excluded in [
+            ('boss', 'giamdoc', False), ('administrator', 'admin', False),
+            ('team_leader', 'leader', False), ('therapist', 'nhanvien', False),
+            ('cashier', 'thungan', False), ('support_staff', 'support', False),
+            ('cleaner', 'tapvu', False), ('no_salary', 'letan', True),
+            ('warehouse_staff', 'warehouse', False), ('assigned_admin', 'admin', False),
+        ]:
+            conn.execute(text('INSERT INTO employees(username,full_name,role,payload) VALUES(:name,:name,:role,CAST(:payload AS jsonb))'),
+                         {'name': name, 'role': role, 'payload': json.dumps({'Không tính lương': excluded})})
+        payroll._put_setting(conn, 'hr_registry', {
+            'departments': {
+                'leader': {'name': 'Leader', 'salary_mode': 'hourly', 'active': True},
+                'nhanvien': {'name': 'Nhân viên', 'salary_mode': 'monthly', 'active': True},
+                'warehouse': {'name': 'Kho', 'salary_mode': 'monthly', 'active': True},
+            },
+            'assignments': {'assigned_admin': 'quanly'},
+        }, 'synthetic')
+    expected = {'a', 'b', 'c', 'cashier', 'support_staff', 'cleaner', 'warehouse_staff', 'assigned_admin'}
+    response = http.get(f'/v2/department-payroll/combined/calculate?month=2026-09&source={source}')
+    assert response.status_code == 200, response.text
+    assert {row['employee_username'] for row in response.json()['rows']} == expected
+    with database.connect() as conn:
+        assert {row['employee_username'] for row in dep._salary_employee_catalog(conn)} == expected
+        assert set(dep._combined_employee_catalog(conn)) == expected
+    for code in ['admin', 'giamdoc', 'leader', 'nhanvien']:
+        response = http.get(f'/v2/department-payroll/calculate?department={code}&month=2026-09')
+        assert response.status_code == 400, response.text
+
+
 def test_saved_drafts_hide_excluded_without_rewriting_history_and_reject_stale_writes(database,client):
     http,ident=client
     saved=[{'employee_username':'a','department':'letan','combo_sales':123,'net_salary':456},
