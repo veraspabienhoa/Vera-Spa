@@ -2041,3 +2041,21 @@ Disabling notifications does not disable the business rule. Generic penalty
 notification is handed off to this outbox once, avoiding a duplicate notification
 or bypass of its settings. No network I/O or nested pool connection under locks.
 Deployment and actual production behavior are not yet verified.
+
+## 30-09-2026: reuse of a retired employee name (New)
+
+Operator read-only SQL shows New is soft-deleted/Đã nghỉ việc; inspected text
+identity columns only link employees, vera_v2_active_device and vera_v2_user_profile.
+This is not proof that arbitrary JSON history has no links. Creation may retire
+an unused former directory identity under an opaque retired UUID name, retaining
+its data and old auth UUID/device ownership. Old local sessions are revoked,
+profile disabled, account permission overrides moved, and the new employee gets
+a separate auth identity UUID; deterministic username UUID reuse is forbidden.
+The entire retirement and creation share the existing directory transaction.
+
+Active/temporarily absent accounts remain reserved, including linked rename
+aliases. Unknown business text references and identity-bearing application JSON
+block reuse pending explicit separation; this change does not claim unrestricted
+reuse of all historical names. No automatic financial-history migration or raw
+FaceGate evidence rewriting is performed. A failed creation rolls retirement
+back. Deployment/production creation has not been verified.

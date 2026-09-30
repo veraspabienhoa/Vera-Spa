@@ -5,7 +5,7 @@ read or written by these routes.  The browser never receives passwords or
 token hashes and never writes the employees table directly.
 """
 from vera_search_text import search_text_matches
-from vera_employee_names import reserved_name
+from vera_staff_name_reuse import prepare_reuse
 from vera_shift_assignment import scheduled_shift
 from vera_web_v2_live_tour_roster import key as shift_key
 
@@ -807,8 +807,7 @@ def install_staff_routes(
             if norm(username) in {"quan tri vien", "admin"}:
                 raise HTTPException(400, "Tên nhân viên này được dành cho tài khoản hệ thống.")
             all_rows = _select_staff_rows(conn, for_update=True, include_deleted=True)
-            if reserved_name(all_rows, username, norm):
-                raise HTTPException(409, "Tên nhân viên đã tồn tại; hệ thống không phân biệt dấu hoặc HOA/thường.")
+            new_auth_identity = prepare_reuse(conn, all_rows, username, norm, ident.employee_username)
             rows = [
                 row for row in all_rows
                 if str((row.get("payload") or {}).get("__deleted") or "").lower() != "true"
@@ -848,6 +847,8 @@ def install_staff_routes(
                 "cccd_issue_date": _date_text(body.cccd_issue_date, field_name="Ngày cấp CCCD"),
                 "cccd_issue_place": body.cccd_issue_place.strip(),
             }
+            if new_auth_identity:
+                record["payload"]["__auth_identity_id"] = new_auth_identity
             status = STATUS_OPTIONS[0]
             payload = _employee_payload(record, status)
             conn.execute(text("""
