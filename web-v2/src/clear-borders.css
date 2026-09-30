@@ -444,3 +444,32 @@ body .attendance-page > .page-heading h1 {
 .attendance-tabs > button[aria-selected="true"] { background: #205440; color: #fff; }
 .attendance-tabs > button:focus-visible { outline: 3px solid #a36a00; outline-offset: 2px; }
 @media (max-width: 640px) { .attendance-tabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); } .attendance-tabs > button { padding: 10px 6px; } }
+
+/* Desktop leave actions share the date-filter row; mobile keeps its original flow. */
+.leave-list-controls { display: contents; }
+@media (min-width: 901px) {
+  .leave-list-panel .leave-list-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 9px 16px;
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: #f7f9f8;
+  }
+  .leave-list-controls > .list-filter-toolbar { display: contents; }
+  .leave-list-controls > .list-actions {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    margin: 0;
+    align-self: center;
+  }
+  .leave-list-controls .list-range-buttons { grid-column: 1; grid-row: 1; min-width: 0; }
+  .leave-list-controls .employee-search-field { grid-column: 1; min-width: 0; }
+  .leave-list-controls .list-custom-range,
+  .leave-list-controls > .list-action-notice { grid-column: 1 / -1; min-width: 0; }
+  .leave-list-controls > .list-actions button { max-width: 100%; white-space: normal; }
+}
