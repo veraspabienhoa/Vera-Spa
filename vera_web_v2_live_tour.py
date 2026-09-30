@@ -4408,6 +4408,42 @@ def _remember_idempotency(
         # is a soft cap; durable financial receipts share the ledger lifetime.
 
 
+def _sync_online_booking_requests(state, bookings, today):
+    desired = {}
+    for booking in bookings:
+        key = _norm(booking.get('requested_staff'))
+        token = f"YC {booking.get('appointment_time')}"
+        desired.setdefault(key, [])
+        if token not in desired[key]:
+            desired[key].append(token)
+    changed = 0
+    for employee in state.get('employees', []):
+        before = deepcopy(employee)
+        current = str(employee.get('appointment') or '').strip()
+        parts = current.split(' · ') if current else []
+        # Remove only the last copy of each suffix previously owned by bookings;
+        # a manually entered identical appointment remains intact.
+        for token in employee.get('_website_booking_appointment_values') or []:
+            if token in parts:
+                parts.pop(len(parts) - 1 - parts[::-1].index(token))
+        eligible = employee.get('roster_eligible') is not False and _norm(employee.get('work_status')) == 'di lam'
+        wanted = desired.get(_norm(employee.get('username') or employee.get('name')), []) if eligible else []
+        applied = []
+        for token in wanted:
+            if len(' · '.join(parts + [token])) <= 200:
+                parts.append(token)
+                applied.append(token)
+        employee['appointment'] = ' · '.join(parts)
+        if applied:
+            employee['_website_booking_appointment_day'] = today
+            employee['_website_booking_appointment_values'] = applied
+        else:
+            employee.pop('_website_booking_appointment_day', None)
+            employee.pop('_website_booking_appointment_values', None)
+        changed += employee != before
+    return changed
+
+
 def install_live_tour_routes(
     app, *, engine_instance: Callable[[], Any], current_identity, require_feature,
     feature_allowed: Callable[..., bool], identity_type, vn_tz=VN_TZ, attendance_reader=None,
@@ -4680,6 +4716,26 @@ def install_live_tour_routes(
                 _write_state_compat(conn, state, revision, "website_booking", previous_state=previous)
         return {"applied": True, "employee": str(employee.get("username") or employee.get("name") or "")}
 
+    def sync_online_booking_appointments():
+        now = datetime.now(timezone)
+        today = now.astimezone(VN_TZ).date()
+        with engine_instance().begin() as conn:
+            if resource_store.enabled():
+                resource_store.lock(conn)
+            else:
+                acquire_state_lock(conn, STATE_LOCK)
+            state, revision = read_state(conn, now, for_update=True)
+            # Re-read committed bookings under the same board lock/connection so
+            # concurrent edits converge on the latest source, without stale writes.
+            bookings = conn.execute(text("SELECT requested_staff,appointment_time FROM vera_online_booking WHERE NOT deleted AND kind='booking' AND status IN ('new','confirmed') AND appointment_date=:today AND requested_staff<>'' ORDER BY appointment_time,id"), {'today': today}).mappings().all()
+            previous = deepcopy(state)
+            changed = _sync_online_booking_requests(state, bookings, today.isoformat())
+            if changed:
+                _audit(state, 'online_booking_appointments_sync', {'changed_employees': changed}, 'website_booking')
+                _write_state_compat(conn, state, revision, 'website_booking', previous_state=previous)
+        return {'applied': True, 'changed_employees': changed}
+
+    app.state.online_booking_appointment_sync = sync_online_booking_appointments
     app.state.website_booking_staff_provider = website_booking_staff
     app.state.website_booking_appointment_writer = record_website_booking_appointment
 
