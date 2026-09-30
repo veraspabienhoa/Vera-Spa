@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 import vera_web_v2_live_tour as live
 from test_live_tour_backend import NOW, RouteEngine, RouteIdentity, employee, state_with
 from test_live_tour_safety import api_client
+from vera_web_v2_live_tour_daily import sync_daily
 
 
 CLEARED = {"Trạng thái", "Phòng", "TG CÒN LẠI", "Yêu cầu", "Dịch vụ"}
@@ -136,6 +137,52 @@ def test_appointment_revision_retry_and_explicit_clearing(monkeypatch):
     body["expected_revision"] = 2
     assert client.post("/v2/live-tour/action", json=body).status_code == 200
     assert shared["state"]["employees"][0]["appointment"] == ""
+
+
+def test_website_booking_appointment_writes_only_for_working_staff_today(monkeypatch):
+    class FrozenDateTime(live.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+
+    monkeypatch.setattr(live, "datetime", FrozenDateTime)
+    client, shared = appointment_client(monkeypatch, "letan")
+    writer = client.app.state.website_booking_appointment_writer
+    result = writer("An An", NOW.date(), "19:30")
+    assert result["applied"] is True
+    worker = shared["state"]["employees"][0]
+    assert worker["appointment"] == "16:30 · khách hẹn · YC 19:30"
+
+    worker["work_status"] = "Nghỉ"
+    rejected = writer("An An", NOW.date(), "20:00")
+    assert rejected == {"applied": False, "reason": "staff_no_longer_working"}
+    assert worker["appointment"].endswith("YC 19:30")
+
+
+def test_website_booking_appointment_is_not_written_for_another_day(monkeypatch):
+    class FrozenDateTime(live.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+
+    monkeypatch.setattr(live, "datetime", FrozenDateTime)
+    client, shared = appointment_client(monkeypatch, "letan")
+    writer = client.app.state.website_booking_appointment_writer
+    result = writer("An An", NOW.date() + timedelta(days=1), "19:30")
+    assert result == {"applied": False, "reason": "not_today"}
+    assert shared["state"]["employees"][0]["appointment"] == "16:30 · khách hẹn"
+
+
+def test_website_booking_suffix_is_removed_at_day_rollover():
+    worker = employee("e1", "An An")
+    worker.update(appointment="Lịch riêng · YC 19:30", roster_eligible=True,
+                  _website_booking_appointment_day="2026-09-05",
+                  _website_booking_appointment_values=["YC 19:30"])
+    state = state_with(worker)
+    sync_daily(state, [{"username":"An An"}], [], automatic=True, today="2026-09-06")
+    assert worker["appointment"] == "Lịch riêng"
+    assert "_website_booking_appointment_day" not in worker
+    assert "_website_booking_appointment_values" not in worker
 
 
 @pytest.mark.parametrize("overrides", [

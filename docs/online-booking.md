@@ -8,10 +8,10 @@ Implementation prepared for deployment; installing the code alone does not activ
 - WordPress captures validated/non-spam submissions before mail delivery; `skip_mail: on` remains supported. It commits a local outbox record first; a failed insert aborts success. Mail failure does not discard the saved request.
 - A short signed server-to-server POST forwards the request to Vera. No key or customer data is placed in browser JavaScript, a URL or logs.
 - API stores each event UUID once. Same UUID/different content is rejected; retry after timeout cannot create another record. Two independent customer submissions intentionally remain separate requests.
-- Separate PostgreSQL rows, indexed inbox, SQL pagination (25/page), optimistic per-row updates. No Live Tour aggregate write or global business lock.
+- Separate PostgreSQL rows, indexed inbox, SQL pagination (25/page), optimistic per-row updates. A same-day staff request writes `YC HH:MM` to the selected staff row's Lịch hẹn field under the Live Tour lock; later-day requests stay in the inbox without changing Live Tour.
 - Admin/Quản lý/Lễ tân can view and process. Other roles and accounts requiring password changes are denied by the API.
 - On visible Live Tour, poll unread requests every **5 seconds**, no overlapping requests or hidden-tab polling. Acknowledgement is per account and persists across devices. Popup is not an OS notification and does not run while the app is closed.
-- Menu **Booking online** retains booking and contact history, search by name/phone, status/type filters, processing notes. Confirmation records reception's decision; it does not allocate employees, create an invoice or charge the customer.
+- Menu **Booking online** retains booking and contact history, search by name/phone, status/type filters, processing notes. The employee request is a preference recorded in Lịch hẹn; it does not allocate a room, create an invoice or charge the customer.
 - Contact form has only name, phone and message. Missing appointment fields display **Chưa cung cấp**; no inferred appointment.
 
 ## Activation (after merge and normal VPS deploy)
@@ -43,10 +43,12 @@ The HMAC signs `unix_timestamp + '.' + exact_raw_json_body` using SHA-256; heade
 
 ## Booking form UX update (30-09-2026)
 
-- CF7 form 1271, field menu-396, ends its service list with **Chưa chọn dịch vụ**. The option has a nonempty value, so it is selectable while the rest of the booking validation remains in place.
+- CF7 form 1271, field menu-396, ends its service list with **Chưa chọn dịch vụ**. Service selection is optional.
 - The mobile form uses two columns for date/time and name/phone, keeps service and guest count full-width, and reduces excess field spacing and control heights. Screens up to 360px use tighter padding.
 - On CF7 invalid submissions, a page-scoped accessible popup lists the required booking fields still missing. Closing it returns focus to the first invalid field and scrolls that field into view.
 - Source for the active WordPress Code Snippets entry is integrations/wordpress/booking-form-ux.php. Keep it synchronized with the entry named "Booking - giao diện mobile và popup thông tin thiếu".
-- These website changes are maintained independently from the online-booking inbox integration above; no backend/API changes are required.
-- The phone number remains required on public veraspa.vn/booking/. In app.veraspa.vn manual Booking online, the phone field is optional.
+- The public phone field is optional for booking submissions; the separate contact form still requires a phone number. App.veraspa.vn manual Booking online also permits an empty phone.
+- **Yêu cầu nhân viên** appears immediately above **Lời nhắn**. WordPress obtains only the current Live Tour roster rows marked Đi làm through a signed server-to-server API call; the selection is optional.
+- The selected employee is revalidated against the current roster on submit. For a booking dated today in Vietnam, its requested time is appended as `YC HH:MM` to that row's Lịch hẹn; future bookings do not change the Live Tour board. The automatically added suffix is removed at the next day rollover while preserving other appointment text.
+- Booking inbox records retain the selected employee request, and reception can see it in the booking details.
 - On Live Tour, when upcoming bookings exist, the Booking online sắp tới dialog opens at the next quarter-hour boundary and repeats every 15 minutes while eligible staff are on Live Tour.

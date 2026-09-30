@@ -1,5 +1,5 @@
 """Signed website inbox, independent of Live Tour state and its locks."""
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 import hashlib
@@ -8,12 +8,14 @@ import json
 import os
 import re
 import time
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import text
 
 ROLES = {'admin', 'quanly', 'letan'}
+VN_TZ = ZoneInfo('Asia/Ho_Chi_Minh')
 MAX_BODY = 32768
 # Keep the same bounded window for count and rows, before pagination. Compare
 # full Vietnam timestamps so the two-hour lookback also crosses midnight.
@@ -25,11 +27,12 @@ class WebsiteRequest(BaseModel):
     event_id: UUID
     kind: Literal['booking', 'contact']
     customer_name: str = Field(min_length=1, max_length=100)
-    phone: str = Field(min_length=9, max_length=20)
+    phone: str = Field(default='', max_length=20)
     appointment_date: date | None = None
     appointment_time: str | None = Field(default=None, pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
     service: str = Field(default='', max_length=500)
     guests: int | None = Field(default=None, ge=1, le=50, strict=True)
+    requested_staff: str = Field(default='', max_length=100)
     message: str = Field(default='', max_length=4000)
 
     @field_validator('phone')
@@ -43,9 +46,9 @@ class WebsiteRequest(BaseModel):
 
     @model_validator(mode='after')
     def required_booking_fields(self):
-        if self.kind == 'booking' and not all((self.appointment_date, self.appointment_time, self.service, self.guests)):
+        if self.kind == 'booking' and not all((self.appointment_date, self.appointment_time, self.guests)):
             raise ValueError('Missing booking fields')
-        if self.kind == 'contact' and not self.message:
+        if self.kind == 'contact' and (not self.message or not self.phone):
             raise ValueError('Missing message')
         return self
 
@@ -72,13 +75,15 @@ def verify_signature(body, timestamp, signature, secret, now=None):
 
 
 def ensure_schema(conn):
-    if conn.execute(text("SELECT to_regclass('vera_online_booking_seen')")).scalar_one_or_none():
-        return
     conn.execute(text("SELECT pg_advisory_xact_lock(726409291)"))
+    if conn.execute(text("SELECT to_regclass('vera_online_booking')")).scalar_one_or_none():
+        conn.execute(text("ALTER TABLE vera_online_booking ADD COLUMN IF NOT EXISTS requested_staff text NOT NULL DEFAULT ''"))
+        return
     conn.execute(text('''CREATE TABLE IF NOT EXISTS vera_online_booking (
       id bigserial PRIMARY KEY, event_id uuid UNIQUE NOT NULL, fingerprint text NOT NULL,
       kind text NOT NULL CHECK(kind IN ('booking','contact')), customer_name text NOT NULL,
       phone text NOT NULL, appointment_date date, appointment_time text, service text NOT NULL,
+      requested_staff text NOT NULL DEFAULT '',
       guests integer, message text NOT NULL, status text NOT NULL DEFAULT 'new'
         CHECK(status IN ('new','confirmed','handled','cancelled')),
       note text NOT NULL DEFAULT '', revision integer NOT NULL DEFAULT 0,
@@ -86,6 +91,7 @@ def ensure_schema(conn):
       updated_by text NOT NULL DEFAULT '')'''))
     conn.execute(text('CREATE INDEX IF NOT EXISTS vera_online_booking_status_idx ON vera_online_booking(status,id)'))
     conn.execute(text('CREATE INDEX IF NOT EXISTS vera_online_booking_date_idx ON vera_online_booking(appointment_date,id)'))
+    conn.execute(text("ALTER TABLE vera_online_booking ADD COLUMN IF NOT EXISTS requested_staff text NOT NULL DEFAULT ''"))
     conn.execute(text('''CREATE TABLE IF NOT EXISTS vera_online_booking_seen (
       booking_id bigint NOT NULL REFERENCES vera_online_booking(id), actor text NOT NULL,
       seen_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(booking_id,actor))'''))
@@ -102,9 +108,9 @@ def ingest(conn, payload):
     fingerprint = hashlib.sha256(json.dumps(values, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     values['fingerprint'] = fingerprint
     row = conn.execute(text('''INSERT INTO vera_online_booking
-      (event_id,fingerprint,kind,customer_name,phone,appointment_date,appointment_time,service,guests,message)
+      (event_id,fingerprint,kind,customer_name,phone,appointment_date,appointment_time,service,guests,requested_staff,message)
       VALUES(CAST(:event_id AS uuid),:fingerprint,:kind,:customer_name,:phone,CAST(:appointment_date AS date),
-      :appointment_time,:service,:guests,:message) ON CONFLICT(event_id) DO NOTHING RETURNING id'''), values).scalar_one_or_none()
+      :appointment_time,:service,:guests,:requested_staff,:message) ON CONFLICT(event_id) DO NOTHING RETURNING id'''), values).scalar_one_or_none()
     if row is not None:
         return {'ok': True, 'id': row, 'duplicate': False}
     prior = conn.execute(text('SELECT id,fingerprint FROM vera_online_booking WHERE event_id=CAST(:event_id AS uuid)'), values).mappings().one()
@@ -113,12 +119,15 @@ def ingest(conn, payload):
     return {'ok': True, 'id': prior['id'], 'duplicate': True}
 
 
-PUBLIC_COLUMNS = 'b.id,b.kind,b.customer_name,b.phone,b.appointment_date,b.appointment_time,b.service,b.guests,b.message,b.status,b.note,b.revision,b.created_at,b.updated_at,b.updated_by'
+PUBLIC_COLUMNS = 'b.id,b.kind,b.customer_name,b.phone,b.appointment_date,b.appointment_time,b.service,b.guests,b.requested_staff,b.message,b.status,b.note,b.revision,b.created_at,b.updated_at,b.updated_by'
 
 
-def install_online_booking_routes(app, *, engine_instance, current_identity):
+def install_online_booking_routes(app, *, engine_instance, current_identity,
+                                  working_staff_provider=None, appointment_writer=None):
     if getattr(app.state, 'online_booking_installed', False):
         return
+    working_staff_provider = working_staff_provider or getattr(app.state, 'website_booking_staff_provider', None)
+    appointment_writer = appointment_writer or getattr(app.state, 'website_booking_appointment_writer', None)
 
     def authorized(ident=Depends(current_identity)):
         if ident.role not in ROLES or ident.must_change_password:
@@ -144,8 +153,27 @@ def install_online_booking_routes(app, *, engine_instance, current_identity):
         def save():
             with engine_instance().begin() as conn:
                 ensure_schema(conn)
-                return ingest(conn, payload)
-        return await run_in_threadpool(save)
+                result = ingest(conn, payload)
+                return result
+        result = await run_in_threadpool(save)
+        appointment_result = None
+        if (payload.kind == 'booking' and payload.requested_staff and payload.appointment_date
+                and payload.appointment_date == datetime.now(VN_TZ).date()
+                and appointment_writer):
+            appointment_result = await run_in_threadpool(
+                appointment_writer, payload.requested_staff, payload.appointment_date,
+                payload.appointment_time,
+            )
+        return {**result, **({'staff_appointment': appointment_result} if appointment_result is not None else {})}
+
+    @app.get('/v2/integrations/website/booking-staff')
+    def website_booking_staff(request: Request):
+        timestamp = request.headers.get('X-Vera-Timestamp')
+        signature = request.headers.get('X-Vera-Signature')
+        verify_signature(b'', timestamp, signature, os.getenv('VERA_WEBSITE_WEBHOOK_SECRET', ''))
+        if not working_staff_provider:
+            raise HTTPException(503, 'Danh sách nhân viên đang đi làm chưa sẵn sàng.')
+        return working_staff_provider()
 
     @app.post('/v2/online-bookings')
     def create_manual_booking(payload: ManualBookingRequest, ident=Depends(authorized)):

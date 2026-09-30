@@ -37,6 +37,10 @@ add_action('wp_head', function () {
             margin: 0 !important; padding: 7px 10px !important; font-size: 15px !important;
         }
         .vera-booking-form .vera-booking-message { margin: 8px 0 0 !important; }
+        .vera-booking-form .vera-booking-staff { margin: 8px 0 0 !important; }
+        .vera-booking-form .vera-booking-staff p { margin: 0 !important; }
+        .vera-booking-form .vera-booking-staff label { display: block; margin: 0 0 4px !important; font-size: 13px !important; }
+        .vera-booking-form .vera-booking-staff select { box-sizing: border-box; width: 100%; min-height: 42px !important; height: 42px; margin: 0 !important; padding: 7px 10px !important; font-size: 15px !important; }
         .vera-booking-form .vera-booking-message p { margin: 0 !important; }
         .vera-booking-form .vera-booking-message textarea {
             box-sizing: border-box; min-height: 54px !important; height: 54px !important;
@@ -60,6 +64,7 @@ add_action('wp_head', function () {
         .vera-booking-form .vera-booking-fields select {
             padding-right: 7px !important; padding-left: 7px !important; font-size: 14px !important;
         }
+        .vera-booking-form .vera-booking-staff select { padding-right: 7px !important; padding-left: 7px !important; font-size: 14px !important; }
     }
     .vera-booking-popup {
         position: fixed; inset: 0; z-index: 999999; display: flex; align-items: center; justify-content: center;
@@ -96,6 +101,44 @@ add_action('wp_footer', function () {
     ?>
     <script>
     (function () {
+        function loadWorkingStaff() {
+            var select = document.querySelector('.vera-booking-form select[name="requested-staff"]');
+            if (!select) return;
+            var endpoint = (window.wpApiSettings && window.wpApiSettings.root)
+                ? window.wpApiSettings.root + 'vera/v1/booking-staff'
+                : window.location.origin + '/wp-json/vera/v1/booking-staff';
+            fetch(endpoint, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+                .then(function (response) { if (!response.ok) throw new Error('unavailable'); return response.json(); })
+                .then(function (data) {
+                    select.innerHTML = '';
+                    var blank = document.createElement('option');
+                    blank.value = '';
+                    blank.textContent = 'Không yêu cầu nhân viên';
+                    select.appendChild(blank);
+                    (Array.isArray(data.employees) ? data.employees : []).forEach(function (employee) {
+                        if (!employee || !employee.value || !employee.label) return;
+                        var option = document.createElement('option');
+                        option.value = employee.value;
+                        option.textContent = employee.label;
+                        select.appendChild(option);
+                    });
+                    if (select.options.length === 1) {
+                        select.options[0].textContent = 'Hôm nay chưa có nhân viên trong ca';
+                    }
+                })
+                .catch(function () {
+                    select.innerHTML = '';
+                    var blank = document.createElement('option');
+                    blank.value = '';
+                    blank.textContent = 'Không yêu cầu nhân viên';
+                    select.appendChild(blank);
+                    select.disabled = true;
+                    select.setAttribute('aria-label', 'Không tải được danh sách nhân viên đang đi làm');
+                });
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadWorkingStaff);
+        else loadWorkingStaff();
+
         function findBookingForm(target) {
             if (!target) return null;
             var form = target.matches && target.matches('form.wpcf7-form')

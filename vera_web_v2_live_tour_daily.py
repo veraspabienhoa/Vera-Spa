@@ -26,6 +26,18 @@ def sync_daily(state, directory, leaves, *, automatic=False, today=''):
     for worker in state['employees']:
         if worker.get('roster_eligible') is False:
             continue
+        website_day = str(worker.get('_website_booking_appointment_day') or '')
+        if website_day and today and website_day != today:
+            appointment = str(worker.get('appointment') or '')
+            for value in reversed(worker.get('_website_booking_appointment_values') or []):
+                suffix = f' · {value}'
+                if appointment.endswith(suffix):
+                    appointment = appointment[:-len(suffix)]
+                elif appointment == value:
+                    appointment = ''
+            worker['appointment'] = appointment
+            worker.pop('_website_booking_appointment_day', None)
+            worker.pop('_website_booking_appointment_values', None)
         username = key(worker.get('username') or worker.get('name'))
         if username not in rows:
             continue

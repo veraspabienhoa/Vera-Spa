@@ -44,23 +44,29 @@ def test_validation_and_contact_missing_appointment():
     assert booking.WebsiteRequest(**payload()).guests == 2
     contact = booking.WebsiteRequest(event_id=uuid4(), kind='contact', customer_name='Test', phone='0900000000', message='Xin tư vấn')
     assert contact.appointment_date is None and contact.guests is None
-    for changes in ({'appointment_date': '2026-02-30'}, {'appointment_time':'24:00'}, {'guests':0}, {'guests':True}, {'service':''}, {'phone':'<script>123'}, {'customer_name':'  '}):
+    optional = booking.WebsiteRequest(**payload(service='', phone='', requested_staff=''))
+    assert optional.service == '' and optional.phone == ''
+    for changes in ({'appointment_date': '2026-02-30'}, {'appointment_time':'24:00'}, {'guests':0}, {'guests':True}, {'phone':'<script>123'}, {'customer_name':'  '}):
         data = payload(); data.update(changes)
         with pytest.raises(ValidationError): booking.WebsiteRequest(**data)
-
-
-def test_phone_is_optional_only_for_app_manual_booking():
-    data = payload(phone='')
     with pytest.raises(ValidationError):
-        booking.WebsiteRequest(**data)
+        booking.WebsiteRequest(event_id=uuid4(), kind='contact', customer_name='Test', phone='', message='Xin tư vấn')
+
+
+def test_phone_is_optional_for_public_booking_and_app_manual_booking():
+    data = payload(phone='')
+    assert booking.WebsiteRequest(**data).phone == ''
     assert booking.ManualBookingRequest(**data).phone == ''
 
 
-def client(role='admin', engine=None, locked=False):
+def client(role='admin', engine=None, locked=False, working_staff_provider=None, appointment_writer=None):
     app = FastAPI()
     ident = SimpleNamespace(role=role, must_change_password=locked, auth_user_id='test-user', employee_username='test')
     def forbidden_engine(): raise AssertionError('Unauthorized request accessed business DB')
-    booking.install_online_booking_routes(app, engine_instance=(lambda: engine) if engine else forbidden_engine, current_identity=lambda: ident)
+    booking.install_online_booking_routes(app, engine_instance=(lambda: engine) if engine else forbidden_engine,
+                                          current_identity=lambda: ident,
+                                          working_staff_provider=working_staff_provider,
+                                          appointment_writer=appointment_writer)
     return TestClient(app)
 
 
@@ -82,6 +88,15 @@ def test_webhook_rejects_unsigned_oversized_and_invalid_without_db(monkeypatch):
     body = b'{"customer_name":"private-value"}'
     response = api.post('/v2/integrations/website/requests', content=body, headers=signature(body))
     assert response.status_code == 422 and 'private-value' not in response.text
+
+
+def test_public_staff_list_requires_signed_wordpress_request(monkeypatch):
+    monkeypatch.setenv('VERA_WEBSITE_WEBHOOK_SECRET', SECRET)
+    api = client(working_staff_provider=lambda: {"date":"2026-09-30", "employees":[{"value":"AN AN", "label":"AN AN"}]})
+    assert api.get('/v2/integrations/website/booking-staff').status_code == 401
+    response = api.get('/v2/integrations/website/booking-staff', headers=signature(b''))
+    assert response.status_code == 200
+    assert response.json()['employees'] == [{"value":"AN AN", "label":"AN AN"}]
 
 
 def test_listing_rejects_invalid_calendar_and_reversed_range_before_database():
