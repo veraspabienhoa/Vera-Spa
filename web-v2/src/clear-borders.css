@@ -261,7 +261,7 @@ body .live-tour-page .tour-table thead :is(th, td) {
 .staff-tools > summary:focus-visible { outline:3px solid #8bb49c; outline-offset:-3px; }
 .staff-tools[open] > summary { border-bottom:2px solid #3c6955; }
 .staff-tools .staff-control-panel { border:0; border-radius:0; margin:0; }
-.staff-page .staff-list-primary-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
+.staff-page .staff-list-primary-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
 .staff-page .staff-list-primary-actions button { width:100%; min-width:0; min-height:40px; white-space:normal; justify-content:center; }
 .checkin-history-page .checkin-history-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; width:100%; }
 .checkin-history-page .checkin-history-actions button { width:100%; min-width:0; min-height:44px; padding:10px 8px; white-space:normal; justify-content:center; }
@@ -333,3 +333,8 @@ body .online-booking-page .online-booking-periods button:focus-visible{outline:2
 @media (max-width: 700px) {
   .live-tour-page .tour-room-share-tools .upcoming-booking-button { grid-column: 1 / -1; }
 }
+
+.staff-page .staff-list-search { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:end; gap:12px; margin:8px 0 16px; min-width:0; }
+.staff-page .staff-list-search .staff-heading-search { width:100%; max-width:none; margin:0; }
+.staff-page .staff-list-search > * { min-width:0; max-width:100%; }
+@media (max-width:600px) { .staff-page .staff-list-search { grid-template-columns:minmax(0,1fr); } }
