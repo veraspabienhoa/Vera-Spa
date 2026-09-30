@@ -1,5 +1,4 @@
 import StableFeedback from '../components/StableFeedback'
-import ClearableSearchInput from '../components/ClearableSearchInput'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
 import EmployeeProfileModal from '../components/EmployeeProfileModal'
@@ -662,9 +661,10 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
       <section data-ui-key="u-65f570ca3cb3" ref={listRef} className="panel staff-list-panel">
         <div data-ui-key="u-0d632daa26f2" className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div><button data-ui-key="u-1d57a0d23aa6" data-ui-label-default="Làm mới" className="secondary-button" onClick={() => load()} disabled={loading || Boolean(busy)}><RefreshCw size={17} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-1d57a0d23aa6"> Làm mới</UiCustomText></button></div>
         <div className="staff-list-search">
-          <label className="staff-heading-search">Tìm tên nhân viên<ClearableSearchInput type="search" aria-label="Tìm tên nhân viên" value={search} onChange={event => changeEmployeeSearch(event.target.value)} onClear={() => changeEmployeeSearch('')} placeholder="Nhập tên hoặc mã nhân viên…" /></label>
           <LiveTourSearchSelect
             className="staff-employee-name-filter"
+            searchValue={search}
+            onSearch={changeEmployeeSearch}
             hideLabel
             label="Tên nhân viên"
             placeholder="-- Chọn nhân viên --"
