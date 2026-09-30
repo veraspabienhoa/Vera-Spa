@@ -432,3 +432,15 @@ body .report-date-preset input { min-width: 0; width: 100%; box-sizing: border-b
 .leave-queue-policy-panel fieldset label { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; }
 .leave-queue-policy-panel input[type="checkbox"] { flex: 0 0 20px; width: 20px; height: 20px; }
 @media (max-width: 640px) { .leave-queue-policy-panel fieldset { grid-template-columns: minmax(0, 1fr); } }
+
+body .attendance-workspace > .page-heading h1,
+body .attendance-page > .page-heading h1 {
+  font-family: Arial, "Segoe UI", sans-serif !important;
+  letter-spacing: normal !important; line-height: 1.25; font-weight: 800;
+}
+.attendance-workspace { min-width: 0; max-width: 100%; }
+.attendance-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 18px; }
+.attendance-tabs > button { min-width: 0; min-height: 44px; padding: 10px 16px; border: 2px solid #386452; border-radius: 12px; background: #edf3ef; color: #173e32; font-weight: 700; }
+.attendance-tabs > button[aria-selected="true"] { background: #205440; color: #fff; }
+.attendance-tabs > button:focus-visible { outline: 3px solid #a36a00; outline-offset: 2px; }
+@media (max-width: 640px) { .attendance-tabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); } .attendance-tabs > button { padding: 10px 6px; } }

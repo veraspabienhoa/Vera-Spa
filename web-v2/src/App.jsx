@@ -59,9 +59,8 @@ const ProfilePage = lazyPage(() => import('./pages/ProfilePage'))
 const PermissionsPage = lazyPage(() => import('./pages/PermissionsPage'))
 const PayrollPage = lazyPage(() => import('./pages/PayrollPageV38'))
 const RevenuePage = lazyPage(() => import('./pages/RevenuePage'))
-const SnapshotPage = lazyPage(() => import('./pages/SnapshotPage'))
+const AttendancePage = lazyPage(() => import('./pages/AttendancePage'))
 const DevicePage = lazyPage(() => import('./pages/DevicePage'))
-const CheckinHistoryPage = lazyPage(() => import('./pages/CheckinHistoryPage'))
 const AdminChangesPage = lazyPage(() => import('./pages/AdminChangesPage'))
 const StorageAdminPage = lazyPage(() => import('./pages/StorageAdminPage'))
 const BirthdayPage = lazyPage(() => import('./pages/BirthdayPage'))
@@ -86,7 +85,7 @@ const pageModules = {
   employees: EmployeePage, 'contract-1': ContractPage, rules: RulesPage, profile: ProfilePage,
   hr: HumanResourcesPage, payroll: PayrollPage, 'department-payroll': DepartmentPayrollPanel,
   'payroll-config': DepartmentPayrollSettingsPage, revenue: RevenuePage, purchases: PurchasePage,
-  training: TrainingPage, snapshot: SnapshotPage, devices: DevicePage, 'checkin-history': CheckinHistoryPage,
+  training: TrainingPage, snapshot: AttendancePage, devices: DevicePage, 'checkin-history': AttendancePage,
   birthday: BirthdayPage, tour: TourPage, reports: LiveTourReportsPage, 'live-tour': LiveTourPage,
   'milk-tea': MilkTeaPage, customers: SpaManagementPage, settings: SettingsPage,
   notifications: NotificationSettingsPage, permissions: PermissionsPage, 'auto-check': AutoCheckPage,
@@ -282,9 +281,9 @@ export default function App() {
         {page === 'revenue' && <RevenuePage user={shellUser} />}
         {page === 'purchases' && <PurchasePage user={shellUser} />}
         {page === 'training' && <TrainingPage user={shellUser} />}
-        {page === 'snapshot' && <SnapshotPage user={shellUser} />}
+        {page === 'snapshot' && <AttendancePage key="snapshot" user={shellUser} />}
         {page === 'devices' && shellUser.permissions?.device_view && <DevicePage user={shellUser} />}
-        {page === 'checkin-history' && shellUser.permissions?.device_history_view && <CheckinHistoryPage user={shellUser} />}
+        {page === 'checkin-history' && <AttendancePage key="checkin-history" user={shellUser} initialTab="history" />}
         {page === 'birthday' && <BirthdayPage />}
         {page === 'tour' && <><TourPage user={shellUser} /><TourAdminCustomerCount user={shellUser} /></>}
         {page === 'reports' && <LiveTourReportsPage user={shellUser} />}
