@@ -441,7 +441,7 @@ body .attendance-page > .page-heading h1 {
 .attendance-workspace { min-width: 0; max-width: 100%; }
 .attendance-tab-actions { display: flex; align-items: center; gap: 10px; margin: 12px 0 18px; }
 .attendance-tabs { display: flex; flex-wrap: nowrap; gap: 10px; min-width: 0; }
-.attendance-refresh { flex: 0 0 auto; min-height: 44px; white-space: nowrap; }
+.attendance-refresh { flex: 0 0 auto; min-height: 44px; white-space: nowrap; margin-left: auto; }
 .attendance-tabs > button { min-width: 0; min-height: 44px; padding: 10px 16px; border: 2px solid #386452; border-radius: 12px; background: #edf3ef; color: #173e32; font-weight: 700; }
 .attendance-tabs > button[aria-selected="true"] { background: #205440; color: #fff; }
 .attendance-tabs > button:focus-visible { outline: 3px solid #a36a00; outline-offset: 2px; }
