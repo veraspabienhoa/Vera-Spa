@@ -15,6 +15,9 @@ from sqlalchemy import text
 
 ROLES = {'admin', 'quanly', 'letan'}
 MAX_BODY = 32768
+# Keep the same bounded window for count and rows, before pagination. Compare
+# full Vietnam timestamps so the two-hour lookback also crosses midnight.
+UPCOMING_WINDOW_SQL = "b.kind='booking' AND b.status IN ('new','confirmed') AND (b.appointment_date + CAST(b.appointment_time AS time)) >= ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '2 hours')"
 
 
 class WebsiteRequest(BaseModel):
@@ -163,7 +166,7 @@ def install_online_booking_routes(app, *, engine_instance, current_identity):
         where = "WHERE (:status='' OR b.status=:status) AND (:kind='' OR b.kind=:kind) AND (:q='' OR b.customer_name ILIKE :search OR b.phone ILIKE :search)"
         where += " AND (CAST(:date_from AS date) IS NULL OR COALESCE(b.appointment_date,(b.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)>=CAST(:date_from AS date)) AND (CAST(:date_to AS date) IS NULL OR COALESCE(b.appointment_date,(b.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)<=CAST(:date_to AS date))"
         if upcoming:
-            where += " AND b.kind='booking' AND b.status IN ('new','confirmed') AND (b.appointment_date + CAST(b.appointment_time AS time)) >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh')"
+            where += " AND " + UPCOMING_WINDOW_SQL
         ordering = 'b.appointment_date ASC, b.appointment_time ASC, b.id ASC' if upcoming else 'b.id DESC'
         params = dict(date_from=date_from, date_to=date_to, status=status, kind=kind, q=q.strip(), search='%'+q.strip()+'%', limit=limit, offset=(page-1)*limit)
         with engine_instance().begin() as conn:

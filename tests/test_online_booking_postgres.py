@@ -64,7 +64,7 @@ def test_listing_filters_dates_before_pagination_and_uses_vietnam_contact_day(da
     assert all(row['appointment_date'] in ('2026-10-01', None) for row in first['rows'] + second['rows'])
 
 
-def test_upcoming_excludes_past_and_closed_before_pagination(database):
+def test_upcoming_includes_recent_past_and_excludes_old_and_closed_before_pagination(database):
     from datetime import timedelta
     with database.begin() as conn:
         booking.ensure_schema(conn)
@@ -72,8 +72,11 @@ def test_upcoming_excludes_past_and_closed_before_pagination(database):
         future = (now + timedelta(days=1)).date().isoformat()
         past = (now - timedelta(days=1)).date().isoformat()
         expected = []
-        earlier = now - timedelta(minutes=2)
+        earlier = now - timedelta(minutes=119)
         data = payload(); data.update(appointment_date=earlier.date().isoformat(), appointment_time=earlier.strftime('%H:%M'))
+        expected.append(booking.ingest(conn, booking.WebsiteRequest(**data))['id'])
+        too_old = now - timedelta(minutes=121)
+        data = payload(); data.update(appointment_date=too_old.date().isoformat(), appointment_time=too_old.strftime('%H:%M'))
         booking.ingest(conn, booking.WebsiteRequest(**data))
         for index in range(30):
             data = payload(); data.update(appointment_date=future, appointment_time='10:00')
@@ -86,10 +89,10 @@ def test_upcoming_excludes_past_and_closed_before_pagination(database):
     api = client(engine=database)
     first = api.get('/v2/online-bookings?upcoming=true').json()
     second = api.get('/v2/online-bookings?upcoming=true&page=2').json()
-    assert first['total'] == 30
+    assert first['total'] == 31
     assert [row['id'] for row in first['rows'] + second['rows']] == expected
     assert api.patch(f"/v2/online-bookings/{expected[0]}", json={'status':'handled','revision':0}).status_code == 200
-    assert api.get('/v2/online-bookings?upcoming=true').json()['total'] == 29
+    assert api.get('/v2/online-bookings?upcoming=true').json()['total'] == 30
 
 
 @pytest.mark.parametrize('role', ['admin', 'quanly', 'letan'])
@@ -107,3 +110,18 @@ def test_manual_booking_is_durable_and_retry_does_not_duplicate(database, role):
     assert rows[0]['status'] == 'new'
     assert api.post('/v2/online-bookings', json={**data, 'guests':3}).status_code == 409
     assert api.post('/v2/online-bookings', json={**data, 'kind':'contact'}).status_code == 422
+
+
+@pytest.mark.parametrize('minutes,status,expected', [(-121,'new',0),(-120,'new',1),(-119,'confirmed',1),
+    (0,'new',1),(120,'confirmed',1),(14400,'new',1),(0,'handled',0),(0,'cancelled',0)])
+def test_booking_window_exact_boundary_crosses_vietnam_midnight(database, minutes, status, expected):
+    from datetime import datetime, timedelta
+    now = datetime(2026,10,1,0,30)
+    appointment = now + timedelta(minutes=minutes)
+    predicate = booking.UPCOMING_WINDOW_SQL.replace("CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh'", "CAST(:now AS timestamp)")
+    with database.begin() as conn:
+        count = conn.execute(text("""WITH b AS (SELECT 'booking' AS kind, CAST(:status AS text) AS status,
+            CAST(:day AS date) AS appointment_date, CAST(:time AS text) AS appointment_time)
+            SELECT count(*) FROM b WHERE """ + predicate), dict(now=now, status=status,
+            day=appointment.date(), time=appointment.strftime('%H:%M'))).scalar_one()
+        assert count == expected
