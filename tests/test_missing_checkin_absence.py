@@ -151,6 +151,58 @@ def test_registered_late_still_requires_checkin(scenario):
     assert s.leaves[0]['leave_reason'] == 'Đi trễ CÓ phép'
 
 
+@pytest.mark.parametrize('weekend,half_day,with_late', [
+    (False, False, False), (True, False, False),
+    (False, False, True), (True, False, True),
+    (False, True, True), (True, True, True),
+])
+def test_existing_matching_absence_is_preserved_on_every_refresh(scenario, weekend, half_day, with_late):
+    from copy import deepcopy
+    s = scenario
+    now = s.now.replace(month=10, day=3) if weekend else s.now
+    s.data['syncs'][0].update(work_date=now.date().isoformat(), last_synced_at=now.isoformat())
+    reason = ('Về sớm CUỐI TUẦN KHÔNG phép' if weekend else 'Về sớm KHÔNG phép') if half_day else rule.REASONS[weekend]
+    item = {'name': reason, 'days': 0.5 if half_day else 0, 'penalty': 123000}
+    s.catalog[rule.auto_check._norm(reason)] = item
+    s.leaves.append(dict(record_uid='registered', employee_name='Test', leave_reason=reason,
+                         detail='Người Thứ 1 | Ghi chú đã đăng ký', penalty=123000))
+    if with_late:
+        s.leaves.append(dict(record_uid='late', employee_name='Test', leave_reason='Đi trễ CÓ phép'))
+    before = deepcopy(s.leaves)
+    for _ in range(2):
+        assert rule.process(s.conn, now=now) == {'added': 0, 'skipped': 1}
+    assert s.leaves == before
+    assert not s.saved and not s.notices
+
+
+def test_registered_absence_cohort_keeps_uids_ordinals_and_money(database, scenario, monkeypatch):
+    import vera_missing_checkin_notifications as alerts
+    s = scenario
+    names = ('An Nhiên', 'Phương Vy', 'Linh Đan')
+    s.data['index'] = {str(i): {'username': name} for i, name in enumerate(names)}
+    monkeypatch.setattr(alerts, '_staff_scheduled_rows', lambda *args: [
+        dict(employee_username=name, employee_name=name, employee_role='nhanvien', shift_code='Ca 2')
+        for name in names[:2]])
+    with database.begin() as conn:
+        REAL_SCHEMA(conn)
+        conn.execute(text('''CREATE TABLE leave_records(
+            record_uid text PRIMARY KEY, leave_date date, employee_name text,
+            leave_reason text, detail text, penalty numeric, payload jsonb)'''))
+        for ordinal, name in enumerate(names, 1):
+            conn.execute(text('''INSERT INTO leave_records VALUES(
+                :uid,:day,:name,:reason,:detail,:penalty,CAST(:payload AS jsonb))'''),
+                dict(uid=f'original-{ordinal}', day=s.now.date(), name=name, reason=rule.REASONS[0],
+                     detail=f'Người Thứ {ordinal} nghỉ không phép',
+                     penalty=500000 if ordinal < 3 else 600000, payload='{"original":true}'))
+        before = conn.execute(text('SELECT * FROM leave_records ORDER BY record_uid')).mappings().all()
+        for _ in range(2):
+            assert rule.process(conn, now=s.now) == {'added': 0, 'skipped': 2}
+        assert conn.execute(text('SELECT * FROM leave_records ORDER BY record_uid')).mappings().all() == before
+        assert conn.execute(text('SELECT count(*) FROM vera_auto_check_event')).scalar() == 0
+        assert conn.execute(text("SELECT to_regclass('vera_absence_replacement_audit')")).scalar() is None
+    assert not s.saved and not s.notices
+
+
 def test_real_penalty_transaction_rollback_and_replay(database, scenario, monkeypatch):
     import vera_notification_delivery as delivery
     s = scenario

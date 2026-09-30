@@ -2096,3 +2096,26 @@ Live Tour marking is a follow-up operation after that commit. These are source
 changes only: production API/plugin deployment, secret configuration and
 readback are still pending. No customer booking was submitted and no production
 Live Tour row was changed during implementation.
+
+## 30-09-2026: preserve an already registered absence
+
+The operator's leave export and the visible production system audit show An
+Nhiên registered weekday unpermitted absence as ordinal 1 (500,000 VND) at
+09:51:05 and Phương Vy as ordinal 2 (500,000 VND) at 12:24:24. Linh Đan's
+automatic absence at 15:00 was ordinal 3 (600,000 VND). At 19:00 the automatic
+absence rule deleted and recreated the first two records; each replacement
+counted the two remaining absences and became ordinal 3 (600,000 VND).
+
+The operator confirms an already correct absence must be retained. Under the
+existing employee/leave lock, skip a registered full-day reason appropriate for
+the work date, including when another permitted-late row exists. Also skip an
+existing matching half-day reason when the permitted-late rule selects it.
+These skips retain the record UID, detail/ordinal, penalty and original metadata;
+they do not create an automatic event, replacement audit or notification.
+Actual conversion of a different unpermitted reason retains its existing atomic
+replacement and evidence safeguards. Regression coverage includes repeated
+refreshes, weekdays/weekends and an unchanged three-person PostgreSQL cohort.
+
+This is a source fix pending deployment. The two already replaced production
+records have not been restored by this change; no historical or payroll data
+has been rewritten.
