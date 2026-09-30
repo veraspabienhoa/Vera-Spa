@@ -33,8 +33,14 @@ export default function UpcomingOnlineBookings({ user, onClose, services = [] })
   if (creating) return <ManualOnlineBooking services={services} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setPage(1); reload() }}/>
   if (selected) return <RequestCard key={`${selected.id}:${selected.revision}`} row={selected} reload={reload} onClose={() => setSelected(null)}/>
   return <EmployeeProfileModal labelledBy="upcoming-booking-title" className="upcoming-booking-modal" onClose={onClose}>
-    <header><h2 id="upcoming-booking-title">Booking online sắp tới</h2><div className="online-booking-actions"><button onClick={() => setCreating(true)}>Thêm Lịch đặt Booking</button><button onClick={onClose}>Đóng</button></div></header>
-    <button disabled={busy} onClick={reload}>Làm mới</button>
+    <header>
+      <h2 id="upcoming-booking-title">Booking online sắp tới</h2>
+      <button onClick={onClose}>Đóng</button>
+    </header>
+    <div className="upcoming-booking-toolbar">
+      <button aria-haspopup="dialog" onClick={() => setCreating(true)}>Thêm Lịch đặt Booking</button>
+      <button disabled={busy} onClick={reload}>Làm mới</button>
+    </div>
     {error && <p role="alert">{error}</p>}
     {busy ? <p role="status">Đang tải…</p> : !error && <>
       <p>{result.total} lịch hẹn</p>
