@@ -15,6 +15,7 @@ import vera_postgres_job_queue as job_queue
 import vera_live_tour_queue_alerts as queue_alerts
 from vera_live_tour_timing import ActionTiming
 import vera_live_tour_leave_return as leave_return
+from vera_live_tour_leave_queue_policy import load_policy as load_leave_queue_policy
 
 import hashlib
 import json
@@ -3612,18 +3613,16 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
         if attendance_records is not None:
             sync_breaks(state, attendance_records, now.astimezone(VN_TZ))
         _sync_daily(state, directory, leaves, automatic=True, today=now.astimezone(VN_TZ).date().isoformat())
-        pending_leave_ids = leave_return.pending_source_ids(state, leave_day)
-        return_history = None
-        if pending_leave_ids:
-            # One bounded primary-key lookup on the caller's connection, only
-            # while a recorded absence is waiting for the employee's return.
-            params = {f"leave_{index}": value for index, value in enumerate(pending_leave_ids)}
-            placeholders = ",".join(f":{name}" for name in params)
-            return_history = [dict(item) for item in conn.execute(text(
-                f"SELECT id, employee_name, leave_reason, leave_type, leave_date, detail FROM leave_records WHERE id IN ({placeholders})"
-            ), params).mappings().all()]
-        leave_return.sync_returns(state, directory, leaves, now.astimezone(VN_TZ), leave_day,
-                                  _ordered_employees, _employee_time_key, history_leaves=return_history)
+        local_now = now.astimezone(VN_TZ)
+        if leave_return.prepare_daily(state, local_now):
+            # Read yesterday once on the caller's locked connection. No saved
+            # absence marker or check-in is needed to participate in this batch.
+            return_leaves = [dict(item) for item in conn.execute(text(
+                "SELECT id, employee_name, leave_reason, leave_type, leave_date, record_uid, source_row, detail FROM leave_records WHERE leave_date=:return_day ORDER BY id"
+            ), {"return_day": local_now.date() - timedelta(days=1)}).mappings().all()]
+            leave_return.sync_returns(state, directory, return_leaves, local_now,
+                                      local_now.date() - timedelta(days=1),
+                                      _ordered_employees, _employee_time_key, policy=load_leave_queue_policy(conn))
         _auto_start_waiting(state, now)
         if state != before:
             revision = _write_state_compat(
@@ -4475,7 +4474,7 @@ def install_live_tour_routes(
                 enqueue_projection(reason="scheduled")
             except Exception:
                 logging.getLogger(__name__).exception("Live Tour projection enqueue failed")
-            scheduler_stop.wait(PROJECTION_REFRESH_SECONDS)
+            scheduler_stop.wait(leave_return.scheduler_delay(datetime.now(timezone), PROJECTION_REFRESH_SECONDS))
 
     def projection_worker():
         while not scheduler_stop.is_set():

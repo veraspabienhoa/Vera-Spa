@@ -23,7 +23,7 @@ def test_projection_reads_inputs_before_board_lock():
 def test_projection_is_queued_every_five_minutes():
     body = src()
     assert "PROJECTION_REFRESH_SECONDS = 300" in body
-    assert "scheduler_stop.wait(PROJECTION_REFRESH_SECONDS)" in body
+    assert "scheduler_stop.wait(leave_return.scheduler_delay(datetime.now(timezone), PROJECTION_REFRESH_SECONDS))" in body
     assert "job_queue.claim_one(engine_instance, PROJECTION_QUEUE)" in body
 
 def test_legacy_test_writers_are_compatible():

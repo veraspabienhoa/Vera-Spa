@@ -13,9 +13,11 @@ from test_live_tour_backend import NOW, employee, state_with
 DAY = NOW.replace(year=2026, month=9, day=27, hour=12, minute=0)
 
 UNEXCUSED_REASONS = [
-    'Nghỉ không phép', 'Đi trễ không phép', 'Về sớm không phép',
-    'Nghỉ CUỐI TUẦN KHÔNG phép', 'Đi trễ CUỐI TUẦN KHÔNG phép',
-    'Về sớm CUỐI TUẦN KHÔNG phép',
+    'Về sớm CÓ phép', 'Về sớm KHÔNG phép', 'Về sớm CUỐI TUẦN CÓ phép',
+    'Về sớm CUỐI TUẦN KHÔNG phép', 'Về sớm phát sinh',
+    'Leader về sớm về sớm theo chính sách',
+    'Về sớm bệnh có giấy khám hoặc được quản lý duyệt',
+    'Nghỉ KHÔNG phép', 'Nghỉ CUỐI TUẦN KHÔNG phép',
 ]
 
 
@@ -42,8 +44,8 @@ def leaves(reason='Nghỉ không phép'):
 def project(state, now, checked=(), records=()):
     rows = directory(now, checked)
     live._reconcile_roster(state, rows, live._new_directory_employee, today=now.date().isoformat())
-    live._sync_daily(state, rows, records, automatic=True, today=now.date().isoformat())
-    returns.sync_returns(state, rows, records, now, (now-timedelta(hours=5)).date(), live._ordered_employees, live._employee_time_key)
+    # These are yesterday's batch inputs, not today's work-status records.
+    returns.sync_returns(state, rows, records, now, now.date()-timedelta(days=1), live._ordered_employees, live._employee_time_key)
 
 
 def order(state, now):
@@ -51,83 +53,86 @@ def order(state, now):
             manual_order_active=state.get('manual_order_active', True))]
 
 
-@pytest.mark.parametrize('days', [1, 2, 9])
 @pytest.mark.parametrize('manual', [False, True])
 @pytest.mark.parametrize('reason', UNEXCUSED_REASONS)
-def test_returning_group_moves_once_to_bottom_in_original_ordinal(days, manual, reason):
+def test_batch_at_0300_without_checkin_and_never_repeated(manual, reason):
     state = fixture()
-    if manual:
-        for row in state['employees']:
-            row['manual_order'] = True
-    original_clocks = [row['board_started_at'] for row in state['employees']]
-    project(state, DAY, records=leaves(reason))
-    later = DAY + timedelta(days=days)
-    project(state, later)  # Midnight/daily rollover without a check-in is not a return.
-    assert all(row[returns.MARKER]['status'] == 'absent' for row in state['employees'][:3])
-    project(state, later, checked=(1, 2, 3, 4, 5))
-    assert order(state, later) == ['e4', 'e5', 'e1', 'e2', 'e3']
-    assert [row['board_started_at'] for row in state['employees']] == original_clocks
+    for worker in state['employees']:
+        worker['manual_order'] = manual
+    clocks = [row['board_started_at'] for row in state['employees']]
+    project(state, DAY)
+    boundary = (DAY + timedelta(days=1)).replace(hour=3, minute=0, second=0, microsecond=0)
+    project(state, boundary - timedelta(seconds=1), records=leaves(reason))
+    assert order(state, boundary) == ['e1', 'e2', 'e3', 'e4', 'e5']
+    project(state, boundary, records=leaves(reason))
+    assert order(state, boundary) == ['e4', 'e5', 'e1', 'e2', 'e3']
+    assert [row['board_started_at'] for row in state['employees']] == clocks
+    snapshot = deepcopy(state)
+    project(state, boundary + timedelta(hours=6), checked=(3, 2, 1), records=leaves(reason))
+    assert state[returns.DAILY_MARKER] == snapshot[returns.DAILY_MARKER]
+    assert [row.get(returns.MARKER) for row in state['employees']] == [row.get(returns.MARKER) for row in snapshot['employees']]
+    assert order(state, boundary) == ['e4', 'e5', 'e1', 'e2', 'e3']
+    assert all(not state[name] for name in ('invoices', 'reports', 'pending', 'combo_usage'))
+
+
+@pytest.mark.parametrize('reason', ['Nghỉ CÓ phép', 'Nghỉ phát sinh', 'Nghỉ phép năm',
+    'Đi trễ KHÔNG phép', 'Đi trễ CUỐI TUẦN KHÔNG phép',
+    'Nghỉ bệnh có giấy khám hoặc được quản lý duyệt'])
+def test_only_nine_exact_reasons(reason):
+    state = fixture()
+    project(state, DAY)
+    project(state, DAY + timedelta(days=1), records=leaves(reason))
+    assert order(state, DAY) == ['e1', 'e2', 'e3', 'e4', 'e5']
+
+
+def test_deploy_midday_waits_until_next_cutoff_and_no_old_backlog():
+    state = fixture()
+    project(state, DAY + timedelta(days=1), records=leaves())
+    assert not any(returns.queue_clock(row) for row in state['employees'])
+    project(state, DAY + timedelta(days=2), records=leaves())
+    assert not any(returns.queue_clock(row) for row in state['employees'])
+
+
+def test_empty_batch_is_final_even_if_leave_added_later():
+    state = fixture()
+    project(state, DAY)
+    project(state, DAY + timedelta(days=1))
     before = deepcopy(state)
-    project(state, later + timedelta(minutes=5), checked=(1, 2, 3, 4, 5))
+    project(state, DAY + timedelta(days=1, hours=2), records=leaves())
     assert state == before
-    assert not any(state[name] for name in ('invoices', 'pending', 'reports', 'combo_usage'))
 
 
-@pytest.mark.parametrize('reason', ['Nghỉ CÓ phép', 'Nghỉ phép năm', 'Nghỉ phát sinh',
-                                  'Đi trễ có phép',
-                                  'Đi trễ CUỐI TUẦN CÓ phép'])
-def test_other_leave_types_never_get_return_queue_penalty(reason):
+def test_group_priority_and_correction_before_cutoff():
     state = fixture()
-    project(state, DAY, records=leaves(reason))
-    later = DAY + timedelta(days=1)
-    project(state, later, checked=(1, 2, 3, 4, 5))
-    assert order(state, later) == ['e1', 'e2', 'e3', 'e4', 'e5']
-    assert not any(returns.MARKER in row for row in state['employees'])
-
-
-@pytest.mark.parametrize('reason', UNEXCUSED_REASONS)
-def test_reverse_checkins_across_ticks_and_days_keep_unserved_cohort_order(reason):
-    state = fixture()
-    project(state, DAY, records=leaves(reason))
-    later = DAY + timedelta(days=1)
-    project(state, later, checked=(3, 4, 5))
-    project(state, later + timedelta(minutes=5), checked=(2, 3, 4, 5))
-    project(state, later + timedelta(days=1), checked=(1, 2, 3, 4, 5))
-    assert order(state, later) == ['e4', 'e5', 'e1', 'e2', 'e3']
-
-
-def test_weekend_source_order_and_duplicate_identity_are_safe():
-    state = fixture()
-    records = leaves('Nghỉ CUỐI TUẦN KHÔNG phép')
-    for row in records:
-        row['detail'] = ''  # Weekend surcharge off still has a stable ordinal.
-    project(state, DAY, records=records)
-    assert [row[returns.MARKER]['ordinal'] for row in state['employees'][:3]] == [1, 2, 3]
-    rows = directory(DAY)
-    rows[0]['full_name'] = rows[1]['full_name'] = 'Duplicate'
-    untouched = fixture()
-    returns.sync_returns(untouched, rows, [{'employee_name': 'Duplicate', 'leave_reason': 'Nghỉ không phép'}],
-                         DAY, DAY.date(), live._ordered_employees, live._employee_time_key)
-    assert not any(returns.MARKER in row for row in untouched['employees'])
-
-
-def test_same_day_correction_cancels_pending_placement_and_missing_roster_is_ignored():
-    state = fixture()
-    project(state, DAY, records=leaves())
-    project(state, DAY + timedelta(minutes=5), records=leaves('Nghỉ CÓ phép'))
-    assert not any(returns.MARKER in row for row in state['employees'])
-    state['employees'][0]['roster_eligible'] = False
-    returns.sync_returns(state, directory(DAY), leaves(), DAY, DAY.date(), live._ordered_employees, live._employee_time_key)
-    assert returns.MARKER not in state['employees'][0]
+    project(state, DAY)
+    records = leaves()
+    records[0]['leave_reason'] = 'Về sớm CÓ phép'  # e3 before absence group
+    records = [row for row in records if row['employee_name'] != 'Test 1']
+    project(state, DAY + timedelta(days=1), records=records)
+    assert order(state, DAY) == ['e1', 'e4', 'e5', 'e3', 'e2']
 
 
 def ready_state():
     state = fixture()
-    project(state, DAY, records=leaves())
-    later = DAY + timedelta(days=1, minutes=5)
-    project(state, later, checked=(1, 2, 3, 4, 5))
+    project(state, DAY)
+    later = DAY + timedelta(days=1)
+    project(state, later, checked=(1, 2, 3, 4, 5), records=leaves())
     return state, later + timedelta(minutes=1)
 
+
+def test_admin_order_is_not_overwritten_by_later_projection():
+    state, now = ready_state()
+    live._apply_action(state, 'admin_reorder', {'employee_id': 'e1', 'direction': 'top'}, 'test', now)
+    project(state, now + timedelta(minutes=5), records=leaves())
+    assert order(state, now)[0] == 'e1'
+
+
+def test_normal_turn_releases_position_and_no_requeue():
+    state, now = ready_state()
+    start(state, 'e1', now)
+    assert not returns.queue_clock(state['employees'][0])
+    project(state, now + timedelta(minutes=5), records=leaves())
+    assert order(state, now)[-1] == 'e1'
 
 def start(state, worker, now, requested=False):
     live._apply_action(state, 'booking', {'employee_id': worker, 'room': '1.1',
@@ -157,71 +162,6 @@ def test_replacement_and_restart_restore_the_return_position_without_invoice():
         assert not state['invoices']
 
 
-def test_manual_assignment_allows_return_and_admin_can_override_once():
-    state = fixture()
-    project(state, DAY, records=leaves())
-    now = DAY + timedelta(days=1)
-    worker = state['employees'][0]
-    worker.update(manual_shift='Ca 1', manual_shift_date=now.date().isoformat(), shift='Ca 1')
-    project(state, now)
-    assert returns.queue_clock(worker)
-    live._apply_action(state, 'admin_reorder', {'employee_id': 'e1', 'direction': 'top'}, 'test', now)
-    assert not returns.queue_clock(worker)
-    project(state, now + timedelta(minutes=5))
-    assert order(state, now)[0] == 'e1'
-
-
-@pytest.mark.parametrize('correction', ['delete', 'approved', 'renamed'])
-@pytest.mark.parametrize('reason', UNEXCUSED_REASONS)
-def test_historical_correction_is_rechecked_before_placement(correction, reason):
-    state = fixture()
-    project(state, DAY, records=leaves(reason))
-    now = DAY + timedelta(days=2)
-    records = leaves(reason)
-    if correction == 'delete':
-        records = [row for row in records if row['employee_name'] != 'Test 1']
-    else:
-        row = next(row for row in records if row['employee_name'] == 'Test 1')
-        row['leave_reason' if correction == 'approved' else 'employee_name'] = 'Nghỉ CÓ phép' if correction == 'approved' else 'Unknown'
-    rows = directory(now, (1, 2, 3, 4, 5))
-    live._reconcile_roster(state, rows, live._new_directory_employee, today=now.date().isoformat())
-    live._sync_daily(state, rows, [], automatic=True, today=now.date().isoformat())
-    returns.sync_returns(state, rows, [], now, now.date(), live._ordered_employees, live._employee_time_key, records)
-    assert returns.MARKER not in state['employees'][0]
-    assert order(state, now) == ['e1', 'e4', 'e5', 'e2', 'e3']
-
-
-@pytest.mark.parametrize('reason', UNEXCUSED_REASONS)
-def test_early_morning_previous_leave_day_does_not_count_as_return(reason):
-    state = fixture()
-    project(state, DAY, records=leaves(reason))
-    now = (DAY + timedelta(days=1)).replace(hour=4)
-    project(state, now, checked=(1, 2, 3), records=leaves(reason))
-    assert all(row[returns.MARKER]['status'] == 'absent' for row in state['employees'][:3])
-
-
-@pytest.mark.parametrize('weekend', [False, True])
-def test_mixed_unexcused_group_waits_for_later_day_and_keeps_source_order(weekend):
-    state = fixture()
-    records = leaves()
-    reasons = UNEXCUSED_REASONS[3:] if weekend else UNEXCUSED_REASONS[:3]
-    for row in records:
-        row['leave_reason'] = reasons[row['source_row'] - 1]
-        row['detail'] = ''
-    # Late/early employees may already have checked in on the violation day.
-    project(state, DAY, checked=(1, 2, 3, 4, 5), records=records)
-    assert all(row[returns.MARKER]['status'] == 'absent' for row in state['employees'][:3])
-    assert not any(returns.queue_clock(row) for row in state['employees'])
-    later = DAY + timedelta(days=1)
-    project(state, later, checked=(3, 4, 5))
-    project(state, later + timedelta(minutes=5), checked=(2, 3, 4, 5))
-    project(state, later + timedelta(minutes=10), checked=(1, 2, 3, 4, 5))
-    assert order(state, later) == ['e4', 'e5', 'e3', 'e1', 'e2']
-    before = deepcopy(state)
-    project(state, later + timedelta(minutes=15), checked=(1, 2, 3, 4, 5))
-    assert state == before
-
-
 def test_browser_sort_preserves_server_return_order_even_with_active_filter():
     state, now = ready_state()
     response = live._state_response(state, 1, now, can_operate=True, can_payment=True, can_admin=True, can_export=True)
@@ -238,16 +178,45 @@ def test_browser_sort_preserves_server_return_order_even_with_active_filter():
     assert json.loads(result.stdout) == ['e4', 'e5', 'e1', 'e2', 'e3']
 
 
-@pytest.mark.parametrize('reason', ['Về sớm CÓ phép', 'Về sớm KHÔNG phép', 'Về sớm CUỐI TUẦN CÓ phép', 'Về sớm CUỐI TUẦN KHÔNG phép', 'Về sớm phát sinh'])
-@pytest.mark.parametrize('manual', [False, True])
-def test_early_returns_precede_unexcused_returns(reason, manual):
+
+
+def test_duplicate_identity_and_ineligible_roster_are_not_guessed():
     state = fixture()
-    for worker in state['employees']:
-        worker['manual_order'] = manual
+    project(state, DAY)
+    now = DAY + timedelta(days=1)
+    rows = directory(now)
+    rows[0]['full_name'] = rows[1]['full_name'] = 'Duplicate'
+    state['employees'][2]['roster_eligible'] = False
     records = leaves()
-    records[0]['leave_reason'] = reason  # e3: early, e1/e2: unexcused
-    project(state, DAY, records=records)
-    later = DAY + timedelta(days=1)
-    project(state, later, checked=(1, 2, 4, 5))
-    project(state, later + timedelta(minutes=1), checked=(1, 2, 3, 4, 5))
-    assert order(state, later) == ['e4', 'e5', 'e3', 'e1', 'e2']
+    for row in records:
+        if row['employee_name'] != 'Test 3':
+            row['employee_name'] = 'Duplicate'
+    returns.sync_returns(state, rows, records, now, DAY.date(), live._ordered_employees, live._employee_time_key)
+    assert not any(returns.queue_clock(row) for row in state['employees'])
+
+
+def test_next_day_expires_prior_marker_without_carrying_absence_forward():
+    state, now = ready_state()
+    project(state, now + timedelta(days=1), records=leaves())
+    assert not any(returns.queue_clock(row) for row in state['employees'])
+
+
+@pytest.mark.parametrize('hour,minute,second,delay', [(2,59,59,1), (2,58,0,120), (2,0,0,300), (3,0,0,300), (12,0,0,300)])
+def test_scheduler_keeps_five_minute_refresh_but_wakes_at_0300(hour, minute, second, delay):
+    assert returns.scheduler_delay(DAY.replace(hour=hour, minute=minute, second=second, microsecond=0), 300) == delay
+
+
+@pytest.mark.parametrize('enabled', [True, False])
+def test_admin_policy_selects_individual_reasons_without_reapplying(enabled):
+    state = fixture()
+    project(state, DAY)
+    now = DAY + timedelta(days=1)
+    records = leaves()
+    records[0]['leave_reason'] = 'Leader về sớm về sớm theo chính sách'
+    policy = {'enabled': enabled, 'reasons': ['Leader về sớm về sớm theo chính sách'], 'revision': 7}
+    returns.sync_returns(state, directory(now), records, now, DAY.date(), live._ordered_employees, live._employee_time_key, policy=policy)
+    assert order(state, now) == (['e1', 'e2', 'e4', 'e5', 'e3'] if enabled else ['e1', 'e2', 'e3', 'e4', 'e5'])
+    before = deepcopy(state)
+    returns.sync_returns(state, directory(now), records, now, DAY.date(), live._ordered_employees, live._employee_time_key,
+        policy={'enabled': True, 'reasons': UNEXCUSED_REASONS, 'revision': 8})
+    assert state == before

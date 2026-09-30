@@ -410,3 +410,10 @@ body .report-date-preset input { min-width: 0; width: 100%; box-sizing: border-b
 @media (max-width: 420px) {
   body .report-date-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.leave-queue-policy-panel { min-width: 0; overflow-wrap: anywhere; }
+.leave-queue-policy-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.leave-queue-policy-panel fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0; gap: 12px; }
+.leave-queue-policy-panel fieldset label { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; }
+.leave-queue-policy-panel input[type="checkbox"] { flex: 0 0 20px; width: 20px; height: 20px; }
+@media (max-width: 640px) { .leave-queue-policy-panel fieldset { grid-template-columns: minmax(0, 1fr); } }

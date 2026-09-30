@@ -1982,3 +1982,36 @@ fails closed. If source activation is selected, full verification remains requir
 This performs no device I/O, database writes, source switch, cache publication or
 payroll/penalty changes. Freshness/readiness are explicitly unverified.
 Production use of this new dispatch option is not yet verified.
+
+## 30-09-2026: xếp cuối bảng tua một lần tại mốc 03:00
+
+Yêu cầu mới thay thế cơ chế chờ check-in/quay lại ở các mục 27–28/09:
+chỉ xử lý chung một lần/ngày tại mốc 03:00 giờ Việt Nam, dựa trên lịch nghỉ
+ngày liền trước. Áp dụng đúng chín lý do: Về sớm CÓ phép, Về sớm KHÔNG phép,
+Về sớm CUỐI TUẦN CÓ phép, Về sớm CUỐI TUẦN KHÔNG phép, Về sớm phát sinh,
+Leader về sớm về sớm theo chính sách, Về sớm bệnh có giấy khám hoặc được quản lý duyệt
+(bổ sung lúc 13:06–13:07 ngày 30/09), Nghỉ KHÔNG phép, Nghỉ CUỐI TUẦN KHÔNG phép. Không đưa đi trễ hoặc các lý do
+khác vào danh sách này bằng so khớp tiền tố.
+
+Scheduler hiện hữu thức tại mốc 03:00; worker lưu dấu ngày đã chạy cùng giao
+dịch/khóa bảng tua, kể cả không có nhân viên đủ điều kiện. Nguồn lịch nghỉ
+ngày trước được đọc một lần bằng connection đang giữ khóa; không cần dấu đã
+quan sát hôm trước, không đợi check-in, không tích lũy nhiều ngày vắng mặt.
+Lượt xử lý có thể trễ nếu dịch vụ dừng hoặc hàng đợi bị nghẽn; lần phục hồi
+chỉ xử lý ngày liền trước một lần, bỏ qua lượt thường đã bắt đầu trong ngày.
+Không có cam kết thời gian thực cứng đến từng giây khi VPS không hoạt động.
+
+Bản mới khởi tạo mốc theo dõi khi nâng cấp và chờ 03:00 kế tiếp, không đảo
+bảng giữa ngày deploy. Nhóm về sớm trước nhóm nghỉ không phép, giữ thứ tự
+Người Thứ N. Sau lượt sắp xếp, vận hành tua thường/YC, đổi nhân viên, hủy
+Thực hiện và quyền Admin giữ nguyên; check-in, refresh, chỉnh lịch nghỉ sau
+mốc đã xử lý không xếp lại. Dấu xếp cuối cũ hết hiệu lực ở lượt 03:00 kế tiếp.
+Không sửa giờ dịch vụ, tiền phạt, lương hay hóa đơn. Chưa xác minh production;
+CI kiểm tra biên 02:59:59/03:00, replay PostgreSQL và vận hành sau sắp xếp.
+
+Bổ sung lúc 13:09: menu Nội quy có mục Xếp cuối bảng tua · 03:00, cho Admin
+kích hoạt/tắt tất cả hoặc từng lý do. Mặc định bật đủ chín lý do được xác nhận.
+API kiểm tra cả quyền sửa Nội quy và role Admin, khóa cập nhật cùng kiểm tra
+revision để chặn ghi đè cấu hình cũ. Mỗi thao tác lưu ngay, ghi updated_by;
+worker đọc cấu hình tại lượt chạy, lưu revision đã áp dụng trong dấu ngày.
+Thay cấu hình sau lượt đã xử lý không kích hoạt lại ngày đó, không sửa mức phạt.

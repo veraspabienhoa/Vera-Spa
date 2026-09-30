@@ -1,3 +1,4 @@
+import LeaveQueuePolicyRules from './LeaveQueuePolicyRules'
 import StableFeedback from '../components/StableFeedback'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -451,6 +452,9 @@ export default function RulesPage() {
         </div>
         <p className="page-subtitle" style={{ marginTop: 10 }}>Ví dụ: ngưỡng 5 phút thì trễ 4 phút không phạt; trễ từ 5 phút trở lên mới phạt.</p>
       </section>
+
+      {data?.leave_queue_policy && <LeaveQueuePolicyRules key={data.leave_queue_policy.revision}
+        policy={data.leave_queue_policy} canEdit={data.can_edit_leave_queue_policy === true} />}
 
       <section data-ui-key="u-c8a830458926" className="panel weekend-unpaid-nth-panel">
         <div data-ui-key="u-48ba3acb6907" className="panel-title-row">
