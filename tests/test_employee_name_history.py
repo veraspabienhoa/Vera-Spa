@@ -109,7 +109,11 @@ def test_combo_read_export_and_count_share_canonical_owner_without_writes(databa
     workbook = load_workbook(BytesIO(asyncio.run(collect())))
     assert len(workbook.worksheets) == 1
     sheet = workbook.active
-    assert [sheet.cell(row, 3).value for row in range(2,5)] == ['Gia Anh'] * 3
+    # Export reserves row 2 for its hidden employee marker; count sale IDs,
+    # rather than assuming every worksheet row is a sale.
+    sales = [row for row in range(2, sheet.max_row + 1) if sheet.cell(row, 1).value]
+    assert {sheet.cell(row, 1).value for row in sales} == {'0','1','2'}
+    assert [sheet.cell(row, 3).value for row in sales] == ['Gia Anh'] * 3
     assert sheet.cell(2,10).value == 'Gia Anh'
     workbook.close()
 
