@@ -16,9 +16,11 @@ SECRET = 'test-only-' + 'x' * 40
 
 
 def payload(**overrides):
-    return dict(event_id=str(uuid4()), kind='booking', customer_name='Khách kiểm thử',
+    data = dict(event_id=str(uuid4()), kind='booking', customer_name='Khách kiểm thử',
                 phone='0900000000', appointment_date='2026-09-30', appointment_time='14:30',
-                service='VIP 90 phút', guests=2, **overrides)
+                service='VIP 90 phút', guests=2)
+    data.update(overrides)
+    return data
 
 
 def signature(body, timestamp=None):

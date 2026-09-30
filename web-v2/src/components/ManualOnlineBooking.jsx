@@ -60,7 +60,7 @@ export default function ManualOnlineBooking({ services, onClose, onSaved }) {
       {['customer_name', 'phone'].map(field => {
         const label = field === 'phone' ? 'Số điện thoại' : 'Tên khách hàng'
         const required = field === 'customer_name'
-        return <LiveTourSearchSelect key={field} label={required ? `${label} *` : label} placeholder={`Nhập ${label.toLowerCase()}`} required={required} disabled={busy} value="" searchValue={draft[field]} onSearch={value => { set(field, value); if (field === 'customer_name') setQuery(value) }} onChange={choose} filterOption={() => true} options={customers.map(row => ({ value: row.id, label: field === 'phone' ? row.phone : row.name, detail: field === 'phone' ? row.name : row.phone }))}/>
+        return <LiveTourSearchSelect key={field} label={required ? `${label} *` : label} placeholder={`Nhập ${label.toLowerCase()}`} required={required} disabled={busy} value="" searchValue={draft[field]} onSearch={value => { set(field, value); setQuery(value) }} onChange={choose} filterOption={() => true} options={customers.map(row => ({ value: row.id, label: field === 'phone' ? row.phone : row.name, detail: field === 'phone' ? row.name : row.phone }))}/>
       })}
       {lookupError && <p className="wide" role="status">Chưa tra cứu được khách hàng: {lookupError}. Bạn vẫn có thể nhập thông tin khách.</p>}
       <label className="wide">Lời nhắn<textarea aria-label="Lời nhắn" maxLength={4000} disabled={busy} value={draft.message} onChange={event => set('message', event.target.value)}/></label>
