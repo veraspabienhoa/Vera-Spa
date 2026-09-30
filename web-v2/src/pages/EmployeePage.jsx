@@ -548,7 +548,6 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
         <div>
           <div className="eyebrow"><UserRoundCog size={14} /> VẬN HÀNH NHÂN SỰ</div>
           <h1 className="page-title">Nhân viên</h1>
-          <label className="staff-heading-search">Tìm tên nhân viên<ClearableSearchInput type="search" aria-label="Tìm tên nhân viên" value={search} onChange={event => changeEmployeeSearch(event.target.value)} onClear={() => changeEmployeeSearch('')} placeholder="Nhập tên hoặc mã nhân viên…" /></label>
           <p className="page-subtitle">Danh sách, hồ sơ, trạng thái làm việc và phân ca trong một màn hình.</p>
         </div>
       </div>
@@ -578,20 +577,7 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
         <summary>Bộ lọc và thao tác nhân viên</summary>
       <section data-ui-key="u-ff418fa84752" className="panel staff-control-panel">
         <UiToolbar data-ui-key="u-2bec85ee8f1f" className="staff-toolbar">
-          <LiveTourSearchSelect
-            className="staff-employee-name-filter"
-            hideLabel
-            label="Tên nhân viên"
-            placeholder="-- Chọn nhân viên --"
-            emptyLabel="Tất cả nhân viên"
-            value={search}
-            options={(data?.employees || []).map((employee) => ({
-              value: employee.username,
-              label: shortEmployeeName(employee.username),
-              detail: employee.full_name && employee.full_name !== employee.username ? employee.full_name : '',
-            }))}
-            onChange={changeEmployeeSearch}
-          />
+
           <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} aria-label="Lọc phân quyền">
             <option value="">Tất cả phân quyền</option>
             {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -608,7 +594,6 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
         </UiToolbar>
         {isAdmin && permissions.employee_face_id_manage && <div className="staff-face-actions" aria-label="Tác vụ ảnh nhân viên"><button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllFaceId}><Download size={15}/> Tải tất cả ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllPortraits}><Download size={15}/> Tải tất cả ảnh nhân viên</button></div>}
         <div className="staff-actionbar">
-          {permissions.employee_add && <button data-ui-key="u-dcce5ace3b12" data-ui-label-default="Thêm nhân viên" className="primary-button" disabled={Boolean(busy)} onClick={() => { setNotice(null); setAddOpen(true) }}><Plus size={17} /><UiCustomText uiKey="u-dcce5ace3b12"> Thêm nhân viên</UiCustomText></button>}
           {permissions.staff_export && <button data-ui-key="u-72a7e0c083db" data-ui-label-default="Export Excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /><UiCustomText uiKey="u-72a7e0c083db"> Export Excel</UiCustomText></button>}
           {isAdmin && permissions.staff_export && <button type="button" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter, true))}><Download size={17} /> Excel kèm ảnh 3 × 4 cm</button>}
           {isAdmin && permissions.staff_export && <button data-ui-key="u-facc0987c3af" className="secondary-button" disabled={busy === 'profiles-pdf' || !selected.length} onClick={exportSelectedProfiles}>{busy === 'profiles-pdf' ? <LoaderCircle className="spin" size={17}/> : <FileDown size={17}/>} Xuất đồng loạt PDF ({selected.length})</button>}
@@ -676,11 +661,29 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
 
       <section data-ui-key="u-65f570ca3cb3" ref={listRef} className="panel staff-list-panel">
         <div data-ui-key="u-0d632daa26f2" className="panel-title-row"><div><h2>DANH SÁCH NHÂN VIÊN</h2><p>{visible.length} nhân viên phù hợp bộ lọc.{incompleteVisible ? ` · ${incompleteVisible} hồ sơ chưa đầy đủ (dòng vàng).` : ''}</p></div><button data-ui-key="u-1d57a0d23aa6" data-ui-label-default="Làm mới" className="secondary-button" onClick={() => load()} disabled={loading || Boolean(busy)}><RefreshCw size={17} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-1d57a0d23aa6"> Làm mới</UiCustomText></button></div>
+        <div className="staff-list-search">
+          <label className="staff-heading-search">Tìm tên nhân viên<ClearableSearchInput type="search" aria-label="Tìm tên nhân viên" value={search} onChange={event => changeEmployeeSearch(event.target.value)} onClear={() => changeEmployeeSearch('')} placeholder="Nhập tên hoặc mã nhân viên…" /></label>
+          <LiveTourSearchSelect
+            className="staff-employee-name-filter"
+            hideLabel
+            label="Tên nhân viên"
+            placeholder="-- Chọn nhân viên --"
+            emptyLabel="Tất cả nhân viên"
+            value={search}
+            options={(data?.employees || []).map((employee) => ({
+              value: employee.username,
+              label: shortEmployeeName(employee.username),
+              detail: employee.full_name && employee.full_name !== employee.username ? employee.full_name : '',
+            }))}
+            onChange={changeEmployeeSearch}
+          />
+        </div>
         <div className="staff-shift-summary" aria-label="Thống kê ca Leader và Nhân viên đang làm việc">
           {[1, 2].flatMap((shift) => [['regular', `Số lượng nhân viên Ca ${shift}`], ['fixed', `Cố định Ca ${shift}`], ['total', `Tổng Ca ${shift}`]].map(([kind, label]) => <div className={`metric-card shift-${shift}`} key={`${shift}-${kind}`}><span>{label}</span><strong>{data?.shift_summary?.[`ca_${shift}_${kind}`] ?? 0}</strong></div>))}
         </div>
         <p role="status">{busy === 'save' || busy === 'profile' ? 'Đang lưu…' : hasUnsavedChanges ? 'Có thay đổi chưa lưu. Bấm Lưu thay đổi hoặc chọn Lưu khi chuyển menu.' : 'Dữ liệu đã được lưu.'}</p>
         <div className="staff-list-primary-actions">
+          {permissions.employee_add && <button data-ui-key="u-dcce5ace3b12" data-ui-label-default="Thêm nhân viên" className="primary-button" disabled={Boolean(busy)} onClick={() => { setNotice(null); setAddOpen(true) }}><Plus size={17} /><UiCustomText uiKey="u-dcce5ace3b12"> Thêm nhân viên</UiCustomText></button>}
           {canSaveRows && <button data-ui-key="u-32777dcb19cc" className="secondary-button" disabled={busy === 'save' || !dirtyRows.length} onClick={saveRows}><Save size={17} /> Lưu thay đổi ({dirtyRows.length})</button>}
           {isAdmin && permissions.employee_delete && <button data-ui-key="u-fa225ec98bac" className="danger-button" disabled={busy === 'delete' || !selected.length} onClick={deleteSelected}><Trash2 size={17} /> Xóa đã chọn ({selected.length})</button>}
         </div>
