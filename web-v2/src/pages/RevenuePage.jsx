@@ -1,3 +1,4 @@
+import ReportDatePreset from '../components/ReportDatePreset'
 import useTablePage from '../lib/useTablePage'
 import TablePager from '../components/TablePager'
 import useRevenueSource from '../lib/useRevenueSource'
@@ -22,12 +23,12 @@ const purchaseMoney = value => `${Number(value || 0).toLocaleString('vi-VN', { m
 const numberText = (value) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
 const reconcileFilters = [
   ['all', 'Tất cả'],
-  ['yesterday', 'Hôm qua'],
   ['today', 'Hôm nay'],
-  ['last_week', 'Tuần trước'],
+  ['yesterday', 'Hôm qua'],
   ['this_week', 'Tuần này'],
-  ['last_month', 'Tháng trước'],
+  ['last_week', 'Tuần trước'],
   ['this_month', 'Tháng này'],
+  ['last_month', 'Tháng trước'],
   ['custom', 'Tùy chỉnh'],
 ]
 const differenceFilters = [
@@ -787,7 +788,10 @@ export default function RevenuePage({ user }) {
         <button type="button" aria-pressed={manualLedger} onClick={() => { setManualLedger(true); setSelectedLedgerId(null) }}>Sổ nhập tay</button>
       </div>}
       <div data-ui-key="u-92de57f35d25" className="detail-filter-panel">
-        <label>Thời gian<select value={detailPreset} onChange={(event) => setDetailPreset(event.target.value)}>{reconcileFilters.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <ReportDatePreset key={detailPreset + detailStart + detailEnd} value={detailPreset} presets={reconcileFilters} onChange={(preset, date) => {
+          if (preset === 'custom') { setDetailStart(date || (detailPreset === 'custom' ? detailStart : detailData?.start_date) || ''); setDetailEnd(date || (detailPreset === 'custom' ? detailEnd : detailData?.end_date) || '') }
+          setDetailPreset(preset)
+        }}/>
         <label>Từ ngày<VeraDateInput value={detailPreset === 'custom' ? detailStart : (detailData?.start_date || '')} onChange={(event) => { if (detailPreset !== 'custom') setDetailEnd(detailData?.end_date || ''); setDetailPreset('custom'); setDetailStart(event.target.value) }} /></label>
         <label>Đến ngày<VeraDateInput value={detailPreset === 'custom' ? detailEnd : (detailData?.end_date || '')} onChange={(event) => { if (detailPreset !== 'custom') setDetailStart(detailData?.start_date || ''); setDetailPreset('custom'); setDetailEnd(event.target.value) }} /></label>
         {activeTab === 'ledger' ? <div className="detail-filter-secondary">
@@ -805,8 +809,8 @@ export default function RevenuePage({ user }) {
           <label>Ngày nhập<VeraDateInput value={purchaseEnteredFilter} onChange={(event) => setPurchaseEnteredFilter(event.target.value)} /></label>
           <label>User<input value={purchaseUserFilter} onChange={(event) => setPurchaseUserFilter(event.target.value)} placeholder="Tìm user" /></label>
         </div> : null}
-        <UiToolbar data-ui-key="u-d3c2154b8b3d" className="detail-filter-actions">
-          {reconcileFilters.filter(([value]) => value !== 'custom').map(([value, label]) => <button data-ui-key="u-983619469a80" type="button" key={value} className={`secondary-button ${detailPreset === value ? 'active' : ''}`} onClick={() => { setDetailPreset(value); setDetailStart(''); setDetailEnd('') }}>{label}</button>)}
+        <UiToolbar data-ui-key="u-d3c2154b8b3d" className="detail-filter-actions report-date-buttons">
+          {reconcileFilters.map(([value, label]) => <button data-ui-key="u-983619469a80" type="button" key={value} className={`secondary-button ${detailPreset === value ? 'active' : ''}`} aria-pressed={detailPreset === value} onClick={() => { if (value === 'custom' && detailPreset !== 'custom') { setDetailStart(detailData?.start_date || ''); setDetailEnd(detailData?.end_date || '') } setDetailPreset(value) }}>{label}</button>)}
           <button data-ui-key="u-e82fca1fc852" data-ui-label-default="Xóa lọc chi tiết" type="button" className="secondary-button" onClick={() => { setLedgerDate(''); setLedgerType(''); setLedgerAmountFilter(''); setLedgerNoteFilter(''); setLedgerEnteredDate(''); setLedgerEnteredByFilter(''); setPurchaseDate(''); setPurchaseItemFilter(''); setPurchaseBuyerFilter(''); setPurchaseUserFilter(''); setPurchaseAmountFilter(''); setPurchaseEnteredFilter('') }}><UiCustomText uiKey="u-e82fca1fc852">Xóa lọc chi tiết</UiCustomText></button>
         </UiToolbar>
       </div>
@@ -832,7 +836,10 @@ export default function RevenuePage({ user }) {
       <div className="reconcile-head">
         <div><span className="eyebrow"><FileSpreadsheet size={14}/> Đối chiếu chi mua hàng</span><h2>BÁO CÁO MUA HÀNG ↔ QUẢN LÝ THU CHI</h2><p>So sánh từng ngày: tổng cột Thành Tiền của BaoCaoMuaHang với các dòng Input có B = Chi và nội dung mua hàng, số tiền lấy từ cột C. Chênh lệch từ 1đ đến 5.000đ được xếp GẦN KHỚP; trên 5.000đ là KHÔNG KHỚP.</p></div>
         <div className="reconcile-filter">
-          <label>Bộ lọc thời gian<select value={filterPreset} onChange={(event) => setFilterPreset(event.target.value)}>{reconcileFilters.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+          <ReportDatePreset key={filterPreset + customStart + customEnd} label="Bộ lọc thời gian" value={filterPreset} presets={reconcileFilters} onChange={(preset, date) => {
+            if (preset === 'custom') { setCustomStart(date || (filterPreset === 'custom' ? customStart : reconcile?.start_date) || ''); setCustomEnd(date || (filterPreset === 'custom' ? customEnd : reconcile?.end_date) || '') }
+            setFilterPreset(preset)
+          }}/>
           {filterPreset === 'custom' && <><label>Từ ngày<VeraDateInput aria-label="Từ ngày" value={customStart} onChange={(event) => setCustomStart(event.target.value)} /></label><label>Đến ngày<VeraDateInput aria-label="Đến ngày" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} /></label></>}
         </div>
       </div>
