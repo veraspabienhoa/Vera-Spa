@@ -428,3 +428,27 @@ for (const historical of [false, true]) test(`Auto midnight refresh preserves ex
     }
   } finally { await f.close() }
 })
+
+
+test('revenue date presets are ordered and compact date search sends a read-only one-day filter', async () => {
+  const f = await fixture('admin', 'auto', false, 1, '2026-09-24', 2)
+  try {
+    const labels = ['Tất cả','Hôm nay','Hôm qua','Tuần này','Tuần trước','Tháng này','Tháng trước','Tùy chỉnh']
+    const buttons = [...f.doc.querySelectorAll('.detail-filter-actions button')]
+    assert.deepEqual(buttons.slice(0,8).map(b => b.textContent), labels)
+    const input = f.doc.querySelector('.detail-filter-panel .report-date-preset input')
+    await act(async () => input.focus())
+    assert.deepEqual([...f.doc.querySelectorAll('[role=option]')].map(b => b.textContent), labels)
+    await f.change(input, '30092026')
+    const option = [...f.doc.querySelectorAll('[role=option]')].find(b => b.textContent.startsWith('30-09-2026'))
+    assert.ok(option)
+    await act(async () => option.click())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 320)) })
+    const requests = f.calls.filter(c => c.path.endsWith('/purchase-reconcile'))
+    const params = new URL(requests.at(-1).url).searchParams
+    assert.equal(params.get('preset'), 'custom')
+    assert.equal(params.get('start'), '2026-09-30')
+    assert.equal(params.get('end'), '2026-09-30')
+    assert.equal(f.calls.some(c => c.method !== 'GET'), false)
+  } finally { await f.close() }
+})

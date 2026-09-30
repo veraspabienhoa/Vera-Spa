@@ -370,3 +370,35 @@ body .live-tour-page .tour-room-share-tools .upcoming-booking-button:is(:hover,:
 body .live-tour-page .tour-room-share-tools .upcoming-booking-button span { color:inherit !important; }
 body .live-tour-page .tour-room-share-tools .upcoming-booking-button:hover { background:#ffe89a !important; }
 body .live-tour-page .tour-room-share-tools .upcoming-booking-button:focus-visible { outline:3px solid #205440; outline-offset:3px; }
+
+/* Report/revenue date shortcuts keep the same reading order at every width. */
+body .report-date-buttons {
+  display: grid !important;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+body .report-date-buttons > button {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 8px 6px;
+}
+body .report-date-buttons > button[aria-pressed="true"] {
+  background: #20533f !important;
+  color: #fff !important;
+}
+body .report-date-buttons > button:last-child:nth-child(9) { grid-column: -3 / -1; }
+body .report-date-preset { min-width: 0; max-width: 100%; }
+body .report-date-preset input { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (max-width: 1000px) {
+  body .report-date-buttons { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  body .report-date-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

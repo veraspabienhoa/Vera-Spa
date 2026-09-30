@@ -1,5 +1,5 @@
 import UiToolbar from './UiToolbar'
-import UiCustomText from './UiCustomText'
+import ReportDatePreset from './ReportDatePreset'
 import VeraMoneyInput from './VeraMoneyInput'
 import VeraDateInput from './VeraDateInput'
 import './LiveTourFilters.css'
@@ -7,7 +7,7 @@ import { useMemo } from 'react'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import { customerMatches } from '../lib/customerSearch'
 import { customerTicketLabel } from '../lib/liveTourComboBooking'
-import { EMPTY_TOUR_FILTERS, TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
+import { TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
 
 export default function LiveTourFilters({ value, onChange, rows, customers = [], services = [], employees = [], showTotal = false, showTip = false }) {
   const options = useMemo(() => {
@@ -27,9 +27,10 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
     return result
   }, [customers, rows, services, employees])
   const change = patch => onChange({ ...value, ...patch })
+  const choosePreset = (preset, date) => change({ preset, ...(date ? { date_from: date, date_to: date } : preset === 'custom' ? {} : tourDateRange(preset)) })
   return <UiToolbar data-ui-key="u-aee0d456f8e9" className="live-tour-filters" role="group" aria-label="Bộ lọc danh sách">
     <UiToolbar data-ui-key="u-6cab38b8ea72" className="live-tour-filters-row live-tour-filters-dates">
-      <label className="live-tour-filters-preset"><span>Thời gian</span><select value={value.preset} onChange={e => change({ preset: e.target.value, ...tourDateRange(e.target.value) })}>{TOUR_DATE_PRESETS.map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></label>
+      <ReportDatePreset key={value.preset + value.date_from + value.date_to} className="live-tour-filters-preset" value={value.preset} presets={TOUR_DATE_PRESETS} onChange={choosePreset}/>
       <label><span>Từ ngày</span><VeraDateInput value={value.date_from} max={value.date_to || undefined} onChange={e => change({ date_from: e.target.value, preset: 'custom' })}/></label>
       <label><span>Đến ngày</span><VeraDateInput value={value.date_to} min={value.date_from || undefined} onChange={e => change({ date_to: e.target.value, preset: 'custom' })}/></label>
     </UiToolbar>
@@ -41,9 +42,8 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
       {showTotal && <label><span>Tổng tiền (đ)</span><VeraMoneyInput aria-label="Lọc tổng tiền" placeholder="Tất cả số tiền" value={value.total_amount ?? ''} onChange={event => change({ total_amount: event.target.value })}/></label>}
       {showTip && <label><span>Số tiền TIP (đ)</span><VeraMoneyInput aria-label="Lọc số tiền TIP" placeholder="Tất cả số tiền" value={value.tip_amount ?? ''} onChange={event => change({ tip_amount: event.target.value })}/></label>}
     </UiToolbar>
-    <UiToolbar data-ui-key="u-4f2eb3da8de7" className="live-tour-filters-actions">
-      <button data-ui-key="u-a4601b56057f" data-ui-label-default="Hôm qua" type="button" className="secondary-button live-tour-filters-reset" onClick={() => onChange({ ...EMPTY_TOUR_FILTERS, preset: 'yesterday', ...tourDateRange('yesterday') })}><UiCustomText uiKey="u-a4601b56057f">Hôm qua</UiCustomText></button>
-      <button data-ui-key="u-aa46e61bc4b0" data-ui-label-default="Hôm nay" type="button" className="secondary-button live-tour-filters-reset" onClick={() => onChange({ ...EMPTY_TOUR_FILTERS, preset: 'today', ...tourDateRange('today') })}><UiCustomText uiKey="u-aa46e61bc4b0">Hôm nay</UiCustomText></button>
+    <UiToolbar data-ui-key="u-4f2eb3da8de7" className="live-tour-filters-actions report-date-buttons">
+      {TOUR_DATE_PRESETS.map(([id, label]) => <button key={id} type="button" className={`secondary-button live-tour-filters-reset ${value.preset === id ? 'active' : ''}`} aria-pressed={value.preset === id} onClick={() => choosePreset(id)}>{label}</button>)}
     </UiToolbar>
   </UiToolbar>
 }

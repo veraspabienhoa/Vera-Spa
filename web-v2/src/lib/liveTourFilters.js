@@ -6,7 +6,7 @@ export function invoiceNumbers(row) {
   if (Array.isArray(row)) return row.flatMap(invoiceNumbers)
   return [row.bill_no, ...(row.bill_numbers || []), ...['before', 'after', 'invoice', 'pending', 'payload'].flatMap(key => invoiceNumbers(row[key]))].filter(Boolean)
 }
-export const TOUR_DATE_PRESETS = [['all', 'Tất cả'], ['yesterday', 'Hôm qua'], ['today', 'Hôm nay'], ['last-week', 'Tuần trước'], ['week', 'Tuần này'], ['last-month', 'Tháng trước'], ['month', 'Tháng này'], ['custom', 'Tùy chỉnh']]
+export const TOUR_DATE_PRESETS = [['all', 'Tất cả'], ['today', 'Hôm nay'], ['yesterday', 'Hôm qua'], ['week', 'Tuần này'], ['last-week', 'Tuần trước'], ['month', 'Tháng này'], ['last-month', 'Tháng trước'], ['custom', 'Tùy chỉnh']]
 const day = (value) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value)
 export function tourDateRange(preset, now = new Date()) {
   if (['all', 'custom'].includes(preset)) return { date_from: '', date_to: '' }

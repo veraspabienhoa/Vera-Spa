@@ -73,9 +73,10 @@ test('typing, choosing, clearing and switching lists update searches immediately
     await type(input('Dịch vụ'), 'Foot')
     assert.equal(filterTourRows(rows, current).length, 0)
     await act(() => document.querySelector('.live-tour-filters-reset').click())
-    assert.equal(current.employee, '')
+    assert.equal(current.employee, 'Mỹ Duyên')
     assert.equal(current.customer, '')
-    assert.equal(current.service, '')
+    assert.equal(current.service, 'Foot')
+    assert.equal(current.preset, 'all')
     current = { ...EMPTY_TOUR_FILTERS }
     await act(render)
     await act(() => input('Khách hàng').focus())
@@ -135,4 +136,51 @@ test('TIP money filter compares exact tip including zero independently from invo
  assert.deepEqual(filterTourRows(rows,{tip_amount:'50.000'}).map(row=>row.id),['a'])
  assert.deepEqual(filterTourRows(rows,{tip_amount:0}).map(row=>row.id),['c'])
  assert.equal(filterTourRows(rows,{tip_amount:''}).length,3)
+})
+
+
+test('date shortcuts have the requested order, preserve other filters and accept compact dates', async () => {
+  const root = createRoot(document.querySelector('#root'))
+  let current = { ...EMPTY_TOUR_FILTERS, employee: 'An An', date_from: '2026-09-01', date_to: '2026-09-30', preset: 'month' }
+  const render = () => root.render(React.createElement(module.exports.default, { rows, value: current, onChange(value) { current = value; render() } }))
+  const dateInput = () => document.querySelector('.report-date-preset input')
+  const type = async value => act(() => {
+    const field = dateInput()
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(field, value)
+    field.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+  })
+  const chooseDate = async text => {
+    await act(() => dateInput().focus())
+    await type(text)
+    await act(() => dateInput().dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  }
+  try {
+    await act(render)
+    const buttons = [...document.querySelectorAll('.report-date-buttons button')]
+    const labels = ['Tất cả','Hôm nay','Hôm qua','Tuần này','Tuần trước','Tháng này','Tháng trước','Tùy chỉnh']
+    assert.deepEqual(buttons.map(b => b.textContent), labels)
+    await act(() => dateInput().focus())
+    assert.deepEqual([...document.querySelectorAll('[role=option]')].map(b => b.textContent), labels)
+    await act(() => buttons[7].click())
+    assert.equal(current.preset, 'custom')
+    assert.equal(current.date_from, '2026-09-01')
+    assert.equal(current.date_to, '2026-09-30')
+    for (const text of ['30092026','30-09-2026','30/09/2026']) {
+      await chooseDate(text)
+      assert.equal(current.date_from, '2026-09-30')
+      assert.equal(current.date_to, '2026-09-30')
+      assert.equal(current.employee, 'An An')
+    }
+    for (const invalid of ['31092026','29022025','3009','300920260']) {
+      await chooseDate(invalid)
+      assert.equal(current.date_from, '2026-09-30')
+      assert.equal(document.querySelectorAll('[role=option]').length, 0)
+    }
+    await chooseDate('29022024')
+    assert.equal(current.date_from, '2024-02-29')
+    await act(() => [...document.querySelectorAll('.report-date-buttons button')][0].click())
+    assert.equal(current.date_from, '')
+    assert.equal(current.date_to, '')
+    assert.equal(current.employee, 'An An')
+  } finally { await act(() => root.unmount()) }
 })
