@@ -8,6 +8,11 @@ on:
         type: boolean
         required: true
         default: false
+      defer_attendance_freshness:
+        description: 'Tạm gác kiểm tra độ mới dữ liệu chấm công để deploy các chức năng khác'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -103,6 +108,7 @@ jobs:
             "set -e; cd /opt/vera-spa/current; timeout 460 /opt/vera-spa/.venv/bin/python -B vera_facegate_cutover.py --apply --expected-commit '$DEPLOY_SHA'"
 
       - name: Verify attendance source after deployment
+        if: ${{ !inputs.defer_attendance_freshness || inputs.retire_timesoft }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -110,6 +116,17 @@ jobs:
           set -euo pipefail
           ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
             'set -e; cd /opt/vera-spa/current; timeout 45 /opt/vera-spa/.venv/bin/python -B vera_facegate_cutover.py'
+
+      - name: Verify preserved FaceGate policy with freshness explicitly deferred
+        if: ${{ inputs.defer_attendance_freshness && !inputs.retire_timesoft }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -e; cd /opt/vera-spa/current; timeout 15 /opt/vera-spa/.venv/bin/python -B vera_vps_deferred_attendance_check.py'
+          echo "::warning::Attendance freshness was explicitly deferred. This deployment does not verify attendance or payroll readiness."
 
       - name: Verify configured Live Tour background cleanup
         env:
