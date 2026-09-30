@@ -439,11 +439,13 @@ body .attendance-page > .page-heading h1 {
   letter-spacing: normal !important; line-height: 1.25; font-weight: 800;
 }
 .attendance-workspace { min-width: 0; max-width: 100%; }
-.attendance-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 18px; }
+.attendance-tab-actions { display: flex; align-items: center; gap: 10px; margin: 12px 0 18px; }
+.attendance-tabs { display: flex; flex-wrap: nowrap; gap: 10px; min-width: 0; }
+.attendance-refresh { flex: 0 0 auto; min-height: 44px; white-space: nowrap; }
 .attendance-tabs > button { min-width: 0; min-height: 44px; padding: 10px 16px; border: 2px solid #386452; border-radius: 12px; background: #edf3ef; color: #173e32; font-weight: 700; }
 .attendance-tabs > button[aria-selected="true"] { background: #205440; color: #fff; }
 .attendance-tabs > button:focus-visible { outline: 3px solid #a36a00; outline-offset: 2px; }
-@media (max-width: 640px) { .attendance-tabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); } .attendance-tabs > button { padding: 10px 6px; } }
+@media (max-width: 640px) { .attendance-tab-actions, .attendance-tabs { gap: 5px; } .attendance-tabs { flex: 1; } .attendance-tabs > button { flex: 1; padding: 8px 5px; font-size: 11px; } .attendance-refresh { padding: 8px 5px; font-size: 11px; gap: 4px; } }
 
 /* Desktop leave actions share the date-filter row; mobile keeps its original flow. */
 .leave-list-controls { display: contents; }
