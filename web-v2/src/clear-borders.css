@@ -473,3 +473,14 @@ body .attendance-page > .page-heading h1 {
   .leave-list-controls > .list-action-notice { grid-column: 1 / -1; min-width: 0; }
   .leave-list-controls > .list-actions button { max-width: 100%; white-space: normal; }
 }
+
+/* Photo downloads and self-update permission share one bounded desktop row. */
+.staff-page .staff-face-toolbar { display:flex; align-items:stretch; flex-wrap:wrap; gap:10px; min-width:0; max-width:100%; }
+.staff-page .staff-face-toolbar .staff-face-actions { flex:3 1 560px; min-width:0; max-width:100%; }
+.staff-page .staff-face-toolbar .staff-face-switch { flex:1 1 260px; margin:0 0 0 auto; min-width:0; max-width:100%; box-sizing:border-box; }
+.staff-page .staff-face-toolbar .staff-face-switch input { flex:0 0 19px; }
+.staff-page .staff-face-toolbar .staff-face-switch span { min-width:0; overflow-wrap:anywhere; }
+@media (max-width:640px) {
+  .staff-page .staff-face-toolbar .staff-face-actions,
+  .staff-page .staff-face-toolbar .staff-face-switch { flex-basis:100%; width:100%; }
+}
