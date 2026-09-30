@@ -36,6 +36,7 @@ export default function LeaveQuotaCheck() {
       <div className="leave-quota-check-items">{result.items.map(item => <div className="leave-quota-check-item" key={`${item.employee}-${item.month}`}>
         <strong>{item.employee} · {item.month.split('-').reverse().join('/')}</strong>
         <div>{item.exceeded.map(key => `${labels[key]}: ${Number(item[key]).toLocaleString('vi-VN')}/${key === 'days' ? (item.day_limit ?? result.limits[key]) : result.limits[key]}`).join(' · ')}</div>
+        {item.borrowed > 0 && <div>Nghỉ bệnh được duyệt: {Number(item.sick_days).toLocaleString('vi-VN')} ngày · Ứng thêm: {Number(item.borrowed).toLocaleString('vi-VN')} ngày (trừ phép tháng kế tiếp).</div>}
       </div>)}</div></>}
     </div>
   </div>

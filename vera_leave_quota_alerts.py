@@ -21,7 +21,7 @@ from vera_notification_periods import current_month
 LIMITS = {'days': 5, 'weekends': 2, 'generated': 2}
 
 
-def summarize(rows):
+def summarize(rows, *, include_approved_borrow=False):
     groups = defaultdict(list)
     for row in rows:
         day = row['leave_date']
@@ -48,15 +48,17 @@ def summarize(rows):
                     and _reason_key(r['leave_reason']) in GROUP3_WEEKEND_REASON_KEYS}
         values = {'days': summary['total_leave'], 'weekends': len(weekends), 'generated': summary['generated']}
         balance = allowances[employee][month]
-        values['days'] = balance['ordinary']
-        exceeded = [key for key, limit in LIMITS.items() if (balance['ordinary_excess'] > 0 if key == 'days' else values[key] > limit)]
+        values['days'] = balance['ordinary'] + (balance['sick'] if include_approved_borrow else 0)
+        day_excess = values['days'] > balance['available'] if include_approved_borrow else balance['ordinary_excess'] > 0
+        exceeded = [key for key, limit in LIMITS.items() if (day_excess if key == 'days' else values[key] > limit)]
         if exceeded:
             result.append({'employee': records[0]['employee_name'].strip(), 'month': month,
-                           **values, 'day_limit': balance['available'], 'borrowed': balance['borrowed'], 'exceeded': exceeded})
+                           **values, 'day_limit': balance['available'], 'borrowed': balance['borrowed'], 'exceeded': exceeded,
+                           **({'sick_days': balance['sick'], 'ordinary_days': balance['ordinary']} if include_approved_borrow else {})})
     return result
 
 
-def read_report(conn, start=None, end=None):
+def read_report(conn, start=None, end=None, *, include_approved_borrow=False):
     # Whole calendar months, even when the UI selects only part of a month.
     params = {}
     where = ''
@@ -65,7 +67,7 @@ def read_report(conn, start=None, end=None):
         where = 'WHERE leave_date <= :end'
     rows = conn.execute(text(f'''SELECT employee_name, leave_date, leave_reason, leave_type,
         calculated_days FROM leave_records {where} ORDER BY leave_date, record_uid'''), params).mappings().all()
-    items = summarize(rows)
+    items = summarize(rows, include_approved_borrow=include_approved_borrow)
     return [item for item in items if start is None or item['month'] >= start.strftime('%Y-%m')]
 
 
@@ -184,7 +186,7 @@ def install(app, *, engine_instance, current_identity, identity_type, require_fe
         with engine_instance().connect() as conn:
             if require_feature is not None:
                 require_feature(conn, ident, "leave_quota_check")
-            items = read_report(conn, start, end)
+            items = read_report(conn, start, end, include_approved_borrow=True)
         return {'items': items, 'limits': LIMITS, 'start': start.replace(day=1).isoformat(),
                 'end': end.replace(day=monthrange(end.year,end.month)[1]).isoformat()}
 

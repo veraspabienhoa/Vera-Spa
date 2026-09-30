@@ -112,7 +112,7 @@ def test_quota_permission_is_enforced_before_report_and_can_be_revoked(monkeypat
     def authorize(conn, ident, feature):
         assert feature == 'leave_quota_check'
         if not state['allowed']: raise HTTPException(403, 'Denied')
-    def report(*args):
+    def report(*args, **kwargs):
         state['reads'] += 1
         return []
     monkeypatch.setattr(alerts, 'read_report', report)
@@ -140,3 +140,15 @@ def test_layout_destinations_reject_locked_targets_and_cycles():
         validate_items({first: LayoutItem(move_to=second), second: LayoutItem(move_to=first)})
     with pytest.raises(HTTPException):
         validate_items({first: LayoutItem(move_to='u-missing')})
+
+
+def test_manual_check_includes_approved_half_day_borrow_without_changing_alert_policy():
+    rows = [row('2026-09-01', 5), row('2026-09-20', .5, 'Nghỉ bệnh có giấy khám hoặc được quản lý duyệt')]
+    assert alerts.summarize(rows) == []
+    item, = alerts.summarize(rows, include_approved_borrow=True)
+    assert item['days'] == 5.5 and item['day_limit'] == 5
+    assert item['borrowed'] == item['sick_days'] == .5
+    assert item['ordinary_days'] == 5 and item['exceeded'] == ['days']
+    rows.append(row('2026-10-01', 5))
+    october = alerts.summarize(rows, include_approved_borrow=True)[1]
+    assert october['month'] == '2026-10' and october['day_limit'] == 4.5
