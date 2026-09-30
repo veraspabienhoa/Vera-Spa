@@ -62,3 +62,31 @@ def test_listing_filters_dates_before_pagination_and_uses_vietnam_contact_day(da
     second = api.get('/v2/online-bookings?date_from=2026-10-01&date_to=2026-10-01&page=2').json()
     assert first['total'] == 27 and len(first['rows']) == 25 and len(second['rows']) == 2
     assert all(row['appointment_date'] in ('2026-10-01', None) for row in first['rows'] + second['rows'])
+
+
+def test_upcoming_excludes_past_and_closed_before_pagination(database):
+    from datetime import timedelta
+    with database.begin() as conn:
+        booking.ensure_schema(conn)
+        now = conn.execute(text("SELECT CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh'")).scalar_one()
+        future = (now + timedelta(days=1)).date().isoformat()
+        past = (now - timedelta(days=1)).date().isoformat()
+        expected = []
+        earlier = now - timedelta(minutes=2)
+        data = payload(); data.update(appointment_date=earlier.date().isoformat(), appointment_time=earlier.strftime('%H:%M'))
+        booking.ingest(conn, booking.WebsiteRequest(**data))
+        for index in range(30):
+            data = payload(); data.update(appointment_date=future, appointment_time='10:00')
+            saved = booking.ingest(conn, booking.WebsiteRequest(**data))
+            expected.append(saved['id'])
+        for day, status in [(past, 'new'), (future, 'cancelled'), (future, 'handled')]:
+            data = payload(); data.update(appointment_date=day)
+            saved = booking.ingest(conn, booking.WebsiteRequest(**data))
+            conn.execute(text('UPDATE vera_online_booking SET status=:status WHERE id=:id'), dict(status=status, id=saved['id']))
+    api = client(engine=database)
+    first = api.get('/v2/online-bookings?upcoming=true').json()
+    second = api.get('/v2/online-bookings?upcoming=true&page=2').json()
+    assert first['total'] == 30
+    assert [row['id'] for row in first['rows'] + second['rows']] == expected
+    assert api.patch(f"/v2/online-bookings/{expected[0]}", json={'status':'handled','revision':0}).status_code == 200
+    assert api.get('/v2/online-bookings?upcoming=true').json()['total'] == 29

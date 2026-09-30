@@ -5,11 +5,11 @@ import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
 
 const built = await build({
-  stdin: { contents: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Popup from './src/components/OnlineBookingPopup';import Page from './src/pages/OnlineBookingPage';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=user=>act(async()=>root.render(<Popup user={user} onOpen={()=>window.opens++}/>));window.mountPage=user=>act(async()=>root.render(<Page user={user}/>));window.unmount=()=>act(async()=>root.unmount());`, resolveDir: process.cwd(), loader:'jsx' },
+  stdin: { contents: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Popup from './src/components/OnlineBookingPopup';import Upcoming from './src/components/UpcomingOnlineBookings';import Page from './src/pages/OnlineBookingPage';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=user=>act(async()=>root.render(<Popup user={user} onOpen={()=>window.opens++}/>));window.mountUpcoming=user=>act(async()=>root.render(<Upcoming user={user} onClose={()=>window.opens++}/>));window.mountPage=user=>act(async()=>root.render(<Page user={user}/>));window.unmount=()=>act(async()=>root.unmount());`, resolveDir: process.cwd(), loader:'jsx' },
   bundle:true, write:false, format:'iife', jsx:'automatic', loader:{'.css':'empty'},
   plugins:[{name:'mock-api',setup(b){
     b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}))
-    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
+    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={updateOnlineBooking:async(id,body)=>{if(window.fail)throw Error('Xung đột cập nhật');window.updated={id,...body};window.rows=[];return {ok:true}},onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
   }}],
 })
 async function mount(role='letan') {
@@ -94,6 +94,36 @@ test('date presets reach API; details opens accessible modal and Escape closes i
   assert.ok(modal);assert.ok(modal.textContent.includes('Đặt lịch'))
   assert.ok(modal.textContent.includes('Phòng yên tĩnh'))
   await w.act(async()=>modal.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true})))
+  assert.equal(w.document.querySelector('[role="dialog"]'),null)
+ }finally{await w.unmount();w.close()}
+})
+
+for (const role of ['admin','quanly','letan']) test(`upcoming ${role}: filter, details, revision update and return`,async()=>{
+ const dom=await mount(role),w=dom.window
+ try {
+  await w.mountUpcoming({role})
+  assert.equal(w.lastParams.upcoming,true)
+  const button=text=>[...w.document.querySelectorAll('button')].find(b=>b.textContent===text)
+  await w.act(async()=>button('Chi tiết').click())
+  assert.equal(w.document.querySelectorAll('[role="dialog"]').length,1)
+  const select=w.document.querySelector('select')
+  await w.act(async()=>{select.value='handled';select.dispatchEvent(new w.Event('change',{bubbles:true}))})
+  w.fail=true
+  await w.act(async()=>button('Lưu').click())
+  assert.ok(w.document.querySelector('[role="alert"]').textContent.includes('Xung đột'))
+  assert.equal(w.document.querySelector('select').value,'handled')
+  w.fail=false
+  await w.act(async()=>button('Lưu').click())
+  assert.equal(w.updated.revision,0);assert.equal(w.updated.status,'handled')
+  assert.equal(w.document.querySelectorAll('[role="dialog"]').length,1)
+  assert.ok(w.document.body.textContent.includes('Không có booking online sắp tới'))
+ }finally{await w.unmount();w.close()}
+})
+test('upcoming does not load or render for other roles',async()=>{
+ const dom=await mount('nhanvien'),w=dom.window
+ try {
+  await w.mountUpcoming({role:'nhanvien'})
+  assert.equal(w.lastParams,undefined)
   assert.equal(w.document.querySelector('[role="dialog"]'),null)
  }finally{await w.unmount();w.close()}
 })

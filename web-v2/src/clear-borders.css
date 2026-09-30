@@ -293,3 +293,43 @@ body .online-booking-page .online-booking-periods button:focus-visible{outline:2
  .online-booking-page .online-booking-actions{align-items:stretch}
  .online-booking-page .online-booking-actions label{width:100%}
 }
+
+/* Shared modal palette; screen only so printed receipts remain unchanged. */
+@media screen {
+  body :is([role="dialog"], [role="alertdialog"], dialog, .modal-card, .modal-content,
+    .live-tour-modal, .identity-editor-card, .identity-camera-card) {
+    --surface: #fff3c4;
+    background: #fff3c4 !important;
+    color: #173e32;
+  }
+  body :is([role="dialog"], [role="alertdialog"], dialog, .modal-card, .modal-content,
+    .live-tour-modal, .identity-editor-card, .identity-camera-card)
+    :is(.online-booking-card, .employee-create-header, .employee-create-actions) {
+    background: #fff3c4;
+  }
+  body :is([role="dialog"], [role="alertdialog"], dialog, .modal-card, .modal-content,
+    .live-tour-modal, .identity-editor-card, .identity-camera-card) button {
+    background: #205440 !important;
+    color: #fff !important;
+    border: 2px solid #37634f;
+    border-radius: 12px !important;
+    padding: 8px 12px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  body :is([role="dialog"], [role="alertdialog"], dialog, .modal-card, .modal-content) button:disabled { opacity: .5; cursor: not-allowed; }
+  body :is([role="dialog"], [role="alertdialog"], dialog, .modal-card, .modal-content) button:focus-visible { outline: 3px solid #a36a00; outline-offset: 3px; }
+  body :is([role="dialog"], [role="alertdialog"], dialog, .modal-card, .modal-content) button:is(.danger-button, .danger, [data-danger="true"]) { border-color: #b64343; }
+  body :is([role="dialog"], [role="alertdialog"], dialog) button:is([aria-pressed="true"], [aria-selected="true"]) { box-shadow: inset 0 0 0 2px #f4d57c; }
+}
+.upcoming-booking-modal { width: min(760px, calc(100vw - 24px)); min-width: 0; padding: 18px; overflow: auto; }
+.upcoming-booking-modal > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.upcoming-booking-modal h2 { margin: 0; }
+.upcoming-booking-list { display: grid; gap: 12px; min-width: 0; }
+.upcoming-booking-list > article { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px; border: 2px solid #587561; border-radius: 12px; overflow-wrap: anywhere; }
+.upcoming-booking-list button { justify-self: start; }
+
+.live-tour-page .tour-room-share-tools { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+@media (max-width: 700px) {
+  .live-tour-page .tour-room-share-tools .upcoming-booking-button { grid-column: 1 / -1; }
+}
