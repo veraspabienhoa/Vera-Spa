@@ -4,7 +4,7 @@ All business writes and durable notifications share the caller's transaction.
 No device/network calls, nested connections, historical backfill or payroll writes.
 """
 import json
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -30,7 +30,7 @@ def load_policy(conn):
     value = row['value_json'] if row else {}
     return {**{k: value.get(k, True) is True for k in ('enabled', 'ca1_enabled', 'ca2_enabled')},
             'revision': int(row['revision'] or 0) if row else 0,
-            'ca1_cutoff': '15:00', 'ca2_cutoff': '17:00', 'reasons': list(REASONS)}
+            'ca1_cutoff': '17:00', 'ca2_cutoff': '19:00', 'delay_minutes': 120, 'reasons': list(REASONS)}
 
 
 def install_routes(app, *, engine_instance, current_identity, require_feature, identity_type):
@@ -58,7 +58,7 @@ def deadline_for(row, day, policy):
     hour = {'ca1': 15, 'ca2': 17}.get(shift)
     if hour is None or not policy.get(shift + '_enabled'):
         return None
-    return datetime.combine(day, time(hour), tzinfo=VN_TZ)
+    return datetime.combine(day, time(hour), tzinfo=VN_TZ) + timedelta(hours=2)
 
 
 def eligible_schedule(row, *, now, synced, policy, mapped, checked, leave_names):
@@ -73,6 +73,46 @@ def eligible_schedule(row, *, now, synced, policy, mapped, checked, leave_names)
     aliases = {auto_check._norm(username), auto_check._norm(row.get('employee_name'))} - {''}
     return not bool(aliases & leave_names)
 
+
+
+def permitted_late(reason):
+    key = auto_check._norm(reason)
+    return 'di tre' in key and 'co phep' in key and 'khong phep' not in key
+
+
+def absence_item(catalog, day, half_day):
+    if not half_day:
+        return auto_check.catalog_item(catalog, REASONS[day.weekday() >= 5])
+    # Never guess half-day fines or divide a full-day progressive fine by two.
+    candidates = [item for item in catalog.values()
+                  if auto_check._norm(item.get('name')).startswith('nghi ')
+                  and 'khong phep' in auto_check._norm(item.get('name'))
+                  and ('cuoi tuan' in auto_check._norm(item.get('name'))) == (day.weekday() >= 5)
+                  and float(item.get('days') or 0) == 0.5]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def replace_unpermitted(conn, rows, *, day, username, target_reason):
+    if not rows:
+        return
+    # Archive the complete rows before removal, in the same transaction as the
+    # replacement. Only today's exact employee and unpermitted rows qualify.
+    conn.execute(text('CREATE TABLE IF NOT EXISTS vera_absence_replacement_audit '
+                      '(id bigserial PRIMARY KEY, work_date date NOT NULL, employee_name text NOT NULL, '
+                      'replaced_rows jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT NOW())'))
+    conn.execute(text('INSERT INTO vera_absence_replacement_audit(work_date,employee_name,replaced_rows) '
+                      'VALUES(:day,:name,CAST(:rows AS jsonb))'),
+                 {'day': day, 'name': username, 'rows': json.dumps([dict(r) for r in rows], default=str, ensure_ascii=False)})
+    for row in rows:
+        if not row.get('record_uid'):
+            raise RuntimeError('replacement_requires_record_uid')
+        conn.execute(text("UPDATE vera_auto_check_event SET status=CASE WHEN reason=:reason THEN 'revoked' ELSE 'superseded' END, "
+                          "leave_record_uid=NULL,employee_notify_claimed_at=NULL,employee_notified_at=NOW() "
+                          "WHERE leave_record_uid=:uid"), {'uid': row['record_uid'], 'reason': target_reason})
+        deleted = conn.execute(text('DELETE FROM leave_records WHERE record_uid=:uid AND leave_date=:day AND employee_name=:name'),
+                               {'uid': row['record_uid'], 'day': day, 'name': username})
+        if deleted.rowcount != 1:
+            raise RuntimeError('replacement_row_changed')
 
 def process(conn, *, now=None):
     from vera_attendance_source import source_for
@@ -107,10 +147,7 @@ def process(conn, *, now=None):
     # a scan has an unexpected status or the attendance projection is pending.
     checked = {r.get('EmployeeName') for r in data['rows']}
     schedules = _merge_schedules(_staff_scheduled_rows(conn, day), _scheduled_rows(conn, day))
-    reason = REASONS[day.weekday() >= 5]
-    item = auto_check.catalog_item(auto_check.load_catalog(conn), reason)
-    if not item:
-        return {**result, 'reason': 'missing_official_reason'}
+    catalog = auto_check.load_catalog(conn)
     auto_check.ensure_schema(conn)
     for row in sorted(schedules, key=lambda r: str(r.get('employee_username') or '')):
         username = str(row.get('employee_username') or '').strip()
@@ -124,20 +161,45 @@ def process(conn, *, now=None):
         if prior:
             result['skipped'] += 1
             continue
-        leaves = conn.execute(text('SELECT employee_name,leave_reason FROM leave_records WHERE leave_date=:day'), {'day': day}).mappings().all()
+        leaves = conn.execute(text('SELECT * FROM leave_records WHERE leave_date=:day AND employee_name=:name FOR UPDATE'), {'day': day, 'name': username}).mappings().all()
         leave_names = {auto_check._norm(r['employee_name']) for r in leaves
-                       if 'di tre' not in auto_check._norm(r['leave_reason'])}
+                       if 'di tre' not in auto_check._norm(r['leave_reason']) and 'khong phep' not in auto_check._norm(r['leave_reason'])}
         if not eligible_schedule(row, now=now, synced=synced, policy=policy, mapped=mapped, checked=checked, leave_names=leave_names):
             result['skipped'] += 1
             continue
+        half_day = any(permitted_late(r['leave_reason']) for r in leaves)
+        item = absence_item(catalog, day, half_day)
+        if not item:
+            result['skipped'] += 1
+            result.setdefault('review_required', []).append({'employee': username, 'reason': 'missing_half_day_official_reason' if half_day else 'missing_official_reason'})
+            continue
+        # Re-read after the employee/leave lock, immediately before any deletion
+        # or penalty. A newer scan or incomplete refresh cancels the operation.
+        fresh = fg.project_evidence(conn, day, day)
+        if (not fresh['rows'] or not archive_complete(fresh, day)
+                or any(i.get('reason') != 'no_vera_shift' for i in fresh['issues'])
+                or username in {r.get('EmployeeName') for r in fresh['rows']}):
+            result['skipped'] += 1
+            continue
+        latest = next((s for s in fresh['syncs'] if str(s['work_date']) == day.isoformat()), None)
+        latest_sync = datetime.fromisoformat(str(latest['last_synced_at'])).astimezone(VN_TZ) if latest else None
         cutoff = deadline_for(row, day, policy)
-        detail = f"{row['shift_code']} · quá {cutoff:%H:%M} chưa có check-in · nguồn FaceGate đủ và mới lúc {synced:%H:%M:%S} · nội quy phiên bản {policy['revision']}"
+        if latest_sync is None or latest_sync <= cutoff or not 0 <= (now-latest_sync).total_seconds() <= 300:
+            result['skipped'] += 1
+            continue
+        synced = latest_sync
+        detail = f"{row['shift_code']} · quá {cutoff:%H:%M} chưa có check-in (đã chờ thêm 120 phút) · nguồn FaceGate đủ và mới lúc {synced:%H:%M:%S} · nội quy phiên bản {policy['revision']}"
+        replacement = conn.begin_nested()
+        replace_unpermitted(conn, [r for r in leaves if 'khong phep' in auto_check._norm(r['leave_reason'])],
+                            day=day, username=username, target_reason=item['name'])
         ok, status = auto_check.save_violation(conn, work_date=day, employee=username, reason_item=item, detail=detail, source=SOURCE)
         if not ok:
             raise RuntimeError('absence_write_failed')
         if status != 'ADDED':
+            replacement.rollback()
             result['skipped'] += 1
             continue
+        replacement.commit()
         event = conn.execute(text('''SELECT e.id, e.leave_record_uid, l.penalty FROM vera_auto_check_event e
             JOIN leave_records l ON l.record_uid=e.leave_record_uid
             WHERE e.work_date=:day AND e.employee_name=:name AND e.reason=:reason AND e.status='added' '''),
