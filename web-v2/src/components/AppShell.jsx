@@ -14,7 +14,7 @@ import BookingNotificationPopup from './BookingNotificationPopup'
 import OnlineBookingPopup from './OnlineBookingPopup'
 import MissingCheckinPopup from './MissingCheckinPopup'
 import { canSeeMissingCheckins } from '../lib/missingCheckinAudience'
-import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, History, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Server, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
+import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Server, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
@@ -28,9 +28,8 @@ const items = [
   { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
   { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
   { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, anyPermission: ['live_tour_admin', 'ktv_shift_view', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_quanly', 'work_schedule_tapvu', 'permission_admin'] },
-  { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, permission: 'snapshot_today' },
+  { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, anyPermission: ['snapshot_today', 'device_history_view'] },
   { id: 'devices', label: 'Quản lý thiết bị', icon: Server, ready: true, permission: 'device_view' },
-  { id: 'checkin-history', label: 'Lịch sử checkin', icon: History, ready: true, permission: 'device_history_view' },
   { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Bảng Lương', icon: WalletCards, ready: true, anyPermission: ['payroll_history', 'payroll_calculate'] },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
@@ -421,7 +420,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           }).sort((a,b) => (uiItems['u-menu-'+a.id]?.order ?? items.indexOf(a)) - (uiItems['u-menu-'+b.id]?.order ?? items.indexOf(b))).map(({ id, label, icon: Icon, ready }) => (
             <Fragment key={id}><a data-ui-key={`u-menu-${id}`}
               key={id}
-              className={`nav-item ${(currentPage === id || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
+              className={`nav-item ${(currentPage === id || (currentPage === 'checkin-history' && id === 'snapshot') || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               href={ready ? menuPageUrl(id) : '#'}
               onClick={(event) => chooseFromLink(event, id, ready)}
               onPointerEnter={() => { if (ready) onPageIntent?.(id) }}

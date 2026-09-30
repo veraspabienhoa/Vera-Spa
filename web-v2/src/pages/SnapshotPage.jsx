@@ -3,7 +3,7 @@ import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
-import { BellRing, CalendarDays, Download, Power, RefreshCw, ScanLine, X } from 'lucide-react'
+import { BellRing, CalendarDays, Download, Power, RefreshCw, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import VeraDateInput from '../components/VeraDateInput'
@@ -158,7 +158,7 @@ async function downloadExcel(path, fallbackName) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export default function SnapshotPage({ user }) {
+export default function SnapshotPage({ user, embedded = false }) {
   usePageRefresh(() => load(), () => Boolean(busy || controlBusy))
   const initial = useMemo(() => rangeFor('Hôm nay'), [])
   const [period, setPeriod] = useState('Hôm nay')
@@ -298,7 +298,7 @@ export default function SnapshotPage({ user }) {
       @media(max-width:820px){.attendance-toolbar{display:block;padding:12px}.attendance-department-grid,.attendance-break-rule-grid{grid-template-columns:1fr}.attendance-control-actions{grid-template-columns:1fr}.attendance-filter-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:10px}.attendance-filter-buttons button{min-height:44px;padding:8px 5px;font-size:13px}.attendance-filter-buttons button:last-child{grid-column:1/-1}.attendance-date-custom{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}.attendance-date-custom label{font-size:12px}.attendance-date-custom input{min-width:0;padding:9px 6px}.attendance-search-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.attendance-search-grid label:first-child{grid-column:1/-1}.attendance-search-grid label{gap:4px;font-size:12px}.attendance-search-grid input{min-height:46px;padding:10px 12px;font-size:15px}.attendance-toolbar-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px}.attendance-toolbar-actions button{width:100%;min-height:44px}.attendance-toolbar-actions button:only-child{grid-column:1/-1}.attendance-kpis{grid-template-columns:repeat(2,1fr)}.attendance-page .responsive-data-table{margin-left:-10px;margin-right:-10px;width:calc(100% + 20px)}.attendance-page .responsive-data-table table{font-size:9px}.attendance-page .responsive-data-table th,.attendance-page .responsive-data-table td{padding:5px 3px;line-height:1.15}.attendance-page .responsive-data-table th{font-size:8px;letter-spacing:-.1px}.attendance-page .responsive-data-table td strong{font-size:9px;line-height:1.15}.attendance-page .responsive-data-table td small{font-size:8px;line-height:1.15;margin-top:2px}.attendance-page .attendance-break{min-width:0}.attendance-page .attendance-status-cell{min-width:0}}
       @media(max-width:390px){.attendance-filter-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}.attendance-filter-buttons button:last-child{grid-column:1/-1}.attendance-page .responsive-data-table table{font-size:8px}.attendance-page .responsive-data-table th,.attendance-page .responsive-data-table td{padding:4px 2px}.attendance-page .responsive-data-table td strong{font-size:8px}.attendance-page .responsive-data-table td small{font-size:7px}}
     `}</style>
-    <div data-ui-key="u-a9281c85e098" className="page-heading"><div><span className="eyebrow"><ScanLine size={14} /> TimeSoft</span><h1>CHẤM CÔNG</h1><p>FaceID lấy từ TimeSoft. Quy tắc nghỉ giữa ca của Lễ tân, Locker và Tạp vụ được điều khiển theo công tắc của Admin.</p></div><button data-ui-key="u-274e5db19281" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-274e5db19281"> Làm mới</UiCustomText></button></div>
+    <div data-ui-key="u-a9281c85e098" className="page-heading"><div>{!embedded && <h1>CHẤM CÔNG</h1>}<p>Dữ liệu chấm công đã đồng bộ vào VERA. Quy tắc nghỉ giữa ca của Lễ tân, Locker và Tạp vụ được điều khiển theo công tắc của Admin.</p></div><button data-ui-key="u-274e5db19281" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-274e5db19281"> Làm mới</UiCustomText></button></div>
     <StableFeedback>{error && <div className="error-box">{error}</div>}</StableFeedback>
 
     <section data-ui-key="u-35e8ac56af0a" className="panel data-toolbar attendance-toolbar">

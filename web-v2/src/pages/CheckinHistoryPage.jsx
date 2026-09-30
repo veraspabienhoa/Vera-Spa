@@ -112,7 +112,7 @@ function CaptureImageButton({ record, onChoose }) {
   </div>
 }
 
-export default function CheckinHistoryPage({ user }) {
+export default function CheckinHistoryPage({ user, embedded = false }) {
   usePageRefresh(() => load(), () => Boolean(busy || exporting || selectedCapture))
   const [selectedCapture, setSelectedCapture] = useState(null)
   const [assignmentNotice, setAssignmentNotice] = useState('')
@@ -164,7 +164,7 @@ export default function CheckinHistoryPage({ user }) {
   const visible = records || []
 
   return <section className="checkin-history-page">
-    <div className="page-heading"><div><span className="eyebrow"><History size={16} /> FACE ID · CHẤM CÔNG</span><h1>LỊCH SỬ CHECKIN</h1><p>Tra cứu nhật ký thiết bị hoặc dữ liệu chấm công đã đồng bộ vào VERA.</p></div></div>
+    <div className="page-heading"><div><span className="eyebrow"><History size={16} /> FACE ID · CHẤM CÔNG</span>{embedded ? <h2>LỊCH SỬ CHECK IN</h2> : <h1>LỊCH SỬ CHECK IN</h1>}<p>Tra cứu nhật ký thiết bị hoặc dữ liệu chấm công đã đồng bộ vào VERA.</p></div></div>
     <form ref={formRef} className="checkin-filters" onSubmit={load} onInput={() => setDirty(true)}>
       <fieldset disabled={busy || exporting}>
         <div className="checkin-filter-dates">
