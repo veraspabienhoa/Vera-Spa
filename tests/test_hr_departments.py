@@ -121,6 +121,23 @@ def test_mode_change_keeps_existing_payroll_history_intact(setup):
     assert saved['department_payroll_combined_history'] == history
 
 
+@pytest.mark.parametrize('code', ['leader', 'nhanvien', 'giamdoc', 'admin'])
+@pytest.mark.parametrize('mode', ['hourly', 'monthly'])
+def test_administrative_payroll_excludes_named_departments_even_if_mode_changes(setup, code, mode):
+    _, saved, _, _, conn = setup
+    saved[hr.KEY] = {'departments': {code: {'name': code, 'salary_mode': mode, 'active': True}}}
+    assert code not in hr.admin_departments(conn)
+    with pytest.raises(Exception) as exc:
+        department_payroll._settings(conn, code)
+    assert exc.value.status_code == 400
+
+
+def test_administrative_payroll_includes_all_other_wage_departments(setup):
+    _, saved, _, _, conn = setup
+    saved[hr.KEY] = {'departments': {'warehouse': {'name': 'Kho', 'salary_mode': 'monthly', 'active': True}}}
+    assert set(hr.admin_departments(conn)) == {'quanly', 'letan', 'thungan', 'locker', 'support', 'tapvu', 'warehouse'}
+
+
 def test_reject_invalid_mode_duplicate_name_and_code(setup):
     client, _, _, _, _ = setup
     assert save(client, 'new', 'invalid').status_code == 422

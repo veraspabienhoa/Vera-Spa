@@ -28,7 +28,7 @@ import vera_web_v2_work_schedule as work_schedule
 import vera_attendance_participation as participation
 
 
-RELEASE = "department-payroll-combo-exclusion-2026-09-26-v9"
+RELEASE = "department-payroll-department-exclusion-2026-09-30-v10"
 COMBO_COMMISSION = 100_000
 PAYROLL_EXCLUDED_SQL = "lower(btrim(COALESCE(payload->>'Không tính lương','false'))) IN ('1','true','yes','y','có','x','ẩn')"
 DEPARTMENTS = {
@@ -241,7 +241,7 @@ def _clean_config(department: str, raw: Any, mode: str | None = None) -> dict[st
 def _settings(conn, department: str) -> dict[str, Any]:
     definition = hr.admin_departments(conn).get(department)
     if not definition:
-        raise HTTPException(400, "Bộ phận không thuộc hình thức Lương giờ hoặc Lương tháng. Hãy dùng Lương KTV cho hình thức Tip.")
+        raise HTTPException(400, "Bộ phận không thuộc Lương hành chánh: loại trừ Leader, nhanvien, giamdoc, admin; hình thức Tip dùng Lương KTV.")
     config = _clean_config(
         department,
         payroll._setting(conn, _setting_key(department, "config"), DEFAULT_CONFIG.get(department, DEFAULT_CONFIG["support"])),

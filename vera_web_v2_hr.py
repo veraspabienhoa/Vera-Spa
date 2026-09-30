@@ -26,7 +26,9 @@ _DEFAULT_SQL = json.dumps(DEFAULT_DEPARTMENTS, ensure_ascii=False).replace("'", 
 DEFINITION_SQL = f"COALESCE({REGISTRY_SQL}->'departments'->({DEPARTMENT_SQL}), CAST('{_DEFAULT_SQL}' AS jsonb)->({DEPARTMENT_SQL}))"
 MODE_SQL = f"(CASE WHEN COALESCE(({DEFINITION_SQL})->>'active','true') = 'true' THEN ({DEFINITION_SQL})->>'salary_mode' ELSE NULL END)"
 TIP_SQL = f"{MODE_SQL} = 'tip'"
-ADMIN_PAY_SQL = f"{MODE_SQL} IN ('hourly','monthly')"
+ADMIN_PAY_EXCLUDED_DEPARTMENTS = frozenset({'leader', 'nhanvien', 'giamdoc', 'admin'})
+_ADMIN_PAY_EXCLUDED_SQL = ','.join(f"'{code}'" for code in sorted(ADMIN_PAY_EXCLUDED_DEPARTMENTS))
+ADMIN_PAY_SQL = f"{MODE_SQL} IN ('hourly','monthly') AND lower(btrim({DEPARTMENT_SQL})) NOT IN ({_ADMIN_PAY_EXCLUDED_SQL})"
 
 
 def registry(conn):
@@ -49,7 +51,8 @@ def department_code(employee, state):
 
 
 def admin_departments(conn):
-    return departments(conn, {'hourly', 'monthly'})
+    return {code: item for code, item in departments(conn, {'hourly', 'monthly'}).items()
+            if code.strip().lower() not in ADMIN_PAY_EXCLUDED_DEPARTMENTS}
 
 
 class DepartmentWrite(BaseModel):
