@@ -2119,3 +2119,25 @@ refreshes, weekdays/weekends and an unchanged three-person PostgreSQL cohort.
 This is a source fix pending deployment. The two already replaced production
 records have not been restored by this change; no historical or payroll data
 has been rewritten.
+
+
+## 01-10-2026 — Manual online-booking staff requests and edit/delete (code change)
+
+The in-app manual booking modal now reuses the authenticated current-working-staff
+provider, with optional searchable selection before the message. Admin, quanly and
+letan can edit booking fields and delete online bookings using optimistic revisions.
+Deleted bookings are hidden with a durable marker; UUID replays cannot resurrect them.
+The existing role and mandatory-password-change checks still run before DB access.
+
+Inbox mutations commit before acquiring the Live Tour lock. The synchronization
+callback reads committed active bookings for today's Vietnam date under the board
+lock, using the same connection as the board read/write. It reconciles only the
+previously owned YC appointment suffixes, retains manual appointments and requests
+from other active bookings, and excludes staff no longer eligible/working. This
+adds no network delivery inside either transaction and does not touch receipts,
+attendance evidence, shifts or payroll. Future bookings do not project into today's
+appointment field. Tests cover role denials, revision-safe edits/deletes, transaction
+ordering, duplicate appointment times, old-token cleanup and leave exclusion.
+
+These are source/test observations; this change has not been deployed or verified
+against production booking records. Deploy both API and Web V2 after CI and merge.
