@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { clampPopupPosition } from '../lib/popupPosition'
 import { veraApi } from '../lib/api'
 import OnlineBookingDetails from './OnlineBookingDetails'
+import UpcomingOnlineBookings from './UpcomingOnlineBookings'
+import { startQuarterHourBookingReminder } from '../lib/quarterHourBookingReminder'
 import '../pages/OnlineBookingPage.css'
 
 import { canViewOnlineBookings } from '../lib/onlineBookings'
@@ -15,6 +17,7 @@ export default function OnlineBookingPopup({ user, onOpen }) {
   const [rows, setRows] = useState([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [showUpcomingReminder, setShowUpcomingReminder] = useState(false)
   const allowed = canViewOnlineBookings(user)
   const account = user?.id || user?.username || user?.employee_username
   useEffect(() => {
@@ -40,6 +43,13 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     document.addEventListener('visibilitychange', load)
     window.addEventListener('vera-online-bookings-changed', changed)
     return () => { active = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', load); window.removeEventListener('vera-online-bookings-changed', changed) }
+  }, [allowed, account])
+  useEffect(() => {
+    if (!allowed) return undefined
+    return startQuarterHourBookingReminder({
+      load: () => veraApi.onlineBookings({ upcoming: true, page: 1, limit: 1 }),
+      onReminder: result => { if (result.total > 0) setShowUpcomingReminder(true) },
+    })
   }, [allowed, account])
   const moveTo = next => {
     if (!panel.current) return
@@ -74,7 +84,7 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     const step = event.shiftKey ? 30 : 10
     moveTo({ left: rect.left + delta[0] * step, top: rect.top + delta[1] * step })
   }
-  if (!allowed || !rows.length) return null
+  if (!allowed) return null
   const row = rows[0]
   const dismiss = async (open = false) => {
     setBusy(true); setError('')
@@ -86,7 +96,8 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
-  return <aside ref={panel} className={`online-booking-popup${hidden ? ' is-minimized' : ''}`} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} role="region" aria-label="Yêu cầu từ website">
+  return <>{showUpcomingReminder && <UpcomingOnlineBookings user={user} onClose={() => setShowUpcomingReminder(false)}/>}
+  {!rows.length || showUpcomingReminder ? null : <aside ref={panel} className={`online-booking-popup${hidden ? ' is-minimized' : ''}`} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} role="region" aria-label="Yêu cầu từ website">
     <div className="online-booking-popup-header">
       <button type="button" className="online-booking-drag-handle" aria-label="Di chuyển thông báo bằng kéo hoặc phím mũi tên" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }} onKeyDown={keyboardMove}>
         <strong aria-live="polite">{row.kind === 'booking' ? 'Booking online mới' : 'Lời nhắn mới'}{rows.length > 1 ? ` · ${rows.length}` : ''}</strong>
@@ -99,5 +110,6 @@ export default function OnlineBookingPopup({ user, onOpen }) {
       <div className="online-booking-actions"><button disabled={busy} onClick={() => dismiss()}>Đã xem</button><button disabled={busy} onClick={() => dismiss(true)}>Mở Booking online</button></div>
     </>}
     {error && <p role="alert">{error}</p>}
-  </aside>
+  </aside>}
+  </>
 }

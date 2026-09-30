@@ -76,7 +76,7 @@ export default function OnlineBookingPage({ user }) {
     {error && <p role="alert">{error}</p>}
     {busy ? <p role="status">Đang tải…</p> : <><p>{result.total} yêu cầu</p><div className="online-booking-table-wrap"><table className="online-booking-table"><thead><tr><th>Mã / Loại</th><th>Khách hàng</th><th>Điện thoại</th><th>Ngày / Giờ hẹn</th><th>Dịch vụ</th><th>Số khách</th><th>Lời nhắn</th><th>Trạng thái</th><th>Tiếp nhận</th><th>Xử lý</th></tr></thead><tbody>{result.rows.map(row => <tr key={row.id}>{[
       ['Mã / Loại', <>#{row.id} · {row.kind==='booking'?'Đặt lịch':'Liên hệ'}</>],
-      ['Khách hàng', row.customer_name], ['Điện thoại', row.phone],
+      ['Khách hàng', row.customer_name], ['Điện thoại', row.phone || 'Không cung cấp'],
       ['Ngày / Giờ hẹn', <>{formatVeraDate(row.appointment_date,'Chưa cung cấp')}<br/>{row.appointment_time||''}</>],
       ['Dịch vụ',row.service||'Chưa cung cấp'], ['Số khách',row.guests??'—'],
       ['Lời nhắn',row.message||'Không có lời nhắn'], ['Trạng thái',statuses[row.status]],

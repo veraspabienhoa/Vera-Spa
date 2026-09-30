@@ -57,7 +57,11 @@ export default function ManualOnlineBooking({ services, onClose, onSaved }) {
       <label className="wide">Số khách *<input aria-label="Số khách" type="number" required min="1" max="50" step="1" disabled={busy} value={draft.guests} onChange={event => set('guests', event.target.value === '' ? '' : Number(event.target.value))}/></label>
       <label>Ngày đến *<VeraDateInput aria-label="Ngày đến" required disabled={busy} min={bookingDateRange('today').date_from} value={draft.appointment_date} onChange={event => set('appointment_date', event.target.value)}/></label>
       <label>Giờ đến mong muốn *<input aria-label="Giờ đến mong muốn" type="time" required disabled={busy} value={draft.appointment_time} onChange={event => set('appointment_time', event.target.value)}/></label>
-      {[['customer_name', 'Tên khách hàng', 'phone'], ['phone', 'Số điện thoại', 'customer_name']].map(([field, label]) => <LiveTourSearchSelect key={field} label={`${label} *`} placeholder={`Nhập ${label.toLowerCase()}`} required disabled={busy} value="" searchValue={draft[field]} onSearch={value => { set(field, value); setQuery(value) }} onChange={choose} filterOption={() => true} options={customers.map(row => ({ value: row.id, label: field === 'phone' ? row.phone : row.name, detail: field === 'phone' ? row.name : row.phone }))}/>) }
+      {['customer_name', 'phone'].map(field => {
+        const label = field === 'phone' ? 'Số điện thoại' : 'Tên khách hàng'
+        const required = field === 'customer_name'
+        return <LiveTourSearchSelect key={field} label={required ? `${label} *` : label} placeholder={`Nhập ${label.toLowerCase()}`} required={required} disabled={busy} value="" searchValue={draft[field]} onSearch={value => { set(field, value); if (field === 'customer_name') setQuery(value) }} onChange={choose} filterOption={() => true} options={customers.map(row => ({ value: row.id, label: field === 'phone' ? row.phone : row.name, detail: field === 'phone' ? row.name : row.phone }))}/>
+      })}
       {lookupError && <p className="wide" role="status">Chưa tra cứu được khách hàng: {lookupError}. Bạn vẫn có thể nhập thông tin khách.</p>}
       <label className="wide">Lời nhắn<textarea aria-label="Lời nhắn" maxLength={4000} disabled={busy} value={draft.message} onChange={event => set('message', event.target.value)}/></label>
       {error && <p className="wide" role="alert">{error}</p>}

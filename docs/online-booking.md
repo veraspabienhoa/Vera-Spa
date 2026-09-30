@@ -40,3 +40,13 @@ The HMAC signs `unix_timestamp + '.' + exact_raw_json_body` using SHA-256; heade
 - Inbox table has a dedicated Lời nhắn column. Reception's processing note remains separate from the customer's original message.
 - Live Tour popup: Ẩn collapses to its header without acknowledging; Hiện restores; Đóng acknowledges only the current request for that account, retaining history. Drag the title on desktop/touch; arrow keys move the focused handle. Viewport clamping keeps controls reachable after resize.
 - The WordPress form is live. The plugin/frontend changes require merge/deploy/update and the original integration activation steps still apply. No real booking was submitted for verification.
+
+## Booking form UX update (30-09-2026)
+
+- CF7 form 1271, field menu-396, ends its service list with **Chưa chọn dịch vụ**. The option has a nonempty value, so it is selectable while the rest of the booking validation remains in place.
+- The mobile form uses two columns for date/time and name/phone, keeps service and guest count full-width, and reduces excess field spacing and control heights. Screens up to 360px use tighter padding.
+- On CF7 invalid submissions, a page-scoped accessible popup lists the required booking fields still missing. Closing it returns focus to the first invalid field and scrolls that field into view.
+- Source for the active WordPress Code Snippets entry is integrations/wordpress/booking-form-ux.php. Keep it synchronized with the entry named "Booking - giao diện mobile và popup thông tin thiếu".
+- These website changes are maintained independently from the online-booking inbox integration above; no backend/API changes are required.
+- The phone number remains required on public veraspa.vn/booking/. In app.veraspa.vn manual Booking online, the phone field is optional.
+- On Live Tour, when upcoming bookings exist, the Booking online sắp tới dialog opens at the next quarter-hour boundary and repeats every 15 minutes while eligible staff are on Live Tour.
