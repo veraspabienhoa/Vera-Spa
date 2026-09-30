@@ -47,6 +47,13 @@ def identity_index(directory):
     return result
 
 
+def reserved_name(directory, username, normalize=name_key):
+    wanted = normalize(username)
+    return any(wanted in {normalize(row.get('username')),
+                          *(normalize(alias) for alias in previous_names(row))}
+               for row in directory)
+
+
 def load_identity_index(conn, *, lock=False):
     # Reuse the caller transaction; includes deleted names as occupied names.
     return identity_index(conn.execute(text(

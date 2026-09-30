@@ -31,6 +31,9 @@ def test_confirmed_history_only_and_ambiguous_aliases():
     assert names.canonical_username(index, 'Anh Nguyen') == 'Gia Anh'
     assert names.canonical_username(index, 'Nguyễn Anh') == 'Nguyễn Anh'
     assert rows == before
+    assert names.reserved_name(rows, 'Anh Nguyễn')
+    assert names.reserved_name([employee(payload={names.HISTORY_KEY: ['Former']})], 'former')
+    assert not names.reserved_name(rows, 'Different')
     for competing in [employee('Anh Nguyễn'), employee('Anh Nguyễn', payload={'__deleted': True})]:
         assert names.canonical_username(names.identity_index(rows + [competing]), 'Anh Nguyễn') == 'Anh Nguyễn'
     other = employee('Other', payload={names.HISTORY_KEY: ['Anh Nguyễn']})

@@ -116,6 +116,9 @@ def install_system_name_routes(
         renamed_counts: dict[str, int] = {}
 
         with engine_instance().begin() as conn:
+            # Same directory lock as account creation/import: old names may not
+            # be reused by a new employee while this rename is committing.
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             # Lock the active employee directory so two simultaneous renames cannot
             # create usernames that are equivalent after login normalization.
             directory = conn.execute(text("""
