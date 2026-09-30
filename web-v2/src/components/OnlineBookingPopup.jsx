@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Move } from 'lucide-react'
 import { clampPopupPosition } from '../lib/popupPosition'
 import { veraApi } from '../lib/api'
 import OnlineBookingDetails from './OnlineBookingDetails'
@@ -57,7 +59,8 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     return () => window.removeEventListener('resize', constrain)
   }, [hidden, rows.length])
   const beginDrag = event => {
-    if (event.button !== 0) return
+    if (event.button !== 0 || event.isPrimary === false) return
+    event.preventDefault()
     const rect = panel.current.getBoundingClientRect()
     drag.current = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -86,9 +89,10 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
-  return <aside ref={panel} className={`online-booking-popup${hidden ? ' is-minimized' : ''}`} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} role="region" aria-label="Yêu cầu từ website">
+  return createPortal(<aside ref={panel} className={`online-booking-popup${hidden ? ' is-minimized' : ''}`} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} role="region" aria-label="Yêu cầu từ website">
     <div className="online-booking-popup-header">
-      <button type="button" className="online-booking-drag-handle" aria-label="Di chuyển thông báo bằng kéo hoặc phím mũi tên" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }} onKeyDown={keyboardMove}>
+      <button type="button" className="online-booking-drag-handle" title="Kéo để di chuyển" aria-label="Di chuyển thông báo bằng kéo hoặc phím mũi tên" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }} onKeyDown={keyboardMove}>
+        <Move size={18} aria-hidden="true"/>
         <strong aria-live="polite">{row.kind === 'booking' ? 'Booking online mới' : 'Lời nhắn mới'}{rows.length > 1 ? ` · ${rows.length}` : ''}</strong>
       </button>
       <button type="button" aria-expanded={!hidden} onClick={() => setHidden(value => !value)}>{hidden ? 'Hiện' : 'Ẩn'}</button>
@@ -99,5 +103,5 @@ export default function OnlineBookingPopup({ user, onOpen }) {
       <div className="online-booking-actions"><button disabled={busy} onClick={() => dismiss()}>Đã xem</button><button disabled={busy} onClick={() => dismiss(true)}>Mở Booking online</button></div>
     </>}
     {error && <p role="alert">{error}</p>}
-  </aside>
+  </aside>, document.body)
 }
