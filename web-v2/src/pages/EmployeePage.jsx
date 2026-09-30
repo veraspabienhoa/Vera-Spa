@@ -552,7 +552,6 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
       </div>
 
       <Notice notice={addOpen ? null : notice} onClose={() => setNotice(null)} />
-      {isAdmin && faceSettings && <label className="staff-face-switch"><input type="checkbox" checked={faceSettings.enabled} onChange={event => updateFaceSetting('', event.target.checked)}/> Cho phép nhân viên tự cập nhật ảnh Face ID</label>}
 
       <div className="metric-grid staff-metrics">
         {[
@@ -591,7 +590,10 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
           </select>
           {isAdmin && <select value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)} aria-label="Lọc hiển thị nhân viên"><option value="visible">Đang hiển thị</option><option value="hidden">Đã tạm ẩn</option><option value="all">Tất cả nhân viên</option></select>}
         </UiToolbar>
+        <div className="staff-face-toolbar">
         {isAdmin && permissions.employee_face_id_manage && <div className="staff-face-actions" aria-label="Tác vụ ảnh nhân viên"><button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllFaceId}><Download size={15}/> Tải tất cả ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllPortraits}><Download size={15}/> Tải tất cả ảnh nhân viên</button></div>}
+          {isAdmin && faceSettings && <label className="staff-face-switch"><input type="checkbox" checked={faceSettings.enabled} onChange={event => updateFaceSetting('', event.target.checked)}/> <span>Cho phép nhân viên tự cập nhật ảnh Face ID</span></label>}
+        </div>
         <div className="staff-actionbar">
           {permissions.staff_export && <button data-ui-key="u-72a7e0c083db" data-ui-label-default="Export Excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /><UiCustomText uiKey="u-72a7e0c083db"> Export Excel</UiCustomText></button>}
           {isAdmin && permissions.staff_export && <button type="button" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter, true))}><Download size={17} /> Excel kèm ảnh 3 × 4 cm</button>}
