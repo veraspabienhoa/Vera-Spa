@@ -47,7 +47,7 @@ export default function UpcomingOnlineBookings({ user, onClose, services = [] })
       <div className="upcoming-booking-list">{result.rows.map(row => <article key={row.id}>
         <strong>#{row.id} · {row.customer_name}</strong>
         <span>{formatVeraDate(row.appointment_date)} · {row.appointment_time}</span>
-        <span>{row.phone} · {row.guests} khách</span><span>{row.service}</span>
+        <span>{row.phone || 'Không cung cấp số điện thoại'} · {row.guests} khách</span><span>{row.service}</span>
         <span>{row.status === 'confirmed' ? 'Đã xác nhận' : 'Mới nhận'}</span>
         <button aria-haspopup="dialog" onClick={() => setSelected(row)}>Chi tiết</button>
       </article>)}</div>
