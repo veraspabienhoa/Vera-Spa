@@ -8,6 +8,7 @@ configurable shift definitions stored in PostgreSQL. All four departments share
 the same overtime choices: TC Ca 1, TC Ca 2, or an explicit time range.
 """
 from __future__ import annotations
+from vera_employee_names import canonical_username, load_identity_index, project_employee_rows
 
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -594,7 +595,7 @@ def _employee_catalog(conn, department: str) -> list[dict[str, Any]]:
 
 
 def _combo_employee(conn, department: str, username: str) -> dict[str, Any]:
-    wanted = str(username or "").strip().casefold()
+    wanted = canonical_username(load_identity_index(conn, lock=True), username).casefold()
     employee = next(
         (item for item in _employee_catalog(conn, department) if str(item.get("username") or "").strip().casefold() == wanted),
         None,
@@ -947,6 +948,7 @@ def install_work_schedule_routes(
                 WHERE department=:department AND sale_date BETWEEN :start AND :end
                 ORDER BY sale_date DESC, lower(employee_name), created_at DESC
             """), {"department": dep, "start": start, "end": end}).mappings().all()
+            rows = project_employee_rows(conn, rows)
         return {
             "ok": True,
             "rows": [dict(row) for row in rows],
@@ -974,7 +976,7 @@ def install_work_schedule_routes(
                 )
             """), {
                 "id": sale_id, "sale_date": body.sale_date,
-                "employee_username": body.employee_username.strip(),
+                "employee_username": employee["username"],
                 "employee_name": _combo_employee_name(employee, body.employee_username),
                 "department": body.department, "customer_name": body.customer_name.strip(),
                 "customer_phone": body.customer_phone.strip(), "combo_ticket": body.combo_ticket.strip(),
@@ -1013,7 +1015,7 @@ def install_work_schedule_routes(
                 WHERE id=:id
             """), {
                 "id": sale_id, "sale_date": body.sale_date,
-                "employee_username": body.employee_username.strip(),
+                "employee_username": employee["username"],
                 "employee_name": _combo_employee_name(employee, body.employee_username),
                 "customer_name": body.customer_name.strip(),
                 "customer_phone": body.customer_phone.strip(),
@@ -1057,6 +1059,7 @@ def install_work_schedule_routes(
                 WHERE department=:department AND sale_date BETWEEN :start AND :end
                 ORDER BY lower(employee_name), sale_date, created_at
             """), {"department": dep, "start": start, "end": end}).mappings().all()
+            rows = project_employee_rows(conn, rows)
 
         groups: dict[str, dict[str, Any]] = {}
         for employee in employees:
@@ -1141,6 +1144,7 @@ def install_work_schedule_routes(
                 str(item.get("username") or "").strip().casefold(): item
                 for item in _employee_catalog(conn, dep)
             }
+            identities = load_identity_index(conn, lock=True)
             ids = [str(item["id"]) for item in imported if item.get("id")]
             existing = {}
             if ids:
@@ -1151,7 +1155,8 @@ def install_work_schedule_routes(
                     """), {"ids": ids}).mappings().all()
                 }
             for item in imported:
-                key = str(item["employee_username"]).casefold()
+                item["employee_username"] = canonical_username(identities, item["employee_username"])
+                key = item["employee_username"].casefold()
                 employee = catalog.get(key)
                 if not employee:
                     raise HTTPException(400, f"Tên hệ thống '{item['employee_username']}' không thuộc bộ phận {dep}.")

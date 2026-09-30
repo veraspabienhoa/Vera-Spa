@@ -1,5 +1,6 @@
 """Reconcile the persisted tour with the server employee directory without clearing work."""
 from copy import deepcopy
+from vera_employee_names import identity_index, name_key
 import unicodedata
 import re
 
@@ -39,6 +40,7 @@ def eligible(row):
 def reconcile(state, directory, make_employee, *, today=''):
     before = deepcopy(state)
     by_username = {key(row['username']): row for row in directory if row.get('username')}
+    historical_names = identity_index(directory)
     assigned = set()
     for worker in state['employees']:
         manual_shift_day = str(worker.get('manual_shift_date') or '')
@@ -49,6 +51,8 @@ def reconcile(state, directory, make_employee, *, today=''):
             manual_shift_day = ''
         manual_shift_today = bool(manual_shift_day and (not today or manual_shift_day == today))
         row = by_username.get(key(worker.get('username')))
+        if row is None and worker.get('username'):
+            row = historical_names.get(name_key(worker['username']))
         if row is None and not worker.get('username'):
             # Imported/free-text rows can be linked only when the name is unique.
             matches = [row for row in directory if key(worker.get('name')) in {key(row.get('username')), key(row.get('full_name'))}]
