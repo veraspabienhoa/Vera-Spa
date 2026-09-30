@@ -4,7 +4,7 @@ import json
 
 from sqlalchemy import text
 from vera_employee_names import reserved_name
-from vera_web_v2_staff import norm
+from vera_web_v2_system_name import _name_key as norm
 
 
 def inspect(conn, username):
