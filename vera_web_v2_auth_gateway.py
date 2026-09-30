@@ -599,7 +599,7 @@ def _create_local_session(employee: dict[str, Any]) -> dict[str, Any]:
             # deterministic UUID and do not need a row in auth.users/profile.
             auth_user_id = str((profile or {}).get("auth_user_id") or "").strip()
             if not auth_user_id:
-                auth_user_id = local_auth_user_id(username)
+                auth_user_id = str((employee.get("payload") or {}).get("__auth_identity_id") or local_auth_user_id(username))
             try:
                 auth_user_id = str(uuid.UUID(auth_user_id))
             except (TypeError, ValueError, AttributeError) as exc:
