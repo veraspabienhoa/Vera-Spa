@@ -135,6 +135,8 @@ test('manual booking searches customer phone, fills both fields, retries with sa
  const dom=await mount(),w=dom.window
  try {
   await w.mountManual()
+  const backdrop=w.document.querySelector(".employee-profile-modal-backdrop")
+  backdrop.style.position="fixed";backdrop.style.zIndex="11000"
   const change=async(input,value)=>w.act(async()=>{
    const proto=input.tagName==='SELECT'?w.HTMLSelectElement.prototype:w.HTMLInputElement.prototype
    Object.getOwnPropertyDescriptor(proto,'value').set.call(input,value)
@@ -146,6 +148,7 @@ test('manual booking searches customer phone, fills both fields, retries with sa
   assert.equal(w.lookup,'0900')
   const option=[...w.document.querySelectorAll('[role="option"]')].find(el=>el.textContent.includes('Khách Mẫu'))
   assert.ok(option)
+  assert.ok(Number(w.document.querySelector(".tour-search-popup").style.zIndex)>Number(w.getComputedStyle(backdrop).zIndex))
   await w.act(async()=>option.click())
   assert.equal(phone.value,'0900000001')
   assert.equal(w.document.querySelector('input[placeholder="Nhập tên khách hàng"]').value,'Khách Mẫu')

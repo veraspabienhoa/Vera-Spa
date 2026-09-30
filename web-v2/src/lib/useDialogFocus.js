@@ -8,7 +8,10 @@ export default function useDialogFocus(onClose) {
     const previous = document.activeElement
     const dialog = dialogRef.current
     const targets = () => [...(dialog?.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]') || [])]
-    const frame = window.requestAnimationFrame(() => (targets()[0] || dialog)?.focus({ preventScroll: true }))
+    const frame = window.requestAnimationFrame(() => {
+      // Do not steal focus from an input already used before this frame runs.
+      if (!dialog?.contains(document.activeElement)) (targets()[0] || dialog)?.focus({ preventScroll: true })
+    })
     const keydown = (event) => {
       if (event.key === 'Escape') { event.preventDefault(); closeRef.current?.(); return }
       if (event.key !== 'Tab') return
