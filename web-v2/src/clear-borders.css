@@ -350,3 +350,23 @@ body .online-booking-page .online-booking-periods button:focus-visible{outline:2
 .manual-booking-form .wide { grid-column:1/-1; }
 .manual-booking-form textarea { min-height:90px; }
 @media(max-width:600px) { .manual-booking-form { grid-template-columns:minmax(0,1fr); } }
+
+/* Three filter fields share one row at every viewport width. */
+body .online-booking-page .online-booking-filters {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px; width:100%; max-width:100%; min-width:0; margin:12px 0;
+}
+body .online-booking-page .online-booking-filters > * { min-width:0; max-width:100%; box-sizing:border-box; }
+body .online-booking-page .online-booking-filters :is(input,select) { width:100%; min-width:0; max-width:100%; box-sizing:border-box; }
+body .online-booking-page .online-booking-filter-buttons { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:8px; }
+@media(max-width:600px) {
+  body .online-booking-page .online-booking-filters { gap:5px; }
+  body .online-booking-page .online-booking-filters :is(input,select) { font-size:12px; padding:8px 4px; }
+}
+body .live-tour-page .tour-room-share-tools .upcoming-booking-button,
+body .live-tour-page .tour-room-share-tools .upcoming-booking-button:is(:hover,:focus-visible,:active) {
+  background:#fff3c4 !important; color:#173e32 !important; border-color:#a07b22 !important;
+}
+body .live-tour-page .tour-room-share-tools .upcoming-booking-button span { color:inherit !important; }
+body .live-tour-page .tour-room-share-tools .upcoming-booking-button:hover { background:#ffe89a !important; }
+body .live-tour-page .tour-room-share-tools .upcoming-booking-button:focus-visible { outline:3px solid #205440; outline-offset:3px; }

@@ -61,11 +61,11 @@ export default function OnlineBookingPage({ user }) {
   if (!allowed) return <p role="alert">Chỉ Admin, Quản lý và Lễ tân được xem Booking online.</p>
   return <section className="online-booking-page">
     <h1>Booking online</h1><p>Yêu cầu đặt lịch và lời nhắn từ website. Lễ tân xác nhận với khách trước khi xếp phòng và nhân viên trên Live Tour.</p>
-    <form className="online-booking-actions" onSubmit={e => { e.preventDefault(); setPage(1); setQ(search.trim()); reload() }}>
-      <input aria-label="Tìm tên hoặc số điện thoại" placeholder="Tên hoặc số điện thoại" value={search} onChange={e => setSearch(e.target.value)} maxLength={100}/><button>Tìm</button>
+    <form className="online-booking-filters" onSubmit={e => { e.preventDefault(); setPage(1); setQ(search.trim()); reload() }}>
+      <input aria-label="Tìm tên hoặc số điện thoại" placeholder="Tên hoặc số điện thoại" value={search} onChange={e => setSearch(e.target.value)} maxLength={100}/>
       <select aria-label="Trạng thái" value={status} onChange={e => { setPage(1); setStatus(e.target.value) }}><option value="">Tất cả trạng thái</option>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
       <select aria-label="Loại yêu cầu" value={kind} onChange={e => { setPage(1); setKind(e.target.value) }}><option value="">Đặt lịch và liên hệ</option><option value="booking">Đặt lịch</option><option value="contact">Liên hệ</option></select>
-      <button type="button" disabled={busy} onClick={reload}>Làm mới</button>
+      <div className="online-booking-filter-buttons"><button type="submit">Tìm</button><button type="button" disabled={busy} onClick={reload}>Làm mới</button></div>
     </form>
     <div className="online-booking-periods" aria-label="Lọc ngày booking">{[['today','Hôm nay'],['tomorrow','Ngày mai'],['week','Tuần này'],['next-week','Tuần sau'],['custom','Tuỳ chỉnh']].map(([key,label]) => <button key={key} type="button" aria-pressed={period===key} onClick={() => { setPeriod(key); if(key!=='custom') { setPage(1); setRange(bookingDateRange(key)) } }}>{label}</button>)}</div>
     {period==='custom' && <form className="online-booking-actions" onSubmit={e => { e.preventDefault(); if(draftRange.date_from && draftRange.date_to && draftRange.date_from>draftRange.date_to) return; setPage(1); setRange({...draftRange}) }}>
