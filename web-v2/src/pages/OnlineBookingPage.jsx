@@ -9,7 +9,7 @@ import { canViewOnlineBookings } from '../lib/onlineBookings'
 import './OnlineBookingPage.css'
 
 const statuses = { new: 'Mới nhận', confirmed: 'Đã xác nhận', handled: 'Đã xử lý', cancelled: 'Đã hủy' }
-function RequestCard({ row, reload, onClose }) {
+export function RequestCard({ row, reload, onClose }) {
   const [status, setStatus] = useState(row.status)
   const [note, setNote] = useState(row.note)
   const [busy, setBusy] = useState(false)

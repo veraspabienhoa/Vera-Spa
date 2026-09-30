@@ -1,3 +1,5 @@
+import UpcomingOnlineBookings from '../components/UpcomingOnlineBookings'
+import { canViewOnlineBookings } from '../lib/onlineBookings'
 import usePageRefresh from '../lib/usePageRefresh'
 import LiveTourBoard from '../components/LiveTourBoard'
 import LiveTourPendingPanel from '../components/LiveTourPendingPanel'
@@ -580,6 +582,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const tipPreferenceKey = `${cacheKey}:tip-mode`
   const [boardData, setData] = useState(() => readCachedLiveTour(cacheKey))
   const initiallyCached = useRef(Boolean(boardData.records.length))
+  const [onlineBookingsOpen, setOnlineBookingsOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [actionBusy, setActionBusy] = useState('')
   // Errors remain local to open forms; the board has no status banner or spacer.
@@ -1481,6 +1484,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const panelActions = usePanelActions({exportData, openModal, openCustomerHistory, copyBoardImage, executeAction, confirmExpired, previewExpired, removeCatalogItem})
 
   return <div className="feature-page tour-page live-tour-page">
+    {onlineBookingsOpen && canViewOnlineBookings(user) && <UpcomingOnlineBookings user={user} onClose={() => setOnlineBookingsOpen(false)}/>}
     <style>{appearanceCss}</style>
     <style>{`
       .live-tour-page{--live-tour-section-gap:10px;gap:var(--live-tour-section-gap)}.page-wrap.live-tour-page-wrap{padding-top:0;padding-bottom:0}.live-tour-page>.setup-note{padding:6px 9px;font-size:9px}
@@ -1569,6 +1573,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <span className="tour-room-segment-button tour-room-share-control"><span>{selectedRoomKey ? `${areaLabel(selectedRoom)} · ${selectedRoomRecords.length} nhân viên` : `Đã chọn ${selectedIds.size} nhân viên`}</span></span>
               <button data-ui-key="u-d35850857f8b" type="button" className="tour-room-segment-button tour-room-share-control" onClick={copySelectedSummary}><ClipboardCopy size={14}/><span>Sao chép</span></button>
               <button data-ui-key="u-7ad8ab09af4b" type="button" className="tour-room-segment-button tour-room-share-control" onClick={shareSelectedSummary}><Share2 size={14}/><span>Chia sẻ</span></button>
+              {canViewOnlineBookings(user) && <button type="button" className="tour-room-segment-button tour-room-share-control" aria-haspopup="dialog" onClick={() => setOnlineBookingsOpen(true)}>Booking online sắp tới</button>}
             </div>
           </div>
           <div className="tour-room-grid" style={{ '--room-columns': Math.max(1, Math.ceil(displayedRooms.length / 2)) }}>
