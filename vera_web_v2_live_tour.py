@@ -15,6 +15,7 @@ import vera_postgres_job_queue as job_queue
 import vera_live_tour_queue_alerts as queue_alerts
 from vera_live_tour_timing import ActionTiming
 import vera_live_tour_leave_return as leave_return
+from vera_live_tour_leave_queue_policy import load_policy as load_leave_queue_policy
 
 import hashlib
 import json
@@ -3621,7 +3622,7 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
             ), {"return_day": local_now.date() - timedelta(days=1)}).mappings().all()]
             leave_return.sync_returns(state, directory, return_leaves, local_now,
                                       local_now.date() - timedelta(days=1),
-                                      _ordered_employees, _employee_time_key)
+                                      _ordered_employees, _employee_time_key, policy=load_leave_queue_policy(conn))
         _auto_start_waiting(state, now)
         if state != before:
             revision = _write_state_compat(
@@ -4473,12 +4474,7 @@ def install_live_tour_routes(
                 enqueue_projection(reason="scheduled")
             except Exception:
                 logging.getLogger(__name__).exception("Live Tour projection enqueue failed")
-            local_now = datetime.now(timezone)
-            next_cutoff = leave_return.cutoff(local_now)
-            if next_cutoff <= local_now:
-                next_cutoff += timedelta(days=1)
-            scheduler_stop.wait(min(PROJECTION_REFRESH_SECONDS,
-                                    max(0.1, (next_cutoff - local_now).total_seconds())))
+            scheduler_stop.wait(leave_return.scheduler_delay(datetime.now(timezone), PROJECTION_REFRESH_SECONDS))
 
     def projection_worker():
         while not scheduler_stop.is_set():

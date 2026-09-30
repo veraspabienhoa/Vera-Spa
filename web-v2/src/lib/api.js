@@ -313,6 +313,7 @@ export const veraApi = {
   saveDepartmentRules: (department, body) => request(`/v2/rules/department/${encodeURIComponent(department)}`, { method: 'PUT', body: JSON.stringify(body) }),
   saveDailyQuota: (body) => request('/v2/rules/daily-quota', { method: 'PUT', body: JSON.stringify(body) }),
   saveLateThreshold: (body) => request('/v2/rules/late-threshold', { method: 'PUT', body: JSON.stringify(body) }),
+  saveLeaveQueuePolicy: (body) => request('/v2/rules/live-tour-leave-queue', { method: 'PUT', body: JSON.stringify(body) }),
   saveWeekendUnpaidNthPenalty: (body) => request('/v2/rules/weekend-unpaid-nth-penalty', { method: 'PUT', body: JSON.stringify(body) }),
   saveEmployeeSelfServicePolicy: (body) => request('/v2/rules/employee-self-service-policy', { method: 'PUT', body: JSON.stringify(body) }),
   saveLetanLeavePolicy: (body) => request('/v2/rules/letan-leave-policy', { method: 'PUT', body: JSON.stringify(body) }),

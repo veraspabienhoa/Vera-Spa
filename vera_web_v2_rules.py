@@ -7,6 +7,7 @@ rules while the migration is in progress.
 """
 from __future__ import annotations
 
+import vera_live_tour_leave_queue_policy as leave_queue_policy
 import hashlib
 from io import BytesIO
 import json
@@ -643,6 +644,9 @@ def install_rules_routes(
     identity_type: type,
     vn_tz,
 ) -> None:
+    leave_queue_policy.install_routes(app, engine_instance=engine_instance,
+        current_identity=current_identity, require_feature=require_feature, identity_type=identity_type)
+
     def response_payload(conn, ident) -> dict:
         document = _load_document(conn)
         daily_quota = _load_daily_quota(conn)
@@ -657,6 +661,8 @@ def install_rules_routes(
             "permissions": _permissions(conn, ident, feature_allowed),
             "daily_quota": daily_quota,
             "late_threshold": late_threshold,
+            "leave_queue_policy": leave_queue_policy.load_policy(conn),
+            "can_edit_leave_queue_policy": is_admin,
             "weekend_unpaid_nth_penalty": weekend_unpaid_nth_penalty,
             "employee_self_service_policy": employee_self_service_policy,
             "letan_leave_policy": letan_leave_policy,

@@ -8,7 +8,8 @@ MARKER = 'unexcused_leave_return'
 DAILY_MARKER = 'leave_queue_0300_v1'
 EARLY = {'ve som co phep', 've som khong phep', 've som cuoi tuan co phep',
          've som cuoi tuan khong phep', 've som phat sinh',
-         'leader ve som ve som theo chinh sach'}
+         'leader ve som ve som theo chinh sach',
+         've som benh co giay kham hoac duoc quan ly duyet'}
 UNEXCUSED = {'nghi khong phep', 'nghi cuoi tuan khong phep'}
 
 
@@ -36,6 +37,13 @@ def cutoff(now):
     return now.replace(hour=3, minute=0, second=0, microsecond=0)
 
 
+def scheduler_delay(now, refresh_seconds):
+    next_cutoff = cutoff(now)
+    if next_cutoff <= now:
+        next_cutoff += timedelta(days=1)
+    return min(refresh_seconds, max(0.1, (next_cutoff - now).total_seconds()))
+
+
 def prepare_daily(state, now):
     """Arm new installations for the next cutoff; never reorder on deployment."""
     boundary = cutoff(now)
@@ -48,8 +56,8 @@ def prepare_daily(state, now):
     return now >= boundary and state[DAILY_MARKER]['last_day'] < now.date().isoformat()
 
 
-def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, time_key, history_leaves=None):
-    """Apply yesterday's eight reasons once, without waiting for a check-in.
+def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, time_key, history_leaves=None, *, policy=None):
+    """Apply yesterday's nine reasons once, without waiting for a check-in.
 
     The scheduler targets 03:00. A delayed/retried worker catches up once under
     the existing transaction lock. There is no per-employee return trigger.
@@ -61,13 +69,16 @@ def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, ti
     owners = {}
     for username, row in users.items():
         owners.setdefault(key(row.get('full_name')), set()).add(username)
+    enabled_reasons = EARLY | UNEXCUSED
+    if policy is not None:
+        enabled_reasons = {key(reason) for reason in policy['reasons']} if policy['enabled'] else set()
     candidates = {}
     indexed = sorted(enumerate(leaves), key=lambda pair: (
         pair[1].get('source_row') is None, pair[1].get('source_row') or 0,
         pair[1].get('id') or pair[0]))
     for ordinal, (_, row) in enumerate(indexed, 1):
         kind = return_kind(row.get('leave_reason') or row.get('leave_type'))
-        if not kind or str(row.get('leave_date')) != yesterday:
+        if not kind or key(row.get('leave_reason') or row.get('leave_type')) not in enabled_reasons or str(row.get('leave_date')) != yesterday:
             continue
         name = key(row.get('employee_name'))
         matches = owners.get(name, set())
@@ -102,4 +113,4 @@ def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, ti
         for index, worker in enumerate([row for row in ordered if row['id'] not in ids] + group):
             worker.update(sort_index=index, manual_order=True)
     state[DAILY_MARKER].update(last_day=now.date().isoformat(), scheduled_at=cutoff(now).isoformat(),
-        applied_at=now.isoformat(), employee_ids=[worker['id'] for worker in group])
+        applied_at=now.isoformat(), policy_revision=policy.get('revision', 0) if policy else 0, employee_ids=[worker['id'] for worker in group])

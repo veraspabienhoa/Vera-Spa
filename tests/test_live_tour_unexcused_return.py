@@ -16,6 +16,7 @@ UNEXCUSED_REASONS = [
     'Về sớm CÓ phép', 'Về sớm KHÔNG phép', 'Về sớm CUỐI TUẦN CÓ phép',
     'Về sớm CUỐI TUẦN KHÔNG phép', 'Về sớm phát sinh',
     'Leader về sớm về sớm theo chính sách',
+    'Về sớm bệnh có giấy khám hoặc được quản lý duyệt',
     'Nghỉ KHÔNG phép', 'Nghỉ CUỐI TUẦN KHÔNG phép',
 ]
 
@@ -76,8 +77,8 @@ def test_batch_at_0300_without_checkin_and_never_repeated(manual, reason):
 
 @pytest.mark.parametrize('reason', ['Nghỉ CÓ phép', 'Nghỉ phát sinh', 'Nghỉ phép năm',
     'Đi trễ KHÔNG phép', 'Đi trễ CUỐI TUẦN KHÔNG phép',
-    'Về sớm bệnh có giấy khám hoặc được quản lý duyệt'])
-def test_only_eight_exact_reasons(reason):
+    'Nghỉ bệnh có giấy khám hoặc được quản lý duyệt'])
+def test_only_nine_exact_reasons(reason):
     state = fixture()
     project(state, DAY)
     project(state, DAY + timedelta(days=1), records=leaves(reason))
@@ -198,3 +199,24 @@ def test_next_day_expires_prior_marker_without_carrying_absence_forward():
     state, now = ready_state()
     project(state, now + timedelta(days=1), records=leaves())
     assert not any(returns.queue_clock(row) for row in state['employees'])
+
+
+@pytest.mark.parametrize('hour,minute,second,delay', [(2,59,59,1), (2,58,0,120), (2,0,0,300), (3,0,0,300), (12,0,0,300)])
+def test_scheduler_keeps_five_minute_refresh_but_wakes_at_0300(hour, minute, second, delay):
+    assert returns.scheduler_delay(DAY.replace(hour=hour, minute=minute, second=second, microsecond=0), 300) == delay
+
+
+@pytest.mark.parametrize('enabled', [True, False])
+def test_admin_policy_selects_individual_reasons_without_reapplying(enabled):
+    state = fixture()
+    project(state, DAY)
+    now = DAY + timedelta(days=1)
+    records = leaves()
+    records[0]['leave_reason'] = 'Leader về sớm về sớm theo chính sách'
+    policy = {'enabled': enabled, 'reasons': ['Leader về sớm về sớm theo chính sách'], 'revision': 7}
+    returns.sync_returns(state, directory(now), records, now, DAY.date(), live._ordered_employees, live._employee_time_key, policy=policy)
+    assert order(state, now) == (['e1', 'e2', 'e4', 'e5', 'e3'] if enabled else ['e1', 'e2', 'e3', 'e4', 'e5'])
+    before = deepcopy(state)
+    returns.sync_returns(state, directory(now), records, now, DAY.date(), live._ordered_employees, live._employee_time_key,
+        policy={'enabled': True, 'reasons': UNEXCUSED_REASONS, 'revision': 8})
+    assert state == before

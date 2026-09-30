@@ -1987,10 +1987,11 @@ Production use of this new dispatch option is not yet verified.
 
 Yêu cầu mới thay thế cơ chế chờ check-in/quay lại ở các mục 27–28/09:
 chỉ xử lý chung một lần/ngày tại mốc 03:00 giờ Việt Nam, dựa trên lịch nghỉ
-ngày liền trước. Áp dụng đúng tám lý do: Về sớm CÓ phép, Về sớm KHÔNG phép,
+ngày liền trước. Áp dụng đúng chín lý do: Về sớm CÓ phép, Về sớm KHÔNG phép,
 Về sớm CUỐI TUẦN CÓ phép, Về sớm CUỐI TUẦN KHÔNG phép, Về sớm phát sinh,
-Leader về sớm về sớm theo chính sách (bổ sung lúc 13:06 ngày 30/09), Nghỉ KHÔNG phép, Nghỉ CUỐI TUẦN KHÔNG phép. Không đưa đi trễ hoặc các lý do
-bệnh vào danh sách này bằng so khớp tiền tố.
+Leader về sớm về sớm theo chính sách, Về sớm bệnh có giấy khám hoặc được quản lý duyệt
+(bổ sung lúc 13:06–13:07 ngày 30/09), Nghỉ KHÔNG phép, Nghỉ CUỐI TUẦN KHÔNG phép. Không đưa đi trễ hoặc các lý do
+khác vào danh sách này bằng so khớp tiền tố.
 
 Scheduler hiện hữu thức tại mốc 03:00; worker lưu dấu ngày đã chạy cùng giao
 dịch/khóa bảng tua, kể cả không có nhân viên đủ điều kiện. Nguồn lịch nghỉ
@@ -2007,3 +2008,10 @@ Thực hiện và quyền Admin giữ nguyên; check-in, refresh, chỉnh lịch
 mốc đã xử lý không xếp lại. Dấu xếp cuối cũ hết hiệu lực ở lượt 03:00 kế tiếp.
 Không sửa giờ dịch vụ, tiền phạt, lương hay hóa đơn. Chưa xác minh production;
 CI kiểm tra biên 02:59:59/03:00, replay PostgreSQL và vận hành sau sắp xếp.
+
+Bổ sung lúc 13:09: menu Nội quy có mục Xếp cuối bảng tua · 03:00, cho Admin
+kích hoạt/tắt tất cả hoặc từng lý do. Mặc định bật đủ chín lý do được xác nhận.
+API kiểm tra cả quyền sửa Nội quy và role Admin, khóa cập nhật cùng kiểm tra
+revision để chặn ghi đè cấu hình cũ. Mỗi thao tác lưu ngay, ghi updated_by;
+worker đọc cấu hình tại lượt chạy, lưu revision đã áp dụng trong dấu ngày.
+Thay cấu hình sau lượt đã xử lý không kích hoạt lại ngày đó, không sửa mức phạt.
