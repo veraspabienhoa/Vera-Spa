@@ -26,7 +26,7 @@ def test_return_projection_persists_once_and_rechecks_source_in_one_query(databa
     if corrected:
         with database.begin() as conn:
             conn.execute(text("UPDATE leave_records SET leave_reason='Nghỉ CÓ phép' WHERE employee_name='Test 1'"))
-    now = DAY + timedelta(days=2)
+    now = (DAY + timedelta(days=1)).replace(hour=3, minute=0, second=0, microsecond=0)
     statements = []
     def capture(conn, cursor, statement, parameters, context, executemany):
         statements.append(statement)
@@ -38,7 +38,7 @@ def test_return_projection_persists_once_and_rechecks_source_in_one_query(databa
     finally:
         event.remove(database, 'before_cursor_execute', capture)
     queries = [sql for sql in statements if 'FROM leave_records' in sql]
-    assert len(queries) == 1 and 'WHERE id IN' in queries[0]
+    assert len(queries) == 1 and 'return_day' in queries[0]
     with database.begin() as conn:
         persisted, revision, _ = store.read(conn)
     assert order(persisted, now) == (['e1', 'e4', 'e5', 'e2', 'e3'] if corrected else ['e4', 'e5', 'e1', 'e2', 'e3'])
