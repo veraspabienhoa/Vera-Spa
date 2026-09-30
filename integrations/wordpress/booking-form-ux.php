@@ -101,43 +101,66 @@ add_action('wp_footer', function () {
     ?>
     <script>
     (function () {
+        var employeesCache = null;
+        var pendingRequest = null;
+
+        function getStaffSelects() {
+            return Array.prototype.slice.call(document.querySelectorAll('.vera-booking-form select[name="requested-staff"]'));
+        }
+
+        function renderStaffOptions(selects, employees, error) {
+            selects.forEach(function (select) {
+                select.innerHTML = '';
+                var blank = document.createElement('option');
+                blank.value = '';
+                blank.textContent = error ? 'Không thể tải nhân viên lúc này' : 'Không yêu cầu nhân viên';
+                select.appendChild(blank);
+                if (error) {
+                    select.disabled = true;
+                    select.setAttribute('aria-label', 'Không tải được danh sách nhân viên đang đi làm');
+                    return;
+                }
+                select.disabled = false;
+                select.removeAttribute('aria-label');
+                employees.forEach(function (employee) {
+                    if (!employee || !employee.value || !employee.label) return;
+                    var option = document.createElement('option');
+                    option.value = employee.value;
+                    option.textContent = employee.label;
+                    select.appendChild(option);
+                });
+                if (select.options.length === 1) {
+                    select.options[0].textContent = 'Hôm nay chưa có nhân viên trong ca';
+                }
+            });
+        }
+
         function loadWorkingStaff() {
-            var select = document.querySelector('.vera-booking-form select[name="requested-staff"]');
-            if (!select) return;
+            var selects = getStaffSelects();
+            if (!selects.length) return;
+            if (employeesCache) {
+                renderStaffOptions(selects, employeesCache, false);
+                return;
+            }
+            if (pendingRequest) return;
             var endpoint = (window.wpApiSettings && window.wpApiSettings.root)
                 ? window.wpApiSettings.root + 'vera/v1/booking-staff'
                 : window.location.origin + '/wp-json/vera/v1/booking-staff';
-            fetch(endpoint, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+            pendingRequest = fetch(endpoint, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
                 .then(function (response) { if (!response.ok) throw new Error('unavailable'); return response.json(); })
                 .then(function (data) {
-                    select.innerHTML = '';
-                    var blank = document.createElement('option');
-                    blank.value = '';
-                    blank.textContent = 'Không yêu cầu nhân viên';
-                    select.appendChild(blank);
-                    (Array.isArray(data.employees) ? data.employees : []).forEach(function (employee) {
-                        if (!employee || !employee.value || !employee.label) return;
-                        var option = document.createElement('option');
-                        option.value = employee.value;
-                        option.textContent = employee.label;
-                        select.appendChild(option);
-                    });
-                    if (select.options.length === 1) {
-                        select.options[0].textContent = 'Hôm nay chưa có nhân viên trong ca';
-                    }
+                    employeesCache = Array.isArray(data.employees) ? data.employees : [];
+                    renderStaffOptions(getStaffSelects(), employeesCache, false);
                 })
                 .catch(function () {
-                    select.innerHTML = '';
-                    var blank = document.createElement('option');
-                    blank.value = '';
-                    blank.textContent = 'Không yêu cầu nhân viên';
-                    select.appendChild(blank);
-                    select.disabled = true;
-                    select.setAttribute('aria-label', 'Không tải được danh sách nhân viên đang đi làm');
+                    renderStaffOptions(getStaffSelects(), [], true);
+                })
+                .finally(function () {
+                    pendingRequest = null;
                 });
         }
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadWorkingStaff);
-        else loadWorkingStaff();
+        document.addEventListener('wpcf7init', loadWorkingStaff);
+        loadWorkingStaff();
 
         function findBookingForm(target) {
             if (!target) return null;
