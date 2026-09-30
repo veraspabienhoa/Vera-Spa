@@ -175,6 +175,7 @@ export default function PayrollPageV38({ user }) {
       .payroll-main-tabs button.active{background:#1f513f;color:#fff;border-color:#1f513f}
       .payroll-page-enhanced.payroll-tab-calculate>.payroll-history-panel{display:none}
       .payroll-page-enhanced.payroll-tab-history>section.panel:not(.payroll-history-panel){display:none}
+      .payroll-page-enhanced.payroll-tab-accumulation>section.panel{display:none}
       @media(max-width:700px){.payroll-main-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-main-tabs button{width:100%;padding:8px 6px;white-space:nowrap}}
       .payroll-v38-stack.full>.payroll-personal-tracking{order:900}
       .payroll-v38-stack.full .payroll-default-config-section{order:910}
@@ -184,7 +185,7 @@ export default function PayrollPageV38({ user }) {
     `}</style>
     <PayrollAdminSectionOrder enabled={canFullPayroll} version={payrollVersion} />
     {canFullPayroll && <PayrollPage key={payrollVersion} user={user} activeTab={payrollTab} onTabChange={setPayrollTab} />}
-    {showPersonalTracking && payrollTab === 'calculate' && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
+    {showPersonalTracking && !isAdmin && payrollTab === 'calculate' && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
     {isAdmin && canFullPayroll && payrollTab === 'calculate' && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
     {canFullPayroll && canEditConfig && payrollTab === 'calculate' && <div className="feature-page payroll-page payroll-v38-config">
       <section data-ui-key="u-644a635241c1" className="panel">
