@@ -83,13 +83,9 @@ def permitted_late(reason):
 def absence_item(catalog, day, half_day):
     if not half_day:
         return auto_check.catalog_item(catalog, REASONS[day.weekday() >= 5])
-    # Never guess half-day fines or divide a full-day progressive fine by two.
-    candidates = [item for item in catalog.values()
-                  if auto_check._norm(item.get('name')).startswith('nghi ')
-                  and 'khong phep' in auto_check._norm(item.get('name'))
-                  and ('cuoi tuan' in auto_check._norm(item.get('name'))) == (day.weekday() >= 5)
-                  and float(item.get('days') or 0) == 0.5]
-    return candidates[0] if len(candidates) == 1 else None
+    # Operator-confirmed half-day equivalents use the existing official rules.
+    reason = ('Về sớm KHÔNG phép', 'Về sớm CUỐI TUẦN KHÔNG phép')[day.weekday() >= 5]
+    return auto_check.catalog_item(catalog, reason)
 
 
 def replace_unpermitted(conn, rows, *, day, username, target_reason):

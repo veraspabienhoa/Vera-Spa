@@ -2072,3 +2072,7 @@ or duplicate rolls removal back. Preserve permitted registrations. Permitted
 late requires a unique official half-day unpermitted catalog reason for the
 actual weekday/weekend; missing/ambiguous catalog means review, never full-day
 fallback or an invented fine. No historical repair or production writes performed.
+
+Operator clarified half-day absence equivalents: Về sớm KHÔNG phép on weekdays,
+Về sớm CUỐI TUẦN KHÔNG phép on Saturday/Sunday. Select those exact existing
+catalog rules and their configured penalty/day values; do not invent a new rule.

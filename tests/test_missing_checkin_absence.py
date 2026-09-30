@@ -144,7 +144,7 @@ def test_no_writes_without_reliable_absence(scenario, condition):
 def test_registered_late_still_requires_checkin(scenario):
     s = scenario
     s.leaves.append({'employee_name': 'Test', 'leave_reason': 'Đi trễ CÓ phép'})
-    half = {'name': 'Nghỉ nửa ngày KHÔNG phép', 'days': 0.5, 'penalty': 60000}
+    half = {'name': 'Về sớm KHÔNG phép', 'days': 0.5, 'penalty': 60000}
     s.catalog[rule.auto_check._norm(half['name'])] = half
     assert rule.process(s.conn, now=s.now)['added'] == 1
     assert s.saved[0]['reason_item'] == half
@@ -218,9 +218,9 @@ def test_checkin_arriving_before_final_write_cancels_penalty(scenario, monkeypat
 
 
 def test_half_day_weekend_uses_own_catalog_amount():
-    weekday = {'name': 'Nghỉ nửa ngày KHÔNG phép', 'days': 0.5, 'penalty': 123}
-    weekend = {'name': 'Nghỉ nửa ngày CUỐI TUẦN KHÔNG phép', 'days': 0.5, 'penalty': 456}
-    catalog = {'weekday': weekday, 'weekend': weekend}
+    weekday = {'name': 'Về sớm KHÔNG phép', 'days': 0.5, 'penalty': 123}
+    weekend = {'name': 'Về sớm CUỐI TUẦN KHÔNG phép', 'days': 0.5, 'penalty': 456}
+    catalog = {rule.auto_check._norm(item['name']): item for item in (weekday, weekend)}
     assert rule.absence_item(catalog, date(2026, 9, 30), True) == weekday
     assert rule.absence_item(catalog, date(2026, 10, 3), True) == weekend
 
