@@ -43,7 +43,7 @@ export default function ManualOnlineBooking({ services, onClose, onSaved }) {
     } catch (err) { setError(err.message) }
     finally { submitting.current = false; setBusy(false) }
   }
-  const catalog = services.filter(catalogIsAvailable)
+  const catalog = services.filter(row => catalogIsAvailable(row))
   return <EmployeeProfileModal labelledBy="manual-booking-title" className="upcoming-booking-modal" busy={busy} onClose={onClose}>
     <header><h2 id="manual-booking-title">ĐẶT LỊCH - BOOKING</h2><button disabled={busy} onClick={onClose}>Đóng</button></header>
     <p>Nhập thông tin khách mới hoặc tìm khách đã có bằng tên hay số điện thoại.</p>
