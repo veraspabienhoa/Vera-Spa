@@ -77,6 +77,7 @@ def scenario(monkeypatch):
     state = SimpleNamespace(now=now, data=data, complete=True, leaves=[], saved=[], notices=[], policy=POLICY.copy())
     monkeypatch.setattr(source, 'source_for', lambda day: 'facegate')
     monkeypatch.setattr(rule, 'load_policy', lambda conn: state.policy)
+    monkeypatch.setattr(rule.auto_check, 'load_config', lambda conn: {'status': 'PAUSED' if state.policy.get('paused') else 'RUNNING'})
     monkeypatch.setattr(fg, 'project_evidence', lambda conn, left, right: data)
     monkeypatch.setattr(runtime, 'archive_complete', lambda *args: state.complete)
     monkeypatch.setattr(participation, 'suspended', lambda *args: False)
@@ -116,7 +117,7 @@ def test_weekday_weekend_official_amount_and_replay(scenario, day, reason, amoun
     assert len(s.saved) == len(s.notices) == 1
 
 
-@pytest.mark.parametrize('condition', ['empty', 'incomplete', 'ambiguous', 'stale', 'future', 'disabled', 'checked', 'leave', 'unmapped'])
+@pytest.mark.parametrize('condition', ['empty', 'incomplete', 'ambiguous', 'stale', 'future', 'disabled', 'paused', 'checked', 'leave', 'unmapped'])
 def test_no_writes_without_reliable_absence(scenario, condition):
     s = scenario
     if condition == 'empty': s.data['rows'] = []
@@ -125,6 +126,7 @@ def test_no_writes_without_reliable_absence(scenario, condition):
     if condition == 'stale': s.data['syncs'][0]['last_synced_at'] = (s.now-timedelta(minutes=6)).isoformat()
     if condition == 'future': s.data['syncs'][0]['last_synced_at'] = (s.now+timedelta(seconds=1)).isoformat()
     if condition == 'disabled': s.policy['enabled'] = False
+    if condition == 'paused': s.policy['paused'] = True
     if condition == 'checked': s.data['rows'].append({'EmployeeName': 'Test'})
     if condition == 'leave': s.leaves.append({'employee_name': 'Test', 'leave_reason': 'Nghỉ CÓ phép'})
     if condition == 'unmapped': s.data['index'] = {}

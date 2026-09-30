@@ -22,7 +22,7 @@ export default function MissingCheckinAbsenceRules({ policy, canEdit }) {
     <h2 id="absence-policy-title">TỰ ĐỘNG NGHỈ KHÔNG PHÉP · THIẾU CHECK IN</h2>
     <p>Qua 15:00 với Ca 1 hoặc 17:00 với Ca 2 (giờ Việt Nam), nhân viên có lịch làm nhưng chưa có lượt quét hợp lệ được ghi nghỉ không phép tại lượt đồng bộ FaceGate đầy đủ, còn mới tiếp theo.</p>
     <p>Thứ Hai–Thứ Sáu: Nghỉ KHÔNG phép. Thứ Bảy–Chủ nhật: Nghỉ CUỐI TUẦN KHÔNG phép. Mức phạt và cộng dồn lấy theo Nội quy tại lúc ghi nhận.</p>
-    <p>Không xử lý ngày cũ, tài khoản tạm miễn, chưa ánh xạ Face ID, dữ liệu thiếu hoặc mất kết nối. Lịch nghỉ đã đăng ký được giữ nguyên; đăng ký đi trễ vẫn cần check in trước mốc tương ứng. Trường hợp có lượt quét đến sau khi đã ghi nghỉ cần quản lý kiểm tra và điều chỉnh.</p>
+    <p>Khi Admin tạm dừng phạt tự động, quy tắc cũng tạm dừng. Không xử lý ngày cũ, tài khoản tạm miễn, chưa ánh xạ Face ID, dữ liệu thiếu hoặc mất kết nối. Lịch nghỉ đã đăng ký được giữ nguyên; đăng ký đi trễ vẫn cần check in trước mốc tương ứng. Trường hợp có lượt quét đến sau khi đã ghi nghỉ cần quản lý kiểm tra và điều chỉnh.</p>
     <fieldset disabled={!canEdit || busy}>
       <legend>Áp dụng tự động</legend>
       {[['enabled', 'Bật quy tắc tự động nghỉ không phép'], ['ca1_enabled', 'Ca 1 · sau 15:00'], ['ca2_enabled', 'Ca 2 · sau 17:00']].map(([key, label]) => <label key={key}>

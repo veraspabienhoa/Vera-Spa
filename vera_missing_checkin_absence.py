@@ -93,6 +93,8 @@ def process(conn, *, now=None):
     policy = load_policy(conn)
     if not policy['enabled']:
         return {**result, 'reason': 'disabled'}
+    if auto_check.load_config(conn)['status'] == 'PAUSED':
+        return {**result, 'reason': 'auto_penalty_paused'}
     data = fg.project_evidence(conn, day, day)
     if not data['rows'] or not archive_complete(data, day) or any(i.get('reason') != 'no_vera_shift' for i in data['issues']):
         return {**result, 'reason': 'incomplete_or_ambiguous_evidence'}
