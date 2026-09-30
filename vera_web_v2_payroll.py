@@ -458,6 +458,37 @@ def _net(row: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _history_details(records, catalog, norm, text_search="", non_positive_only=False, former_only=False):
+    """Annotate visible history without recalculating any saved financial amount."""
+    def words(value):
+        return re.sub(r"[\W_]+", " ", norm(value)).strip().split()
+
+    terms = words(text_search)
+    def matches(value):
+        tokens = words(value)
+        return any(all(
+            index + start < len(tokens) and (
+                tokens[index + start].startswith(term) if index == len(terms) - 1
+                else tokens[index + start] == term
+            ) for index, term in enumerate(terms)
+        ) for start in range(len(tokens)))
+
+    result = []
+    for original in records:
+        item = dict(original)
+        employee = catalog.get(norm(item.get("Tên Hệ thống")), {})
+        status = employee.get("employment_status") or item.get("__employment_status") or ""
+        item["__employment_status"] = status
+        if terms and not any(matches(item.get(field)) for field in ("Tên Hệ thống", "Họ và tên")):
+            continue
+        if non_positive_only and _number(item.get("Số tiền thực nhận")) > 0:
+            continue
+        if former_only and norm(status) != norm("Đã nghỉ việc"):
+            continue
+        result.append(item)
+    return result
+
+
 def _draft_key(start: date, end: date) -> str:
     return f"draft:{start.isoformat()}:{end.isoformat()}"
 
@@ -1006,20 +1037,23 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_history")
             records, checksum, updated_at = _payload(conn)
+            catalog = _employee_catalog(conn, norm)
         visible_records = _visible(records, ident, norm)
         batches = list(dict.fromkeys(str(item.get("Mã bản lưu") or "") for item in visible_records if str(item.get("Mã bản lưu") or "")))
         employees = sorted({str(item.get("Tên Hệ thống") or "") for item in visible_records if str(item.get("Tên Hệ thống") or "")}, key=norm)
         records = _filter_rows(visible_records, batch, search, norm)
         fields = ADMIN_FIELDS if str(ident.role).lower() == "admin" else PUBLIC_FIELDS
         clean = [{key: (_number(item.get(key)) if key in MONEY_FIELDS else str(item.get(key) or "")) for key in fields} for item in records]
+        clean = _history_details(clean, catalog, norm)
         return {"records": clean, "batches": batches, "employees": employees, "fields": fields, "count": len(clean), "checksum": checksum, "updated_at": updated_at}
 
     @app.get("/v2/payroll/history/export.xlsx")
-    def payroll_export(batch: str = Query(default=""), search: str = Query(default=""), ident: identity_type = Depends(current_identity)):
+    def payroll_export(batch: str = Query(default=""), search: str = Query(default=""), text_search: str = Query(default=""), non_positive_only: bool = Query(default=False), former_only: bool = Query(default=False), ident: identity_type = Depends(current_identity)):
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_export")
             records, _checksum, _updated = _payload(conn)
-        records = _filter_rows(_visible(records, ident, norm), batch, search, norm)
+            catalog = _employee_catalog(conn, norm)
+        records = _history_details(_filter_rows(_visible(records, ident, norm), batch, search, norm), catalog, norm, text_search, non_positive_only, former_only)
         fields = ADMIN_FIELDS if str(ident.role).lower() == "admin" else PUBLIC_FIELDS
         filename = "VERA_BangLuong_BanCu.xlsx" if not batch else f"VERA_BangLuong_BanCu_{batch.replace(' ', '_').replace('/', '-')}.xlsx"
         return StreamingResponse(BytesIO(_workbook(records, fields, "Bảng lương bản cũ")), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})

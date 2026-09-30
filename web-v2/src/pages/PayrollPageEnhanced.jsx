@@ -5,6 +5,7 @@ import PayrollObligationTable from '../components/PayrollObligationTable'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
+import { formatVeraDate } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
 import { currentPayrollPeriod } from '../lib/payrollPeriod'
 import { ArrowRightCircle, CheckCircle2, Download, Edit3, Mail, Plus, RefreshCw, Save, Search, Settings2, Trash2, WalletCards } from 'lucide-react'
@@ -102,6 +103,9 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const [draftFormerOnly, setDraftFormerOnly] = useState(false)
   const [selected, setSelected] = useState([])
   const [historySelected, setHistorySelected] = useState([])
+  const [historySearch, setHistorySearch] = useState('')
+  const [historyNonPositiveOnly, setHistoryNonPositiveOnly] = useState(false)
+  const [historyFormerOnly, setHistoryFormerOnly] = useState(false)
   const [searchSelectionMode, setSearchSelectionMode] = useState(false)
   const [config, setConfig] = useState(CONFIG_DEFAULT)
   const [configBaseline, setConfigBaseline] = useState(() => JSON.stringify(CONFIG_DEFAULT))
@@ -201,10 +205,19 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     return () => { active = false }
   }, [canCalculate, month, periodNo])
 
-  const historyTotal = useMemo(() => history.records.reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [history.records])
   const historyRowKey = (item, index) => `${item['Mã bản lưu'] || ''}:${item['Tên Hệ thống'] || ''}:${index}`
-  const historyKeys = history.records.map(historyRowKey)
+  const visibleHistory = useMemo(() => history.records.map((item, index) => ({ item, rowKey: historyRowKey(item, index) })).filter(({ item }) => {
+    if (historySearch && !searchTextMatches([item['Tên Hệ thống'], item['Họ và tên']], historySearch)) return false
+    if (historyNonPositiveOnly && Number(item['Số tiền thực nhận'] || 0) > 0) return false
+    if (historyFormerOnly && String(item.__employment_status || '').trim() !== 'Đã nghỉ việc') return false
+    return true
+  }), [history.records, historySearch, historyNonPositiveOnly, historyFormerOnly])
+  const historyKeys = visibleHistory.map(({ rowKey }) => rowKey)
   const allHistorySelected = historyKeys.length > 0 && historyKeys.every((key) => historySelected.includes(key))
+  const historyColumns = { 'Tiền Lương': 'Lương', ...EDIT_LABELS, 'Số tiền thực nhận': 'Thực nhận' }
+  const historySummary = Object.fromEntries(Object.keys(historyColumns).map(field => [field, visibleHistory.reduce((sum, { item }) => sum + Number(item[field] || 0), 0)]))
+  const historyTotal = historySummary['Số tiền thực nhận']
+  useEffect(() => { setHistorySelected([]) }, [historySearch, historyNonPositiveOnly, historyFormerOnly])
   const draftTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [draft])
   const draftSalaryTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Tiền Lương'] || 0), 0), [draft])
   const draftRows = draft?.rows || []
@@ -418,8 +431,8 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   })
 
   const exportHistory = () => run('export-history', async () => {
-    if (!history.records.length) throw new Error('Không có dữ liệu lịch sử phù hợp để xuất Excel.')
-    await veraApi.exportPayrollExcel(batch, employee)
+    if (!visibleHistory.length) throw new Error('Không có dữ liệu lịch sử phù hợp để xuất Excel.')
+    await veraApi.exportPayrollExcel(batch, employee, { text_search: historySearch, non_positive_only: String(historyNonPositiveOnly), former_only: String(historyFormerOnly) })
     setNotice({ type: 'success', message: 'Đã xuất Excel lịch sử bảng lương theo bộ lọc đang xem.' })
   })
 
@@ -436,7 +449,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   })
 
   const emailHistory = () => run('email-history', async () => {
-    const rows = history.records.filter((item, index) => historySelected.includes(historyRowKey(item, index)))
+    const rows = visibleHistory.filter(({ rowKey }) => historySelected.includes(rowKey)).map(({ item }) => item)
     if (!rows.length) throw new Error('Chưa chọn nhân viên trong lịch sử để gửi email.')
     if (!window.confirm(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`)) return
     const groups = new Map()
@@ -614,11 +627,20 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
       {!savedBatches.length && <div className="setup-note">Chưa có bảng lương đã hoàn thành.</div>}
 
       <UiToolbar data-ui-key="u-f20b1fef821b" className="data-toolbar history-delete-actions"><label>Kỳ lương<select value={batch} disabled={isBusy} onChange={(event) => setBatch(event.target.value)}><option value="">Tất cả kỳ lương</option>{history.batches.map((item) => <option key={item}>{item}</option>)}</select></label><label>Nhân viên<select value={employee} disabled={isBusy} onChange={(event) => setEmployee(event.target.value)}><option value="">Tất cả nhân viên</option>{history.employees.map((item) => <option key={item}>{item}</option>)}</select></label>{canExport && <button data-ui-key="u-e9ca5a611292" className="secondary-button" onClick={exportHistory} disabled={isBusy}><Download size={16} /> {busy === 'export-history' ? 'Đang xuất…' : 'Excel lịch sử'}</button>}{canEmail && <button data-ui-key="u-51881dff155c" className="secondary-button" type="button" onClick={emailHistory} disabled={isBusy || !historySelected.length}><Mail size={16} /> {busy === 'email-history' && emailProgress ? `Đang gửi ${emailProgress.processed}/${emailProgress.total}…` : `Gửi email (${historySelected.length})`}</button>}{canDeleteHistory && <button data-ui-key="u-9839d630c477" data-ui-label-default="Xóa lịch sử kỳ đang chọn" className="danger-button" type="button" disabled={isBusy || !batch} onClick={() => deleteHistoryBatch(batch)}><Trash2 size={16} /><UiCustomText uiKey="u-9839d630c477"> Xóa lịch sử kỳ đang chọn</UiCustomText></button>}</UiToolbar>
+      <div className="payroll-search-toolbar">
+        <label className="payroll-search-box">Tìm tên nhân viên<Search size={16}/><ClearableSearchInput type="search" value={historySearch} disabled={isBusy} placeholder="Tìm trong lịch sử bảng lương" onChange={event => setHistorySearch(event.target.value)} /></label>
+        <div className="payroll-quick-filters"><button type="button" disabled={isBusy} className={`secondary-button ${historyNonPositiveOnly ? 'active-filter' : ''}`} onClick={() => setHistoryNonPositiveOnly(value => !value)}>Thực nhận ≤ 0</button><button type="button" disabled={isBusy} className={`secondary-button ${historyFormerOnly ? 'active-filter' : ''}`} onClick={() => setHistoryFormerOnly(value => !value)}>Đã nghỉ việc</button>{(historySearch || historyNonPositiveOnly || historyFormerOnly || batch || employee) && <button type="button" disabled={isBusy} className="secondary-button" onClick={() => { setHistorySearch(''); setHistoryNonPositiveOnly(false); setHistoryFormerOnly(false); setBatch(''); setEmployee('') }}>Xóa lọc</button>}</div>
+        <strong>Hiển thị {visibleHistory.length}/{history.records.length} dòng lương</strong>
+      </div>
       {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allHistorySelected} onChange={() => setHistorySelected(allHistorySelected ? [] : historyKeys)} disabled={isBusy || !historyKeys.length} /> Chọn tất cả nhân viên đang hiển thị để gửi email</label>}
-      <div className="metric-grid small payroll-history-metrics"><div data-ui-key="u-1afe5bbd851b" className="metric-card"><span>Số dòng lương</span><strong>{history.records.length}</strong></div><div data-ui-key="u-66c0bdee3dce" className="metric-card"><span>Tổng thực nhận đang xem</span><strong>{money(historyTotal)}</strong></div></div>
-      <div className="responsive-data-table payroll-history-desktop"><table data-ui-key="u-a10738a2726e"><thead><tr>{canEmail && <th data-ui-key="u-ee2d2926335e" data-ui-label-default="Gửi"><UiCustomText uiKey="u-ee2d2926335e">Gửi</UiCustomText></th>}<th data-ui-key="u-97fe3fec6da3" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-97fe3fec6da3">Nhân viên</UiCustomText></th><th data-ui-key="u-1e5c8ae68f44" data-ui-label-default="Kỳ lương"><UiCustomText uiKey="u-1e5c8ae68f44">Kỳ lương</UiCustomText></th><th data-ui-key="u-0a896f53f4a8" data-ui-label-default="Lương"><UiCustomText uiKey="u-0a896f53f4a8">Lương</UiCustomText></th><th data-ui-key="u-4327b0bada56" data-ui-label-default="Hoàn trả tích lũy"><UiCustomText uiKey="u-4327b0bada56">Hoàn trả tích lũy</UiCustomText></th><th data-ui-key="u-a0044d60bbc9" data-ui-label-default="Vi phạm"><UiCustomText uiKey="u-a0044d60bbc9">Vi phạm</UiCustomText></th><th data-ui-key="u-d3d04e4c6dd6" data-ui-label-default="Nợ vi phạm kỳ trước"><UiCustomText uiKey="u-d3d04e4c6dd6">Nợ vi phạm kỳ trước</UiCustomText></th><th data-ui-key="u-e546dcbd270f" data-ui-label-default="Thực nhận"><UiCustomText uiKey="u-e546dcbd270f">Thực nhận</UiCustomText></th></tr></thead><tbody>{history.records.map((item, index) => { const rowKey = historyRowKey(item, index); return <tr className={isNonPositive(item) ? 'payroll-nonpositive' : ''} key={rowKey}>{canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${item['Tên Hệ thống']}`} checked={historySelected.includes(rowKey)} disabled={isBusy} onChange={() => setHistorySelected((current) => current.includes(rowKey) ? current.filter((key) => key !== rowKey) : [...current, rowKey])} /></td>}<td><strong>{item['Tên Hệ thống']}</strong><small>{item['Họ và tên']}</small><small>{item.Email || 'Chưa có email'}</small></td><td>{item['Mã bản lưu'] || `${item['Từ ngày']} – ${item['Đến ngày']}`}</td><td>{money(item['Tiền Lương'])}</td><td>{money(item['Hoàn trả tiền tích lũy'])}</td><td>{money(item['Tiền phạt trong tháng'])}</td><td>{money(item['Vi phạm kỳ trước'])}</td><td><strong>{money(item['Số tiền thực nhận'])}</strong></td></tr> })}</tbody></table></div>
-      <div className="payroll-mobile-list payroll-history-mobile">{history.records.map((item, index) => { const rowKey = historyRowKey(item, index); return <article className={`payroll-mobile-card${isNonPositive(item) ? ' payroll-nonpositive' : ''}`} key={rowKey}><header className="payroll-mobile-head"><div className="payroll-mobile-person">{canEmail && <input type="checkbox" aria-label={`Chọn gửi email cho ${item['Tên Hệ thống']}`} checked={historySelected.includes(rowKey)} disabled={isBusy} onChange={() => setHistorySelected((current) => current.includes(rowKey) ? current.filter((key) => key !== rowKey) : [...current, rowKey])} />}<div><strong>{item['Tên Hệ thống']}</strong><small>{item['Họ và tên']} · {item.Email || 'Chưa có email'}</small></div></div><span><small>Thực nhận</small><strong>{money(item['Số tiền thực nhận'])}</strong></span></header><strong className="payroll-mobile-period">{item['Mã bản lưu'] || `${item['Từ ngày']} – ${item['Đến ngày']}`}</strong><div className="payroll-mobile-summary payroll-history-summary"><span>Lương<strong>{money(item['Tiền Lương'])}</strong></span><span>Hoàn trả tích lũy<strong>{money(item['Hoàn trả tiền tích lũy'])}</strong></span><span>Vi phạm<strong>{money(item['Tiền phạt trong tháng'])}</strong></span><span>Nợ cũ<strong>{money(item['Vi phạm kỳ trước'])}</strong></span></div></article> })}</div>
-      {!history.records.length && <div className="setup-note">Không có bảng lương phù hợp.</div>}
+      <div className="metric-grid small payroll-history-metrics"><div className="metric-card"><span>Số dòng lương</span><strong>{visibleHistory.length}</strong></div><div className="metric-card"><span>Tổng thực nhận đang xem</span><strong>{money(historyTotal)}</strong></div></div>
+      <div className="payroll-column-summary" aria-label="Tổng các cột lịch sử đang hiển thị">{Object.entries(historyColumns).map(([field, label]) => <div key={field}><span>{label}</span><strong>{money(historySummary[field])}</strong></div>)}</div>
+      <div className="responsive-data-table payroll-history-desktop payroll-fit-table"><table aria-label="Lịch sử bảng lương đầy đủ"><thead><tr>{canEmail && <th>Gửi</th>}<th>Nhân viên</th>{Object.entries(historyColumns).map(([field, label]) => <th key={field}>{label}</th>)}</tr></thead><tbody>{visibleHistory.map(({ item, rowKey }) => <tr className={isNonPositive(item) ? 'payroll-nonpositive' : ''} key={rowKey}>
+        {canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${item['Tên Hệ thống']}`} checked={historySelected.includes(rowKey)} disabled={isBusy} onChange={() => setHistorySelected(current => current.includes(rowKey) ? current.filter(key => key !== rowKey) : [...current, rowKey])} /></td>}
+        <td><strong>{item['Tên Hệ thống']}</strong><small>{item['Họ và tên']}</small><small>{item.Email || 'Chưa có email'}</small><small>{item.__employment_status}</small><small>{item['Mã bản lưu'] || `${formatVeraDate(item['Từ ngày'], '—')} – ${formatVeraDate(item['Đến ngày'], '—')}`}</small></td>{Object.keys(historyColumns).map(field => <td key={field} className="money-cell">{money(item[field])}</td>)}
+      </tr>)}</tbody></table></div>
+      <div className="payroll-mobile-list payroll-history-mobile">{visibleHistory.map(({ item, rowKey }) => <article className={`payroll-mobile-card${isNonPositive(item) ? ' payroll-nonpositive' : ''}`} key={rowKey}><header className="payroll-mobile-head"><div className="payroll-mobile-person">{canEmail && <input type="checkbox" aria-label={`Chọn gửi email cho ${item['Tên Hệ thống']}`} checked={historySelected.includes(rowKey)} disabled={isBusy} onChange={() => setHistorySelected(current => current.includes(rowKey) ? current.filter(key => key !== rowKey) : [...current, rowKey])} />}<div><strong>{item['Tên Hệ thống']}</strong><small>{item['Họ và tên']} · {item.Email || 'Chưa có email'}</small><small>{item.__employment_status}</small></div></div></header><strong className="payroll-mobile-period">{item['Mã bản lưu'] || `${formatVeraDate(item['Từ ngày'], '—')} – ${formatVeraDate(item['Đến ngày'], '—')}`}</strong><div className="payroll-mobile-summary payroll-history-summary">{Object.entries(historyColumns).map(([field, label]) => <span key={field}>{label}<strong>{money(item[field])}</strong></span>)}</div></article>)}</div>
+      {!visibleHistory.length && <div className="setup-note">Không có bảng lương phù hợp.</div>}
     </section>
 
     {canEditConfig && <section data-ui-key="u-6d5ef6daf882" className="panel payroll-default-config-panel">

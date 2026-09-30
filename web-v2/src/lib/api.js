@@ -345,8 +345,8 @@ export const veraApi = {
     return request(`/v2/payroll/history?${params}`)
   },
   syncLegacyPayroll: () => request('/v2/payroll/history/sync-legacy', { method: 'POST' }),
-  exportPayrollExcel: (batch = '', search = '') => {
-    const params = new URLSearchParams()
+  exportPayrollExcel: (batch = '', search = '', filters = {}) => {
+    const params = new URLSearchParams(filters)
     if (batch) params.set('batch', batch)
     if (search.trim()) params.set('search', search.trim())
     return download(`/v2/payroll/history/export.xlsx?${params}`, 'VERA_BangLuong_BanCu.xlsx')
