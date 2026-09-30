@@ -49,6 +49,13 @@ def test_validation_and_contact_missing_appointment():
         with pytest.raises(ValidationError): booking.WebsiteRequest(**data)
 
 
+def test_phone_is_optional_only_for_app_manual_booking():
+    data = payload(phone='')
+    with pytest.raises(ValidationError):
+        booking.WebsiteRequest(**data)
+    assert booking.ManualBookingRequest(**data).phone == ''
+
+
 def client(role='admin', engine=None, locked=False):
     app = FastAPI()
     ident = SimpleNamespace(role=role, must_change_password=locked, auth_user_id='test-user', employee_username='test')
