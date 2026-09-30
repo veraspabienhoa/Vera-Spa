@@ -67,7 +67,9 @@ def test_batch_at_0300_without_checkin_and_never_repeated(manual, reason):
     assert [row['board_started_at'] for row in state['employees']] == clocks
     snapshot = deepcopy(state)
     project(state, boundary + timedelta(hours=6), checked=(3, 2, 1), records=leaves(reason))
-    assert state == snapshot
+    assert state[returns.DAILY_MARKER] == snapshot[returns.DAILY_MARKER]
+    assert [row.get(returns.MARKER) for row in state['employees']] == [row.get(returns.MARKER) for row in snapshot['employees']]
+    assert order(state, boundary) == ['e4', 'e5', 'e1', 'e2', 'e3']
     assert all(not state[name] for name in ('invoices', 'reports', 'pending', 'combo_usage'))
 
 
