@@ -334,7 +334,7 @@ body .online-booking-page .online-booking-periods button:focus-visible{outline:2
   .live-tour-page .tour-room-share-tools .upcoming-booking-button { grid-column: 1 / -1; }
 }
 
-.staff-page .staff-list-search { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:end; gap:12px; margin:8px 0 16px; min-width:0; }
+.staff-page .staff-list-search { display:grid; grid-template-columns:minmax(0,340px); align-items:end; gap:12px; margin:8px 0 16px; min-width:0; }
 .staff-page .staff-list-search .staff-heading-search { width:100%; max-width:none; margin:0; }
 .staff-page .staff-list-search > * { min-width:0; max-width:100%; }
 @media (max-width:600px) { .staff-page .staff-list-search { grid-template-columns:minmax(0,1fr); } }

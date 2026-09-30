@@ -81,7 +81,7 @@ for (const entry of ['/?page=employees&standalone=1', '/']) test(`real employee 
     assert.deepEqual(errors.filter(x=>!x.includes('not wrapped in act')),[])
   }
   const filter=async value=>{
-    const input=document.querySelector('.staff-heading-search input')
+    const input=document.querySelector('.staff-list-search input')
     await act(async()=>{Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}))})
     await settle();assertOpen()
   }
@@ -101,7 +101,7 @@ for (const entry of ['/?page=employees&standalone=1', '/']) test(`real employee 
       assert.match(badges[0].textContent,/Thiếu: Ngày sinh/)
       assert.doesNotMatch(badges[0].textContent,/Quận\/Huyện/)
     }
-    const input=document.querySelector('.staff-heading-search input')
+    const input=document.querySelector('.staff-list-search input')
     await filter('Ánh Mẫu');assert.equal(document.querySelectorAll('.staff-table tbody tr').length,1);assertSummary(1,1)
     await act(async()=>document.querySelector('.staff-list-panel .panel-title-row button').click())
     await settle();assertOpen();assert.equal(input.value,'Ánh Mẫu')
