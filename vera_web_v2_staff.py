@@ -5,6 +5,7 @@ read or written by these routes.  The browser never receives passwords or
 token hashes and never writes the employees table directly.
 """
 from vera_search_text import search_text_matches
+from vera_employee_names import reserved_name
 from vera_shift_assignment import scheduled_shift
 from vera_web_v2_live_tour_roster import key as shift_key
 
@@ -806,7 +807,7 @@ def install_staff_routes(
             if norm(username) in {"quan tri vien", "admin"}:
                 raise HTTPException(400, "Tên nhân viên này được dành cho tài khoản hệ thống.")
             all_rows = _select_staff_rows(conn, for_update=True, include_deleted=True)
-            if any(norm(row["username"]) == norm(username) for row in all_rows):
+            if reserved_name(all_rows, username, norm):
                 raise HTTPException(409, "Tên nhân viên đã tồn tại; hệ thống không phân biệt dấu hoặc HOA/thường.")
             rows = [
                 row for row in all_rows

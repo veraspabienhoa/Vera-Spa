@@ -7,17 +7,20 @@ VERA tables that use the employee username as an identity key.
 from __future__ import annotations
 
 import re
+import json
 import unicodedata
 from typing import Any, Callable
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 import vera_web_v2_work_schedule as work_schedule
+from vera_employee_names import HISTORY_KEY, previous_names
 
 
-RELEASE = "system-login-name-2026-08-31-v2"
+RELEASE = "system-login-name-2026-09-30-v3"
 _ORIGINAL_EMPLOYEE_CATALOG = work_schedule._employee_catalog
 
 
@@ -51,10 +54,16 @@ def _system_names(conn, usernames: list[str]) -> dict[str, str]:
 
 def _rename_reference(conn, table: str, column: str, old: str, new: str) -> int:
     # table/column are hard-coded below, never supplied by the request.
-    result = conn.execute(
-        text(f'UPDATE "{table}" SET "{column}"=:new WHERE "{column}"=:old'),
-        {"old": old, "new": new},
-    )
+    if not conn.execute(text('SELECT to_regclass(:table)'), {'table': table}).scalar():
+        return 0
+    try:
+        result = conn.execute(
+            text(f'UPDATE "{table}" SET "{column}"=:new WHERE "{column}"=:old'),
+            {"old": old, "new": new},
+        )
+    except IntegrityError as exc:
+        # The outer transaction rolls back every reference and the directory.
+        raise HTTPException(409, 'Tên mới có dữ liệu liên kết xung đột. Chưa đổi tên; cần đối chiếu dữ liệu trước.') from exc
     return int(result.rowcount or 0)
 
 
@@ -107,10 +116,13 @@ def install_system_name_routes(
         renamed_counts: dict[str, int] = {}
 
         with engine_instance().begin() as conn:
+            # Same directory lock as account creation/import: old names may not
+            # be reused by a new employee while this rename is committing.
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             # Lock the active employee directory so two simultaneous renames cannot
             # create usernames that are equivalent after login normalization.
             directory = conn.execute(text("""
-                SELECT username, payload
+                SELECT username, full_name, payload
                 FROM employees
                 WHERE COALESCE(payload->>'__deleted','false') <> 'true'
                 ORDER BY username
@@ -126,7 +138,7 @@ def install_system_name_routes(
                     str(item["username"])
                     for item in directory
                     if str(item["username"]) != target
-                    and _name_key(item["username"]) == wanted_key
+                    and wanted_key in {_name_key(item["username"]), *(_name_key(alias) for alias in previous_names(item))}
                 ),
                 "",
             )
@@ -134,6 +146,15 @@ def install_system_name_routes(
                 raise HTTPException(409, f"Tên hệ thống đã trùng với tài khoản {duplicate}.")
 
             if system_name != target:
+                # Keep the complete rename chain for historical VERA readers.
+                # No password/login alias is created. Raw device names are not edited.
+                aliases = list(dict.fromkeys([*previous_names(row), target]))
+                conn.execute(text('''UPDATE employees
+                    SET payload=jsonb_set(COALESCE(payload, '{}'::jsonb),
+                        :history_path, CAST(:aliases AS jsonb), true)
+                    WHERE username=:username'''), {
+                    'history_path': [HISTORY_KEY], 'aliases': json.dumps(aliases), 'username': target,
+                })
                 # employees.username is the canonical login key. vera_v2_user_profile
                 # has an ON UPDATE CASCADE FK, so its employee_username follows this
                 # update automatically and the existing Supabase auth_user_id remains.
@@ -162,6 +183,18 @@ def install_system_name_routes(
                     ("vera_v2_leave_watch", "employee_username"),
                     ("vera_v2_push_subscription", "employee_username"),
                     ("vera_work_schedule", "employee_username"),
+                    ("vera_work_schedule_combo_sale", "employee_username"),
+                    ("vera_employee_face_id", "employee_username"),
+                    ("vera_face_id_self_update", "employee_username"),
+                    ("vera_training_scope", "employee_username"),
+                    ("vera_training_scope", "trainer_username"),
+                    ("vera_training_session", "employee_username"),
+                    ("vera_training_session", "trainer_username"),
+                    ("vera_evaluation_assignment", "employee_username"),
+                    ("vera_evaluation_assignment", "evaluator_username"),
+                    ("vera_training_notification_recipient", "username"),
+                    ("vera_training_notification", "recipient_username"),
+                    ("vera_hr_leave_period", "employee_username"),
                 ):
                     count = _rename_reference(conn, table, column, target, system_name)
                     if count:
@@ -173,6 +206,7 @@ def install_system_name_routes(
                     "vera_auto_check_event",
                     "vera_v2_leave_change_detail",
                     "vera_work_schedule",
+                    "vera_work_schedule_combo_sale",
                 ):
                     count = _rename_reference(conn, table, "employee_name", target, system_name)
                     if count:

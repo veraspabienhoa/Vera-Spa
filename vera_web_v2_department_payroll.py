@@ -1,5 +1,6 @@
 """Editable monthly payroll for Quản lý, Locker, Lễ tân, Support and Tạp vụ."""
 from __future__ import annotations
+from vera_employee_names import canonical_username, load_identity_index
 
 import calendar
 from datetime import date, datetime, timedelta, timezone
@@ -450,7 +451,12 @@ def _combo_sale_counts(conn, start: date, end: date) -> dict[str, int]:
         WHERE department IN ('quanly','letan') AND sale_date BETWEEN :start AND :end
         GROUP BY lower(btrim(employee_username))
     """), {"start": start, "end": end}).mappings().all()
-    return {row["employee"]: int(row["count"]) for row in rows}
+    identities = load_identity_index(conn)
+    totals = {}
+    for row in rows:
+        employee = canonical_username(identities, row["employee"]).casefold()
+        totals[employee] = totals.get(employee, 0) + int(row["count"])
+    return totals
 
 
 def _visible_payroll_rows(conn, rows, *, month=None):
