@@ -17,6 +17,36 @@ PENDING_ENROLLMENT = ['Cậu Tưởng', 'Nguyễn Thị Sen', 'Nguyễn Thị Th
 
 
 @pytest.mark.parametrize('username', ['admin', 'akamen', 'letan', 'Ms Tuyết'])
+def test_all_accounts_resume_october_without_rewriting_september(username):
+    rows = [{'username': username}]
+    assert policy.suspended(username, date(2026, 9, 30))
+    assert not policy.suspended(username, date(2026, 10, 1))
+    assert policy.eligible(rows, date(2026, 10, 1), date(2026, 10, 31),
+                           key='username') == rows
+    policy.require_payroll_participants(rows, date(2026, 10, 1),
+                                        date(2026, 10, 31), key='username')
+    assert policy.preserved_payroll(rows, date(2026, 10, 1),
+                                   date(2026, 10, 31), key='username') == []
+    assert policy.suspended(username, date(2026, 9, 1), date(2026, 9, 30))
+    assert policy.preserved_payroll(rows, date(2026, 9, 1),
+                                   date(2026, 9, 30), key='username') == rows
+    assert policy.status(date(2026, 10, 1))['excluded_usernames'] == []
+    assert policy.status(date(2026, 10, 1))['excluded_employee_count'] == 0
+
+
+def test_resumed_accounts_reappear_in_attendance_and_alerts(monkeypatch, facegate):
+    users = ['admin', 'akamen', 'letan', 'Ms Tuyết']
+    rows = [{**record(), 'employee_name': username, 'date': '01/10/2026',
+             'check_out': ''} for username in users]
+    result = runtime.annotate(rows, evidence())
+    assert {row['employee_name'] for row in result} == set(users)
+    assert all(row['attendance_pending'] for row in result)
+    monkeypatch.setattr(runtime.fg, 'project_evidence', lambda *_: {
+        'issues': [], 'index': {i: {'username': name} for i, name in enumerate(users)}})
+    assert runtime.alert_eligible_users(object(), date(2026, 10, 1)) == set(users)
+
+
+@pytest.mark.parametrize('username', ['admin', 'akamen', 'letan', 'Ms Tuyết'])
 def test_effective_date_exact_account_and_resumption(monkeypatch, username):
     assert not policy.suspended(username, date(2026, 9, 28))
     assert policy.suspended(username.upper(), DAY)
