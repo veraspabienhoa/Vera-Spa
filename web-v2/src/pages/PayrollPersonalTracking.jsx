@@ -1,5 +1,5 @@
 import PayrollAccumulationTable from '../components/PayrollAccumulationTable'
-import { accumulationRows } from '../lib/payrollAccumulationRows'
+import { accumulationRows, filterAccumulationRows } from '../lib/payrollAccumulationRows'
 import StableFeedback from '../components/StableFeedback'
 import usePageRefresh from '../lib/usePageRefresh'
 import UiToolbar from '../components/UiToolbar'
@@ -125,6 +125,7 @@ export default function PayrollPersonalTracking({ user, standalone = false, unif
   const [busyEmployee, setBusyEmployee] = useState('')
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [accumulationFilter, setAccumulationFilter] = useState({ employee: '', status: '', group: '' })
   const [sectionOpen, setSectionOpen] = useState(unified || !isAdmin)
   const [completedOpen, setCompletedOpen] = useState(false)
 
@@ -175,12 +176,15 @@ export default function PayrollPersonalTracking({ user, standalone = false, unif
     if (!isAdmin || sectionOpen) void load()
   }, [canUsePersonalTracking, isAdmin, sectionOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const unifiedRows = useMemo(() => accumulationRows(data?.employees || [], formerEmployees, refunds), [data, formerEmployees, refunds])
+  const statuses = [...new Set(unifiedRows.map(row => row.employment_status || 'Chưa có trạng thái'))].sort((a, b) => a.localeCompare(b, 'vi'))
   const visible = useMemo(() => {
-    const rows = unified ? accumulationRows(data?.employees || [], formerEmployees, refunds) : (data?.employees || []).filter((item) => trackedRoles.has(String(item.role || '').toLowerCase()))
+    if (unified) return filterAccumulationRows(unifiedRows, accumulationFilter)
+    const rows = (data?.employees || []).filter((item) => trackedRoles.has(String(item.role || '').toLowerCase()))
     const needle = searchKey(search)
     if (!needle) return rows
     return rows.filter((item) => searchTextMatches([item.employee_name, item.full_name, item.role], needle))
-  }, [data, search, unified, formerEmployees, refunds])
+  }, [data, search, unified, unifiedRows, accumulationFilter])
 
   const activeRows = useMemo(() => visible.filter((item) => !item.completed && Number(item.remaining || 0) > 0), [visible])
   const completedRows = useMemo(() => visible.filter((item) => item.completed || Number(item.remaining || 0) <= 0), [visible])
@@ -225,6 +229,12 @@ export default function PayrollPersonalTracking({ user, standalone = false, unif
 
         {unified && isAdmin ? <>
           {children}
+          <div className="payroll-accumulation-filters" aria-label="Bộ lọc tích lũy và hoàn trả">
+            <label>Nhân viên<select aria-label="Lọc nhân viên tích lũy" value={accumulationFilter.employee} onChange={event => setAccumulationFilter(current => ({ ...current, employee: event.target.value }))}><option value="">Tất cả nhân viên</option>{unifiedRows.map(row => <option key={row.employee_name} value={row.employee_name}>{row.employee_name}</option>)}</select></label>
+            <label>Trạng thái<select aria-label="Lọc trạng thái tích lũy" value={accumulationFilter.status} onChange={event => setAccumulationFilter(current => ({ ...current, status: event.target.value }))}><option value="">Tất cả trạng thái</option>{statuses.map(status => <option key={status} value={status}>{status}</option>)}</select></label>
+            {[['completed', 'Đã đóng (Hoàn thành)'], ['active', 'Còn phải đóng (Đang đóng)'], ['refunded', 'Đã hoàn trả']].map(([group, label]) => <button key={group} type="button" aria-pressed={accumulationFilter.group === group} className={`secondary-button ${accumulationFilter.group === group ? 'active-filter' : ''}`} onClick={() => setAccumulationFilter(current => ({ ...current, group: current.group === group ? '' : group }))}>{label}</button>)}
+            {(accumulationFilter.employee || accumulationFilter.status || accumulationFilter.group) && <button type="button" className="secondary-button" onClick={() => setAccumulationFilter({ employee: '', status: '', group: '' })}>Xóa lọc</button>}
+          </div>
           <PayrollAccumulationTable rows={visible} onAdd={addAccumulation} onEdit={editAccumulation} onDelete={deleteAccumulation} onRemoveRefund={onRemoveRefund} busyEmployee={busyEmployee} disabled={disabled || busy} />
         </> : isAdmin ? <>
           <div className="payroll-personal-metrics">

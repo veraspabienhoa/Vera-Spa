@@ -16,3 +16,15 @@ export function accumulationRows(employees = [], formerEmployees = [], refunds =
   return [...rows.values()].map(row => ({ ...row, configuredRefund: row.refunds.reduce((sum, item) => sum + Number(item.amount || 0), 0) }))
     .sort((a, b) => a.employee_name.localeCompare(b.employee_name, 'vi'))
 }
+
+export function filterAccumulationRows(rows, { employee = '', status = '', group = '' } = {}) {
+  return rows.filter(row => {
+    if (employee && row.employee_name !== employee) return false
+    if (status && (row.employment_status || 'Chưa có trạng thái') !== status) return false
+    if (group === 'completed') return row.hasTracking && (row.completed || Number(row.remaining || 0) <= 0)
+    if (group === 'active') return row.hasTracking && !row.completed && Number(row.remaining || 0) > 0
+    // A configured refund is not proof of payment: use saved payroll periods.
+    if (group === 'refunded') return (row.periods || []).some(period => Number(period.refund || 0) > 0)
+    return true
+  })
+}
