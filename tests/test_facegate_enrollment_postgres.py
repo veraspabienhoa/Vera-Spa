@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, text
 import vera_web_v2_facegate_enrollment as routes
 from vera_web_v2_face_id import ensure_table
 from vera_facegate_enrollment import UploadRejected
-from test_facegate_enrollment import REF
+from test_facegate_enrollment import REF, OLD_REF
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ def setup(monkeypatch):
         ensure_table(conn)
         conn.execute(text("""INSERT INTO vera_employee_face_id VALUES ('worker',:image,'image/png',:size,:sha,'admin',NOW())"""),
                      {'image':image,'size':len(image),'sha':sha})
-    calls=[]; mode={'value':'ok'}
+    calls=[]; mode={'value':'ok'}; device={'ref':OLD_REF}
     class Client:
         def __init__(self): self._call('init')
         def _call(self,name):
@@ -48,9 +48,21 @@ def setup(monkeypatch):
         def login(self): self._call('login')
         def profiles(self):
             self._call('profiles')
-            return [{'uname':'Test Staff'}] if mode['value']=='existing' else []
+            if mode['value'] in {'existing','replacement','replacement_timeout'}:
+                return [{'uid':'123','uname':'Test Staff','utext':'vera:legacy',
+                         'dwfiletype':str(device['ref']['file_type']),
+                         'dwfileindex':str(device['ref']['file_index']),
+                         'dwfilepos':str(device['ref']['file_position'])}]
+            return []
+        def profile_details(self, profile_id):
+            self._call('profile_details')
+            assert profile_id == 123
+            return {'uid':'123','uname':'Test Staff','utext':'vera:legacy',
+                    'dwfiletype':str(device['ref']['file_type']),
+                    'dwfileindex':str(device['ref']['file_index']),
+                    'dwfilepos':str(device['ref']['file_position']), 'uphone':'0123456789'}
         def door_defaults(self): self._call('defaults'); return (1,0)
-        def upload(self, photo, session):
+        def upload(self, photo, session, *, profile_id=None):
             self._call('upload')
             with engine.connect() as conn:
                 assert conn.execute(text('SELECT stage FROM vera_facegate_enrollment')).scalar()=='uploading'
@@ -62,6 +74,12 @@ def setup(monkeypatch):
             with engine.connect() as conn:
                 assert conn.execute(text('SELECT stage FROM vera_facegate_enrollment')).scalar()=='committing'
             if mode['value']=='commit_timeout': raise TimeoutError('secret must not be disclosed')
+        def update_photo(self, profile, ref):
+            self._call('update_photo')
+            with engine.connect() as conn:
+                assert conn.execute(text('SELECT stage FROM vera_facegate_enrollment')).scalar()=='committing'
+            device['ref']=ref
+            if mode['value']=='replacement_timeout': raise TimeoutError('private device response')
         def verify(self,name,token,ref):
             self._call('verify')
             if mode['value']=='verify_fail': raise ValueError('secret device payload')
@@ -70,6 +88,11 @@ def setup(monkeypatch):
                     conn.execute(text("INSERT INTO vera_app_setting(category,setting_key,value_json,revision) VALUES ('facegate','mapping_test-device',CAST(:v AS jsonb),1)"),
                         {'v':json.dumps([{'username':'other','profile_id':123,'registration_ref':REF}])})
             return {'profile_id':123,'device_name':name,'registration_ref':ref}
+        def verify_replacement(self, profile_id, name, token, ref):
+            self._call('verify_replacement')
+            assert (profile_id, name, token, ref) == (123, 'Test Staff', 'vera:legacy', REF)
+            assert device['ref']==ref
+            return {'profile_id':profile_id,'device_name':name,'registration_ref':ref}
         def close(self): self._call('close')
     monkeypatch.setattr(routes,'FaceGateEnrollmentClient',Client)
     grants={'employee_face_id_manage','device_facegate_mapping_manage'}
@@ -107,6 +130,45 @@ def test_success_atomic_mapping_and_idempotent_replay(setup):
     assert s.calls.count('upload')==s.calls.count('add')==1
     assert send(s,'0'*64).status_code==409
     assert s.api.get(PATH).json()['status']=='verified'
+
+
+def test_existing_confirmed_mapping_updates_same_device_profile_without_manual_confirmation(setup):
+    s=setup;s.mode['value']='replacement'
+    old={'profile_id':123,'device_name':'Test Staff','registration_ref':OLD_REF,
+         'username':'worker','employee_code':'legacy-code','device_address':'192.168.1.34',
+         'confirmed_by':'admin','confirmed_at':'2026-09-28T10:00:00+00:00'}
+    with s.engine.begin() as conn:
+        conn.execute(text("INSERT INTO vera_app_setting(category,setting_key,value_json,revision) VALUES ('facegate','mapping_test-device',CAST(:v AS jsonb),1)"),
+                     {'v':json.dumps([old])})
+    response=s.api.post(PATH,json={'photo_sha256':s.sha,'confirmed':False})
+    assert response.status_code==200,response.text
+    assert response.json()['status']=='verified' and response.json()['operation_type']=='replace'
+    with s.engine.connect() as conn:
+        rows=routes.mappings(conn,'test-device')
+        operation=conn.execute(text('SELECT operation_type,profile_id,previous_ref FROM vera_facegate_enrollment')).mappings().one()
+    assert len(rows)==1 and rows[0]['profile_id']==123 and rows[0]['registration_ref']==REF
+    assert rows[0]['employee_code']=='legacy-code'
+    assert rows[0]['replaced_registration_refs']==[OLD_REF]
+    assert operation['operation_type']=='replace' and operation['profile_id']==123
+    assert operation['previous_ref']==OLD_REF
+    assert s.calls.count('update_photo')==s.calls.count('verify_replacement')==1
+    assert 'add' not in s.calls
+
+
+def test_ambiguous_replacement_verifies_existing_uid_without_replaying_update(setup):
+    s=setup;s.mode['value']='replacement_timeout'
+    old={'profile_id':123,'device_name':'Test Staff','registration_ref':OLD_REF,
+         'username':'worker','device_address':'192.168.1.34','confirmed_by':'admin'}
+    with s.engine.begin() as conn:
+        conn.execute(text("INSERT INTO vera_app_setting(category,setting_key,value_json,revision) VALUES ('facegate','mapping_test-device',CAST(:v AS jsonb),1)"),
+                     {'v':json.dumps([old])})
+    result=s.api.post(PATH,json={'photo_sha256':s.sha,'confirmed':False})
+    assert result.status_code==502 and 'private' not in result.text
+    assert state(s)=='unverified' and s.calls.count('update_photo')==1
+    s.mode['value']='replacement'
+    checked=s.api.post(PATH+'/verify')
+    assert checked.status_code==200 and checked.json()['status']=='verified'
+    assert s.calls.count('update_photo')==1 and s.calls.count('verify_replacement')==1
 
 
 @pytest.mark.parametrize('feature',['employee_face_id_manage','device_facegate_mapping_manage'])

@@ -1,8 +1,8 @@
-"""Observed FaceGate LISTADD protocol. No automatic retries of device writes.
+"""Observed FaceGate LISTADD/LISTMODIFT protocol. No automatic retries of device writes.
 
 Source: operator-provided bwlist.asp/js/bwlist.js, 28 September 2026.
-Only new enrollments: replacing an existing registration would invalidate
-historical references and requires a separate reviewed workflow.
+New enrollments use LISTADD/add. Replacements keep the existing UID and use
+LISTMODIFT/update, with a strict device read-back before the mapping changes.
 """
 from datetime import datetime
 from io import BytesIO
@@ -131,11 +131,16 @@ class FaceGateEnrollmentClient:
             raise EnrollmentError('incomplete_list', 'Danh sách máy chưa đầy đủ; chưa thể đăng ký an toàn.')
         return list(items.values())
 
-    def upload(self, photo, session_id):
+    def upload(self, photo, session_id, *, profile_id=None):
         # POST body may be an HTML completion page; the authoritative result is
         # getUploadPercent. Do not assume HTTP 200 means a face was accepted.
-        self.request('/webs/uploadfile', {'action': 'LISTADD', 'group': 'UPLOAD',
-                     'sessionid': session_id, 'IsCheckSim': '1'}, photo=photo)
+        params = {'action': 'LISTADD' if profile_id is None else 'LISTMODIFT',
+                  'group': 'UPLOAD', 'sessionid': session_id, 'IsCheckSim': '1'}
+        if profile_id is not None:
+            if not isinstance(profile_id, int) or profile_id <= 0:
+                raise EnrollmentError('invalid_profile', 'ID hồ sơ FaceGate không hợp lệ.')
+            params['LISTuid'] = str(profile_id)
+        self.request('/webs/uploadfile', params, photo=photo)
         for _ in range(12):
             value = fields(self.request('/webs/getUploadPercent', {
                 'action': 'list', 'group': 'UPLOAD', 'sessionid': session_id}))
@@ -155,6 +160,46 @@ class FaceGateEnrollmentClient:
                 raise EnrollmentError('invalid_state', 'Trạng thái xử lý ảnh của máy không hợp lệ.')
             self.sleep(.5)
         raise EnrollmentError('upload_pending', 'Máy chưa hoàn tất xử lý ảnh; cần kiểm tra lại kết quả.')
+
+    def profile_details(self, profile_id):
+        if not isinstance(profile_id, int) or not 0 < profile_id <= 2**31 - 1:
+            raise EnrollmentError('invalid_profile', 'ID hồ sơ FaceGate không hợp lệ.')
+        value = fields(self.request('/webs/getWhitelist', {
+            'action': 'list', 'group': 'LIST', 'LIST.uid': str(profile_id)}))
+        detail = {key.removeprefix('LIST.'): val for key, val in value.items()
+                  if key.startswith('LIST.')}
+        if detail.get('uid') != str(profile_id):
+            raise EnrollmentError('wrong_profile', 'Máy không trả đúng hồ sơ cần cập nhật.')
+        return detail
+
+    def update_photo(self, profile, ref):
+        """Update only a previously read profile, preserving its other fields."""
+        try:
+            profile_id = int(profile['uid'])
+            if profile_id <= 0 or profile.get('uname') is None or profile.get('utext') is None:
+                raise ValueError()
+            params = {'action': 'update', 'group': 'LIST'}
+            for key, value in profile.items():
+                if re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', key):
+                    params['LIST.' + key] = str(value)
+            params.update({'LIST.uid': str(profile_id),
+                           'LIST.dwfiletype': str(ref['file_type']),
+                           'LIST.dwfileindex': str(ref['file_index']),
+                           'LIST.dwfilepos': str(ref['file_position']),
+                           'LIST.uIsCheckSim': '1'})
+        except (KeyError, TypeError, ValueError):
+            raise EnrollmentError('invalid_profile', 'Hồ sơ máy thiếu dữ liệu cần giữ nguyên khi cập nhật.') from None
+        fields(self.request('/webs/setWhitelist', params))
+        return profile_id
+
+    def verify_replacement(self, profile_id, name, token, ref):
+        matches = [p for p in self.profiles() if p.get('uid') == str(profile_id)]
+        if len(matches) != 1 or matches[0].get('uname') != name or matches[0].get('utext') != token or device.registration_ref(matches[0]) != ref:
+            raise EnrollmentError('unverified', 'Ảnh mới chưa được xác minh trên đúng hồ sơ. Không gửi lại để tránh cập nhật trùng.')
+        detail = self.profile_details(profile_id)
+        if detail.get('uname') != name or detail.get('utext') != token or device.registration_ref(detail) != ref:
+            raise EnrollmentError('unverified', 'Hồ sơ đọc lại không khớp ảnh mới. Cần kiểm tra trên máy.')
+        return {'profile_id': profile_id, 'device_name': name, 'registration_ref': ref}
 
     def door_defaults(self):
         value = fields(self.request('/webs/getCfgSysDoor', {'action': 'list', 'group': 'CFGDOOR'}))

@@ -595,15 +595,15 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
     })
     return () => { active = false }
   }, [username])
-  const act = async (verify, owner = username) => {
+  const act = async (verify, owner = username, replace = false) => {
     if (activeOperation.current) return
-    if (!verify && !window.confirm(`Đăng ký ảnh Face ID đã lưu cho ${username} lên máy chấm công? Hãy kiểm tra đúng người trong ảnh trước khi xác nhận.`)) return
+    if (!verify && !replace && !window.confirm(`Đăng ký ảnh Face ID đã lưu cho ${username} lên máy chấm công? Hãy kiểm tra đúng người trong ảnh trước khi xác nhận.`)) return
     activeOperation.current = true
     setBusy(true); setMessage('')
     try {
-      const value = await (verify ? faceIdApi.verifyEnrollment(owner) : faceIdApi.enroll(username, photo.sha256))
+      const value = await (verify ? faceIdApi.verifyEnrollment(owner) : faceIdApi.enroll(username, photo.sha256, !replace))
       setEnrollment(owner === username ? value : await faceIdApi.enrollment(username))
-      setMessage(value.status === 'rejected' ? 'Đã đối chiếu lượt lỗi chưa tạo hồ sơ và mở lại đăng ký. Có thể đăng ký ảnh đã lưu.' : owner !== username && value.status === 'verified' ? `Đã xác minh lượt đăng ký của ${owner}. Có thể tiếp tục đăng ký nhân viên này.` : value.status === 'verified' ? 'Đã lưu hồ sơ trên máy và xác minh ánh xạ với nhân viên.' : 'Lượt đăng ký chưa xác minh xong. Hãy kiểm tra lại kết quả.')
+      setMessage(value.status === 'rejected' ? 'Đã đối chiếu lượt lỗi chưa tạo hồ sơ và mở lại đăng ký. Có thể đăng ký ảnh đã lưu.' : owner !== username && value.status === 'verified' ? `Đã xác minh lượt đăng ký của ${owner}. Có thể tiếp tục đăng ký nhân viên này.` : value.status === 'verified' ? (replace ? 'Đã thay ảnh trên hồ sơ hiện có và xác minh lại hồ sơ trên máy.' : 'Đã lưu hồ sơ trên máy và xác minh ánh xạ với nhân viên.') : 'Lượt đăng ký chưa xác minh xong. Hãy kiểm tra lại kết quả.')
     } catch (error) {
       setMessage(error.message)
       try { setEnrollment(await faceIdApi.enrollment(username)) } catch { /* Preserve the original error. */ }
@@ -646,9 +646,12 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
   const pending = ['running', 'unverified'].includes(enrollment.status)
   const blocked = enrollment.device_pending && enrollment.device_pending.employee_username !== username ? enrollment.device_pending : null
   const changed = verified && enrollment.photo_sha256 !== photo?.sha256
+  const replaceAvailable = Boolean(enrollment.can_replace && enrollment.mapped_profile && photo && !pending && !blocked &&
+    (changed || !verified))
   return <div className="face-id-enrollment">
-    <p>{verified ? (changed ? 'Ảnh trên VERA đã đổi hoặc bị xóa. Hồ sơ trên máy vẫn dùng ảnh đăng ký trước đó.' : `Đã xác minh đăng ký trên máy · Hồ sơ ${enrollment.profile_id}`) : pending ? 'Đăng ký chưa được xác minh. Kiểm tra lại trước khi gửi thêm.' : 'Chưa đăng ký ảnh này từ VERA lên máy.'}</p>
-    {!verified && !pending && !blocked && <button type="button" className="primary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy) || !photo} onClick={() => act(false)}>{busy || automaticBusy ? 'Đang đăng ký…' : 'Đăng ký lên máy'}</button>}
+    <p>{verified ? (changed ? 'Ảnh trên VERA đã đổi hoặc bị xóa. Hồ sơ trên máy vẫn dùng ảnh đăng ký trước đó.' : `Đã xác minh đăng ký trên máy · Hồ sơ ${enrollment.profile_id}`) : pending ? 'Đăng ký chưa được xác minh. Kiểm tra lại trước khi gửi thêm.' : enrollment.mapped_profile ? `Nhân viên đã có hồ sơ trên máy · Hồ sơ ${enrollment.mapped_profile.profile_id}.` : 'Chưa đăng ký ảnh này từ VERA lên máy.'}</p>
+    {replaceAvailable && <button type="button" className="primary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(false, username, true)}>{busy || automaticBusy ? 'Đang cập nhật ảnh…' : 'Cập nhật ảnh trên máy'}</button>}
+    {!verified && !pending && !blocked && !replaceAvailable && <button type="button" className="primary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy) || !photo} onClick={() => act(false)}>{busy || automaticBusy ? 'Đang đăng ký…' : 'Đăng ký lên máy'}</button>}
     {!verified && blocked && <><p role="status">Máy đang chờ xác minh lượt đăng ký của {blocked.employee_username}.</p><button type="button" className="secondary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(true, blocked.employee_username)}>{busy || automaticBusy ? 'Đang kiểm tra…' : 'Kiểm tra lượt đang chặn máy'}</button></>}
     {pending && <button type="button" className="secondary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(true)}>{busy || automaticBusy ? 'Đang kiểm tra…' : 'Kiểm tra lại kết quả'}</button>}
     {message && <p role="status">{message}</p>}
