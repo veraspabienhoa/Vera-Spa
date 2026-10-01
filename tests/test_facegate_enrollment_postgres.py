@@ -62,7 +62,7 @@ def setup(monkeypatch):
                     'dwfileindex':str(device['ref']['file_index']),
                     'dwfilepos':str(device['ref']['file_position']), 'uphone':'0123456789'}
         def door_defaults(self): self._call('defaults'); return (1,0)
-        def upload(self, photo, session):
+        def upload(self, photo, session, *, profile_id=None):
             self._call('upload')
             with engine.connect() as conn:
                 assert conn.execute(text('SELECT stage FROM vera_facegate_enrollment')).scalar()=='uploading'
