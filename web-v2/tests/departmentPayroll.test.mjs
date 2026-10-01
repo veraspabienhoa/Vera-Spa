@@ -10,12 +10,13 @@ const mod={exports:{}};new Function('require','module','exports',built.outputFil
 const {Panel,Settings,Tabs,recoverablePage}=mod.exports,h=React.createElement
 const config={calculation_mode:'hourly',rate_ca1:27000,rate_ca2_before_22:30000,rate_ca2_after_22:33000}
 const rows=[['a','Nhân Viên A','letan','Lễ tân',500000],['b','Quản Lý B','quanly','Quản lý',300000],['c','Nhân Viên C','letan','Lễ tân',0]].map(([id,name,dep,label,combo],i)=>({employee_username:id,employee_name:name,email:`${id}@example.test`,department:dep,department_label:label,tt:i+1,work_days:1,hours_ca1:8,combo_sales:combo,salary:216000,total_salary:216000+combo,net_salary:216000+combo,calculation_config:config,calculation_source:'schedule'}))
-async function fixture(t){
+async function fixture(t,{failSaves=false}={}){
  const dom=new JSDOM('<body><div id="root"/></body>',{url:'https://example.test',pretendToBeVisual:true}),requests=[]
  const data={departments:{letan:{department_label:'Lễ tân',config},quanly:{department_label:'Quản lý',config},tapvu:{department_label:'Tạp vụ',config:{calculation_mode:'monthly'}}},salary_config_tables:{operations:[{employee_username:'a',employee_name:'Nhân Viên A',department:'letan',department_label:'Lễ tân',...config}],tapvu:[]},salary_employee_catalog:[]}
  const globals={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(url,options={})=>{
   const path=new URL(url).pathname;requests.push({path,options})
-  const body=path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows,start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:JSON.parse(options.body).rows,message:'Đã lưu'}:{}
+  if(path.endsWith('/settings/employees') && failSaves)return new Response(JSON.stringify({detail:'Lỗi lưu thử nghiệm'}),{status:503,headers:{'Content-Type':'application/json'}})
+  const body=path.endsWith('/settings/employees')?{message:'Đã lưu',salary_config_tables:{operations:JSON.parse(options.body).rows,tapvu:[]}}:path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows,start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:JSON.parse(options.body).rows,message:'Đã lưu'}:{}
   return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}})
  }}
  const saved=Object.fromEntries(Object.keys(globals).map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));for(const[k,v]of Object.entries(globals))Object.defineProperty(globalThis,k,{value:v,configurable:true})
@@ -60,4 +61,31 @@ test('configuration import failure preserves tabs and retry resets the correct m
 test('non-Admin roles do not get the configuration tab',async t=>{
  const f=await fixture(t);await f.render(h(Tabs,{user:{role:'letan',permissions:{payroll_calculate:true}},administrative:h('p',null,'Payroll'),configuration:h('p',null,'Secret')}))
  assert.equal(document.querySelectorAll('[role="tab"]').length,1);assert.doesNotMatch(document.body.textContent,/Cấu hình lương|Secret/)
+})
+
+test('settings debounce rapid edits and explicit save cancels queued duplicate writes',async t=>{
+ const f=await fixture(t);await f.render(h(Settings,{user:{role:'admin'}}))
+ const input=()=>document.querySelector('.department-config-table input')
+ const saves=()=>f.requests.filter(r=>r.path.endsWith('/settings/employees'))
+ assert.equal(saves().length,0)
+ await f.change(input(),'28.000');await f.change(input(),'29.000')
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1350))})
+ assert.equal(saves().length,1)
+ assert.equal(JSON.parse(saves()[0].options.body).rows[0].rate_ca1,29000)
+ await f.change(input(),'31.000');await f.click('Lưu')
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1350))})
+ assert.equal(saves().length,2)
+ assert.equal(JSON.parse(saves()[1].options.body).rows[0].rate_ca1,31000)
+})
+test('failed autosave preserves edited settings and requires new edit or manual retry',async t=>{
+ const f=await fixture(t,{failSaves:true});await f.render(h(Settings,{user:{role:'admin'}}))
+ const input=document.querySelector('.department-config-table input')
+ await f.change(input,'30.000')
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1350))})
+ assert.match(document.body.textContent,/Chưa lưu được/)
+ assert.equal(input.value,'30.000')
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1350))})
+ assert.equal(f.requests.filter(r=>r.path.endsWith('/settings/employees')).length,1)
+ await f.click('Lưu')
+ assert.equal(f.requests.filter(r=>r.path.endsWith('/settings/employees')).length,2)
 })
