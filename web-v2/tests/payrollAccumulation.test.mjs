@@ -4,7 +4,7 @@ import {createRequire} from 'node:module'
 import {build} from 'esbuild'
 import React,{act} from 'react'
 import {JSDOM} from 'jsdom'
-import {accumulationRows} from '../src/lib/payrollAccumulationRows.js'
+import {accumulationRows,filterAccumulationRows} from '../src/lib/payrollAccumulationRows.js'
 
 test('accumulation tab follows history and combines completed, active and former staff in one table',async t=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',pretendToBeVisual:true}),requests=[],NativeDate=Date
@@ -41,6 +41,16 @@ test('accumulation tab follows history and combines completed, active and former
  assert.ok(document.querySelector('.payroll-refund-form'))
  const completed=[...table.querySelectorAll('tbody > tr')].find(row=>row.textContent.startsWith('B'))
  assert.equal(completed.querySelectorAll('button').length,0)
+ const filterButton=label=>[...document.querySelectorAll('.payroll-accumulation-filters button')].find(button=>button.textContent===label)
+ await act(async()=>filterButton('Đã đóng (Hoàn thành)').click())
+ assert.equal(table.querySelectorAll('tbody > tr').length,1)
+ assert.ok(table.querySelector('tbody').textContent.startsWith('B'))
+ await act(async()=>filterButton('Còn phải đóng (Đang đóng)').click())
+ assert.ok(table.querySelector('tbody').textContent.startsWith('A'))
+ await act(async()=>filterButton('Đã hoàn trả').click())
+ assert.equal(table.querySelectorAll('tbody > tr').length,0)
+ await act(async()=>filterButton('Xóa lọc').click())
+ assert.equal(table.querySelectorAll('tbody > tr').length,3)
  await act(async()=>tabs[0].click())
  assert.equal(document.querySelector('[aria-label="Tích lũy và hoàn trả nhân viên"]'),null)
 })
@@ -52,4 +62,20 @@ test('refunds are grouped per employee without changing paid balances or sources
  assert.equal(rows.length,2);assert.equal(rows[0].paid_total,300000);assert.equal(rows[0].configuredRefund,300000)
  assert.equal(rows[1].hasTracking,false);assert.equal(rows[1].configuredRefund,50000)
  assert.equal(JSON.stringify({employees,refunds}),before)
+})
+
+test('accumulation filters intersect employee, employment status and payment group without changing balances',()=>{
+ const rows=[
+  {employee_name:'A',employment_status:'Đang làm việc',hasTracking:true,remaining:100,paid_total:50,periods:[]},
+  {employee_name:'B',employment_status:'Đã nghỉ việc',hasTracking:true,completed:true,remaining:0,periods:[{refund:200}]},
+  {employee_name:'C',employment_status:'Đã nghỉ việc',hasTracking:false,configuredRefund:200,periods:[]},
+ ]
+ const before=JSON.stringify(rows)
+ assert.deepEqual(filterAccumulationRows(rows,{group:'active'}).map(r=>r.employee_name),['A'])
+ assert.deepEqual(filterAccumulationRows(rows,{group:'completed'}).map(r=>r.employee_name),['B'])
+ assert.deepEqual(filterAccumulationRows(rows,{group:'refunded'}).map(r=>r.employee_name),['B'])
+ assert.equal(filterAccumulationRows(rows,{employee:'A',status:'Đã nghỉ việc'}).length,0)
+ assert.equal(filterAccumulationRows(rows,{employee:'C',group:'refunded'}).length,0)
+ assert.deepEqual(filterAccumulationRows(rows),rows)
+ assert.equal(JSON.stringify(rows),before)
 })
