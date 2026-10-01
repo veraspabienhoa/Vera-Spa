@@ -7,6 +7,7 @@ import requests
 import vera_facegate_enrollment as fg
 
 REF = {'file_type': 0, 'file_index': 0, 'file_position': 14680064}
+OLD_REF = {'file_type': 0, 'file_index': 0, 'file_position': 14680065}
 
 
 def body(**values):
@@ -60,6 +61,30 @@ def test_upload_uses_observed_form_and_similarity_check(monkeypatch):
     assert kwargs['params'] == {'action':'LISTADD','group':'UPLOAD','sessionid':'12345678','IsCheckSim':'1'}
     assert kwargs['files']['vfileselector'] == ('FaceID.jpg', b'jpeg', 'image/jpeg')
     assert all(not call[2]['allow_redirects'] for call in s.calls)
+
+
+def test_photo_replacement_uses_observed_modify_upload_and_update_protocol(monkeypatch):
+    p = {**profile(), 'uphone': '0123456789', 'uaddr': 'Keep this field'}
+    updated = {**p, 'dwfilepos': REF['file_position']}
+    c, s = client(monkeypatch, [
+        '<html>uploaded</html>',
+        body(**{'UPLOAD.state': 100, 'UPLOAD.sessionid': '12345678',
+                'UPLOAD.dwfiletype': REF['file_type'], 'UPLOAD.dwfileindex': REF['file_index'],
+                'UPLOAD.dwfilepos': REF['file_position']}),
+        body(), roster([updated]), body(**{'LIST.' + k: v for k, v in updated.items()}),
+    ])
+    assert c.upload(b'jpeg', '12345678', profile_id=123) == REF
+    c.update_photo(p, REF)
+    assert c.verify_replacement(123, 'Test Staff', 'vera:token', REF)['profile_id'] == 123
+    upload = s.calls[0][2]
+    assert upload['params'] == {'action': 'LISTMODIFT', 'group': 'UPLOAD',
+                                'sessionid': '12345678', 'IsCheckSim': '1', 'LISTuid': '123'}
+    update = s.calls[2][2]['params']
+    assert update['action'] == 'update' and update['LIST.uid'] == '123'
+    assert update['LIST.uname'] == p['uname'] and update['LIST.utext'] == p['utext']
+    assert update['LIST.uphone'] == p['uphone'] and update['LIST.uaddr'] == p['uaddr']
+    assert update['LIST.dwfilepos'] == str(REF['file_position'])
+    assert s.calls[2][0] == 'POST' and all(call[0] == 'GET' for call in s.calls[1:2] + s.calls[3:])
 
 
 @pytest.mark.parametrize('state', [101,102,103,104,105,106])
