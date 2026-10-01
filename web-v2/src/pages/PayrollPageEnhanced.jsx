@@ -535,13 +535,6 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     setNotice({ type: 'success', message: result.message })
   })
 
-  const syncLegacy = () => run('sync-legacy', async () => {
-    if (!window.confirm('Tải lại lịch sử bảng lương và Nghĩa vụ vi phạm từ hệ thống cũ? Dữ liệu Web V2 đã lưu vẫn được ưu tiên hiển thị.')) return
-    const result = await veraApi.syncLegacyPayroll()
-    await Promise.all([loadHistory(), loadSavedBatches(), loadSupporting()])
-    setNotice({ type: 'success', message: result.message })
-  })
-
   const deleteHistoryBatch = (batchId) => run(`delete-history-${batchId}`, async () => {
     if (!batchId) throw new Error('Vui lòng chọn kỳ lương cần xóa.')
     if (!window.confirm(`Xóa lịch sử bảng lương “${batchId}”? Hành động này chỉ dành cho Admin/quyền quản lý lịch sử.`)) return
@@ -553,7 +546,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   })
 
   return <div className={`feature-page payroll-page payroll-page-enhanced payroll-tab-${activeTab}`}>
-    <div data-ui-key="u-4dcec71791b4" className="page-heading payroll-main-heading"><div><h1>BẢNG LƯƠNG</h1></div><button data-ui-key="u-c2ca30d80853" data-ui-label-default="Làm mới" className="secondary-button" onClick={reload} disabled={isBusy}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-c2ca30d80853"> Làm mới</UiCustomText></button></div>
+    <div data-ui-key="u-4dcec71791b4" className="page-heading payroll-main-heading"><div></div><button data-ui-key="u-c2ca30d80853" data-ui-label-default="Làm mới" className="secondary-button" onClick={reload} disabled={isBusy}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-c2ca30d80853"> Làm mới</UiCustomText></button></div>
     <UiToolbar data-ui-key="u-a39c42009c7e" className="payroll-main-tabs" role="tablist" aria-label="Lương KTV">
       <button data-ui-key="u-6a99f7168de5" data-ui-label-default="Tính lương" type="button" role="tab" aria-selected={activeTab === 'calculate'} className={activeTab === 'calculate' ? 'active' : ''} onClick={() => onTabChange?.('calculate')}><UiCustomText uiKey="u-6a99f7168de5">Tính lương</UiCustomText></button>
       <button data-ui-key="u-5f140dee458d" data-ui-label-default="Lịch sử bảng lương" type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => onTabChange?.('history')}><UiCustomText uiKey="u-5f140dee458d">Lịch sử bảng lương</UiCustomText></button>
@@ -621,7 +614,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     </section>}
 
     <section data-ui-key="u-338c2d7b398f" className="panel payroll-history-panel">
-      <div data-ui-key="u-9d1f05fd02a2" className="panel-title-row"><div><h2>LỊCH SỬ BẢNG LƯƠNG</h2></div>{canSyncLegacy && <button data-ui-key="u-77711be61991" className="secondary-button" onClick={syncLegacy} disabled={isBusy}><RefreshCw size={16} className={busy === 'sync-legacy' ? 'spin' : ''} /> {busy === 'sync-legacy' ? 'Đang tải…' : 'Tải dữ liệu hệ thống cũ'}</button>}</div>
+      <div data-ui-key="u-9d1f05fd02a2" className="panel-title-row"><div><h2>LỊCH SỬ BẢNG LƯƠNG</h2></div></div>
 
       <div className="saved-payroll-list">{savedBatches.map((item) => <article className="saved-payroll-card" key={item.batch}><header><div><h3>{item.batch}</h3><small>{item.saved_date ? `Lưu ${item.saved_date}${item.saved_time ? ` · ${item.saved_time}` : ''}` : 'Bảng lương đã lưu'}</small></div><UiToolbar data-ui-key="u-22eced718015" className="list-actions">{canSyncLegacy && <button data-ui-key="u-39395c5de662" className="secondary-button compact" type="button" disabled={isBusy} onClick={() => reopenSavedPayroll(item.batch)}><Edit3 size={14} /> {busy === `reopen-${item.batch}` ? 'Đang mở…' : 'Sửa bảng lương'}</button>}{canDeleteHistory && <button data-ui-key="u-f850fb1d74d2" data-ui-label-default="Xóa" className="danger-button compact" type="button" disabled={isBusy} onClick={() => deleteHistoryBatch(item.batch)}><Trash2 size={14} /><UiCustomText uiKey="u-f850fb1d74d2"> Xóa</UiCustomText></button>}</UiToolbar></header><div className="saved-payroll-metrics"><span>Nhân viên<strong>{item.employee_count}</strong></span><span>Tổng thực nhận<strong>{money(item.total_net)}</strong></span></div><button data-ui-key="u-c94c425924b5" data-ui-label-default="Xem chi tiết" className="secondary-button" type="button" disabled={isBusy} onClick={() => setBatch(item.batch)}><UiCustomText uiKey="u-c94c425924b5">Xem chi tiết</UiCustomText></button></article>)}</div>
       {!savedBatches.length && <div className="setup-note">Chưa có bảng lương đã hoàn thành.</div>}
