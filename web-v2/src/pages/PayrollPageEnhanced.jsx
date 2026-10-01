@@ -555,7 +555,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
 
     {canCalculate && <section data-ui-key="u-856731095818" className="panel payroll-calculate-panel">
       <div data-ui-key="u-7722410132ee" className="panel-title-row"><div><h2>TÍNH BẢNG LƯƠNG</h2><p>Kỳ 1 là 01–15; Kỳ 2 là 16–cuối tháng. Nợ vi phạm đủ ngày bắt đầu trừ sẽ tự cộng vào “Nợ vi phạm kỳ trước”.</p></div></div>
-      <UiToolbar data-ui-key="u-8d0f10645723" className="data-toolbar">
+      <UiToolbar data-ui-key="u-8d0f10645723" className="data-toolbar payroll-period-controls">
         <label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={(event) => { setMonth(event.target.value) }} /></label>
         <label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={(event) => { setPeriodNo(Number(event.target.value)) }}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label>
         <button data-ui-key="u-fa0f02dfbb3f" className="primary-button" onClick={calculate} disabled={isBusy}><WalletCards size={16} /> {busy === 'calculate' ? 'Đang tính…' : 'Tính lương từ TIP'}</button>
@@ -645,7 +645,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
 
     {isAdmin && canEditConfig && activeTab === 'accumulation' && <PayrollPersonalTracking user={user} unified refunds={accumulationRefunds} formerEmployees={formerEmployees} onRemoveRefund={removeAccumulationRefund} disabled={isBusy}>
 
-      <div className="data-toolbar"><label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={event => setMonth(event.target.value)} /></label><label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={event => setPeriodNo(Number(event.target.value))}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label></div>
+      <div className="data-toolbar payroll-period-controls"><label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={event => setMonth(event.target.value)} /></label><label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={event => setPeriodNo(Number(event.target.value))}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label></div>
       <form className="payroll-refund-form" onSubmit={addAccumulationRefund}>
         <label>Nhân viên nghỉ việc<select required disabled={isBusy} value={refundForm.employee_name} onChange={(event) => setRefundForm({ ...refundForm, employee_name: event.target.value })}><option value="">-- Chọn nhân viên --</option>{formerEmployees.map((item) => <option key={item.employee_name} value={item.employee_name}>{item.employee_name} · {item.employment_status}</option>)}</select></label>
         <label>Số tiền hoàn trả<VeraMoneyInput required disabled={isBusy} value={refundForm.amount} onChange={(event) => setRefundForm({ ...refundForm, amount: event.target.value })} /></label>

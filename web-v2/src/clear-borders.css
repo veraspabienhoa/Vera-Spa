@@ -495,3 +495,83 @@ body .attendance-page > .page-heading h1 {
   .staff-page .staff-list-visibility-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .staff-page .staff-list-visibility-actions button:last-child { grid-column:1 / -1; }
 }
+/* Payroll period fields need their own rows on phones: native iOS month
+   controls must not compete with the period selector for intrinsic width. */
+@media screen and (max-width: 760px) {
+  body .payroll-page-enhanced .data-toolbar.payroll-period-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: end;
+    gap: 12px;
+    padding: 0;
+    margin: 12px 0;
+    overflow: visible;
+  }
+  body .payroll-page-enhanced .data-toolbar.payroll-period-controls > label {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    gap: 6px;
+    font-size: 12px;
+  }
+  body .payroll-page-enhanced :is(.payroll-period-controls, .payroll-refund-form) :is(input, select) {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 10px;
+    font-size: 16px;
+    box-sizing: border-box;
+  }
+  body .payroll-page-enhanced .data-toolbar.payroll-period-controls input[type=month] {
+    appearance: none;
+    text-align: left;
+  }
+  body .payroll-page-enhanced .data-toolbar.payroll-period-controls input[type=month]::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: left;
+  }
+  body .payroll-page-enhanced .data-toolbar.payroll-period-controls > button {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 44px;
+  }
+  body .payroll-page-enhanced .payroll-draft-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  body .payroll-page-enhanced :is(.payroll-draft-toolbar .list-actions, .payroll-personal-heading-actions) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 1fr;
+    width: 100%;
+    min-width: 0;
+    gap: 8px;
+  }
+  body .payroll-page-enhanced :is(.payroll-draft-toolbar .list-actions, .payroll-personal-heading-actions) > button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 6px;
+    justify-content: center;
+    white-space: normal;
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  body .payroll-page-enhanced :is(.payroll-draft-toolbar .list-actions, .payroll-personal-heading-actions) > button svg { flex-shrink: 0; }
+  body .payroll-page-enhanced .payroll-refund-form > label { min-width: 0; }
+  body .payroll-page-enhanced .payroll-refund-form > label:nth-of-type(3) { grid-column: 1 / -1; }
+  body .payroll-page-enhanced .payroll-refund-form > button { min-height: 44px; }
+}
+@media screen and (max-width: 480px) {
+  body .payroll-page-enhanced .data-toolbar.payroll-period-controls,
+  body .payroll-page-enhanced .payroll-refund-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media screen and (max-width: 360px) {
+  body .payroll-page-enhanced .payroll-draft-toolbar .list-actions { grid-template-columns: minmax(0, 1fr); }
+}
