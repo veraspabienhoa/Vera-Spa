@@ -230,7 +230,7 @@ def test_active_writer_is_not_recovered_and_deleted_employee_precommit_can_close
     assert s.calls==before
     with s.engine.begin() as conn:
         conn.execute(text("UPDATE vera_facegate_enrollment SET status='unverified'"))
-        conn.execute(text("UPDATE employees SET payload=' {\"__deleted\":true}'::jsonb WHERE username='worker'"))
+        conn.execute(text("UPDATE employees SET payload=CAST(:payload AS jsonb) WHERE username='worker'"), {'payload':json.dumps({'__deleted':True})})
     assert s.api.post(PATH+'/verify').json()['status']=='rejected'
     assert s.api.get(PATH.replace('worker','other')).json()['device_pending'] is None
 
