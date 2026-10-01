@@ -14,6 +14,14 @@ khoảng tạm ngừng cũ vẫn theo quy tắc loại toàn kỳ hiện hữu; 
 tháng 9 hoặc sửa dữ liệu lịch sử. Không thay ảnh, mapping, ca hoặc log gốc.
 Đây là thay đổi mã theo yêu cầu, chưa deploy hoặc xác minh production.
 
+Lúc 12:28 người vận hành xác nhận admin và akamen chỉ là tài khoản quản trị,
+không tính lương. Thêm điều kiện loại đúng hai username trong bộ lọc dùng
+chung cho lương TIP và hành chánh, cả danh mục cấu hình và truy vấn tính công
+lương từng bộ phận; không phụ thuộc bộ phận được gán. Không loại mọi người
+có role admin: quyền đăng nhập và phân loại bộ phận vẫn độc lập. Không sửa
+bảng lương đã lưu hoặc dữ liệu tài khoản. Ms Tuyết và letan vẫn đủ điều kiện
+xét lương từ 01-10 nếu các kiểm tra thông thường đạt. Chưa deploy.
+
 
 ## 29-09-2026 — Tạm ngừng bốn tài khoản; hoàn tất ngừng TimeSoft
 
