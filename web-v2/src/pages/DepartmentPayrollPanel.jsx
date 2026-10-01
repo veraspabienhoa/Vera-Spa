@@ -5,7 +5,7 @@ import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
 import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import VeraMoneyInput from '../components/VeraMoneyInput'
 import './DepartmentPayrollPanel.css'
@@ -88,6 +88,8 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [month, setMonth] = useState(monthNow())
   const [settings, setSettings] = useState({})
   const [settingsBaseline, setSettingsBaseline] = useState('')
+  const [employeeSettingsBaseline, setEmployeeSettingsBaseline] = useState(null)
+  const failedAutoSave = useRef('')
   const [salaryConfigTables, setSalaryConfigTables] = useState({ operations: [], tapvu: [] })
   const [employeeCatalog, setEmployeeCatalog] = useState([])
   const [addDepartment, setAddDepartment] = useState('quanly')
@@ -123,6 +125,8 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     setSettingsBaseline(JSON.stringify([result.departments || {}, result.salary_config_tables || { operations: [], tapvu: [] }]))
     setAddDepartment(Object.keys(result.departments || {}).find(key => result.departments[key].config?.calculation_mode === 'hourly') || '')
     setSalaryConfigTables(result.salary_config_tables || { operations: [], tapvu: [] })
+    setEmployeeSettingsBaseline(JSON.stringify(result.salary_config_tables || { operations: [], tapvu: [] }))
+    failedAutoSave.current = ''
     setEmployeeCatalog(result.salary_employee_catalog || [])
     setHistory(historyResult.items || [])
   })
@@ -197,15 +201,33 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     [group]: (currentTables[group] || []).map((row) => row.employee_username === username ? { ...row, [key]: Number(value) } : row),
   }))
 
+  const employeeSettingsSnapshot = JSON.stringify(salaryConfigTables)
+  const employeeSettingsDirty = employeeSettingsBaseline !== null && employeeSettingsSnapshot !== employeeSettingsBaseline
   const saveEmployeeConfigs = () => run('employee-settings-save', async () => {
-    const result = await request('/v2/department-payroll/settings/employees', {
-      method: 'PUT',
-      body: JSON.stringify({ rows: [...(salaryConfigTables.operations || []), ...(salaryConfigTables.tapvu || [])] }),
-    })
-    setSalaryConfigTables(result.salary_config_tables || salaryConfigTables)
-    setSettingsBaseline(current => JSON.stringify([JSON.parse(current || '[{},{}]')[0], result.salary_config_tables || salaryConfigTables]))
-    setNotice({ type: 'success', message: result.message })
+    const snapshot = employeeSettingsSnapshot
+    try {
+      const result = await request('/v2/department-payroll/settings/employees', {
+        method: 'PUT',
+        body: JSON.stringify({ rows: [...(salaryConfigTables.operations || []), ...(salaryConfigTables.tapvu || [])] }),
+      })
+      const tables = result.salary_config_tables || salaryConfigTables
+      setSalaryConfigTables(tables)
+      setEmployeeSettingsBaseline(JSON.stringify(tables))
+      failedAutoSave.current = ''
+      setSettingsBaseline(current => JSON.stringify([JSON.parse(current || '[{},{}]')[0], tables]))
+      setNotice({ type: 'success', message: result.message || 'Đã lưu cấu hình lương.' })
+    } catch (error) {
+      // Retry only after a new edit or an explicit Save; never loop on failure.
+      failedAutoSave.current = snapshot
+      throw error
+    }
   })
+
+  useEffect(() => {
+    if (!settingsOnly || !canConfig || busy || !employeeSettingsDirty || failedAutoSave.current === employeeSettingsSnapshot) return undefined
+    const timer = window.setTimeout(() => { void saveEmployeeConfigs() }, 1200)
+    return () => window.clearTimeout(timer)
+  }, [settingsOnly, canConfig, busy, employeeSettingsDirty, employeeSettingsSnapshot]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const employeeCandidates = (group) => {
     const departments = group === 'tapvu' ? new Set(Object.keys(settings).filter(key => settings[key].config?.calculation_mode === 'monthly')) : new Set([addDepartment])
@@ -261,8 +283,9 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
 
   if (settingsOnly) return <div className="feature-page department-payroll-page department-payroll-config-page">
     <section data-ui-key="u-0a9ecdd6d190" className="panel department-payroll-panel">
-      <div data-ui-key="u-367c7a50f712" className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG THEO NHÂN VIÊN</h2><p>Bảng 1 gồm các bộ phận Lương giờ. Bảng 2 gồm các bộ phận Lương tháng. Chọn hình thức lương trong menu Nhân sự.</p></div><button data-ui-key="u-d2f1dad4aa43" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'settings-load' ? 'spin' : ''} /><UiCustomText uiKey="u-d2f1dad4aa43"> Làm mới</UiCustomText></button></div>
+      <div data-ui-key="u-367c7a50f712" className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG THEO NHÂN VIÊN</h2><p>Bảng 1 gồm các bộ phận Lương giờ. Bảng 2 gồm các bộ phận Lương tháng. Chọn hình thức lương trong menu Nhân sự.</p></div><div className="list-actions"><button data-ui-key="u-d2f1dad4aa43" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy) || employeeSettingsDirty}><RefreshCw size={16} className={busy === 'settings-load' ? 'spin' : ''} /><UiCustomText uiKey="u-d2f1dad4aa43"> Làm mới</UiCustomText></button>{canConfig && <button className="primary-button" type="button" disabled={Boolean(busy) || !employeeSettingsDirty} onClick={saveEmployeeConfigs}><Save size={16}/> {busy === 'employee-settings-save' ? 'Đang lưu…' : 'Lưu'}</button>}</div></div>
       <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
+      {canConfig && <p role="status">{busy === 'employee-settings-save' ? 'Đang lưu cấu hình…' : employeeSettingsDirty ? failedAutoSave.current === employeeSettingsSnapshot ? 'Chưa lưu được. Bấm Lưu để thử lại.' : 'Có thay đổi chưa lưu. Tự động lưu sau khi ngừng chỉnh sửa.' : 'Tự động lưu khi thay đổi.'}</p>}
       {employeeConfigTable('operations', 'BẢNG 1 · LƯƠNG GIỜ', operationsEmployeeFields)}
       {employeeConfigTable('tapvu', 'BẢNG 2 · LƯƠNG THÁNG', tapvuEmployeeFields)}
       <div className="setup-note">Email bảng lương các bộ phận dùng cùng mẫu chuẩn đang áp dụng cho Leader/Nhân viên.</div>
