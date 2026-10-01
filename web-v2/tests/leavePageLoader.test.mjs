@@ -117,7 +117,7 @@ test('obsolete HTTP request is aborted so the latest month can load immediately'
   assert.deepEqual(view.errors, [])
 })
 
-import { restoreFilterAnchor } from '../src/lib/useFilterScrollAnchor.js'
+import { restoreFilterAnchor } from '../src/lib/filterScrollAnchor.js'
 
 function fixture(top, panelTop) {
   const panel = { style: {}, getBoundingClientRect: () => ({ top: panelTop }) }
