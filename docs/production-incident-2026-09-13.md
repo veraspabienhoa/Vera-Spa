@@ -1884,6 +1884,25 @@ không đăng ký ảnh lên FaceGate. Bổ sung kiểm thử HTTP/PostgreSQL, U
 ảnh nhỏ/ngang/vuông, quyền và kích thước khung Excel qua middleware định dạng.
 Chưa xác nhận bản sửa trên VPS; không thay nguồn tính công hoặc dừng TimeSoft.
 
+## 01-10-2026: thay ảnh Face ID trên hồ sơ FaceGate hiện có (mã chờ CI)
+
+Người vận hành cung cấp `bwlist.js` từ Face Server 4.0.0-1.0. Đối chiếu
+`gotoUpgrade()` xác nhận ảnh sửa hồ sơ dùng upload `LISTMODIFT` với `LISTuid`
+đang chọn; `funSubmitModiyList()` lưu hồ sơ bằng `setWhitelist?action=update`
+và giữ nguyên UID. Đây là bằng chứng giao thức bổ sung cho firmware trong ảnh;
+không gửi lệnh lên thiết bị production trong lượt rà soát này.
+
+Web V2 hiện có luồng thay ảnh cho ánh xạ đã xác minh: giữ nguyên hồ sơ/UID,
+đọc lại danh sách và chi tiết trước khi ghi, lưu tiến trình bền vững trước lệnh
+thay đổi, không tự phát lại lệnh khi kết quả chưa rõ, rồi đọc lại UID, tên,
+token hồ sơ và tham chiếu ảnh trước khi đổi ánh xạ. Xác nhận thủ công chỉ bỏ
+qua cho luồng thay ảnh được gắn với ánh xạ đã có; kiểm tra tự động trên máy
+vẫn bắt buộc. Lịch sử check-in giữ nguyên; ánh xạ lưu dấu các tham chiếu cũ.
+
+Đã thêm kiểm thử giao thức và kiểm thử giao diện. CI/PostgreSQL, merge và
+production chưa được xác minh; chưa thay ảnh nào trên máy thật.
+
+
 ## 27-09-2026: trang Nhân viên lỗi khi thay đổi bộ lọc
 
 Sau deploy main `19517aeb2bf2827c087642b48202e914c5535717`, đã đăng nhập
