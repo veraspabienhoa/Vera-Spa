@@ -418,6 +418,7 @@ def _employees(conn, department: str) -> list[dict[str, Any]]:
         SELECT username,COALESCE(full_name,'') AS full_name,COALESCE(email,'') AS email
         FROM employees
         WHERE {hr.DEPARTMENT_SQL}=:department
+          AND {hr.PAYROLL_ACCOUNT_SQL}
           AND NOT ({PAYROLL_EXCLUDED_SQL})
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc'))='đang làm việc'
