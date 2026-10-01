@@ -50,7 +50,9 @@ def test_suspension_filters_calculation_and_blocks_stale_finalization(database, 
         assert payroll._setting(conn, 'department_payroll_combined_draft_2026-09', []) == saved
         assert [tuple(r) for r in conn.execute(text('SELECT * FROM employees ORDER BY username'))] == profiles
     historic = http.get(f'/v2/department-payroll/combined/calculate?month=2026-08&source={source}')
-    assert set(suspended).issubset({r['employee_username'] for r in historic.json()['rows']})
+    historic_users = {r['employee_username'] for r in historic.json()['rows']}
+    assert {'letan', 'Ms Tuyết'}.issubset(historic_users)
+    assert not {'admin', 'akamen'}.intersection(historic_users)
     # Completing other employees must not erase the suspended account's saved money.
     response = http.post('/v2/department-payroll/combined/complete', json={
         'month': '2026-09', 'rows': [dict(saved[0], calculation_source='schedule')]})
@@ -59,6 +61,16 @@ def test_suspension_filters_calculation_and_blocks_stale_finalization(database, 
     with database.connect() as conn:
         completed = payroll._setting(conn, 'department_payroll_combined_history', [])[0]['rows']
         assert next(r for r in completed if r['employee_username'] == 'Ms Tuyết') == saved[1]
+
+    class OctoberClock(datetime):
+        @classmethod
+        def now(cls, tz=None): return datetime(2026, 10, 1, 12, tzinfo=dep.VN_TZ)
+    monkeypatch.setattr(dep, 'datetime', OctoberClock)
+    resumed = http.get(f'/v2/department-payroll/combined/calculate?month=2026-10&source={source}')
+    assert resumed.status_code == 200, resumed.text
+    resumed_users = {r['employee_username'] for r in resumed.json()['rows']}
+    assert {'letan', 'Ms Tuyết'}.issubset(resumed_users)
+    assert not {'admin', 'akamen'}.intersection(resumed_users)
 
 
 def test_tip_period_update_keeps_suspended_money_and_passes_old_deductions_to_hook(database, monkeypatch):

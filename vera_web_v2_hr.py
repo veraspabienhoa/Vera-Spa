@@ -25,10 +25,11 @@ DEPARTMENT_SQL = f"COALESCE({REGISTRY_SQL}->'assignments'->>username, lower(COAL
 _DEFAULT_SQL = json.dumps(DEFAULT_DEPARTMENTS, ensure_ascii=False).replace("'", "''")
 DEFINITION_SQL = f"COALESCE({REGISTRY_SQL}->'departments'->({DEPARTMENT_SQL}), CAST('{_DEFAULT_SQL}' AS jsonb)->({DEPARTMENT_SQL}))"
 MODE_SQL = f"(CASE WHEN COALESCE(({DEFINITION_SQL})->>'active','true') = 'true' THEN ({DEFINITION_SQL})->>'salary_mode' ELSE NULL END)"
-TIP_SQL = f"{MODE_SQL} = 'tip'"
+PAYROLL_ACCOUNT_SQL = "lower(btrim(COALESCE(username,''))) NOT IN ('admin','akamen')"
+TIP_SQL = f"{MODE_SQL} = 'tip' AND {PAYROLL_ACCOUNT_SQL}"
 ADMIN_PAY_EXCLUDED_DEPARTMENTS = frozenset({'leader', 'nhanvien', 'giamdoc', 'admin'})
 _ADMIN_PAY_EXCLUDED_SQL = ','.join(f"'{code}'" for code in sorted(ADMIN_PAY_EXCLUDED_DEPARTMENTS))
-ADMIN_PAY_SQL = f"{MODE_SQL} IN ('hourly','monthly') AND lower(btrim({DEPARTMENT_SQL})) NOT IN ({_ADMIN_PAY_EXCLUDED_SQL})"
+ADMIN_PAY_SQL = f"{MODE_SQL} IN ('hourly','monthly') AND lower(btrim({DEPARTMENT_SQL})) NOT IN ({_ADMIN_PAY_EXCLUDED_SQL}) AND {PAYROLL_ACCOUNT_SQL}"
 
 
 def registry(conn):
