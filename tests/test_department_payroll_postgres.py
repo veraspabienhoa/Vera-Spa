@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, text
 import vera_web_v2_department_payroll as dep
 import vera_web_v2_payroll as payroll
+import vera_web_v2_hr as hr
 
 
 @pytest.fixture
@@ -68,6 +69,28 @@ def client(database):
         require_feature=require,identity_type=SimpleNamespace,norm=lambda value:str(value or '').strip().casefold())
     with TestClient(app) as http:
         yield http, ident
+
+
+@pytest.mark.parametrize('mode', ['hourly', 'monthly', 'tip'])
+def test_system_admin_accounts_never_enter_payroll_even_when_reassigned(database, mode):
+    accounts = ['admin', 'akamen', ' ADMIN ', 'AKAMEN', 'letan', 'Ms Tuyết']
+    with database.begin() as conn:
+        conn.execute(text('ALTER TABLE employees ADD COLUMN bank_account text, ADD COLUMN bank_name text'))
+        for name in accounts:
+            conn.execute(text('INSERT INTO employees(username,full_name,role) VALUES(:name,:name,\'admin\')'),
+                         {'name': name})
+        payroll._put_setting(conn, 'hr_registry', {
+            'departments': {'support': {'name': 'Support', 'salary_mode': mode, 'active': True}},
+            'assignments': {name: 'support' for name in accounts},
+        }, 'synthetic')
+        clause = hr.TIP_SQL if mode == 'tip' else hr.ADMIN_PAY_SQL
+        names = set(conn.execute(text(f'SELECT username FROM employees WHERE {clause}')).scalars())
+        assert names.intersection(accounts) == {'letan', 'Ms Tuyết'}
+        if mode == 'tip':
+            assert set(payroll._employee_catalog(conn, str)) == {'letan', 'Ms Tuyết'}
+        else:
+            assert {row['username'] for row in dep._employees(conn, 'support')} == {'letan', 'Ms Tuyết'}
+            assert {row['employee_username'] for row in dep._salary_employee_catalog(conn)}.intersection(accounts) == {'letan', 'Ms Tuyết'}
 
 
 @pytest.mark.parametrize('source',['schedule','attendance'])
