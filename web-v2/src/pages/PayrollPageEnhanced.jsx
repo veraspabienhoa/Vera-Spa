@@ -546,7 +546,6 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   })
 
   return <div className={`feature-page payroll-page payroll-page-enhanced payroll-tab-${activeTab}`}>
-    <div data-ui-key="u-4dcec71791b4" className="page-heading payroll-main-heading"><div></div><button data-ui-key="u-c2ca30d80853" data-ui-label-default="Làm mới" className="secondary-button" onClick={reload} disabled={isBusy}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-c2ca30d80853"> Làm mới</UiCustomText></button></div>
     <UiToolbar data-ui-key="u-a39c42009c7e" className="payroll-main-tabs" role="tablist" aria-label="Lương KTV">
       <button data-ui-key="u-6a99f7168de5" data-ui-label-default="Tính lương" type="button" role="tab" aria-selected={activeTab === 'calculate'} className={activeTab === 'calculate' ? 'active' : ''} onClick={() => onTabChange?.('calculate')}><UiCustomText uiKey="u-6a99f7168de5">Tính lương</UiCustomText></button>
       <button data-ui-key="u-5f140dee458d" data-ui-label-default="Lịch sử bảng lương" type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => onTabChange?.('history')}><UiCustomText uiKey="u-5f140dee458d">Lịch sử bảng lương</UiCustomText></button>
