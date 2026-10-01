@@ -2531,6 +2531,19 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             target = int(_bounded_number(payload.get("position"), label="STT", minimum=1, maximum=len(peers), integer=True)) - 1
         elif direction not in {"top", "bottom", "up", "down"}:
             raise HTTPException(400, "Hướng sắp xếp không hợp lệ.")
+        bottom_clock = None
+        if action == "admin_reorder" and direction == "bottom":
+            # Anchor to the queue before moving the employee. Leave rows stay
+            # below working staff and must not supply an empty/stale tail clock.
+            tail = [row for row in ordered if row is not employee
+                    and _norm(row.get("work_status")) != "nghi phep"]
+            if tail:
+                bottom_clock = _parse_datetime(leave_return.queue_clock(tail[-1])
+                    or _board_starts(tail[-1])["board_started_at"])
+                if bottom_clock is None:
+                    clocks = [_parse_datetime(leave_return.queue_clock(row)
+                        or _board_starts(row)["board_started_at"]) for row in tail]
+                    bottom_clock = max((clock for clock in clocks if clock), default=now)
         peers.pop(current)
         peers.insert(max(0, min(target, len(peers))), employee)
         peer_ids = {item["id"] for item in peers}
@@ -2549,7 +2562,10 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         if len(ordered) > 1:
             neighbor = ordered[position - 1] if position else ordered[1]
             neighbor_start = _parse_datetime(_board_starts(neighbor)["board_started_at"])
-            if neighbor_start:
+            if bottom_clock is not None:
+                _preserve_board_starts(employee)
+                employee["board_started_at"] = _iso(bottom_clock + timedelta(seconds=1))
+            elif neighbor_start:
                 _preserve_board_starts(employee)
                 employee["board_started_at"] = _iso(neighbor_start + timedelta(seconds=1 if position else -1))
         result["employee"] = employee
