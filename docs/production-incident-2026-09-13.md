@@ -1,5 +1,19 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 01-10-2026 — Mở lại các tài khoản tạm ngừng chấm công/tính lương
+
+Lúc 12:10:01 +07 người vận hành yêu cầu mở lại tất cả trường hợp tạm ngừng.
+Đóng cả bốn interval admin, akamen, letan, Ms Tuyết với effective_until
+01-10-2026 (exclusive). Từ ngày công Việt Nam này, bản công, cảnh báo và
+tính lương mới áp dụng lại các kiểm tra tham gia thông thường; không miễn
+điều kiện bằng chứng FaceGate, cấu hình lương, bộ phận hoặc Không tính lương.
+Admin vẫn không thuộc khối lương hành chánh theo quy tắc bộ phận hiện hữu.
+
+Giữ nguyên lịch sử tạm ngừng 29–30/09 và tiền đã lưu. Kỳ lương giao với
+khoảng tạm ngừng cũ vẫn theo quy tắc loại toàn kỳ hiện hữu; không tự tính lại
+tháng 9 hoặc sửa dữ liệu lịch sử. Không thay ảnh, mapping, ca hoặc log gốc.
+Đây là thay đổi mã theo yêu cầu, chưa deploy hoặc xác minh production.
+
 
 ## 29-09-2026 — Tạm ngừng bốn tài khoản; hoàn tất ngừng TimeSoft
 
