@@ -144,7 +144,11 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
             row = conn.execute(text('''SELECT * FROM vera_facegate_enrollment WHERE employee_username=:username
                 ORDER BY created_at DESC LIMIT 1'''), {'username': person['username']}).mappings().first()
             result = public(row)
-            result['can_enroll'] = True
+            busy = conn.execute(text("SELECT * FROM vera_facegate_enrollment WHERE device_id=:device AND status IN ('running','unverified')"),
+                                {'device': mapping_device_id()}).mappings().first()
+            result['device_pending'] = ({**public(busy), 'employee_username': busy['employee_username']}
+                                        if busy else None)
+            result['can_enroll'] = not busy
             return result
 
     @app.post('/v2/staff/{username}/face-id/enrollment')
@@ -248,14 +252,30 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
             if target(conn) != row['device_address'] or mapping_device_id() != row['device_id']:
                 raise HTTPException(409, 'Cấu hình máy đã đổi; cần đối chiếu máy trước khi tiếp tục.')
             ref = decode(row['registration_ref'], None)
-        if not ref or row['stage'] not in {'committing', 'verified'}:
-            raise HTTPException(409, 'Lượt gửi dừng trước khi lưu hồ sơ. Cần kiểm tra nhật ký đăng ký; chưa được gửi lặp.')
+        if row['status'] == 'rejected':
+            return public(row)
+        recover_precommit = row['status'] == 'unverified' and row['stage'] in {'preflight', 'uploading', 'uploaded'}
+        if not recover_precommit and (not ref or row['stage'] not in {'committing', 'verified'}):
+            raise HTTPException(409, 'Lượt gửi chưa xác định được kết quả. Giữ lượt này để đối chiếu, không gửi lặp.')
         client = None
         try:
             with facegate_endpoint('http://' + row['device_address']):
                 client = FaceGateEnrollmentClient()
                 client.login()
-                profile = client.verify(row['device_name'], 'vera:' + row['operation_id'], ref)
+                if recover_precommit:
+                    # The failed request never reached the durable committing
+                    # checkpoint, so no profile add was issued. Read the complete
+                    # device list before releasing its device-wide reservation.
+                    profiles = client.profiles()
+                    from vera_facegate_control_log import registration_ref
+                    if any(p.get('utext') == 'vera:' + row['operation_id'] or
+                           (ref and registration_ref(p) == ref) for p in profiles):
+                        raise HTTPException(409, 'Máy có hồ sơ liên quan đến lượt này; cần đối chiếu trước khi mở đăng ký mới.')
+                else:
+                    profile = client.verify(row['device_name'], 'vera:' + row['operation_id'], ref)
+            if recover_precommit:
+                checkpoint(row['operation_id'], status='rejected', code='precommit_reconciled')
+                return {**public(row), 'status': 'rejected', 'error_code': 'precommit_reconciled'}
             return finish(row, profile)
         except HTTPException:
             raise
