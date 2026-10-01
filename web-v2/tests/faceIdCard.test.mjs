@@ -66,10 +66,24 @@ test('enrollment sends the saved photo hash only after confirmation',async()=>{
   dom.window.confirm=()=>true
   await dom.window.act(async()=>button(dom,'Đăng ký lên máy').click())
   assert.equal(writes.length,1)
-  assert.deepEqual(writes[0],['worker','a'.repeat(64)])
+  assert.deepEqual(writes[0],['worker','a'.repeat(64),true])
   assert.equal(button(dom,'Đăng ký lên máy'),undefined)
   assert.ok(dom.window.document.body.textContent.includes('Hồ sơ 123'))
  }finally{await dom.window.unmount();dom.window.close()}
+})
+
+test('replacement updates the mapped profile without a manual confirmation prompt',async()=>{
+ const writes=[]
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:'b'.repeat(64)}}),
+  enrollment:async()=>({status:'verified',profile_id:123,photo_sha256:'a'.repeat(64),can_replace:true,mapped_profile:{profile_id:123}}),
+  enroll:async(...args)=>{writes.push(args);return{status:'verified',profile_id:123,photo_sha256:'b'.repeat(64)}}})
+ try {
+  assert.ok(button(dom,'Cập nhật ảnh trên máy'))
+  dom.window.confirm=()=>{throw new Error('replacement should not request manual confirmation')}
+  await dom.window.act(async()=>button(dom,'Cập nhật ảnh trên máy').click())
+  assert.deepEqual(writes,[['worker','b'.repeat(64),false]])
+  assert.ok(dom.window.document.body.textContent.includes('Đã thay ảnh trên hồ sơ hiện có'))
+ } finally {await dom.window.unmount();dom.window.close()}
 })
 
 test('ambiguous device write exposes verification instead of duplicate registration',async()=>{
