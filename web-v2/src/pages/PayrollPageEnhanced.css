@@ -255,3 +255,23 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Keep history fields, filter toggles and actions in compact aligned rows. */
+.payroll-history-controls { display:grid; gap:10px; margin:14px 0; padding:12px; border:2px solid #587561; border-radius:12px; background:#f7f9f8; }
+.payroll-history-filter-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; align-items:end; }
+.payroll-history-filter-fields label { display:grid; gap:5px; min-width:0; margin:0; }
+.payroll-history-filter-fields :is(select,input) { width:100%; min-width:0; box-sizing:border-box; }
+.payroll-history-filter-options { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+.payroll-history-filter-options strong { font-size:12px; }
+.payroll-history-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:0; }
+.payroll-history-actions button { width:100%; min-height:40px; margin:0; justify-content:center; }
+.payroll-history-controls .payroll-select-all { margin:0; }
+.payroll-history-panel .saved-payroll-card { gap:8px; padding:10px; }
+.payroll-history-panel .saved-payroll-card .list-actions { gap:6px; }
+@media(max-width:760px) {
+  .payroll-history-filter-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .payroll-history-filter-fields .payroll-search-box { grid-column:1 / -1; }
+  .payroll-history-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .payroll-history-actions .danger-button { grid-column:1 / -1; }
+  .payroll-history-filter-options .payroll-quick-filters { width:100%; }
+}
