@@ -116,3 +116,31 @@ test('obsolete HTTP request is aborted so the latest month can load immediately'
   assert.deepEqual(view.data, [['records', 'october']])
   assert.deepEqual(view.errors, [])
 })
+
+import { restoreFilterAnchor } from '../src/lib/filterScrollAnchor.js'
+
+function fixture(top, panelTop) {
+  const panel = { style: {}, getBoundingClientRect: () => ({ top: panelTop }) }
+  const anchor = { closest: () => panel, getBoundingClientRect: () => ({ top }) }
+  const moves = []
+  const viewport = { innerHeight: 800, scrollBy: value => moves.push(value) }
+  return { panel, anchor, viewport, moves }
+}
+test('expanding statistics above a list keeps the active filter in place', () => {
+  const f = fixture(640, 600)
+  restoreFilterAnchor(f.anchor, { top: 220 }, f.viewport)
+  assert.deepEqual(f.moves, [{ top: 420, behavior: 'instant' }])
+  assert.equal(f.panel.style.minHeight, '620px')
+})
+test('loading or empty rows reserve viewport space so the browser cannot clamp to statistics', () => {
+  const f = fixture(100, 60)
+  restoreFilterAnchor(f.anchor, { top: 220 }, f.viewport)
+  assert.deepEqual(f.moves, [{ top: -120, behavior: 'instant' }])
+  assert.equal(f.panel.style.minHeight, '620px')
+})
+test('no captured filter interaction never changes scroll or height', () => {
+  const f = fixture(100, 60)
+  restoreFilterAnchor(f.anchor, null, f.viewport)
+  assert.deepEqual(f.moves, [])
+  assert.equal(f.panel.style.minHeight, undefined)
+})

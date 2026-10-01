@@ -1,4 +1,5 @@
 import usePageRefresh from '../lib/usePageRefresh'
+import useFilterScrollAnchor from '../lib/useFilterScrollAnchor'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
@@ -103,6 +104,7 @@ const matchesEmployeeName = (employeeName, searchValue) => {
 
 export default function LeaveRegistrationPage({ user }) {
   // Keep the current shell's refresh command compatible with the restored page.
+  const listFilterAnchor = useFilterScrollAnchor()
   usePageRefresh(() => load(), () => Boolean(busy || saving || managing || mutationRef.current || changedRecords.length))
   const initialRange = useMemo(() => rangeForFilter('Hôm nay'), [])
   const [date, setDate] = useState(today())
@@ -1061,7 +1063,7 @@ export default function LeaveRegistrationPage({ user }) {
               </button>
             </div>
           )}
-          <UiToolbar data-ui-key="u-1bf317df3f46" className="list-filter-toolbar">
+          <UiToolbar {...listFilterAnchor} data-ui-key="u-1bf317df3f46" className="list-filter-toolbar">
             <div className="range-filter-buttons list-range-buttons" role="group" aria-label="Lọc thời gian danh sách">
               {LIST_DATE_FILTERS.map((filter) => (
                 <button data-ui-key="u-0512fe10d2e8"
