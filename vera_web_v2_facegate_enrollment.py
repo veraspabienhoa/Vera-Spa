@@ -63,8 +63,12 @@ def mappings(conn, device_id, lock=False):
 def public(row):
     if not row:
         return {'status': 'not_registered'}
-    return {key: row.get(key) for key in ('operation_id', 'status', 'stage', 'photo_sha256',
+    result = {key: row.get(key) for key in ('operation_id', 'status', 'stage', 'photo_sha256',
                                         'profile_id', 'updated_at', 'error_code')}
+    updated = row.get('updated_at')
+    result['stale'] = bool(row.get('status') == 'running' and updated and
+                           (datetime.now(timezone.utc) - updated).total_seconds() >= 180)
+    return result
 
 
 def assert_new_mapping(rows, username):
@@ -93,13 +97,16 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
             raise HTTPException(404, 'Không tìm thấy duy nhất một hồ sơ nhân viên đang hoạt động.')
         return dict(row[0])
 
-    def checkpoint(op, *, status='running', stage=None, ref=None, code=None):
+    def checkpoint(op, *, status='running', stage=None, ref=None, code=None, expected_status='running'):
         with engine_instance().begin() as conn:
-            conn.execute(text('''UPDATE vera_facegate_enrollment SET status=:status,
+            updated = conn.execute(text('''UPDATE vera_facegate_enrollment SET status=:status,
                 stage=COALESCE(:stage,stage), registration_ref=COALESCE(CAST(:ref AS jsonb),registration_ref),
-                error_code=:code, updated_at=NOW() WHERE operation_id=:op AND status <> 'verified' '''),
+                error_code=:code, updated_at=NOW() WHERE operation_id=:op AND status=:expected_status '''),
                 {'op': op, 'status': status, 'stage': stage,
-                 'ref': json.dumps(ref) if ref is not None else None, 'code': code})
+                 'ref': json.dumps(ref) if ref is not None else None, 'code': code, 'expected_status': expected_status})
+            if not updated.rowcount and status == 'running':
+                raise HTTPException(409, 'Lượt đăng ký đã được xử lý bởi lần kiểm tra khác; không gửi lại lên máy.')
+            return bool(updated.rowcount)
 
     def finish(row, profile):
         with engine_instance().begin() as conn:
@@ -144,7 +151,11 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
             row = conn.execute(text('''SELECT * FROM vera_facegate_enrollment WHERE employee_username=:username
                 ORDER BY created_at DESC LIMIT 1'''), {'username': person['username']}).mappings().first()
             result = public(row)
-            result['can_enroll'] = True
+            busy = conn.execute(text("SELECT * FROM vera_facegate_enrollment WHERE device_id=:device AND status IN ('running','unverified')"),
+                                {'device': mapping_device_id()}).mappings().first()
+            result['device_pending'] = ({**public(busy), 'employee_username': busy['employee_username']}
+                                        if busy else None)
+            result['can_enroll'] = not busy
             return result
 
     @app.post('/v2/staff/{username}/face-id/enrollment')
@@ -234,10 +245,12 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
     def verify(username: str, ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             authorize(conn, ident)
-            person = employee(conn, username, lock=False)
             ensure_enrollment(conn)
-            row = conn.execute(text('''SELECT * FROM vera_facegate_enrollment WHERE employee_username=:username
-                ORDER BY created_at DESC LIMIT 1'''), {'username': person['username']}).mappings().first()
+            # A failed operation can belong to an employee since deleted or
+            # disabled. Recovery still needs to release its precommit reservation;
+            # finish() separately requires an active employee before mapping.
+            row = conn.execute(text('''SELECT * FROM vera_facegate_enrollment WHERE lower(btrim(employee_username))=lower(btrim(:username))
+                ORDER BY created_at DESC LIMIT 1'''), {'username': username}).mappings().first()
             if not row:
                 raise HTTPException(404, 'Chưa có lượt đăng ký để kiểm tra.')
             row = dict(row)
@@ -247,15 +260,44 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
                 raise HTTPException(409, 'Lượt gửi ảnh đang chạy. Hãy chờ hoàn tất rồi kiểm tra lại.')
             if target(conn) != row['device_address'] or mapping_device_id() != row['device_id']:
                 raise HTTPException(409, 'Cấu hình máy đã đổi; cần đối chiếu máy trước khi tiếp tục.')
+            if row['status'] == 'running':
+                # Fence the interrupted writer before any recovery I/O. Its next
+                # checkpoint cannot upload/add or resurrect a closed journal.
+                recovered = conn.execute(text('''UPDATE vera_facegate_enrollment SET status='unverified',
+                    error_code='worker_interrupted',updated_at=NOW() WHERE operation_id=:op
+                    AND status='running' AND updated_at=:updated RETURNING *'''),
+                    {'op':row['operation_id'],'updated':row['updated_at']}).mappings().first()
+                if not recovered:
+                    raise HTTPException(409,'Lượt đăng ký vừa thay đổi. Hãy kiểm tra lại.')
+                row = dict(recovered)
             ref = decode(row['registration_ref'], None)
-        if not ref or row['stage'] not in {'committing', 'verified'}:
-            raise HTTPException(409, 'Lượt gửi dừng trước khi lưu hồ sơ. Cần kiểm tra nhật ký đăng ký; chưa được gửi lặp.')
+        if row['status'] == 'rejected':
+            return public(row)
+        recover_precommit = row['status'] == 'unverified' and row['stage'] in {'preflight', 'uploading', 'uploaded'}
+        if not recover_precommit and (not ref or row['stage'] not in {'committing', 'verified'}):
+            raise HTTPException(409, 'Lượt gửi chưa xác định được kết quả. Giữ lượt này để đối chiếu, không gửi lặp.')
         client = None
         try:
             with facegate_endpoint('http://' + row['device_address']):
                 client = FaceGateEnrollmentClient()
                 client.login()
-                profile = client.verify(row['device_name'], 'vera:' + row['operation_id'], ref)
+                if recover_precommit:
+                    # The failed request never reached the durable committing
+                    # checkpoint, so no profile add was issued. Read the complete
+                    # device list before releasing its device-wide reservation.
+                    profiles = client.profiles()
+                    from vera_facegate_control_log import registration_ref
+                    if any(p.get('utext') == 'vera:' + row['operation_id'] or
+                           (ref and registration_ref(p) == ref) for p in profiles):
+                        raise HTTPException(409, 'Máy có hồ sơ liên quan đến lượt này; cần đối chiếu trước khi mở đăng ký mới.')
+                else:
+                    profile = client.verify(row['device_name'], 'vera:' + row['operation_id'], ref)
+            if recover_precommit:
+                checkpoint(row['operation_id'], status='rejected', code='precommit_reconciled', expected_status='unverified')
+                with engine_instance().begin() as conn:
+                    current = conn.execute(text('SELECT * FROM vera_facegate_enrollment WHERE operation_id=:op'),
+                                           {'op':row['operation_id']}).mappings().one()
+                    return public(current)
             return finish(row, profile)
         except HTTPException:
             raise

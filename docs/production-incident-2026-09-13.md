@@ -1,5 +1,24 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 01-10-2026 — Khôi phục lượt đăng ký Face ID bị gián đoạn
+
+Ảnh/video người vận hành cung cấp cho thấy thẻ Hải My báo chưa đăng ký trong
+khi một lượt khác giữ khóa đăng ký toàn máy. Rà soát mã xác nhận trạng thái
+cũ chỉ hiển thị lượt của nhân viên đang mở; chưa có nhật ký máy chủ để xác
+định nhân viên/stage của lượt đang chặn production. PR #392 mở rộng cho mọi
+nhân viên: hiển thị chủ lượt chặn, kiểm tra lại có giới hạn khi thẻ đang mở,
+và khôi phục lượt running quá 180 giây bằng chuyển trạng thái có điều kiện.
+Checkpoint của worker cũ không được hồi sinh lượt đã xử lý hoặc gửi add tiếp.
+
+Lượt lỗi trước committing chỉ được kết thúc sau khi đọc đủ danh sách máy
+và không thấy token/tham chiếu của lượt. Lượt đã committing vẫn phải xác minh
+đúng token, tên, tham chiếu và đọc lại hồ sơ trước khi ghi ánh xạ; không phát
+lại upload/add. Giữ journal, hồ sơ máy, ảnh và lịch sử chấm công. Lượt của
+nhân viên đã xóa được đối chiếu để gỡ giữ chỗ trước committing; ghi ánh xạ
+vẫn cần nhân viên đang hoạt động. Không giữ kết nối DB khi gọi máy.
+Bản sửa mã chưa merge/deploy, chưa gỡ lượt production.
+
+
 ## 01-10-2026 — Mở lại các tài khoản tạm ngừng chấm công/tính lương
 
 Lúc 12:10:01 +07 người vận hành yêu cầu mở lại tất cả trường hợp tạm ngừng.

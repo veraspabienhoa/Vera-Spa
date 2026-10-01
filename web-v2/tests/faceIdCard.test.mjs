@@ -85,3 +85,55 @@ test('ambiguous device write exposes verification instead of duplicate registrat
   assert.equal(writes,1);assert.equal(checks,1)
  }finally{await dom.window.unmount();dom.window.close()}
 })
+
+test('a device blocker from another employee can be verified without assigning it to this photo',async()=>{
+ let pending=true;const checks=[]
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),
+  enrollment:async()=>({status:'not_registered',device_pending:pending?{employee_username:'other',status:'unverified'}:null}),
+  verifyEnrollment:async(owner)=>{checks.push(owner);pending=false;return{status:'verified',profile_id:123}}})
+ try{
+  assert.equal(button(dom,'Đăng ký lên máy'),undefined)
+  await dom.window.act(async()=>button(dom,'Kiểm tra lượt đang chặn máy').click())
+  assert.deepEqual(checks,['other'])
+  assert.ok(button(dom,'Đăng ký lên máy'))
+  assert.ok(!dom.window.document.body.textContent.includes('Hồ sơ 123'))
+ }finally{await dom.window.unmount();dom.window.close()}
+})
+
+test('a reconciled precommit failure permits registration again',async()=>{
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),
+  enrollment:async()=>({status:'unverified'}),verifyEnrollment:async()=>({status:'rejected',error_code:'precommit_reconciled'})})
+ try{
+  await dom.window.act(async()=>button(dom,'Kiểm tra lại kết quả').click())
+  assert.ok(button(dom,'Đăng ký lên máy'))
+  assert.ok(dom.window.document.body.textContent.includes('mở lại đăng ký'))
+ }finally{await dom.window.unmount();dom.window.close()}
+})
+
+test('focus automatically reconciles a stale device-wide blocker and releases buttons',async()=>{
+ let pending=true;const checks=[]
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),
+  enrollment:async()=>({status:'not_registered',device_pending:pending?{employee_username:'other',operation_id:'old',status:'running',stale:true}:null}),
+  verifyEnrollment:async(owner)=>{checks.push(owner);pending=false;return{status:'rejected'}}})
+ try{
+  await dom.window.act(async()=>{dom.window.dispatchEvent(new dom.window.Event('focus'));await new Promise(r=>setTimeout(r,0))})
+  assert.deepEqual(checks,['other'])
+  assert.ok(button(dom,'Đăng ký lên máy'))
+  assert.equal(button(dom,'Đăng ký lên máy').disabled,false)
+ }finally{await dom.window.unmount();dom.window.close()}
+})
+
+test('automatic recovery is bounded and manual recovery remains available after device errors',async()=>{
+ let checks=0
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),
+  enrollment:async()=>({status:'unverified',operation_id:'pending'}),
+  verifyEnrollment:async()=>{checks++;throw new Error('Máy chưa kết nối')}})
+ try{
+  for(let i=0;i<4;i++)await dom.window.act(async()=>{dom.window.dispatchEvent(new dom.window.Event('focus'));await new Promise(r=>setTimeout(r,0))})
+  assert.equal(checks,3)
+  assert.equal(button(dom,'Đăng ký lên máy'),undefined)
+  assert.equal(button(dom,'Kiểm tra lại kết quả').disabled,false)
+  await dom.window.act(async()=>button(dom,'Kiểm tra lại kết quả').click())
+  assert.equal(checks,4)
+ }finally{await dom.window.unmount();dom.window.close()}
+})

@@ -138,7 +138,9 @@ def test_ambiguous_outcome_is_durable_and_not_replayed(setup,mode):
     assert other.status_code==409 and s.calls==before
     s.mode['value']='ok'
     if mode=='upload_timeout':
-        assert s.api.post(PATH+'/verify').status_code==409
+        assert s.api.post(PATH+'/verify').json()['status']=='rejected'
+        assert state(s)=='rejected'
+        assert s.calls.count('upload')==1 and 'add' not in s.calls
     else:
         assert s.api.post(PATH+'/verify').json()['status']=='verified'
         assert s.calls.count('upload')==s.calls.count('add')==1
@@ -167,3 +169,82 @@ def test_disabled_or_public_device_never_contacts_network(setup):
             conn.execute(text("UPDATE vera_app_setting SET value_json=CAST(:v AS jsonb) WHERE category='devices'"),{'v':json.dumps({'devices':[device]})})
         assert send(s).status_code==409
     assert not s.calls
+
+
+def test_other_employee_can_find_and_verify_device_blocker(setup):
+    s=setup;s.mode['value']='commit_timeout'
+    assert send(s).status_code==502
+    status=s.api.get(PATH.replace('worker','other')).json()
+    assert status['status']=='not_registered'
+    assert status['device_pending']['employee_username']=='worker'
+    assert not status['can_enroll']
+    s.mode['value']='ok'
+    assert s.api.post(PATH+'/verify').json()['status']=='verified'
+    assert s.api.get(PATH.replace('worker','other')).json()['device_pending'] is None
+    assert s.calls.count('upload')==s.calls.count('add')==1
+
+
+def test_failed_read_keeps_precommit_reservation_and_journal(setup,monkeypatch):
+    s=setup;s.mode['value']='upload_timeout'
+    assert send(s).status_code==502
+    def fail(self):raise ValueError('private device data')
+    monkeypatch.setattr(routes.FaceGateEnrollmentClient,'profiles',fail)
+    result=s.api.post(PATH+'/verify')
+    assert result.status_code==502 and 'private' not in result.text
+    assert state(s)=='unverified'
+    assert s.api.get(PATH.replace('worker','other')).json()['device_pending']['employee_username']=='worker'
+    assert s.calls.count('upload')==1 and 'add' not in s.calls
+
+
+def test_precommit_collision_keeps_reservation(setup,monkeypatch):
+    s=setup;s.mode['value']='upload_timeout'
+    assert send(s).status_code==502
+    with s.engine.connect() as conn:
+        op=conn.execute(text('SELECT operation_id FROM vera_facegate_enrollment')).scalar()
+    monkeypatch.setattr(routes.FaceGateEnrollmentClient,'profiles',lambda self:[{'utext':'vera:'+op}])
+    assert s.api.post(PATH+'/verify').status_code==409
+    assert state(s)=='unverified'
+
+@pytest.mark.parametrize('stage',['preflight','uploading','uploaded','committing'])
+def test_interrupted_running_operations_recover_at_every_checkpoint(setup,stage):
+    s=setup;s.mode['value']='upload_timeout'
+    assert send(s).status_code==502
+    with s.engine.begin() as conn:
+        conn.execute(text("UPDATE vera_facegate_enrollment SET status='running',stage=:stage,registration_ref=CAST(:ref AS jsonb),updated_at=NOW()-interval '4 minutes'"),
+                     {'stage':stage,'ref':json.dumps(REF) if stage in {'uploaded','committing'} else None})
+    assert s.api.get(PATH).json()['stale']
+    s.mode['value']='ok'
+    response=s.api.post(PATH+'/verify')
+    assert response.status_code==200,response.text
+    assert response.json()['status']==('verified' if stage=='committing' else 'rejected')
+    assert s.calls.count('upload')==1 and 'add' not in s.calls
+
+
+def test_active_writer_is_not_recovered_and_deleted_employee_precommit_can_close(setup):
+    s=setup;s.mode['value']='upload_timeout'
+    assert send(s).status_code==502
+    with s.engine.begin() as conn:
+        conn.execute(text("UPDATE vera_facegate_enrollment SET status='running',updated_at=NOW()"))
+    before=list(s.calls)
+    assert s.api.post(PATH+'/verify').status_code==409
+    assert s.calls==before
+    with s.engine.begin() as conn:
+        conn.execute(text("UPDATE vera_facegate_enrollment SET status='unverified'"))
+        conn.execute(text("UPDATE employees SET payload=CAST(:payload AS jsonb) WHERE username='worker'"), {'payload':json.dumps({'__deleted':True})})
+    assert s.api.post(PATH+'/verify').json()['status']=='rejected'
+    assert s.api.get(PATH.replace('worker','other')).json()['device_pending'] is None
+
+
+def test_old_writer_cannot_resurrect_a_recovered_reservation_or_add_profile(setup,monkeypatch):
+    s=setup
+    original=routes.FaceGateEnrollmentClient.upload
+    def interrupted(self,photo,session):
+        ref=original(self,photo,session)
+        with s.engine.begin() as conn:
+            conn.execute(text("UPDATE vera_facegate_enrollment SET updated_at=NOW()-interval '4 minutes'"))
+        assert s.api.post(PATH+'/verify').json()['status']=='rejected'
+        return ref
+    monkeypatch.setattr(routes.FaceGateEnrollmentClient,'upload',interrupted)
+    assert send(s).status_code==502
+    assert state(s)=='rejected'
+    assert s.calls.count('upload')==1 and 'add' not in s.calls
