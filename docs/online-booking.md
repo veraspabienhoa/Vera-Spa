@@ -45,10 +45,9 @@ The HMAC signs `unix_timestamp + '.' + exact_raw_json_body` using SHA-256; heade
 
 - CF7 form 1271, field menu-396, ends its service list with **Chưa chọn dịch vụ**. Service selection is optional.
 - The mobile form uses two columns for date/time and name/phone, keeps service and guest count full-width, and reduces excess field spacing and control heights. Screens up to 360px use tighter padding.
+- Public booking fields are ordered Name, Phone, Arrival date, Desired time, Guest count, Service. The optional staff request field is removed from the public form.
 - On CF7 invalid submissions, a page-scoped accessible popup lists the required booking fields still missing. Closing it returns focus to the first invalid field and scrolls that field into view.
 - Source for the active WordPress Code Snippets entry is integrations/wordpress/booking-form-ux.php. Keep it synchronized with the entry named "Booking - giao diện mobile và popup thông tin thiếu".
 - The public phone field is optional for booking submissions; the separate contact form still requires a phone number. App.veraspa.vn manual Booking online also permits an empty phone.
-- **Yêu cầu nhân viên** appears immediately above **Lời nhắn**. WordPress obtains only the current Live Tour roster rows marked Đi làm through a signed server-to-server API call; the selection is optional.
-- The selected employee is revalidated against the current roster on submit. For a booking dated today in Vietnam, its requested time is appended as `YC HH:MM` to that row's Lịch hẹn; future bookings do not change the Live Tour board. The automatically added suffix is removed at the next day rollover while preserving other appointment text.
-- Booking inbox records retain the selected employee request, and reception can see it in the booking details.
+- The public booking form no longer asks customers to request a staff member. Existing booking records and the internal booking detail view retain any staff request saved previously.
 - On Live Tour, when upcoming bookings exist, the Booking online sắp tới dialog opens at the next quarter-hour boundary and repeats every 15 minutes while eligible staff are on Live Tour.
