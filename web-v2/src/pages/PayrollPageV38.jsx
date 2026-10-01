@@ -170,6 +170,8 @@ export default function PayrollPageV38({ user }) {
     <style>{`
       .payroll-v38-stack.full{display:flex;flex-direction:column}
       .payroll-v38-stack.full>.payroll-page-enhanced{display:contents}
+      .payroll-v38-stack.full .payroll-main-heading{order:-2}
+      .payroll-v38-stack.full .payroll-main-tabs{order:-1}
       .payroll-main-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
       .payroll-main-tabs button{min-height:42px;padding:9px 18px;border:1px solid #b8d0c3;border-radius:12px;background:#fff;color:#24473a;font:inherit;font-weight:900;cursor:pointer}
       .payroll-main-tabs button.active{background:#1f513f;color:#fff;border-color:#1f513f}
@@ -191,7 +193,7 @@ export default function PayrollPageV38({ user }) {
       <section data-ui-key="u-644a635241c1" className="panel">
         <div data-ui-key="u-716cdc9927e0" className="panel-title-row">
           <div>
-            <h2><Settings2 size={17} /> MỨC RIÊNG THEO NHÂN VIÊN / LEADER · 3.8</h2>
+            <h2><Settings2 size={17} /> CÀI ĐẶT PHÍ SINH HOẠT</h2>
             <p>Mức riêng thay cho khấu trừ mặc định khi tính bảng lương mới. Tiền Lương = 0 vẫn tự đưa Phí sinh hoạt và Hỗ trợ Locker về 0 theo quy tắc 3.7.</p>
           </div>
           <UiToolbar data-ui-key="u-f1a54c4c26fa" className="v38-collapse-actions">
