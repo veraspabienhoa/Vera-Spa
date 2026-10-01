@@ -204,3 +204,47 @@ def test_precommit_collision_keeps_reservation(setup,monkeypatch):
     monkeypatch.setattr(routes.FaceGateEnrollmentClient,'profiles',lambda self:[{'utext':'vera:'+op}])
     assert s.api.post(PATH+'/verify').status_code==409
     assert state(s)=='unverified'
+
+@pytest.mark.parametrize('stage',['preflight','uploading','uploaded','committing'])
+def test_interrupted_running_operations_recover_at_every_checkpoint(setup,stage):
+    s=setup;s.mode['value']='upload_timeout'
+    assert send(s).status_code==502
+    with s.engine.begin() as conn:
+        conn.execute(text("UPDATE vera_facegate_enrollment SET status='running',stage=:stage,registration_ref=CAST(:ref AS jsonb),updated_at=NOW()-interval '4 minutes'"),
+                     {'stage':stage,'ref':json.dumps(REF) if stage in {'uploaded','committing'} else None})
+    assert s.api.get(PATH).json()['stale']
+    s.mode['value']='ok'
+    response=s.api.post(PATH+'/verify')
+    assert response.status_code==200,response.text
+    assert response.json()['status']==('verified' if stage=='committing' else 'rejected')
+    assert s.calls.count('upload')==1 and 'add' not in s.calls
+
+
+def test_active_writer_is_not_recovered_and_deleted_employee_precommit_can_close(setup):
+    s=setup;s.mode['value']='upload_timeout'
+    assert send(s).status_code==502
+    with s.engine.begin() as conn:
+        conn.execute(text("UPDATE vera_facegate_enrollment SET status='running',updated_at=NOW()"))
+    before=list(s.calls)
+    assert s.api.post(PATH+'/verify').status_code==409
+    assert s.calls==before
+    with s.engine.begin() as conn:
+        conn.execute(text("UPDATE vera_facegate_enrollment SET status='unverified'"))
+        conn.execute(text("UPDATE employees SET payload=' {\"__deleted\":true}'::jsonb WHERE username='worker'"))
+    assert s.api.post(PATH+'/verify').json()['status']=='rejected'
+    assert s.api.get(PATH.replace('worker','other')).json()['device_pending'] is None
+
+
+def test_old_writer_cannot_resurrect_a_recovered_reservation_or_add_profile(setup,monkeypatch):
+    s=setup
+    original=routes.FaceGateEnrollmentClient.upload
+    def interrupted(self,photo,session):
+        ref=original(self,photo,session)
+        with s.engine.begin() as conn:
+            conn.execute(text("UPDATE vera_facegate_enrollment SET updated_at=NOW()-interval '4 minutes'"))
+        assert s.api.post(PATH+'/verify').json()['status']=='rejected'
+        return ref
+    monkeypatch.setattr(routes.FaceGateEnrollmentClient,'upload',interrupted)
+    assert send(s).status_code==502
+    assert state(s)=='rejected'
+    assert s.calls.count('upload')==1 and 'add' not in s.calls

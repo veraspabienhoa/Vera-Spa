@@ -583,7 +583,10 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
 
 function FaceIdEnrollment({ username, photo, photoBusy }) {
   const [enrollment, setEnrollment] = useState(null)
+  const recoveryAttempts = useRef(new Map())
   const [busy, setBusy] = useState(false)
+  const [automaticBusy, setAutomaticBusy] = useState(false)
+  const activeOperation = useRef(false)
   const [message, setMessage] = useState('')
   useEffect(() => {
     let active = true
@@ -593,7 +596,9 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
     return () => { active = false }
   }, [username])
   const act = async (verify, owner = username) => {
+    if (activeOperation.current) return
     if (!verify && !window.confirm(`Đăng ký ảnh Face ID đã lưu cho ${username} lên máy chấm công? Hãy kiểm tra đúng người trong ảnh trước khi xác nhận.`)) return
+    activeOperation.current = true
     setBusy(true); setMessage('')
     try {
       const value = await (verify ? faceIdApi.verifyEnrollment(owner) : faceIdApi.enroll(username, photo.sha256))
@@ -602,8 +607,40 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
     } catch (error) {
       setMessage(error.message)
       try { setEnrollment(await faceIdApi.enrollment(username)) } catch { /* Preserve the original error. */ }
-    } finally { setBusy(false) }
+    } finally { activeOperation.current = false; setBusy(false) }
   }
+  useEffect(() => {
+    if (busy || photoBusy) return undefined
+    let active = true, running = false
+    const refresh = async () => {
+      if (!active || running || activeOperation.current || document.visibilityState === 'hidden') return
+      running = true
+      try {
+        const value = await faceIdApi.enrollment(username)
+        if (!active || activeOperation.current) return
+        setEnrollment(value)
+        const pending = value.device_pending || (['running', 'unverified'].includes(value.status) ? {...value, employee_username: username} : null)
+        if (pending?.operation_id && (pending.status === 'unverified' || pending.stale)) {
+          const attempts = recoveryAttempts.current.get(pending.operation_id) || 0
+          if (attempts < 3) {
+            recoveryAttempts.current.set(pending.operation_id, attempts + 1)
+            activeOperation.current = true
+            setAutomaticBusy(true)
+            try {
+              await faceIdApi.verifyEnrollment(pending.employee_username)
+              const latest = await faceIdApi.enrollment(username)
+              if (active) { setEnrollment(latest); setMessage('Đã kiểm tra và cập nhật lượt đăng ký trên máy.') }
+            } catch (error) { if (active) setMessage(error.message) }
+            finally { activeOperation.current = false; setAutomaticBusy(false) }
+          }
+        }
+      } catch (error) { if (active) setMessage(error.message) }
+      finally { running = false }
+    }
+    const interval = window.setInterval(refresh, 15000)
+    window.addEventListener('focus', refresh)
+    return () => { active = false; window.clearInterval(interval); window.removeEventListener('focus', refresh) }
+  }, [username, busy, photoBusy])
   if (!enrollment) return message ? <p role="status">{message}</p> : null
   const verified = enrollment.status === 'verified'
   const pending = ['running', 'unverified'].includes(enrollment.status)
@@ -611,9 +648,9 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
   const changed = verified && enrollment.photo_sha256 !== photo?.sha256
   return <div className="face-id-enrollment">
     <p>{verified ? (changed ? 'Ảnh trên VERA đã đổi hoặc bị xóa. Hồ sơ trên máy vẫn dùng ảnh đăng ký trước đó.' : `Đã xác minh đăng ký trên máy · Hồ sơ ${enrollment.profile_id}`) : pending ? 'Đăng ký chưa được xác minh. Kiểm tra lại trước khi gửi thêm.' : 'Chưa đăng ký ảnh này từ VERA lên máy.'}</p>
-    {!verified && !pending && !blocked && <button type="button" className="primary-button compact" disabled={busy || Boolean(photoBusy) || !photo} onClick={() => act(false)}>{busy ? 'Đang đăng ký…' : 'Đăng ký lên máy'}</button>}
-    {!verified && blocked && <><p role="status">Máy đang chờ xác minh lượt đăng ký của {blocked.employee_username}.</p><button type="button" className="secondary-button compact" disabled={busy || Boolean(photoBusy)} onClick={() => act(true, blocked.employee_username)}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra lượt đang chặn máy'}</button></>}
-    {pending && <button type="button" className="secondary-button compact" disabled={busy || Boolean(photoBusy)} onClick={() => act(true)}>{busy ? 'Đang kiểm tra…' : 'Kiểm tra lại kết quả'}</button>}
+    {!verified && !pending && !blocked && <button type="button" className="primary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy) || !photo} onClick={() => act(false)}>{busy || automaticBusy ? 'Đang đăng ký…' : 'Đăng ký lên máy'}</button>}
+    {!verified && blocked && <><p role="status">Máy đang chờ xác minh lượt đăng ký của {blocked.employee_username}.</p><button type="button" className="secondary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(true, blocked.employee_username)}>{busy || automaticBusy ? 'Đang kiểm tra…' : 'Kiểm tra lượt đang chặn máy'}</button></>}
+    {pending && <button type="button" className="secondary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(true)}>{busy || automaticBusy ? 'Đang kiểm tra…' : 'Kiểm tra lại kết quả'}</button>}
     {message && <p role="status">{message}</p>}
   </div>
 }
