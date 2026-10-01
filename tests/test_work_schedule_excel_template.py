@@ -36,7 +36,7 @@ def test_schedule_template_has_dropdown_catalog_and_round_trips_blank_cells():
 
 def test_schedule_frontend_import_waits_for_manual_save():
     source = (Path(__file__).resolve().parents[1] / "web-v2/src/pages/WorkSchedulePage.jsx").read_text(encoding="utf-8")
-    assert "Xuất Excel mẫu" in source
+    assert "Xuất excel" in source
     assert "Import Excel" in source
     assert "importedAwaitingManualSaveRef.current = true" in source
     assert "Excel chờ Lưu lịch" in source

@@ -32,14 +32,14 @@ test('history exports applied filters, blocks stale export, and survives query f
   let fail = false
   const dom = await page('history', { checkinHistory: async () => { if (fail) throw Error('Unavailable'); return { records: [{ event_id: 1, occurred_at: '2026-09-23T10:00:00+07:00' }], options: { statuses: [], types: [] } } }, exportCheckinHistory: async q => { exported = q } }, context)
   await dom.window.testAct(async () => button(dom, 'Xem lịch sử').click())
-  assert.equal(button(dom, 'Xuất Excel').disabled, false)
-  await dom.window.testAct(async () => button(dom, 'Xuất Excel').click())
+  assert.equal(button(dom, 'Xuất excel').disabled, false)
+  await dom.window.testAct(async () => button(dom, 'Xuất excel').click())
   assert.equal(exported.source, 'facegate_saved')
   await dom.window.testAct(async () => button(dom, 'Hôm qua').click())
-  assert.equal(button(dom, 'Xuất Excel').disabled, true)
+  assert.equal(button(dom, 'Xuất excel').disabled, true)
   fail = true; await dom.window.testAct(async () => button(dom, 'Xem lịch sử').click())
   assert.match(dom.window.document.querySelector('[role=alert]').textContent, /Unavailable/)
-  assert.equal(button(dom, 'Xuất Excel').disabled, true)
+  assert.equal(button(dom, 'Xuất excel').disabled, true)
 })
 
 test('device page retries initial failure and can submit a new device without losing configured device', async (context) => {

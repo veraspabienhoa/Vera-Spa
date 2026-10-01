@@ -58,7 +58,7 @@ def test_revenue_entry_defaults_notes_fits_kpis_and_exports_excel():
     assert "function AutoFitMoney" in page
     assert "white-space:nowrap" in page
     assert "/v2/revenue/ledger/export.xlsx" in page
-    assert "Xuất Excel" in page
+    assert "Xuất excel" in page
     assert "Chỉ cần bấm <strong>Lưu Thu + Chi</strong>" not in page
     assert "Nguồn: <strong>{data.source" not in page
     assert "replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.')" in money_input

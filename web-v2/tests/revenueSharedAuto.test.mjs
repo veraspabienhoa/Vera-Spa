@@ -15,7 +15,7 @@ const built = await build({
   plugins: [{ name: 'revenue-fixture', setup(b) {
     b.onResolve({ filter: /(?:\/supabase|\/UiCustomText|\/UiToolbar|\/usePageRefresh)$/ }, args => ({ path: args.path.split('/').at(-1), namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ loader: 'js', contents:
-      args.path === 'supabase' ? 'export const getCurrentSession=async()=>({access_token:"synthetic"});' :
+      args.path === 'supabase' ? 'export const getCurrentSession=async()=>({access_token:"synthetic"}); export const isSupabaseConfigured=false; export const refreshCurrentSession=async()=>null; export const supabase=null;' :
       args.path === 'UiCustomText' ? 'export default function Text({children}){return children}' :
       args.path === 'usePageRefresh' ? 'export default function Hook(){}' :
       'import React from "react"; export default function Toolbar({children,...props}){return React.createElement("div",props,children)}',
@@ -73,6 +73,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
         period_tip_start: '2026-09-16', period_tip_end: savedEnd,
         can_edit_tip: true, can_create_entry: source !== 'auto', can_edit_entry: source !== 'auto', can_delete_entry: source !== 'auto',
       })
+      if (path === '/v2/purchases') return response({rows:Array.from({length:rowCount},(_,i)=>({id:i,purchase_date:'2026-09-26',item:`Hàng ${i+1}`,amount:10,note:'Nguoi dat',entered_by:'Nguoi nhap',quantity:1,unit_price:10})), permissions:{}})
       if (path.endsWith('/purchases')) return response({ start_date:'2025-09-05', end_date:'2026-09-26', purchase_rows:Array.from({length:rowCount},(_,i)=>({id:i,date:'2026-09-26',date_label:'26-09-2026',item:`Hàng ${i+1}`,amount:10,buyer:'Nguoi dat',user:'Nguoi nhap'})) })
       if (path.endsWith('/purchase-reconcile')) {
         const params=new URL(url).searchParams, canonical=params.get('canonical')==='true'
@@ -320,12 +321,14 @@ test('independent purchase report total includes all filtered rows and ignores t
     const call=f.calls.filter(c=>c.path.endsWith('/purchases')).at(-1)
     assert.ok(call)
     assert.equal(new URL(call.url).searchParams.has('report_end'),false)
-    const total=()=>f.doc.querySelector('[aria-label="Tổng mua theo bộ lọc"]').textContent
+    assert.equal(call.path,'/v2/purchases')
+    for (const label of ['Nhập mua hàng','Sửa dòng đã chọn','Xóa dòng đã chọn','Import thêm mới','Import thay toàn bộ','Xuất excel']) assert.ok(f.button(label))
+    const total=()=>f.doc.querySelector('.purchase-filter-total').textContent
     assert.match(total(),/1\.050đ/); assert.match(total(),/105 dòng/)
-    assert.equal(f.doc.querySelectorAll('.report-table tbody tr').length,100)
+    assert.equal(f.doc.querySelectorAll('.purchase-table tbody tr').length,105)
     await f.change(f.doc.querySelector('[placeholder="Tìm hàng hóa"]'),'Hàng 1')
     assert.match(total(),/170đ/); assert.match(total(),/17 dòng/)
-    await f.change(f.doc.querySelector('[placeholder="Tìm người đặt"]'),'khong-co')
+    await f.change(f.doc.querySelector('.purchase-filter-secondary label:nth-child(4) input'),'khong-co')
     assert.match(total(),/0đ/); assert.match(total(),/0 dòng/)
   } finally { await f.close() }
 })
@@ -345,7 +348,7 @@ test('Manual ledger and export can inspect September 24 while the summary stays 
     assert.match(f.doc.querySelector('.ledger-summary-head').textContent,/49\.250\.000đ/)
     assert.match(f.doc.querySelector('.ledger-summary-head').textContent,/54\.202\.000đ/)
     f.doc.addEventListener('click', event=>{if(event.target.closest('a[download]'))event.preventDefault()})
-    await act(async()=>f.button('Xuất Excel').click())
+    await act(async()=>f.button('Xuất excel').click())
     let query=new URL(f.calls.find(c=>c.path.endsWith('/ledger/export.xlsx')).url).searchParams
     assert.equal(query.has('report_end'),false)
     assert.equal(query.get('transaction_date'),'2026-09-24')
@@ -391,7 +394,7 @@ for(const source of ['manual','auto','manual_tip_auto']) test(`${source}: all le
     assert.match(f.doc.querySelector('.ledger-summary-head').textContent,/250đ/)
     assert.equal(field('Ngày').value,'24-09-2026')
     f.doc.addEventListener('click',event=>{if(event.target.closest('a[download]'))event.preventDefault()})
-    await act(async()=>f.button('Xuất Excel').click())
+    await act(async()=>f.button('Xuất excel').click())
     const exported=new URL(f.calls.filter(c=>c.path.endsWith('/ledger/export.xlsx')).at(-1).url).searchParams
     assert.equal(exported.get('live_ledger'),'true')
     assert.equal(exported.get('transaction_date'),'2026-09-24')

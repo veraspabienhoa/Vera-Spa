@@ -432,5 +432,13 @@ def install_long_leave_admin_routes(
             raise HTTPException(500, f"Đã cập nhật máy chủ nhưng chưa đồng bộ được bảng dữ liệu cũ: {type(exc).__name__}.") from exc
         return {"ok": True, "message": "Đã ghi nhận nhân viên quay lại làm việc và kết thúc kỳ nghỉ."}
 
+    from vera_web_v2_long_leave_changes import install as install_changes
+    install_changes(app, engine_instance=engine_instance, current_identity=current_identity,
+        identity_type=identity_type, norm=norm, google_client=google_client,
+        leave_sheet_id=leave_sheet_id, vn_tz=vn_tz, validate_and_prepare=validate_and_prepare,
+        leave_create_type=leave_create_type, sheet_row_for_record=sheet_row_for_record,
+        insert_record=insert_record, request_row=_request_row, require_admin=_require_admin,
+        sheet_request_row=_sheet_request_row)
+
     app.state.long_leave_admin_routes_installed = True
     app.state.long_leave_admin_release = LONG_LEAVE_ADMIN_RELEASE

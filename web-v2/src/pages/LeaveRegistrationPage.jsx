@@ -1036,7 +1036,7 @@ export default function LeaveRegistrationPage({ user }) {
           </div>
           <div className="leave-list-controls">
           <UiToolbar data-ui-key="u-673fd5d1a86a" className="list-actions">
-              {role === 'admin' && <button data-ui-key="u-ac98242f10d4" type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Export to Excel'}</button>}
+              {role === 'admin' && <button data-ui-key="u-ac98242f10d4" type="button" className="secondary-button compact export-button" onClick={exportExcel} disabled={exporting}><Download size={15} /> {exporting ? 'Đang xuất…' : 'Xuất excel'}</button>}
               {canEditVisibleRecord && <button data-ui-key="u-1ce6547689e1" data-ui-label-default="Lưu sửa" type="button" className="secondary-button compact" onClick={saveEdits} disabled={managing || changedRecords.length === 0}><Save size={15} /><UiCustomText uiKey="u-1ce6547689e1"> Lưu sửa</UiCustomText></button>}
               {canDeleteVisibleRecord && <button data-ui-key="u-dad1744abe2f" data-ui-label-default="Xóa đã chọn" type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || deletableSelectedUids.length === 0}><Trash2 size={15} /><UiCustomText uiKey="u-dad1744abe2f"> Xóa đã chọn</UiCustomText></button>}
               {canViewPenalty && <div className="penalty-chip">Phạt: {loadState.records === 'ready' ? `${totalPenalty.toLocaleString('vi-VN')}đ` : '…'}</div>}

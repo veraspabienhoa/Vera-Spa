@@ -134,5 +134,5 @@ def test_combo_sales_table_is_rendered_after_monthly_statistics():
     assert "BẢNG CỦA" in source
     assert "canEditCombo = ['admin', 'quanly', 'letan'].includes(role)" in source
     assert "Import Excel" in source
-    assert "Export Excel" in source
+    assert "Xuất excel" in source
     assert "Lưu sửa" in source

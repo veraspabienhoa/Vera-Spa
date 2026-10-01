@@ -120,11 +120,11 @@ def test_live_tour_exposes_the_main_board_controls_and_workspaces():
         "Báo cáo",
         "Lịch sử & sao lưu",
         "Danh mục",
-        "Xuất doanh thu",
-        "Xuất tiền TIP",
-        "Xuất khách hàng",
-        "Xuất chờ thanh toán",
-        "Xuất lịch sử",
+        "Xuất excel",
+        "Xuất excel",
+        "Xuất excel",
+        "Xuất excel",
+        "Xuất excel",
         "Copy B.Tua",
     }
 

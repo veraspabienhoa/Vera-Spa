@@ -36,7 +36,7 @@ test('filters combine without requests or lost edits; save keeps the full payrol
  await f.change(department,'letan');await f.change(department,'quanly')
  assert.equal(document.querySelector('[aria-label="Trách nhiệm Quản Lý B"]').value,'123.000')
  window.HTMLAnchorElement.prototype.click=()=>{}
- await f.click('Export Excel')
+ await f.click('Xuất excel')
  assert.deepEqual(JSON.parse(f.requests.find(r=>r.path.endsWith('/export.xlsx')).options.body).rows.map(r=>r.employee_username),['b'])
  await f.click('Lưu bảng nháp');const saved=JSON.parse(f.requests.find(r=>r.path.endsWith('/draft')).options.body)
  assert.equal(saved.rows.length,3);assert.equal(saved.rows.find(r=>r.employee_username==='b').responsibility,123000)

@@ -17,6 +17,10 @@
   min-width: 0;
 }
 .live-tour-filters-search { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (min-width: 1101px) {
+  .live-tour-filters-search.live-tour-filters-date-search { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .live-tour-filters-search.live-tour-filters-date-search.live-tour-filters-five { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
 @media (min-width: 901px) {
   .live-tour-filters-search.live-tour-filters-five { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 }

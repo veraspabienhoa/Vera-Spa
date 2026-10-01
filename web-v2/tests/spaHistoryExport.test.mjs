@@ -7,7 +7,7 @@ const history = source.slice(source.indexOf('function CustomerHistory('), source
 
 test('history export uses selected customer and existing authenticated Excel download', () => {
   assert.match(history, /exportLiveTourExcel\('customer_detail', \{ customer_id: value.customer.id \}\)/)
-  assert.match(history, /Xuất Excel mua \/ sử dụng combo/)
+  assert.match(history, /Xuất excel/)
   assert.match(source, /canExport=\{data\?\.can_export\}/)
 })
 
