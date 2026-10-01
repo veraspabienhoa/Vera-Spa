@@ -11,8 +11,10 @@ import unicodedata
 
 POLICY_ID = 'temporary-attendance-payroll-suspension-2026-09-29'
 AUTHORIZED_AT = '2026-09-29T22:07:31+07:00'
+RESUMED_AT = '2026-10-01T12:10:01+07:00'
 SUSPENSIONS = tuple(
-    {'username': username, 'effective_from': date(2026, 9, 29), 'effective_until': None}
+    {'username': username, 'effective_from': date(2026, 9, 29),
+     'effective_until': date(2026, 10, 1)}
     for username in ('admin', 'akamen', 'letan', 'Ms Tuyết')
 )
 
