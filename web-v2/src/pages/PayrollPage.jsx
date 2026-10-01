@@ -244,7 +244,7 @@ export default function PayrollPage({ user }) {
   const exportDraft = () => run('export-draft', async () => {
     if (!draft?.rows?.length) throw new Error('Chưa có bảng lương mới để xuất Excel.')
     await veraApi.exportPayrollDraft({ start: draft.start, end: draft.end, rows: draft.rows })
-    setNotice({ type: 'success', message: `Đã Export to Excel: ${draft.period_label}.` })
+    setNotice({ type: 'success', message: `Đã Xuất excel: ${draft.period_label}.` })
   })
 
   const exportHistory = () => run('export-history', async () => {
@@ -299,7 +299,7 @@ export default function PayrollPage({ user }) {
         <div><strong>BẢNG LƯƠNG NHÁP</strong><small>{draft?.rows?.length ? `${draft.period_label} · ${draft.rows.length} nhân viên${draft.saved_at ? ` · Đã lưu bởi ${draft.saved_by}` : ' · Chưa lưu trên máy chủ'}` : 'Chưa có dữ liệu nháp cho kỳ đang chọn.'}</small></div>
         <UiToolbar data-ui-key="u-ed85724d12da" className="list-actions">
           <button data-ui-key="u-8ddd25c62bd4" className="secondary-button" type="button" onClick={() => draftImportRef.current?.click()} disabled={isBusy}><Upload size={16} /> {busy === 'import-draft' ? 'Đang Import…' : 'Import Excel'}</button>
-          {canExport && <button data-ui-key="u-5ec3207fdacd" className="secondary-button" type="button" onClick={exportDraft} disabled={isBusy || !draftRows.length}><Download size={16} /> {busy === 'export-draft' ? 'Đang Export…' : 'Export to Excel'}</button>}
+          {canExport && <button data-ui-key="u-5ec3207fdacd" className="secondary-button" type="button" onClick={exportDraft} disabled={isBusy || !draftRows.length}><Download size={16} /> {busy === 'export-draft' ? 'Đang xuất…' : 'Xuất excel'}</button>}
           {canSave && <button data-ui-key="u-58282fa9bdca" className="primary-button" type="button" onClick={saveDraftSnapshot} disabled={isBusy || !draftRows.length}><Save size={16} /> {busy === 'save-draft' ? 'Đang lưu…' : 'Lưu bảng lương nháp'}</button>}
           {canSave && <button data-ui-key="u-4280c92e55e8" className="danger-button" type="button" onClick={deleteDraftSnapshot} disabled={isBusy || !draftRows.length}><Trash2 size={16} /> {busy === 'delete-draft' ? 'Đang xóa…' : 'Xóa bảng lương nháp'}</button>}
         </UiToolbar>

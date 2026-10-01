@@ -46,7 +46,7 @@ const emptyForm = () => ({
 })
 
 export default function LongLeaveSection({ user, refreshRevision = 0 }) {
-  usePageRefresh(() => load(), () => Boolean(loading || saving || returnBusyId))
+  usePageRefresh(() => load(), () => Boolean(loading || saving || returnBusyId || approvedBusy || approvedEditor))
   const role = String(user?.role || '').toLowerCase()
   const canOpen = role === 'admin'
     || user?.permissions?.long_leave === true
@@ -61,6 +61,9 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(null)
+  const [approvedEditor, setApprovedEditor] = useState(null)
+  const [approvedBusy, setApprovedBusy] = useState(false)
+  const [pendingSync, setPendingSync] = useState('')
 
   const load = useCallback(async () => {
     if (!canOpen || !isApiConfigured) return
@@ -68,13 +71,17 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
     try {
       const result = await veraApi.longLeaveOverview()
       setOverview(result)
+      if (role === 'admin') {
+        const pending = await veraApi.pendingApprovedLongLeave()
+        setPendingSync(pending.request_ids[0] || '')
+      }
       setNotice((current) => current?.status === 'success' ? current : null)
     } catch (error) {
       setNotice({ status: 'error', message: error.message || 'Không tải được dữ liệu Phép năm / Nghỉ làm đẹp.' })
     } finally {
       setLoading(false)
     }
-  }, [canOpen])
+  }, [canOpen, role])
 
   useEffect(() => { void load() }, [load, refreshRevision])
   useEffect(() => {
@@ -161,6 +168,47 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
     } catch (error) {
       setNotice({ status: 'error', message: error.message || 'Không cập nhật được ngày quay lại.' })
     } finally { setReturnBusyId('') }
+  }
+
+  const saveApproved = async event => {
+    event.preventDefault()
+    setApprovedBusy(true)
+    try {
+      const { id, revision, start_date, end_date, reason, detail } = approvedEditor
+      const result = await veraApi.editApprovedLongLeave(id, { revision, start_date, end_date, reason, detail })
+      setPendingSync(result.mirror_pending ? id : '')
+      setNotice({ status: 'success', message: result.message })
+      setApprovedEditor(null)
+      await load()
+    } catch (error) { setNotice({ status: 'error', message: error.message }) }
+    finally { setApprovedBusy(false) }
+  }
+  const cancelApproved = async item => {
+    const note = window.prompt(`Hủy đơn ${item.id} của ${shortEmployeeName(item.employee_name)}. Nhập lý do hủy:`)
+    if (!note?.trim()) return
+    setApprovedBusy(true)
+    try {
+      const result = await veraApi.cancelApprovedLongLeave(item.id, { revision: item.revision, note: note.trim() })
+      setPendingSync(result.mirror_pending ? item.id : '')
+      setNotice({ status: 'success', message: result.message })
+      await load()
+    } catch (error) { setNotice({ status: 'error', message: error.message }) }
+    finally { setApprovedBusy(false) }
+  }
+  const approvedActions = item => role === 'admin' && <div className="approved-request-actions">
+    <button type="button" className="secondary-button compact" disabled={approvedBusy || loading}
+      onClick={() => setApprovedEditor({ ...item, end_date: item.end_date || item.start_date })}>Sửa đơn</button>
+    <button type="button" className="danger-button compact" disabled={approvedBusy || loading}
+      onClick={() => cancelApproved(item)}>Hủy đơn</button>
+  </div>
+  const retrySync = async () => {
+    setApprovedBusy(true)
+    try {
+      const result = await veraApi.syncApprovedLongLeave(pendingSync)
+      if (!result.mirror_pending) { setPendingSync(''); setNotice({ status: 'success', message: 'Đã đồng bộ bảng dữ liệu cũ.' }) }
+      else setNotice({ status: 'error', message: 'Chưa đồng bộ được bảng dữ liệu cũ. Dữ liệu máy chủ đã được lưu.' })
+    } catch (error) { setNotice({ status: 'error', message: error.message }) }
+    finally { setApprovedBusy(false) }
   }
 
   return (
@@ -273,6 +321,24 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
         </section>
       )}
 
+      {pendingSync && role === 'admin' && <button type="button" className="secondary-button" disabled={approvedBusy} onClick={retrySync}>Đồng bộ lại đơn {pendingSync}</button>}
+      {approvedEditor && role === 'admin' && <section className="panel approved-request-editor">
+        <h3>Sửa đơn đã duyệt · {approvedEditor.employee_name} · {approvedEditor.request_type}</h3>
+        <form onSubmit={saveApproved}>
+          <label>Từ ngày<VeraDateInput required disabled={approvedBusy} value={approvedEditor.start_date}
+            onChange={event => setApprovedEditor(current => ({ ...current, start_date: event.target.value,
+              end_date: current.request_type === RESIGNATION ? event.target.value : current.end_date }))} /></label>
+          <label>Đến ngày<VeraDateInput required disabled={approvedBusy || approvedEditor.request_type === RESIGNATION}
+            min={approvedEditor.start_date} value={approvedEditor.end_date}
+            onChange={event => setApprovedEditor(current => ({ ...current, end_date: event.target.value }))} /></label>
+          <label>Lý do<input disabled={approvedBusy} value={approvedEditor.reason || ''}
+            onChange={event => setApprovedEditor(current => ({ ...current, reason: event.target.value }))} /></label>
+          <label>Chi tiết<textarea disabled={approvedBusy} value={approvedEditor.detail || ''}
+            onChange={event => setApprovedEditor(current => ({ ...current, detail: event.target.value }))} /></label>
+          <div className="approved-request-actions"><button type="submit" className="primary-button" disabled={approvedBusy}>Lưu thay đổi</button>
+            <button type="button" className="secondary-button" disabled={approvedBusy} onClick={() => setApprovedEditor(null)}>Đóng</button></div>
+        </form>
+      </section>}
       {canViewApproved && (
         <section data-ui-key="u-4b4ef7220440" className="panel approved-leave-panel">
           <div data-ui-key="u-d06aabe803eb" className="panel-title-row">
@@ -300,7 +366,7 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
                         <td className="center"><strong>{item.days}</strong></td>
                         <td>{item.reason || '—'}</td>
                         <td className="detail-cell">{item.detail || '—'}</td>
-                        {role === 'admin' && <td className="long-leave-return-cell">{item.leave_completed
+                        {role === 'admin' && <td className="long-leave-return-cell">{approvedActions(item)}{item.leave_completed
                           ? <><strong>{formatDateDisplay(item.return_date)}</strong><small>{item.return_note}</small><em>Đã kết thúc kỳ nghỉ</em></>
                           : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button data-ui-key="u-560863cab625" data-ui-label-default="Kết thúc kỳ nghỉ" type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}><UiCustomText uiKey="u-560863cab625">Kết thúc kỳ nghỉ</UiCustomText></button></>}
                         </td>}
@@ -324,7 +390,7 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
                     </div>
                     <p><strong>Nội dung:</strong> {item.reason || '—'}</p>
                     <p><strong>Chi tiết:</strong> {item.detail || '—'}</p>
-                    {role === 'admin' && <div className="long-leave-return-mobile">{item.leave_completed
+                    {role === 'admin' && <div className="long-leave-return-mobile">{approvedActions(item)}{item.leave_completed
                       ? <p><strong>Đã quay lại:</strong> {formatDateDisplay(item.return_date)} · {item.return_note}</p>
                       : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button data-ui-key="u-ad93a1e80149" data-ui-label-default="Kết thúc kỳ nghỉ" type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}><UiCustomText uiKey="u-ad93a1e80149">Kết thúc kỳ nghỉ</UiCustomText></button></>}
                     </div>}
@@ -339,7 +405,7 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
       {canViewApproved && (
         <section data-ui-key="u-b1cbd409a6a1" className="panel approved-leave-panel resignation-list-panel">
           <div data-ui-key="u-6c50b928f0d4" className="panel-title-row"><div><h2>NHÂN VIÊN NGHỈ VIỆC</h2><p>{resignationRequests.length} đơn nghỉ việc đã được duyệt.</p></div><div className="approved-count-chip"><UserRoundCheck size={15}/> {resignationRequests.length}</div></div>
-          {!resignationRequests.length ? <div className="setup-note">Chưa có đơn nghỉ việc đã duyệt.</div> : <div className="table-wrap"><table data-ui-key="u-a15d380fcb20"><thead><tr><th data-ui-key="u-11498c16f568" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-11498c16f568">Nhân viên</UiCustomText></th><th data-ui-key="u-b06d0b51e254" data-ui-label-default="Ngày nghỉ việc"><UiCustomText uiKey="u-b06d0b51e254">Ngày nghỉ việc</UiCustomText></th><th data-ui-key="u-aac6f1d2aa93" data-ui-label-default="Lý do"><UiCustomText uiKey="u-aac6f1d2aa93">Lý do</UiCustomText></th><th data-ui-key="u-54b743ff05eb" data-ui-label-default="Chi tiết / bàn giao"><UiCustomText uiKey="u-54b743ff05eb">Chi tiết / bàn giao</UiCustomText></th><th data-ui-key="u-89854d0cdfe6" data-ui-label-default="Người duyệt"><UiCustomText uiKey="u-89854d0cdfe6">Người duyệt</UiCustomText></th></tr></thead><tbody>{resignationRequests.map((item) => <tr key={item.id}><td><strong>{shortEmployeeName(item.employee_name)}</strong><small>{item.id}</small></td><td>{formatDateDisplay(item.start_date)}</td><td>{item.reason || '—'}</td><td>{item.detail || '—'}</td><td>{item.approved_by || '—'}<small>{item.approved_date || ''}</small></td></tr>)}</tbody></table></div>}
+          {!resignationRequests.length ? <div className="setup-note">Chưa có đơn nghỉ việc đã duyệt.</div> : <div className="table-wrap"><table data-ui-key="u-a15d380fcb20"><thead><tr><th data-ui-key="u-11498c16f568" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-11498c16f568">Nhân viên</UiCustomText></th><th data-ui-key="u-b06d0b51e254" data-ui-label-default="Ngày nghỉ việc"><UiCustomText uiKey="u-b06d0b51e254">Ngày nghỉ việc</UiCustomText></th><th data-ui-key="u-aac6f1d2aa93" data-ui-label-default="Lý do"><UiCustomText uiKey="u-aac6f1d2aa93">Lý do</UiCustomText></th><th data-ui-key="u-54b743ff05eb" data-ui-label-default="Chi tiết / bàn giao"><UiCustomText uiKey="u-54b743ff05eb">Chi tiết / bàn giao</UiCustomText></th><th data-ui-key="u-89854d0cdfe6" data-ui-label-default="Người duyệt"><UiCustomText uiKey="u-89854d0cdfe6">Người duyệt</UiCustomText></th></tr></thead><tbody>{resignationRequests.map((item) => <tr key={item.id}><td><strong>{shortEmployeeName(item.employee_name)}</strong><small>{item.id}</small></td><td>{formatDateDisplay(item.start_date)}</td><td>{item.reason || '—'}</td><td>{item.detail || '—'}</td><td>{item.approved_by || '—'}<small>{item.approved_date || ''}</small>{approvedActions(item)}</td></tr>)}</tbody></table></div>}
         </section>
       )}
     </section>

@@ -318,7 +318,7 @@ export default function SnapshotPage({ user, embedded = false }) {
       </div>
       {(Object.values(filters).some(Boolean) || user?.permissions?.snapshot_export) && <UiToolbar data-ui-key="u-8f0cd3e782f6" className="attendance-toolbar-actions">
         {Object.values(filters).some(Boolean) && <button data-ui-key="u-3144d0bed172" data-ui-label-default="Bỏ lọc" className="secondary-button" type="button" onClick={clearFilters}><X size={16}/><UiCustomText uiKey="u-3144d0bed172"> Bỏ lọc</UiCustomText></button>}
-        {user?.permissions?.snapshot_export && <button data-ui-key="u-d02cd56bafe6" className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Export Excel'}</button>}
+        {user?.permissions?.snapshot_export && <button data-ui-key="u-d02cd56bafe6" className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Xuất excel'}</button>}
       </UiToolbar>}
     </section>
 

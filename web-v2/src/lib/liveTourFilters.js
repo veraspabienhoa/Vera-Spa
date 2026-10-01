@@ -1,6 +1,6 @@
 import { searchTextMatches } from './searchText.js'
 import { customerMatches } from './customerSearch.js'
-export const EMPTY_TOUR_FILTERS = { preset: 'all', date_from: '', date_to: '', employee: '', customer: '', service: '', bill_no: '' }
+export const EMPTY_TOUR_FILTERS = { preset: 'all', date_from: '', date_to: '', employee: '', customer: '', service: '', bill_no: '', date: '' }
 export function invoiceNumbers(row) {
   if (!row || typeof row !== 'object') return []
   if (Array.isArray(row)) return row.flatMap(invoiceNumbers)
@@ -48,6 +48,7 @@ export function filterTourRows(rows, filters, invoiceDates = false) {
     if (filters.tip_amount != null && filters.tip_amount !== '' && Number(row.tip || 0) !== Number(String(filters.tip_amount).replace(/[^0-9]/g, ''))) return false
     if (filters.bill_no && !invoiceNumbers(row).some(number => String(number).toLowerCase().includes(filters.bill_no.trim().toLowerCase()))) return false
     const date = invoiceDates ? invoiceRowDate(row) : tourRowDate(row)
+    if (filters.date && date !== filters.date) return false
     if ((filters.date_from && (!date || date < filters.date_from)) || (filters.date_to && (!date || date > filters.date_to))) return false
     if (filters.customer && !customerMatches(row, filters.customer)) return false
     const entries = row.entries?.length ? row.entries : [row]

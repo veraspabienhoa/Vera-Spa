@@ -322,11 +322,15 @@ export const veraApi = {
   saveLetanLeavePolicy: (body) => request('/v2/rules/letan-leave-policy', { method: 'PUT', body: JSON.stringify(body) }),
   exportRulesExcel: () => download('/v2/rules/export.xlsx', 'NoiQuy_VeraSpa.xlsx'),
   importRulesExcel: (file) => upload('/v2/rules/import.xlsx', file),
+  pendingApprovedLongLeave: () => request('/v2/long-leave/admin/pending-changes'),
   longLeaveOverview: () => request('/v2/long-leave/overview'),
   createLongLeaveRequest: (body) => request('/v2/long-leave/requests', {
     method: 'POST',
     body: JSON.stringify(body),
   }),
+  editApprovedLongLeave: (id, body) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  cancelApprovedLongLeave: (id, body) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify(body) }),
+  syncApprovedLongLeave: (id) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(id)}/sync`, { method: 'POST' }),
   markLongLeaveReturned: (requestId, body) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(requestId)}/return-to-work`, {
     method: 'POST', body: JSON.stringify(body),
   }),

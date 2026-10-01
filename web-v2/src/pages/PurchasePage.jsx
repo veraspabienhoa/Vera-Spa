@@ -32,11 +32,11 @@ function Modal({ title, busy, close, children }) {
   </dialog>, document.body)
 }
 
-export default function PurchasePage({ user }) {
+export default function PurchasePage({ user, embedded = false, initialPreset = 'this_month' }) {
   usePageRefresh(() => setReload(value => value + 1), () => Boolean(loading || busy || editor))
   const admin = user?.role === 'admin'
   const [data,setData] = useState({ rows: [], permissions: {} }), [error,setError] = useState(''), [message,setMessage] = useState('')
-  const [preset,setPreset] = useState('this_month'), [start,setStart] = useState(today()), [end,setEnd] = useState(today())
+  const [preset,setPreset] = useState(initialPreset), [start,setStart] = useState(today()), [end,setEnd] = useState(today())
   const [filters,setFilters] = useState(filtersEmpty), [selected,setSelected] = useState([]), [busy,setBusy] = useState(false)
   const [editor,setEditor] = useState(null), [draft,setDraft] = useState([]), [modalError,setModalError] = useState(''), [history,setHistory] = useState(null)
   const [reload,setReload] = useState(0), [loading,setLoading] = useState(true)
@@ -95,7 +95,7 @@ export default function PurchasePage({ user }) {
   const filter = (key,value) => setFilters(old => ({ ...old,[key]:value }))
   return <section className="purchase-page" data-ui-key="page:purchases">
     <div className="page-heading">
-      <div><span className="eyebrow"><ShoppingCart size={14} /> Tài chính</span><h1>NHẬP MUA</h1><p>Dữ liệu mua hàng được lưu trực tiếp trên server VERA SPA.</p></div>
+      <div><span className="eyebrow"><ShoppingCart size={14} /> Tài chính</span>{embedded ? <h2>BÁO CÁO MUA HÀNG</h2> : <h1>NHẬP MUA</h1>}<p>Dữ liệu mua hàng được lưu trực tiếp trên server VERA SPA.</p></div>
     </div>
     <StableFeedback>{error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}</StableFeedback>
     <div className="purchase-filters">
@@ -123,7 +123,7 @@ export default function PurchasePage({ user }) {
         {allowed('delete') && <button data-ui-key="purchases:delete" className="secondary-button compact danger-button" disabled={busy || loading || !picked.length || !picked.every(editable)} onClick={remove}>Xóa dòng đã chọn</button>}
         {admin && <button data-ui-key="purchases:import-append" className="secondary-button compact" disabled={busy} onClick={()=>chooseImport('append')}><Upload size={14}/> Import thêm mới</button>}
         {admin && <button data-ui-key="purchases:import-replace" className="secondary-button compact danger-button" disabled={busy} onClick={()=>chooseImport('replace')}><Upload size={14}/> Import thay toàn bộ</button>}
-        <button data-ui-key="purchases:export" className="secondary-button compact purchase-export" title="Xuất Excel theo thời gian đang chọn" disabled={busy || loading} onClick={()=>run(()=>veraApi.exportPurchases(params))}><Download size={14}/> Xuất Excel</button>
+        <button data-ui-key="purchases:export" className="secondary-button compact purchase-export" title="Xuất excel theo thời gian đang chọn" disabled={busy || loading} onClick={()=>run(()=>veraApi.exportPurchases(params))}><Download size={14}/> Xuất excel</button>
       </UiToolbar>
     </div>
     </section>

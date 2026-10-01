@@ -261,7 +261,7 @@ def _pause_state(google_client: Callable[[], Any], leave_sheet_id: str) -> dict[
 def _approved_rows(conn) -> list[dict[str, Any]]:
     rows = conn.execute(text("""
         SELECT logical_id, record_type, record_status, date_from, date_to,
-               payload, updated_at
+               payload, revision, updated_at
         FROM vera_phase14_record
         WHERE dataset=:dataset AND record_status=:approved
           AND COALESCE(record_type,'') <> :resignation
@@ -280,6 +280,7 @@ def _approved_rows(conn) -> list[dict[str, Any]]:
         request_type = _display_request_type(row.get("record_type") or payload.get("Loại đơn") or REQUEST_TYPE_LONG)
         output.append({
             "id": str(payload.get("ID") or str(row.get("logical_id") or "").split(":", 1)[-1]),
+            "revision": int(row.get("revision") or 1),
             "employee_name": str(payload.get("Tên nhân viên") or "").strip(),
             "request_type": request_type or REQUEST_TYPE_LONG_DISPLAY,
             "start_date": start_date.isoformat() if start_date else "",
@@ -300,7 +301,7 @@ def _approved_rows(conn) -> list[dict[str, Any]]:
 
 def _approved_resignation_rows(conn) -> list[dict[str, Any]]:
     rows = conn.execute(text("""
-        SELECT logical_id, date_from, payload
+        SELECT logical_id, date_from, date_to, payload, revision
         FROM vera_phase14_record
         WHERE dataset=:dataset AND record_status=:approved AND record_type=:resignation
         ORDER BY to_date(NULLIF(date_from,''), 'DD/MM/YYYY') DESC NULLS LAST, updated_at DESC
@@ -313,6 +314,7 @@ def _approved_resignation_rows(conn) -> list[dict[str, Any]]:
         start_date = _parse_vn_date(row.get("date_from") or payload.get("Từ ngày"))
         output.append({
             "id": str(payload.get("ID") or str(row.get("logical_id") or "").split(":", 1)[-1]),
+            "revision": int(row.get("revision") or 1),
             "employee_name": str(payload.get("Tên nhân viên") or "").strip(),
             "request_type": REQUEST_TYPE_RESIGNATION,
             "start_date": start_date.isoformat() if start_date else "",

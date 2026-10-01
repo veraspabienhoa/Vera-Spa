@@ -1,8 +1,9 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { getCustomization, subscribeCustomization } from '../lib/uiCustomizationStore'
 export default function UiCustomText({ uiKey, children }) {
-  const label = useSyncExternalStore(subscribeCustomization,
+  const customLabel = useSyncExternalStore(subscribeCustomization,
     () => getCustomization().items[uiKey]?.label || '', () => '')
+  const label = typeof children === 'string' && children.trim() === 'Xuất excel' && customLabel ? 'Xuất excel' : /^(?:export(?: to)? excel|xuất excel)(?:\s.*)?$/i.test(customLabel.trim()) ? 'Xuất excel' : customLabel
   const text = useRef(null)
   useEffect(() => {
     if (!label) return undefined

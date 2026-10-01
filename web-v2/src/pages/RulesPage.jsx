@@ -623,7 +623,7 @@ export default function RulesPage() {
         </UiToolbar>}
         <div className="rules-actionbar">
           {canEdit && <button data-ui-key="u-d3e024d5e421" data-ui-label-default="Thêm dòng" className="primary-button" onClick={addRow}><Plus size={17} /><UiCustomText uiKey="u-d3e024d5e421"> Thêm dòng</UiCustomText></button>}
-          {permissions.official_rules_export && <button data-ui-key="u-dfcfd317a293" data-ui-label-default="Export Excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportRulesExcel())}><Download size={17} /><UiCustomText uiKey="u-dfcfd317a293"> Export Excel</UiCustomText></button>}
+          {permissions.official_rules_export && <button data-ui-key="u-dfcfd317a293" data-ui-label-default="Xuất excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportRulesExcel())}><Download size={17} /><UiCustomText uiKey="u-dfcfd317a293"> Xuất excel</UiCustomText></button>}
           {permissions.official_rules_import && <>
             <input ref={importRef} className="rules-file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importExcel} />
             <button data-ui-key="u-3ad4df54b688" data-ui-label-default="Import Excel" className="secondary-button" disabled={busy === 'import'} onClick={() => importRef.current?.click()}><Upload size={17} /><UiCustomText uiKey="u-3ad4df54b688"> Import Excel</UiCustomText></button>

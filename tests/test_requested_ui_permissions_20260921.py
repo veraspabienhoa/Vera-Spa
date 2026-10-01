@@ -37,7 +37,7 @@ def test_leave_list_hides_manual_sheet_sync_button():
     page = read_ui_source(Path("web-v2/src/pages/LeaveRegistrationPage.jsx"))
     list_actions = page.split('<div className="list-actions">', 1)[1].split("</div>", 1)[0]
     assert "Đồng bộ Web V2 → LichNghi_VeraSpa" not in list_actions
-    assert "Export to Excel" in list_actions
+    assert "Xuất excel" in list_actions
 
 
 def test_combo_import_is_an_independent_permission():

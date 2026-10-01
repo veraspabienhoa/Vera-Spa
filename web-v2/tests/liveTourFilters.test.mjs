@@ -184,3 +184,13 @@ test('date shortcuts have the requested order, preserve other filters and accept
     assert.equal(current.employee, 'An An')
   } finally { await act(() => root.unmount()) }
 })
+
+test('exact date uses Vietnam invoice business date and combines with other filters', () => {
+  const source = [
+    {id:'midnight',effective_at:'2026-09-30T17:15:00Z',bill_no:'10'},
+    {id:'business',business_date:'2026-10-01',created_at:'2026-10-02T03:00:00Z',bill_no:'11'},
+    {id:'before',effective_at:'2026-09-30T16:59:00Z',bill_no:'12'},
+  ]
+  assert.deepEqual(filterTourRows(source,{date:'2026-10-01'},true).map(r=>r.id),['midnight','business'])
+  assert.deepEqual(filterTourRows(source,{date:'2026-10-01',bill_no:'11'},true).map(r=>r.id),['business'])
+})
