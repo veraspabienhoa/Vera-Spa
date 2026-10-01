@@ -486,3 +486,12 @@ body .attendance-page > .page-heading h1 {
   .staff-page .staff-face-toolbar .staff-face-actions,
   .staff-page .staff-face-toolbar .staff-face-switch { flex-basis:100%; width:100%; }
 }
+
+.staff-page .staff-list-action-rows { display:grid; gap:8px; margin:0 0 12px; padding:10px; border:2px solid #587561; border-radius:11px; background:#f7faf8; }
+.staff-page .staff-list-selection-actions { grid-template-columns:repeat(3,minmax(0,1fr)); margin:0; padding:0; border:0; background:transparent; }
+.staff-page .staff-list-visibility-actions { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+.staff-page .staff-list-visibility-actions button { width:100%; min-width:0; min-height:44px; padding:7px 8px; font-size:12px; line-height:1.35; white-space:normal; justify-content:center; }
+@media(max-width:760px) {
+  .staff-page .staff-list-visibility-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .staff-page .staff-list-visibility-actions button:last-child { grid-column:1 / -1; }
+}
