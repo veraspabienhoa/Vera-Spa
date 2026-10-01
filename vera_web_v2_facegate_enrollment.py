@@ -318,8 +318,10 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
                 # Durable checkpoint commits BEFORE each potentially mutating call.
                 checkpoint(row['operation_id'], stage='uploading')
                 stage = 'uploading'
-                ref = client.upload(photo_bytes, row['upload_session'],
-                                    profile_id=row['profile_id'] if operation_type == 'replace' else None)
+                if operation_type == 'replace':
+                    ref = client.upload(photo_bytes, row['upload_session'], profile_id=row['profile_id'])
+                else:
+                    ref = client.upload(photo_bytes, row['upload_session'])
                 checkpoint(row['operation_id'], stage='uploaded', ref=ref)
                 row['registration_ref'] = ref
                 checkpoint(row['operation_id'], stage='committing',
