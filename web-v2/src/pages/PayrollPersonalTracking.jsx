@@ -210,7 +210,7 @@ export default function PayrollPersonalTracking({ user, standalone = false, unif
 
     <section data-ui-key="u-5dda7820be54" className="panel payroll-personal-section">
       <div data-ui-key="u-814461590659" className="payroll-personal-heading">
-        <div><h2>{isAdmin ? unified ? 'TÍCH LŨY VÀ HOÀN TRẢ NHÂN VIÊN' : 'THEO DÕI TÍCH LŨY NHÂN VIÊN' : 'TÍCH LŨY & NGHĨA VỤ VI PHẠM CỦA TÔI'}</h2><p>{isAdmin ? 'Chỉ theo dõi Leader và Nhân viên. Admin có thể thêm, sửa hoặc xóa số tiền Tích lũy ở nhóm đang còn đóng.' : 'Hiển thị số tiền Tích lũy hiện tại và Nghĩa vụ Vi phạm đang mở.'}</p></div>
+        <div><h2>{isAdmin ? unified ? 'TÍCH LŨY VÀ HOÀN TRẢ NHÂN VIÊN' : 'THEO DÕI TÍCH LŨY NHÂN VIÊN' : 'TÍCH LŨY & NGHĨA VỤ VI PHẠM CỦA TÔI'}</h2>{!isAdmin && <p>Hiển thị số tiền Tích lũy hiện tại và Nghĩa vụ Vi phạm đang mở.</p>}</div>
         <UiToolbar data-ui-key="u-bdb11366d99a" className="payroll-personal-heading-actions">
           {isAdmin && <button data-ui-key="u-757f2d641bd8" className="secondary-button" type="button" onClick={() => setSectionOpen((value) => !value)}>{sectionOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>} {sectionOpen ? 'Ẩn' : 'Hiện'}</button>}
           {sectionOpen && !standalone && <button data-ui-key="u-fb93e571f9ff" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''}/><UiCustomText uiKey="u-fb93e571f9ff"> Làm mới</UiCustomText></button>}
@@ -225,7 +225,6 @@ export default function PayrollPersonalTracking({ user, standalone = false, unif
 
         {unified && isAdmin ? <>
           {children}
-          <label className="payroll-personal-search"><Search size={16}/><ClearableSearchInput type="search" value={search} placeholder="Tìm nhân viên" onChange={(event) => setSearch(event.target.value)} /></label>
           <PayrollAccumulationTable rows={visible} onAdd={addAccumulation} onEdit={editAccumulation} onDelete={deleteAccumulation} onRemoveRefund={onRemoveRefund} busyEmployee={busyEmployee} disabled={disabled || busy} />
         </> : isAdmin ? <>
           <div className="payroll-personal-metrics">
