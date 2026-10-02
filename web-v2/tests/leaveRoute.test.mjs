@@ -20,7 +20,7 @@ const built = await build({
   plugins: [{name:'api-boundaries',setup(b){
     b.onResolve({filter:/\/lib\/(api|data|watchBell|pushNotifications|supabase)$/},args=>({path:args.path.split('/').at(-1),namespace:'fixture'}))
     b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({loader:'js',contents:{
-      api:'export const isApiConfigured=true; export const veraApi=globalThis.__leaveRouteApi;',
+      api:'export const apiRequest=async()=>({}); export const apiBinaryResponse=async()=>new Response(); export const isApiConfigured=true; export const veraApi=globalThis.__leaveRouteApi;',
       data:'export const loadEmployees=async()=>[];export const loadLeaveDailyStats=async()=>[];export const loadLeaveReasons=async()=>[];export const loadLeaveRecords=async()=>[];',
       watchBell:'export const playWatchBellSound=async()=>true;export const unlockWatchBellAudio=async()=>true;',
       pushNotifications:'export const disablePushNotifications=async()=>({});export const enablePushNotifications=async()=>({});export const readPushState=async()=>({});export const syncExistingPushSubscription=async()=>({});',

@@ -13,7 +13,7 @@ const built = await build({
   plugins: [{ name: 'staff-transport', setup(builder) {
     builder.onResolve({ filter: /\/(api|supabase)$/ }, args => ({ path: args.path.split('/').at(-1), namespace: 'fixture' }))
     builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ loader: 'js', contents: path === 'api'
-      ? 'export const isApiConfigured=true; export const veraApi=globalThis.__staffApi;'
+      ? 'export const apiRequest=async()=>({}); export const apiBinaryResponse=async()=>new Response(); export const isApiConfigured=true; export const veraApi=globalThis.__staffApi;'
       : 'export const getCurrentSession=async()=>null; export const refreshCurrentSession=getCurrentSession;'
     }))
   } }],

@@ -17,7 +17,7 @@ const built = await build({
     b.onLoad({filter:/\.jsx$/},args=>({loader:'jsx',contents:transformSync(readFileSync(args.path,'utf8'),{filename:args.path,parserOpts:{plugins:['jsx']},plugins:[layoutIdentity],configFile:false,babelrc:false}).code}))
     b.onResolve({filter:/\/(api|supabase)$/},args=>({path:args.path.split('/').at(-1),namespace:'fixture'}))
     b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({loader:'js',contents:path==='api'?
-      'export const isApiConfigured=true; export const isReadConfigured=true; export const veraApi=globalThis.__navigationApi;':
+      'export const apiRequest=async()=>({}); export const apiBinaryResponse=async()=>new Response(); export const isApiConfigured=true; export const isReadConfigured=true; export const veraApi=globalThis.__navigationApi;':
       `export const isAuthConfigured=true;export const isSupabaseConfigured=false;export const supabase=null;
        export const getCurrentSession=async()=>({access_token:'synthetic',user:{id:'synthetic'}});
        export const refreshCurrentSession=getCurrentSession;
