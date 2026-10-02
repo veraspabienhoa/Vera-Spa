@@ -637,6 +637,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const workspaceRef = useRef(null)
   const isAdmin = String(user?.role || '').trim().toLowerCase() === 'admin'
   const normalizedRole = String(user?.role || '').trim().toLowerCase()
+  const sixRoomMobileRole = ['locker', 'quanly'].includes(normalizedRole)
   const privilegedLiveTourRole = ['admin', 'quanly', 'letan'].includes(normalizedRole)
   const capabilities = data.capabilities && typeof data.capabilities === 'object' ? data.capabilities : {}
   const capability = (name, fallback) => Object.prototype.hasOwnProperty.call(capabilities, name) ? capabilities[name] === true : fallback
@@ -1524,6 +1525,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         .live-tour-page .tour-room-panel{padding:0}.live-tour-page .tour-room-panel-head{gap:4px;margin-bottom:0}.live-tour-page .tour-room-panel-title{font-size:9px}.live-tour-page .tour-room-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 3px}.live-tour-page .tour-room-card{min-height:77.74px;padding:2px}.live-tour-page .tour-room-card.vip{padding:0}.live-tour-page .tour-room-card-head strong{font-size:8px}.live-tour-page .tour-room-type{padding:0 2px;font-size:4px}.live-tour-page .tour-room-countdown{font-size:9px}.live-tour-page .tour-room-countdown svg{width:10px;height:10px}.live-tour-page .tour-room-meta{font-size:6px}.live-tour-page .tour-room-detail-row{grid-template-columns:minmax(75px,.55fr) minmax(0,1fr);gap:4px;padding:4px;font-size:7px}
       }
       @media(max-width:420px){.live-tour-page .tour-room-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      @media(max-width:768px){.live-tour-page .tour-room-panel .tour-room-grid.six-room-grid-mobile{grid-template-columns:repeat(6,minmax(0,1fr))!important}}
       @media(max-width:430px){.live-tour-selection-summary{grid-column:1/-1}.live-tour-card-grid{grid-template-columns:1fr}}
     `}</style>
     {canPending && hasPendingReminder && pendingReminder && createPortal(
@@ -1576,7 +1578,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               {canViewOnlineBookings(user) && <button type="button" className="tour-room-segment-button tour-room-share-control upcoming-booking-button" aria-haspopup="dialog" onClick={() => setOnlineBookingsOpen(true)}><span>Booking online sắp tới</span></button>}
             </div>
           </div>
-          <div className="tour-room-grid" style={{ '--room-columns': Math.max(1, Math.ceil(displayedRooms.length / 2)) }}>
+          <div className={`tour-room-grid ${sixRoomMobileRole ? 'six-room-grid-mobile' : ''}`.trim()} style={{ '--room-columns': Math.max(1, Math.ceil(displayedRooms.length / 2)) }}>
             {displayedRooms.map((room) => {
               const key = areaKey(room)
               const records = roomRecords.get(key) || []
