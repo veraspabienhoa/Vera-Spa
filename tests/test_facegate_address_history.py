@@ -75,6 +75,32 @@ def test_new_address_still_uses_existing_reference_guard():
     assert not rows and issues[0]['reason'] == 'unmapped_reference'
 
 
+def test_authenticated_reconfirmation_actor_must_match_saved_verifier():
+    m = mapping()
+    m['confirmed_by'] = m['ip_reconfirmation']['verified_by'] = 'web-admin'
+    rows, issues, _ = adapt(event(), m)
+    assert len(rows) == 1 and not issues
+    m['confirmed_by'] = 'other-admin'
+    rows, issues, _ = adapt(event(), m)
+    assert not rows and issues[0]['reason'] == 'device_address_changed'
+
+
+@pytest.mark.parametrize('changed', ['profile_id', 'username', 'device_name', 'confirmed_by', 'duplicate'])
+def test_ip_reconfirmation_does_not_transfer_or_duplicate_identity(changed):
+    from vera_facegate_address_history import merge_verified_profiles
+    old = mapping()
+    old['employee_code'] = ''
+    candidate = {**old, 'device_address': OLD}
+    current = [deepcopy(old)]
+    if changed == 'duplicate': current.append(deepcopy(old))
+    elif changed == 'confirmed_by': current[0][changed] = ''
+    elif changed == 'profile_id': candidate[changed] = 43
+    else: candidate[changed] = 'different'
+    before = deepcopy(current)
+    value, applied, skipped = merge_verified_profiles(current, [candidate], OLD, 'web-admin', VERIFIED)
+    assert value == before and current == before and not applied and skipped
+
+
 def test_unknown_status_on_old_address_stays_blocking():
     scan = event()
     payload = json.loads(scan['payload_json'])

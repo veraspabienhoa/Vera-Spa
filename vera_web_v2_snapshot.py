@@ -392,8 +392,9 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
     def confirm_facegate_mapping_candidates(body: FaceGateBulkMappingInput, ident: identity_type = Depends(current_identity)):
         """Bulk-confirm exact candidates plus explicit Admin overrides.
 
-        Attendance codes must already be uniquely matched from the saved TimeSoft
-        catalogue. No placeholder code, FaceGate UID, or fuzzy name is accepted.
+        Preserve optional TimeSoft codes from the saved catalogue. Existing
+        stale-IP identities require the same live profile/reference/name/owner;
+        no placeholder code, FaceGate UID, or fuzzy name is substituted.
         """
         mapping_admin(ident)
         actor = str(getattr(ident, 'employee_username', '') or '').strip()
@@ -470,10 +471,19 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
                 VALUES ('facegate',:key,'[]'::jsonb,'web_v2',:actor,1,NOW(),NOW())
                 ON CONFLICT(category,setting_key) DO NOTHING"""), {'key': key, 'actor': actor})
             current = read_mappings(conn, key, lock=True)
-            current_profiles = {m.get('profile_id') for m in current if isinstance(m, dict)}
-            current_users = {m.get('username') for m in current if isinstance(m, dict)}
-            accepted = [row for row in selected if row['profile_id'] not in current_profiles and row['username'] not in current_users]
-            value = current + accepted
+            if current != existing:
+                raise HTTPException(409, 'Ánh xạ đã thay đổi trong lúc đối chiếu; hãy tải lại danh sách.')
+            for username in {row['username'] for row in selected}:
+                if conn.execute(text("""SELECT username FROM employees WHERE username=:username
+                    AND role != 'admin' AND COALESCE(payload->>'__deleted','false') <> 'true'
+                    FOR SHARE"""), {'username': username}).scalar_one_or_none() is None:
+                    raise HTTPException(409, 'Hồ sơ nhân viên đã thay đổi; hãy đối chiếu lại.')
+            from vera_facegate_address_history import merge_verified_profiles
+            value, accepted, conflicts = merge_verified_profiles(
+                current, selected, address, actor, datetime.now().astimezone().isoformat())
+            skipped.extend(conflicts)
+            if not accepted:
+                return {'confirmed_count': 0, 'skipped': skipped, 'attendance_calculation_enabled': False}
             conn.execute(text("""UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb),
                 updated_by=:actor,updated_at=NOW(),revision=revision+1
                 WHERE category='facegate' AND setting_key=:key"""),
