@@ -13,6 +13,7 @@ import LiveTourEmployeeRevenueBreakdown from '../components/LiveTourEmployeeReve
 import LiveTourPaidInvoiceDialog from '../components/LiveTourPaidInvoiceDialog'
 import LiveTourReceipt from '../components/LiveTourReceipt'
 import { defaultTourYesterdayFilters, filterTourRows } from '../lib/liveTourFilters'
+import { reportInvoiceMetrics } from '../lib/liveTourReportMetrics'
 import { invoiceMoneyValues } from '../lib/liveTourInvoiceMoney'
 import './SpaManagementPage.css'
 import './LiveTourReportsPage.css'
@@ -99,6 +100,7 @@ export default function LiveTourReportsPage({ user }) {
       : reports.filter(row => tab !== 'combos' || row.combo_sale || row.combo_units || /combo/i.test(row.service || ''))
   const pagination = useTablePage(rows, JSON.stringify([tab, filters, performanceTiming]))
   const reportInvoiceCount = new Set(rows.map(row => String(row?.invoice_id || row?.bill_no || '').trim()).filter(Boolean)).size
+  const invoiceMetrics = reportInvoiceMetrics(rows, invoiceById)
   const grants = data.capabilities
   const refresh = async () => { setBusy(true); setError(''); try { await load() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   if (!allowed) return <div data-ui-key="u-58587e19c2e9" className="panel">Tài khoản chưa có quyền Xem báo cáo.</div>
@@ -114,6 +116,7 @@ export default function LiveTourReportsPage({ user }) {
       {tab === 'employee' && <LiveTourEmployeeRevenueBreakdown rows={reports}/>}
       {tab !== 'performance' && <p>{rows.length} dòng</p>}
       {grants.export && <button data-ui-key="u-7dae37cfbfcd" data-ui-label-default="Xuất excel" className="secondary-button" onClick={() => (tab === 'history' ? veraApi.exportLiveTourBoardHistory(filters) : veraApi.exportLiveTourExcel(tab === 'tip' ? 'tip' : tab === 'performance' ? 'performance' : tab === 'employee' ? 'employee' : 'reports', { ...appliedFilters, preset: '', ...(tab === 'combos' ? { report_kind: 'combos' } : {}), ...(tab === 'performance' ? { performance_timing: performanceTiming } : {}) })).catch(e => setError(e.message))}><UiCustomText uiKey="u-7dae37cfbfcd">Xuất excel</UiCustomText></button>}
+      {tab === 'revenue' && <div className="live-tour-report-extra-metrics" aria-label="Thống kê hóa đơn theo bộ lọc"><div><span>Hóa đơn tổng tiền = 0</span><strong>{invoiceMetrics.zeroInvoices}</strong></div><div><span>Tổng giảm giá</span><strong>{money(invoiceMetrics.discount)}</strong></div></div>}
       {tab === 'invoices' && !grants.paid_invoice_view && <p>Cần quyền Xem hóa đơn đã thanh toán để mở báo cáo hóa đơn.</p>}
       {tab === 'history' && isAdmin && <button data-ui-key="u-77eae750dea1" className="danger-button" disabled={busy || deletingHistory} onClick={cleanupHistory}>{deletingHistory ? 'Đang xử lý…' : 'Xóa lịch sử theo bộ lọc'}</button>}
       <StableFeedback>{tab === 'history' && historyNotice && <p role="status">{historyNotice}</p>}</StableFeedback>

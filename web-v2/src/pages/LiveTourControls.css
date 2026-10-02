@@ -341,3 +341,5 @@
 .live-tour-payment-reminder button:hover { transform: none; }
 .live-tour-payment-reminder button:focus-visible { outline: 2px solid #64350d; outline-offset: 2px; }
 @media print { .live-tour-payment-reminder { display: none; } }
+
+.tour-quick-extra-services{display:grid;gap:8px;min-width:0}.tour-quick-extra-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.tour-quick-extra-row label{display:flex;align-items:center;gap:8px}.tour-quick-extra-row input{width:85px}

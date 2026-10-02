@@ -32,6 +32,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "live_tour_reorder": "Thay đổi thứ tự nhân viên / STT toàn bảng",
         "live_tour_booking": "Đặt booking (cần quyền Xem Live Tour)",
         "live_tour_payment": "Thanh toán, tạo khách hàng và bán combo",
+        "live_tour_quick_checkout_backdate": "Thanh toán nhanh · Lùi 1 ngày (cần quyền Thanh toán)",
         "live_tour_invoice_view": "Xem hóa đơn chờ thanh toán",
         "live_tour_paid_invoice_view": "Xem / in hóa đơn đã thanh toán",
         "live_tour_paid_invoice_edit": "Sửa hóa đơn đã thanh toán (cần quyền Xem tương ứng)",
@@ -151,7 +152,7 @@ FEATURES = {key: label for group in FEATURE_GROUPS.values() for key, label in gr
 PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
     {"id": "live-tour", "label": "Live Tour", "view_feature": "live_tour_view", "features": [
         "live_tour_view", "live_tour_operate", "live_tour_start_outside_shift", "live_tour_reorder", "live_tour_booking",
-        "live_tour_payment", "live_tour_invoice_view", "live_tour_pending_view",
+        "live_tour_payment", "live_tour_quick_checkout_backdate", "live_tour_invoice_view", "live_tour_pending_view",
         "live_tour_invoice_edit", "live_tour_invoice_delete", "live_tour_paid_invoice_view",
         "live_tour_paid_invoice_edit", "live_tour_paid_invoice_delete",
         "live_tour_invoice_date_edit", "live_tour_export",
@@ -304,6 +305,7 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     "live_tour_reorder": {"live_tour_view", "live_tour_operate"},
     "live_tour_booking": {"live_tour_view"},
     "live_tour_payment": {"live_tour_view"},
+    "live_tour_quick_checkout_backdate": {"live_tour_payment"},
     "live_tour_invoice_view": {"live_tour_view"},
     "live_tour_paid_invoice_view": {"live_tour_view"},
     "live_tour_paid_invoice_edit": {"live_tour_paid_invoice_view"},
