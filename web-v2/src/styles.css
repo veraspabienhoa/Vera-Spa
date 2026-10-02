@@ -1202,3 +1202,27 @@ tr:last-child td { border-bottom: 0; }
 .staff-face-switch input{width:19px;height:19px;accent-color:#287653}
 .staff-face-missing{display:inline-block;margin:2px 4px;padding:2px 7px;border-radius:8px;background:#ffe7c7;color:#823d0b;font-weight:800}
 @media(max-width:600px){.staff-visibility-group{grid-column:1/-1}.staff-visibility-group button{max-width:45%;white-space:normal}.topbar-actions .topbar-open-tab-button{width:32px;min-width:32px;height:32px;min-height:32px;padding:0}.topbar-actions .topbar-open-tab-button span:not(.notification-unread-dot){display:none}}
+
+/* Approved leave list search and status filters */
+.approved-leave-filters { display: grid; gap: 9px; margin: 12px 0; }
+.approved-leave-search { display: grid; gap: 5px; max-width: 440px; color: #4b5b53; font-size: 11px; font-weight: 800; }
+.approved-leave-search input { width: 100%; min-width: 0; min-height: 40px; }
+.approved-leave-filter-buttons { display: flex; flex-wrap: wrap; gap: 7px; }
+.approved-leave-filter-buttons button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #799688; border-radius: 10px; padding: 7px 10px; color: #244b3c; background: #fff; font-size: 11px; font-weight: 800; }
+.approved-leave-filter-buttons button.active { border-color: var(--green-800); color: #fff; background: var(--green-800); }
+.approved-leave-filter-buttons button span { min-width: 20px; padding: 2px 5px; border-radius: 999px; color: inherit; background: rgba(127, 150, 138, .18); font-size: 9px; text-align: center; }
+.approved-leave-filter-buttons button.active span { background: rgba(255,255,255,.2); }
+.approved-leave-status { display: inline-flex; align-items: center; width: fit-content; border: 1px solid #d4ded8; border-radius: 999px; padding: 4px 8px; color: #46564e; background: #f2f5f3; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.approved-leave-status.active { border-color: #c1dfce; color: #24613d; background: #e8f5ec; }
+.approved-leave-status.waiting { border-color: #ead9a9; color: #765c16; background: #fff7df; }
+.approved-leave-status.completed { border-color: #d5dce0; color: #52616a; background: #edf1f3; }
+.approved-leave-status.resignation, .request-type-chip.resignation { border-color: #e5c7c7; color: #812f2f; background: #fff0f0; }
+@media(max-width:700px) {
+  .approved-leave-filters { gap: 7px; margin: 9px 0; }
+  .approved-leave-search { max-width: none; font-size: 9px; }
+  .approved-leave-search input { min-height: 38px; padding: 8px; font-size: 11px; }
+  .approved-leave-filter-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  .approved-leave-filter-buttons button { min-width: 0; min-height: 35px; padding: 6px 5px; font-size: 9px; }
+  .approved-leave-filter-buttons button span { min-width: 17px; font-size: 8px; }
+  .approved-leave-status { margin-top: 7px; padding: 3px 6px; font-size: 8px; white-space: normal; }
+}
