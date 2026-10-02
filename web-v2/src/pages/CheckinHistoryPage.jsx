@@ -132,13 +132,13 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
   const source = filters.source
   const change = patch => { setFilters(value => ({ ...value, ...patch })); setDirty(true); setError('') }
   const preset = value => change({ preset: value, ...checkinDateRange(value), event_date: '' })
-  const load = async event => {
+  const load = async (event, queryFilters = filters) => {
     event?.preventDefault()
     if (!formRef.current?.reportValidity()) return
-    const invalid = checkinRangeError(filters)
+    const invalid = checkinRangeError(queryFilters)
     if (invalid) { setError(invalid); return }
     const id = ++requestId.current
-    const query = checkinQuery(filters)
+    const query = checkinQuery(queryFilters)
     setBusy(true); setError('')
     try {
       const response = await veraApi.checkinHistory(query)
@@ -153,6 +153,16 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
         if ([401, 403].includes(cause.status)) setRecords(null)
       }
     } finally { if (requestId.current === id) setBusy(false) }
+  }
+  const loadFromFacegate = () => {
+    const directFilters = { ...filters, source: 'facegate', status: '', event_type: '' }
+    setFilters(directFilters)
+    setRecords(null)
+    setLoadedQuery(null)
+    setTruncated(false)
+    setOptions({ statuses: [], types: [] })
+    setDirty(false)
+    void load(null, directFilters)
   }
   const exportExcel = async () => {
     if (!formRef.current?.reportValidity() || dirty || !loadedQuery) return
@@ -182,6 +192,7 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
         </div>
         <div className="checkin-quick-dates">{CHECKIN_PRESETS.filter(([id]) => id !== 'custom').map(([id, label]) => <button key={id} type="button" className="secondary-button" aria-pressed={filters.preset === id} onClick={() => preset(id)}>{label}</button>)}<button type="button" className="secondary-button" onClick={() => change(EMPTY_CHECKIN_DETAILS)}>Xóa lọc chi tiết</button></div>
         <div className="device-actions checkin-history-actions">
+          <button className="secondary-button checkin-live-device-button" type="button" disabled={busy || exporting} onClick={loadFromFacegate}><RefreshCw size={16} className={busy && source === 'facegate' ? 'spin' : ''} />{busy && source === 'facegate' ? 'Đang tải từ máy…' : 'Tải lại dữ liệu từ máy Face ID'}</button>
           <button className="secondary-button" type="submit"><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang tải…' : 'Xem lịch sử'}</button>
           <button className="secondary-button" type="button" disabled={busy || !records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} />{exporting ? 'Đang xuất…' : 'Xuất excel'}</button>
         </div>
