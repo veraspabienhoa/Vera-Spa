@@ -67,7 +67,8 @@ test('history saves an entered FaceGate IP before refreshing directly from the d
   }, context)
   const ip = [...dom.window.document.querySelectorAll('input')].find(el => el.closest('label')?.textContent.includes('IP Face ID'))
   assert.ok(ip)
-  ip.value = '192.168.1.34'
+  const setInputValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
+  setInputValue.call(ip, '192.168.1.34')
   await dom.window.testAct(async () => ip.dispatchEvent(new dom.window.Event('input', { bubbles: true })))
   await dom.window.testAct(async () => button(dom, 'Lưu IP và tải lại từ máy Face ID').click())
   assert.equal(saved.expected_revision, 8)
