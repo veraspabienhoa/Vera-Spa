@@ -365,6 +365,7 @@ export const veraApi = {
     period_no: periodNo,
     ...(latestIfMissing ? { latest_if_missing: 'true' } : {}),
   })}`),
+  restorePayrollDraft: (month, periodNo) => request(`/v2/payroll/draft/restore?${new URLSearchParams({ month, period_no: periodNo })}`, { method: 'POST' }),
   savePayrollDraft: (body) => request('/v2/payroll/draft', { method: 'PUT', body: JSON.stringify(body) }),
   deletePayrollDraft: (month, periodNo) => request(`/v2/payroll/draft?${new URLSearchParams({ month, period_no: periodNo })}`, { method: 'DELETE' }),
   importPayrollDraft: (file, month, periodNo) => upload('/v2/payroll/draft/import.xlsx', file, { month, period_no: periodNo }),

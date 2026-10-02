@@ -98,6 +98,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const [month, setMonth] = useState(initialPeriod.month)
   const [periodNo, setPeriodNo] = useState(initialPeriod.periodNo)
   const [draft, setDraft] = useState(null)
+  const [savedDraftAvailable, setSavedDraftAvailable] = useState(false)
   const [draftSearch, setDraftSearch] = useState('')
   const [draftNonPositiveOnly, setDraftNonPositiveOnly] = useState(false)
   const [draftFormerOnly, setDraftFormerOnly] = useState(false)
@@ -192,9 +193,11 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     setDraft(null)
     setDraftSearch('')
     setSelected([])
-    veraApi.payrollDraft(month, periodNo)
-      .then((result) => {
+    setSavedDraftAvailable(false)
+    Promise.all([veraApi.payrollDraft(month, periodNo), veraApi.payrollDraft(month, periodNo, true)])
+      .then(([result, available]) => {
         if (!active) return
+        setSavedDraftAvailable(Boolean(available.draft?.rows?.length))
         const saved = result.draft || null
         setDraft(saved)
         setSelected((saved?.rows || []).map((row) => row['Tên Hệ thống']))
@@ -328,12 +331,14 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
       rows: draft.rows,
     })
     setDraft(result.draft)
+    setSavedDraftAvailable(Boolean(result.draft?.rows?.length))
     setSelected((result.draft?.rows || []).map((row) => row['Tên Hệ thống']))
     setNotice({ type: 'success', message: result.message })
   })
 
   const restoreSavedDraft = () => run('restore-draft', async () => {
-    const result = await veraApi.payrollDraft(month, periodNo, true)
+    const result = await veraApi.restorePayrollDraft(month, periodNo)
+    setSavedDraftAvailable(Boolean(result.has_saved_draft))
     if (!result.draft?.rows?.length) {
       setNotice({ type: 'warning', message: 'Không tìm thấy bảng lương nháp đã lưu trên máy chủ.' })
       return
@@ -353,7 +358,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     setSelected(result.draft.rows.map((row) => row['Tên Hệ thống']))
     setNotice({
       type: 'success',
-      message: `Đã khôi phục bảng lương nháp ${result.draft.period_label}. Bạn có thể tiếp tục chỉnh sửa và lưu lại.`,
+      message: `Đã lấy lại bảng lương ${result.draft.period_label} và xóa bản nháp đã lưu trên máy chủ. Bạn có thể tiếp tục chỉnh sửa và lưu lại.`,
     })
   })
 
@@ -362,6 +367,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     if (!window.confirm(`Xóa bảng lương nháp ${draft.period_label}?`)) return
     const result = await veraApi.deletePayrollDraft(month, periodNo)
     setDraft(null)
+    setSavedDraftAvailable(false)
     setSelected([])
     setNotice({ type: 'success', message: result.message })
   })
@@ -378,6 +384,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     })
     try { await veraApi.deletePayrollDraft(month, periodNo) } catch { /* official payroll is already saved */ }
     setDraft(null)
+    setSavedDraftAvailable(false)
     setSelected([])
     setDraftSearch('')
     await Promise.all([loadHistory('', employee), loadSavedBatches(), loadSupporting()])
@@ -594,17 +601,16 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
       <UiToolbar data-ui-key="u-d77fe86a944d" className="payroll-draft-toolbar">
         <div><strong>BẢNG LƯƠNG NHÁP</strong><small>{draft?.rows?.length ? `${draft.period_label} · ${draft.rows.length} nhân viên${draft.saved_at ? ` · Đã lưu bởi ${draft.saved_by}` : ' · Chưa lưu trên máy chủ'}` : 'Chưa có dữ liệu nháp cho kỳ đang chọn.'}</small></div>
         <UiToolbar data-ui-key="u-e897f7d9f0d6" className="list-actions">
-          <button data-ui-key="payroll-restore-saved-draft" className="secondary-button" type="button" onClick={restoreSavedDraft} disabled={isBusy}><Edit3 size={16} /> {busy === 'restore-draft' ? 'Đang khôi phục…' : 'Lấy lại bảng lương nháp'}</button>
+          {canSave && <button data-ui-key="u-ce81fd2f3ea0" className="secondary-button" type="button" onClick={saveDraftSnapshot} disabled={isBusy || !draftRows.length}><Save size={16} /> {busy === 'save-draft' ? 'Đang lưu…' : 'Lưu bảng lương'}</button>}
+          <button data-ui-key="payroll-restore-saved-draft" className={savedDraftAvailable ? 'primary-button payroll-restore-available' : 'secondary-button'} type="button" onClick={restoreSavedDraft} disabled={isBusy || !canSave || !savedDraftAvailable}><Edit3 size={16} /> {busy === 'restore-draft' ? 'Đang lấy lại…' : 'Lấy lại bảng lương'}</button>
           <button data-ui-key="u-67cfa949cbc8" className="secondary-button" type="button" onClick={recalculatePayroll} disabled={isBusy || !draftRows.length}><RefreshCw size={16} className={busy === 'recalculate' ? 'spin' : ''} /> {busy === 'recalculate' ? 'Đang tính lại…' : 'Tính lại lương'}</button>
-          {canExport && <button data-ui-key="u-44591d8d625e" className="secondary-button" type="button" onClick={exportDraft} disabled={isBusy || !draftRows.length}><Download size={16} /> {busy === 'export-draft' ? 'Đang xuất…' : 'Xuất excel'}</button>}
-          {canSave && <button data-ui-key="u-ce81fd2f3ea0" className="secondary-button" type="button" onClick={saveDraftSnapshot} disabled={isBusy || !draftRows.length}><Save size={16} /> {busy === 'save-draft' ? 'Đang lưu…' : 'Lưu bảng lương nháp'}</button>}
-          {canSave && <button data-ui-key="u-7f80b2224b32" className="danger-button" type="button" onClick={deleteDraftSnapshot} disabled={isBusy || !draftRows.length}><Trash2 size={16} /> {busy === 'delete-draft' ? 'Đang xóa…' : 'Xóa bảng lương nháp'}</button>}
+          {canSave && <button data-ui-key="u-7f80b2224b32" className="danger-button" type="button" onClick={deleteDraftSnapshot} disabled={isBusy || !draftRows.length}><Trash2 size={16} /> {busy === 'delete-draft' ? 'Đang xóa…' : 'Xóa bảng lương'}</button>}
         </UiToolbar>
       </UiToolbar>
     </section>}
 
     {draft?.rows?.length > 0 && <section data-ui-key="u-b5130dabd90f" className="panel payroll-draft-panel">
-      <div data-ui-key="u-1fea30877196" className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><UiToolbar data-ui-key="u-62395aec935b" className="list-actions">{canSave && <button data-ui-key="u-ffb464f0cbcc" className="primary-button" onClick={completePayroll} disabled={isBusy || draftSalaryTotal <= 0}><CheckCircle2 size={16} /> {busy === 'complete' ? 'Đang hoàn thành…' : 'Hoàn thành bảng lương'}</button>}{canEmail && <button data-ui-key="u-83cf7f0e45eb" className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> {busy === 'email' && emailProgress ? `Đang gửi ${emailProgress.processed}/${emailProgress.total}…` : `Gửi email (${selected.length})`}</button>}</UiToolbar></div>
+      <div data-ui-key="u-1fea30877196" className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><UiToolbar data-ui-key="u-62395aec935b" className="list-actions">{canSave && <button data-ui-key="u-ffb464f0cbcc" className="primary-button" onClick={completePayroll} disabled={isBusy || draftSalaryTotal <= 0}><CheckCircle2 size={16} /> {busy === 'complete' ? 'Đang hoàn thành…' : 'Hoàn thành bảng lương'}</button>}{canEmail && <button data-ui-key="u-83cf7f0e45eb" className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> {busy === 'email' && emailProgress ? `Đang gửi ${emailProgress.processed}/${emailProgress.total}…` : `Gửi email (${selected.length})`}</button>}{canExport && <button data-ui-key="u-44591d8d625e" className="secondary-button" type="button" onClick={exportDraft} disabled={isBusy || !draftRows.length}><Download size={16} /> {busy === 'export-draft' ? 'Đang xuất…' : 'Xuất excel'}</button>}</UiToolbar></div>
       <UiToolbar data-ui-key="u-4f690860c619" className="payroll-search-toolbar">
         <label className="payroll-search-box">Tìm tên nhân viên<Search size={16} /><ClearableSearchInput type="search" value={draftSearch} disabled={isBusy} placeholder={`Tìm trong ${draft.period_label}`} onChange={(event) => setDraftSearch(event.target.value)} /></label>
         <UiToolbar data-ui-key="u-879165f77c07" className="payroll-quick-filters">

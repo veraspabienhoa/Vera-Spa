@@ -1074,6 +1074,29 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             "selected_period_no": 1 if selected_start and selected_start.day <= 15 else 2 if selected_start else period_no,
         }
 
+    @app.post("/v2/payroll/draft/restore")
+    def restore_payroll_draft(month: str = Query(...), period_no: int = Query(..., ge=1, le=2), ident: identity_type = Depends(current_identity)):
+        start, end, _label = _period(month, period_no)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "payroll_calculate")
+            require_feature(conn, ident, "payroll_save")
+            draft = _saved_draft(conn, start, end, norm) or _latest_saved_draft(conn, norm)
+            if draft is None:
+                return {"draft": None, "has_saved_draft": False}
+            start, end = _parse_date(draft["start"]), _parse_date(draft["end"])
+            label = _period_label(start, end)
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:payroll-draft:' || :label))"), {"label": label})
+            # Re-read under the same lock as Save. Never delete a newer version
+            # using data read before another session saved the same period.
+            draft = _saved_draft(conn, start, end, norm)
+            if draft is None:
+                return {"draft": None, "has_saved_draft": _latest_saved_draft(conn, norm) is not None}
+            conn.execute(text("DELETE FROM vera_app_setting WHERE category='payroll' AND setting_key=:key"), {"key": _draft_key(start, end)})
+            has_saved_draft = _latest_saved_draft(conn, norm) is not None
+        return {"draft": {**draft, "saved_at": "", "saved_by": ""},
+                "selected_month": start.strftime("%Y-%m"), "selected_period_no": 1 if start.day <= 15 else 2,
+                "has_saved_draft": has_saved_draft}
+
     @app.put("/v2/payroll/draft")
     def save_payroll_draft(body: PayrollSave, ident: identity_type = Depends(current_identity)):
         label = _period_label(body.start, body.end)

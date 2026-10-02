@@ -282,3 +282,10 @@
 .payroll-accumulation-filters button { min-height:42px; width:100%; }
 .payroll-accumulation-filters .active-filter { background:#1f513f; color:#fff; }
 @media(max-width:900px) { .payroll-accumulation-filters { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* Draft title above the ordered action row on desktop and mobile. */
+.payroll-page-enhanced .payroll-draft-toolbar { flex-direction: column; align-items: stretch; }
+.payroll-page-enhanced .payroll-draft-toolbar > .list-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
+.payroll-page-enhanced .payroll-draft-toolbar > .list-actions > button { width: 100%; min-width: 0; white-space: normal; }
+.payroll-page-enhanced .payroll-restore-available { background: var(--green-900, #174c3c); color: #fff; border-color: var(--green-900, #174c3c); }
+@media (max-width: 720px) { .payroll-page-enhanced .payroll-draft-toolbar > .list-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
