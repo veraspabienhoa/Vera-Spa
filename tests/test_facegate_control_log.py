@@ -462,11 +462,87 @@ class FaceGateMappingRouteTests(unittest.TestCase):
     self.assertEqual(response.status_code, 403)
     self.assertEqual(self.sql, [])
 
+  def test_bulk_confirmation_requires_mapping_permission_and_actor(self):
+    with patch.object(facegate, 'fetch_registered_profiles') as read:
+      self.ident.role = 'nhanvien'
+      self.assertEqual(self.client.post('/v2/devices/facegate-mapping-candidates/confirm', json={}).status_code, 403)
+      self.ident.role = 'admin'
+      self.ident.employee_username = ' '
+      self.assertEqual(self.client.post('/v2/devices/facegate-mapping-candidates/confirm', json={}).status_code, 403)
+      read.assert_not_called()
+      self.assertEqual(self.sql, [])
+
   def test_unmapped_reference_does_not_read_device(self):
     with patch.object(facegate, 'fetch_registered_profile') as read:
       result = self.client.post('/v2/devices/facegate-mappings/check', json={'registration_ref': self.ref})
       self.assertEqual(result.json()['status'], 'unmapped')
       read.assert_not_called()
+
+  def test_bulk_ip_reconfirmation_preserves_empty_code_and_is_idempotent(self):
+    from copy import deepcopy
+    from vera_facegate_address_history import accepts_event
+    import vera_web_v2_attendance_codes as codes
+    import vera_web_v2_devices as devices
+    old = {**self.profile, 'username': 'vera-test', 'employee_code': '',
+           'device_address': '192.168.1.34', 'confirmed_by': 'old-admin',
+           'confirmed_at': '2026-09-29T04:27:27+00:00',
+           'replaced_registration_refs': [{'file_type': 0, 'file_index': 0, 'file_position': 11000}]}
+    self.rows = [deepcopy(old)]
+    def profiles():
+      self.assertFalse(self.connection_open)
+      return [deepcopy(self.profile)]
+    with patch.object(facegate, 'fetch_registered_profiles', side_effect=profiles), \
+         patch.object(devices, 'facegate_address', return_value='192.168.1.26'), \
+         patch.object(codes, 'read_employees', return_value=[{'username': 'vera-test', 'full_name': 'Test A'}]), \
+         patch.object(codes, 'saved_codes', return_value=[]), \
+         patch.object(codes, 'match_codes', return_value={'employees': []}):
+      response = self.client.post('/v2/devices/facegate-mapping-candidates/confirm', json={'include_exact': True})
+      self.assertEqual(response.status_code, 200, response.text)
+      self.assertEqual(response.json()['confirmed_count'], 1)
+      restored = deepcopy(self.rows[0])
+      self.assertEqual(restored['employee_code'], '')
+      self.assertEqual(restored['replaced_registration_refs'], old['replaced_registration_refs'])
+      self.assertEqual(restored['confirmed_by'], 'admin-test')
+      self.assertTrue(accepts_event(restored, {'device_address': old['device_address'], 'registration_ref': self.ref},
+                                    '192.168.1.26', '2020-10-02T09:00:00+07:00'))
+      again = self.client.post('/v2/devices/facegate-mapping-candidates/confirm', json={'include_exact': True})
+      self.assertEqual(again.json()['confirmed_count'], 0)
+      self.assertEqual(self.rows, [restored])
+
+  def test_bulk_ip_reconfirmation_rejects_changed_reference(self):
+    import vera_web_v2_attendance_codes as codes
+    import vera_web_v2_devices as devices
+    self.rows = [{**self.profile, 'registration_ref': {**self.ref, 'file_position': 999},
+                  'username': 'vera-test', 'employee_code': '', 'confirmed_by': 'old-admin',
+                  'device_address': '192.168.1.34'}]
+    before = list(self.rows)
+    with patch.object(facegate, 'fetch_registered_profiles', return_value=[self.profile]), \
+         patch.object(devices, 'facegate_address', return_value='192.168.1.26'), \
+         patch.object(codes, 'read_employees', return_value=[{'username': 'vera-test', 'full_name': 'Test A'}]), \
+         patch.object(codes, 'saved_codes', return_value=[]), \
+         patch.object(codes, 'match_codes', return_value={'employees': []}):
+      response = self.client.post('/v2/devices/facegate-mapping-candidates/confirm', json={'include_exact': True})
+      self.assertEqual(response.json()['confirmed_count'], 0)
+      self.assertEqual(response.json()['skipped'][0]['reason'], 'existing_identity_changed')
+      self.assertEqual(self.rows, before)
+
+  def test_bulk_confirmation_rejects_concurrent_mapping_change(self):
+    import vera_web_v2_attendance_codes as codes
+    import vera_web_v2_devices as devices
+    self.rows = [{**self.profile, 'username': 'vera-test', 'employee_code': '',
+                  'confirmed_by': 'old-admin', 'device_address': '192.168.1.34'}]
+    def catalogue(*_):
+      self.rows[0]['confirmed_by'] = 'concurrent-admin'
+      return {'employees': []}
+    with patch.object(facegate, 'fetch_registered_profiles', return_value=[self.profile]), \
+         patch.object(devices, 'facegate_address', return_value='192.168.1.26'), \
+         patch.object(codes, 'read_employees', return_value=[{'username': 'vera-test', 'full_name': 'Test A'}]), \
+         patch.object(codes, 'saved_codes', return_value=[]), \
+         patch.object(codes, 'match_codes', side_effect=catalogue):
+      response = self.client.post('/v2/devices/facegate-mapping-candidates/confirm', json={'include_exact': True})
+      self.assertEqual(response.status_code, 409)
+      self.assertEqual(self.rows[0]['device_address'], '192.168.1.34')
+      self.assertFalse(any(sql.startswith('UPDATE vera_app_setting') for sql in self.sql))
 
 
 if __name__ == "__main__":
