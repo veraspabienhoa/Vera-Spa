@@ -653,45 +653,25 @@ def _tip_rows(source: pd.DataFrame, start: date, end: date, norm) -> tuple[pd.Da
 
 
 def _tichluy_map(conn, employees: list[dict[str, Any]], start: date, end: date, norm) -> dict[str, int]:
-    payload = conn.execute(text("SELECT payload FROM vera_dataset_cache WHERE dataset_key='tichluy' LIMIT 1")).scalar_one_or_none()
-    source = {norm(item.get("Tên nhân viên")): item for item in (payload or []) if isinstance(item, dict)}
-    result: dict[str, int] = {}
+    balances = _employee_accumulation_balances(conn, employees, norm, (start, end))
+    result = {}
     for employee in employees:
         key = norm(employee["username"])
-        item = source.get(key)
-        if not item:
-            result[key] = 0
-            continue
-        target = _number(item.get("Mục tiêu tích lũy")) or 5_000_000
-        accumulated = _number(item.get("Đã tích lũy"))
-        # D/E là nguồn xác nhận hoàn thành. Một số dòng legacy còn giữ F=Còn lại=5.000.000
-        # dù Đã tích lũy đã đủ mục tiêu; không được tiếp tục khấu trừ các dòng này.
-        completed = target > 0 and accumulated >= target
-        if completed:
-            remaining = 0
-        else:
-            remaining_raw = str(item.get("Còn lại") or "").strip()
-            remaining = (
-                _number(remaining_raw)
-                if remaining_raw and remaining_raw not in {"-", "–", "—"}
-                else max(0, target - accumulated)
-            )
-            remaining = max(0, min(remaining, max(0, target - accumulated)))
-        history = {}
-        try:
-            history = json.loads(str(item.get("Chi tiết các kỳ") or "{}"))
-        except Exception:
-            pass
-        period_key = f"{start.isoformat()}|{end.isoformat()}"
-        if period_key in history:
-            result[key] = max(0, min(500_000, _number(history[period_key])))
-            continue
-        start_work = _parse_date(employee.get("employment_start_date")) or _parse_date(item.get("Ngày bắt đầu làm"))
-        if start_work and start <= start_work <= end and (end - start_work).days + 1 < 10:
-            result[key] = 0
-        else:
-            result[key] = max(0, min(500_000, remaining))
+        balance = balances[key]
+        start_work = _parse_date(balance.get("employment_start_date"))
+        former = norm(employee.get("employment_status")) == norm("Đã nghỉ việc")
+        short_period = start_work and start <= start_work <= end and (end - start_work).days + 1 < 10
+        result[key] = 0 if not balance.get("enrolled", True) or former or short_period else min(500_000, balance["remaining"])
     return result
+
+
+def _employee_accumulation_balances(conn, employees, norm, exclude_period=None):
+    from vera_web_v2_payroll_personal import _accumulation_balance, _dataset
+    history = _dataset(conn, "payroll_history")
+    source = _dataset(conn, "tichluy")
+    adjustments = _setting(conn, "accumulation_manual_adjustments", [])
+    return {norm(employee["username"]): _accumulation_balance(
+        employee, history, source, adjustments, norm, exclude_period) for employee in employees}
 
 
 def _obligations(conn) -> list[dict[str, Any]]:
@@ -704,7 +684,7 @@ def _accumulation_refunds(conn) -> list[dict[str, Any]]:
     return [dict(item) for item in (custom or []) if isinstance(item, dict)]
 
 
-def _accumulation_refund_map(conn, start: date, end: date, norm) -> dict[str, int]:
+def _accumulation_refund_map(conn, start: date, end: date, norm, employees=None) -> dict[str, int]:
     result: dict[str, int] = {}
     for item in _accumulation_refunds(conn):
         if _parse_date(item.get("start")) != start or _parse_date(item.get("end")) != end:
@@ -712,6 +692,12 @@ def _accumulation_refund_map(conn, start: date, end: date, norm) -> dict[str, in
         key = norm(item.get("employee_name"))
         if key:
             result[key] = result.get(key, 0) + max(0, _number(item.get("amount")))
+    if employees:
+        balances = _employee_accumulation_balances(conn, employees, norm, (start, end))
+        for employee in employees:
+            key = norm(employee["username"])
+            if norm(employee.get("employment_status")) == norm("Đã nghỉ việc") and key not in result:
+                result[key] = balances[key]["refundable_total"]
     return result
 
 
@@ -767,21 +753,27 @@ def _obligation_group(records: list[dict[str, Any]], obligation_type: str, norm)
     return {"type": obligation_type, "summary": summary, "details": details}
 
 
-def _obligation_map(conn, start: date, norm) -> dict[str, int]:
+def _obligation_map(conn, start: date, norm, end: date | None = None) -> dict[str, int]:
     result: dict[str, int] = {}
     sources = list(_obligations(conn))
     legacy = conn.execute(text("SELECT payload FROM vera_dataset_cache WHERE dataset_key='violation_debt' LIMIT 1")).scalar_one_or_none()
     sources.extend(dict(item) for item in (legacy or []) if isinstance(item, dict))
+    label = _period_label(start, end) if end else ""
     for item in sources:
-        status = norm(item.get("status") or item.get("Trạng thái") or "Chưa hoàn thành")
-        if status not in {"", "chua hoan thanh"}:
+        source_status = item.get("source_status") or item.get("__original_status") or item.get("status") or item.get("Trạng thái") or "Chưa hoàn thành"
+        if not _open_obligation(source_status, norm):
             continue
         due = _parse_date(item.get("due_from") or item.get("Bắt đầu trừ từ"))
-        if due and due > start:
+        if due and due > (end or start):
             continue
+        # Recalculating a saved period replaces its allocation, so include that
+        # allocation in the available balance even when the claim is now closed.
+        settlements = item.get("settlements") or item.get("__settlements") or {}
+        restored = max(0, _number(settlements.get(label))) if isinstance(settlements, dict) else 0
         key = norm(item.get("employee_name") or item.get("Tên nhân viên"))
         if key:
-            result[key] = result.get(key, 0) + max(0, _number(item.get("amount") or item.get("Số tiền")))
+            amount = max(0, _number(item.get("amount") or item.get("Số tiền")))
+            result[key] = result.get(key, 0) + amount + restored
     return result
 
 
@@ -1313,8 +1305,8 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             """), {"start": start, "end": end}).mappings().all()
             penalty_map = {norm(item["employee_name"]): _number(item["amount"]) for item in penalties}
             tichluy = _tichluy_map(conn, employees, start, end, norm)
-            obligations = _obligation_map(conn, start, norm)
-            accumulation_refunds = _accumulation_refund_map(conn, start, end, norm)
+            obligations = _obligation_map(conn, start, norm, end)
+            accumulation_refunds = _accumulation_refund_map(conn, start, end, norm, employees)
         tips, source_summary = _tip_rows(source, start, end, norm)
         known = {norm(item["username"]) for item in employees}
         matched_tips = tips[tips["key"].isin(known)].copy()
@@ -1350,12 +1342,15 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 "Hoàn trả tiền tích lũy": accumulation_refund,
                 "Tích lũy": 0 if accumulation_refund else tichluy.get(key, 0),
                 "Chi Phí Sinh Hoạt": cfg["default_living_expense"], "Tiền phạt trong tháng": penalty_map.get(key, 0),
-                "Vi phạm kỳ trước": obligations.get(key, 0), "Tiền ứng lương": 0,
+                "Vi phạm kỳ trước": 0, "Tiền ứng lương": 0,
                 "Tiền hỗ trợ Locker": cfg["default_locker_support"], "Số tiền thực nhận": 0,
                 "Email": employee["email"], "Số tài khoản ngân hàng": employee["bank_account"],
                 "Tên ngân hàng": employee["bank_name"], "Số dòng Tip": int(counts.get(key, 0)),
                 "__employment_status": employee.get("employment_status") or "Đang làm việc",
+                "__available_prior_debt": obligations.get(key, 0),
             }
+            row = _net(row)
+            row["Vi phạm kỳ trước"] = min(obligations.get(key, 0), max(0, row["Số tiền thực nhận"]))
             rows.append(_net(row))
         return {
             "period_label": label, "start": start.isoformat(), "end": end.isoformat(),

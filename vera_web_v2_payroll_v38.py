@@ -183,6 +183,11 @@ def _apply_overrides_to_calculation(result: dict[str, Any], overrides: dict[str,
             # that salary=0 clears both deductions before net pay is computed.
             row = _payroll._net(row)
             applied_names.append(username)
+        if "__available_prior_debt" in row:
+            row["Vi phạm kỳ trước"] = 0
+            row = _payroll._net(row)
+            row["Vi phạm kỳ trước"] = min(max(0, _payroll._number(row.pop("__available_prior_debt"))), max(0, row["Số tiền thực nhận"]))
+            row = _payroll._net(row)
         rows.append(row)
     result = dict(result)
     result["rows"] = rows

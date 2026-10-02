@@ -201,7 +201,7 @@ def _reconcile_payroll_debts(
         remaining = max(0, _payroll._number(item.get("amount")))
         if not employee_key or not _custom_source_open(item, norm) or remaining <= 0:
             continue
-        if due and due > body.start:
+        if due and due > body.end:
             continue
         claims.setdefault(employee_key, []).append({
             "kind": "custom",
@@ -219,7 +219,7 @@ def _reconcile_payroll_debts(
         remaining = max(0, _payroll._number(item.get("Số tiền") or item.get("amount")))
         if status not in {"", "chua hoan thanh"} or not employee_key or remaining <= 0:
             continue
-        if due and due > body.start:
+        if due and due > body.end:
             continue
         debt_type = norm(item.get("Loại") or item.get("type"))
         claims.setdefault(employee_key, []).append({

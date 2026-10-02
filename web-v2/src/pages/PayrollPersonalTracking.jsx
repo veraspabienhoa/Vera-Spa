@@ -125,7 +125,7 @@ export default function PayrollPersonalTracking({ user, standalone = false, unif
   const [busyEmployee, setBusyEmployee] = useState('')
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [accumulationFilter, setAccumulationFilter] = useState({ employee: '', status: '', group: '' })
+  const [accumulationFilter, setAccumulationFilter] = useState({ employee: '', status: '', group: 'active' })
   const [sectionOpen, setSectionOpen] = useState(unified || !isAdmin)
   const [completedOpen, setCompletedOpen] = useState(false)
 

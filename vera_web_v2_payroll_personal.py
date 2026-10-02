@@ -175,6 +175,34 @@ def _merge_tichluy_periods(periods: list[dict[str, Any]], tichluy_item: dict[str
     return periods
 
 
+def _accumulation_balance(employee, history, tichluy_rows, adjustments, norm, exclude_period=None):
+    """Shared contribution balance; replacing a saved period must not count it twice."""
+    keys = {norm(employee.get("username") or employee.get("employee_name")), norm(employee.get("full_name"))} - {""}
+    username_key = norm(employee.get("username") or employee.get("employee_name"))
+    item = next((row for row in tichluy_rows if norm(row.get("Tên nhân viên")) == username_key), None)
+    if item is None:
+        item = next((row for row in tichluy_rows if norm(row.get("Tên nhân viên")) in keys), {})
+    periods = _merge_tichluy_periods(_period_rows(history, keys, norm), item)
+    omitted = [row for row in periods if exclude_period and (_parse_date(row.get("start")), _parse_date(row.get("end"))) == exclude_period]
+    periods = [row for row in periods if row not in omitted]
+    history_paid = sum(row["contribution"] for row in periods)
+    source_paid = max(0, _number(item.get("Đã tích lũy")))
+    if exclude_period:
+        period_key = "|".join(value.isoformat() for value in exclude_period)
+        source_paid = max(0, source_paid - _tichluy_detail_periods(item).get(period_key, 0))
+    base_paid = max(history_paid, source_paid)
+    delta = sum(_number(row.get("delta")) for row in adjustments if norm(row.get("employee_name")) in keys)
+    paid = max(0, base_paid + delta)
+    enrolled = bool(item or history_paid or delta or omitted)
+    target = max(0, _number(item.get("Mục tiêu tích lũy"))) or _DEFAULT_ACCUMULATION_TARGET
+    refunded = sum(row["refund"] for row in periods)
+    return {"target": target, "enrolled": enrolled, "base_paid_total": base_paid, "manual_adjustment_total": delta,
+            "paid_total": paid, "history_paid_total": history_paid, "source_paid_total": source_paid,
+            "remaining": max(0, target - paid), "completed": paid >= target,
+            "refunded_total": refunded, "refundable_total": max(0, paid - refunded), "periods": periods,
+            "employment_start_date": employee.get("employment_start_date") or item.get("Ngày bắt đầu làm")}
+
+
 def install_payroll_personal_defaults(api_module=None) -> None:
     """Expose payroll-history view only to Leader/Nhân viên by default."""
     for role in _EMPLOYEE_PAYROLL_ROLES:
@@ -241,20 +269,13 @@ def install_payroll_personal_routes(
                     "employment_status": "Đang làm việc",
                 }]
 
-        tichluy_by_key = {norm(item.get("Tên nhân viên")): item for item in tichluy_rows if norm(item.get("Tên nhân viên"))}
         output = []
         for employee in employees:
             username = str(employee.get("username") or "").strip()
             full_name = str(employee.get("full_name") or "").strip()
             keys = {norm(username), norm(full_name)} - {""}
-            periods = _period_rows(history, keys, norm)
-            tichluy_item = next((tichluy_by_key[key] for key in keys if key in tichluy_by_key), {})
-            periods = _merge_tichluy_periods(periods, tichluy_item)
-            history_paid = sum(max(0, _number(row.get("contribution"))) for row in periods)
-            source_paid = max(0, _number(tichluy_item.get("Đã tích lũy")))
-            target = max(0, _number(tichluy_item.get("Mục tiêu tích lũy"))) or _DEFAULT_ACCUMULATION_TARGET
-            paid_total = max(history_paid, source_paid)
-            remaining = max(0, target - paid_total)
+            balance = _accumulation_balance(employee, history, tichluy_rows, [], norm)
+            periods = balance["periods"]
             employee_obligations = [row for row in obligations if norm(row.get("employee_name")) in keys]
             obligation_total = sum(max(0, _number(row.get("amount"))) for row in employee_obligations)
             output.append({
@@ -262,12 +283,7 @@ def install_payroll_personal_routes(
                 "full_name": full_name,
                 "role": str(employee.get("role") or ""),
                 "employment_status": str(employee.get("employment_status") or ""),
-                "target": target,
-                "paid_total": paid_total,
-                "history_paid_total": history_paid,
-                "source_paid_total": source_paid,
-                "remaining": remaining,
-                "completed": target > 0 and remaining == 0,
+                **balance,
                 "period_count": len([row for row in periods if max(0, _number(row.get("contribution"))) > 0]),
                 "periods": periods,
                 "obligation_total": obligation_total,

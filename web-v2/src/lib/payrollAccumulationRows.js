@@ -13,7 +13,7 @@ export function accumulationRows(employees = [], formerEmployees = [], refunds =
     if (employee.employment_status) rows.get(id).employment_status = employee.employment_status
   }
   for (const refund of refunds) rows.get(key(refund.employee_name))?.refunds.push(refund)
-  return [...rows.values()].map(row => ({ ...row, configuredRefund: row.refunds.reduce((sum, item) => sum + Number(item.amount || 0), 0) }))
+  return [...rows.values()].map(row => ({ ...row, refundedTotal: (row.periods || []).reduce((sum, period) => sum + Number(period.refund || 0), 0), configuredRefund: row.refunds.reduce((sum, item) => sum + Number(item.amount || 0), 0) }))
     .sort((a, b) => a.employee_name.localeCompare(b.employee_name, 'vi'))
 }
 
