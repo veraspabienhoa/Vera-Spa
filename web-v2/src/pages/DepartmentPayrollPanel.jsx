@@ -5,12 +5,12 @@ import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
 import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { getCurrentSession } from '../lib/supabase'
+import { useEffect, useRef, useState } from 'react'
+import { apiRequest, apiBinaryResponse } from '../lib/api'
+import useFitPayrollTables from '../lib/useFitPayrollTables'
 import VeraMoneyInput from '../components/VeraMoneyInput'
 import './DepartmentPayrollPanel.css'
 
-const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + 'đ'
 const monthNow = () => {
   const now = new Date()
@@ -20,22 +20,8 @@ const displayIsoDate = (value) => String(value || '').split('-').reverse().join(
 const normalizeSearch = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd').toLowerCase().trim()
 
 async function request(path, options = {}) {
-  if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
-  const session = await getCurrentSession()
-  const headers = new Headers(options.headers || {})
-  if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
-  const response = await fetch(`${apiBase}${path}`, { ...options, headers })
-  if (options.download) {
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}))
-      throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
-    }
-    return response.blob()
-  }
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
-  return payload
+  if (options.download) return (await apiBinaryResponse(path, options)).blob()
+  return apiRequest(path, options)
 }
 
 function recalculate(source, config) {
@@ -78,6 +64,9 @@ const tapvuEmployeeFields = [
 
 export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   usePageRefresh(() => loadSettings(), () => Boolean(busy || (settingsBaseline && JSON.stringify([settings, salaryConfigTables]) !== settingsBaseline)))
+  const pageRef = useRef(null)
+  const hourlyRef = useRef(null)
+  useFitPayrollTables(pageRef)
   const role = String(user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
   const permissions = user?.permissions || {}
@@ -237,7 +226,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const employeeConfigTable = (group, title, fields) => {
     const items = salaryConfigTables[group] || []
     const candidates = employeeCandidates(group)
-    return <section data-ui-key="u-38d16c658c67" className="department-config-table-section">
+    return <section ref={group === 'operations' ? hourlyRef : undefined} data-ui-key="u-38d16c658c67" className="department-config-table-section">
       <div data-ui-key="u-b189c5f017f9" className="panel-title-row"><div><h3>{title}</h3><p>Mỗi nhân viên là một dòng; mức đã lưu được dùng trực tiếp khi tính bảng lương tháng.</p></div></div>
       <div className="department-config-add-row">
         {group === 'operations' && <label>Bộ phận<select value={addDepartment} onChange={(event) => { setAddDepartment(event.target.value); setPendingEmployee((value) => ({ ...value, operations: '' })) }}>{Object.entries(settings).filter(([, item]) => item.config?.calculation_mode === 'hourly').map(([key, item]) => <option key={key} value={key}>{item.department_label}</option>)}</select></label>}
@@ -259,9 +248,9 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     </section>
   }
 
-  if (settingsOnly) return <div className="feature-page department-payroll-page department-payroll-config-page">
+  if (settingsOnly) return <div ref={pageRef} className="feature-page department-payroll-page department-payroll-config-page">
     <section data-ui-key="u-0a9ecdd6d190" className="panel department-payroll-panel">
-      <div data-ui-key="u-367c7a50f712" className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG THEO NHÂN VIÊN</h2><p>Bảng 1 gồm các bộ phận Lương giờ. Bảng 2 gồm các bộ phận Lương tháng. Chọn hình thức lương trong menu Nhân sự.</p></div><button data-ui-key="u-d2f1dad4aa43" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'settings-load' ? 'spin' : ''} /><UiCustomText uiKey="u-d2f1dad4aa43"> Làm mới</UiCustomText></button></div>
+      <div data-ui-key="u-367c7a50f712" className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG THEO NHÂN VIÊN</h2><p>Bảng 1 gồm các bộ phận Lương giờ. Bảng 2 gồm các bộ phận Lương tháng. Chọn hình thức lương trong menu Nhân sự.</p></div><div className="list-actions">{canConfig && <button className="primary-button" type="button" disabled={Boolean(busy)} onClick={saveEmployeeConfigs}><Save size={16} />Lưu cấu hình</button>}<button className="secondary-button" type="button" onClick={() => hourlyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>BẢNG 1 · LƯƠNG GIỜ</button><button data-ui-key="u-d2f1dad4aa43" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'settings-load' ? 'spin' : ''} /><UiCustomText uiKey="u-d2f1dad4aa43"> Làm mới</UiCustomText></button></div></div>
       <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
       {employeeConfigTable('operations', 'BẢNG 1 · LƯƠNG GIỜ', operationsEmployeeFields)}
       {employeeConfigTable('tapvu', 'BẢNG 2 · LƯƠNG THÁNG', tapvuEmployeeFields)}
@@ -270,7 +259,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     </section>
   </div>
 
-  return <div className="feature-page department-payroll-page">
+  return <div ref={pageRef} className="feature-page department-payroll-page">
     <section data-ui-key="u-fe386b14128e" className="panel department-payroll-panel">
       <div data-ui-key="u-0d51bd20233a" className="panel-title-row"><div><h2>LƯƠNG HÀNH CHÁNH</h2><p>Gồm các bộ phận được cấu hình Lương giờ và Lương tháng trong Nhân sự. Lương tháng tính theo 26 ngày công. Các bộ phận Tip tính tại Lương KTV.</p></div></div>
       <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
