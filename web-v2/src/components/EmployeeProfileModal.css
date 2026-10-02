@@ -128,3 +128,19 @@
     padding: 10px 12px max(10px, env(safe-area-inset-bottom));
   }
 }
+
+.face-id-profile-modal > h2,
+.face-id-profile-modal > .staff-face-switch { margin-inline: 20px; }
+.face-id-profile-modal .face-id-profile-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid #d8e4dd;
+  background: white;
+}
+.face-id-profile-modal .face-id-profile-actions > button { min-height: 44px; }
+@media (max-width: 640px) {
+  .face-id-profile-modal > h2,
+  .face-id-profile-modal > .staff-face-switch { margin-inline: 12px; }
+  .face-id-profile-modal .face-id-profile-actions { padding-inline: 12px; }
+}
