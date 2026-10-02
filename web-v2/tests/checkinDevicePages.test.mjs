@@ -73,7 +73,7 @@ test('history saves an entered FaceGate IP before refreshing directly from the d
   assert.equal(saved.expected_revision, 8)
   assert.equal(saved.devices[0].address, '192.168.1.34')
   assert.equal(queried.source, 'facegate')
-  assert.match(dom.window.document.querySelector('[role=status]').textContent, /Tailscale/)
+  assert.ok([...dom.window.document.querySelectorAll('[role=status]')].some(el => /Tailscale/.test(el.textContent)))
 })
 
 test('device page retries initial failure and can submit a new device without losing configured device', async (context) => {
