@@ -123,3 +123,14 @@ def test_prior_debt_is_capped_after_employee_specific_deductions():
     output = _apply_overrides_to_calculation({'rows': [row]}, {norm('A'): {'living': 0, 'locker': 0}}, norm)
     assert output['rows'][0]['Vi phạm kỳ trước'] == 1_480_000
     assert output['rows'][0]['Số tiền thực nhận'] == 520_000
+
+
+def test_missing_accumulation_source_does_not_enroll_employee_implicitly(monkeypatch):
+    employee = {'username': 'A'}
+    balance = personal._accumulation_balance(employee, [], [], [], norm)
+    monkeypatch.setattr(payroll, '_employee_accumulation_balances', lambda *a: {norm('A'): balance})
+    assert payroll._tichluy_map(None, [employee], START, END, norm)[norm('A')] == 0
+    balance = personal._accumulation_balance(employee, [], [{'Tên nhân viên': 'A', 'Ngày bắt đầu làm': '2026-09-25'}], [], norm)
+    assert payroll._tichluy_map(None, [employee], START, END, norm)[norm('A')] == 0
+    balance = personal._accumulation_balance(employee, [], [{'Tên nhân viên': 'A'}], [], norm)
+    assert payroll._tichluy_map(None, [employee], START, END, norm)[norm('A')] == 500_000

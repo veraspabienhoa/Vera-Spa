@@ -661,7 +661,7 @@ def _tichluy_map(conn, employees: list[dict[str, Any]], start: date, end: date, 
         start_work = _parse_date(balance.get("employment_start_date"))
         former = norm(employee.get("employment_status")) == norm("Đã nghỉ việc")
         short_period = start_work and start <= start_work <= end and (end - start_work).days + 1 < 10
-        result[key] = 0 if former or short_period else min(500_000, balance["remaining"])
+        result[key] = 0 if not balance.get("enrolled", True) or former or short_period else min(500_000, balance["remaining"])
     return result
 
 

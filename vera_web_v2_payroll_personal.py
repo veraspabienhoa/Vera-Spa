@@ -193,9 +193,10 @@ def _accumulation_balance(employee, history, tichluy_rows, adjustments, norm, ex
     base_paid = max(history_paid, source_paid)
     delta = sum(_number(row.get("delta")) for row in adjustments if norm(row.get("employee_name")) in keys)
     paid = max(0, base_paid + delta)
+    enrolled = bool(item or history_paid or delta or omitted)
     target = max(0, _number(item.get("Mục tiêu tích lũy"))) or _DEFAULT_ACCUMULATION_TARGET
     refunded = sum(row["refund"] for row in periods)
-    return {"target": target, "base_paid_total": base_paid, "manual_adjustment_total": delta,
+    return {"target": target, "enrolled": enrolled, "base_paid_total": base_paid, "manual_adjustment_total": delta,
             "paid_total": paid, "history_paid_total": history_paid, "source_paid_total": source_paid,
             "remaining": max(0, target - paid), "completed": paid >= target,
             "refunded_total": refunded, "refundable_total": max(0, paid - refunded), "periods": periods,
