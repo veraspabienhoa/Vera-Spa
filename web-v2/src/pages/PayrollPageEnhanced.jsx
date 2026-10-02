@@ -119,6 +119,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const [notice, setNotice] = useState(null)
   const [emailProgress, setEmailProgress] = useState(null)
   const historyRequest = useRef(0)
+  const skipDraftReloadRef = useRef('')
 
   const run = async (key, callback) => {
     setBusy(key); setNotice(null)
@@ -183,6 +184,11 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   useEffect(() => {
     let active = true
     if (!canCalculate || !month) return () => { active = false }
+    const selectedPeriod = `${month}:${periodNo}`
+    if (skipDraftReloadRef.current === selectedPeriod) {
+      skipDraftReloadRef.current = ''
+      return () => { active = false }
+    }
     setDraft(null)
     setDraftSearch('')
     setSelected([])
@@ -324,6 +330,31 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     setDraft(result.draft)
     setSelected((result.draft?.rows || []).map((row) => row['Tên Hệ thống']))
     setNotice({ type: 'success', message: result.message })
+  })
+
+  const restoreSavedDraft = () => run('restore-draft', async () => {
+    const result = await veraApi.payrollDraft(month, periodNo, true)
+    if (!result.draft?.rows?.length) {
+      setNotice({ type: 'warning', message: 'Không tìm thấy bảng lương nháp đã lưu trên máy chủ.' })
+      return
+    }
+    const restoredMonth = String(result.selected_month || month)
+    const restoredPeriodNo = Number(result.selected_period_no || periodNo)
+    if (restoredMonth !== month || restoredPeriodNo !== periodNo) {
+      skipDraftReloadRef.current = `${restoredMonth}:${restoredPeriodNo}`
+      setMonth(restoredMonth)
+      setPeriodNo(restoredPeriodNo)
+    }
+    setDraft(result.draft)
+    setDraftSearch('')
+    setDraftNonPositiveOnly(false)
+    setDraftFormerOnly(false)
+    setSearchSelectionMode(false)
+    setSelected(result.draft.rows.map((row) => row['Tên Hệ thống']))
+    setNotice({
+      type: 'success',
+      message: `Đã khôi phục bảng lương nháp ${result.draft.period_label}. Bạn có thể tiếp tục chỉnh sửa và lưu lại.`,
+    })
   })
 
   const deleteDraftSnapshot = () => run('delete-draft', async () => {
@@ -563,6 +594,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
       <UiToolbar data-ui-key="u-d77fe86a944d" className="payroll-draft-toolbar">
         <div><strong>BẢNG LƯƠNG NHÁP</strong><small>{draft?.rows?.length ? `${draft.period_label} · ${draft.rows.length} nhân viên${draft.saved_at ? ` · Đã lưu bởi ${draft.saved_by}` : ' · Chưa lưu trên máy chủ'}` : 'Chưa có dữ liệu nháp cho kỳ đang chọn.'}</small></div>
         <UiToolbar data-ui-key="u-e897f7d9f0d6" className="list-actions">
+          <button data-ui-key="payroll-restore-saved-draft" className="secondary-button" type="button" onClick={restoreSavedDraft} disabled={isBusy}><Edit3 size={16} /> {busy === 'restore-draft' ? 'Đang khôi phục…' : 'Lấy lại bảng lương nháp'}</button>
           <button data-ui-key="u-67cfa949cbc8" className="secondary-button" type="button" onClick={recalculatePayroll} disabled={isBusy || !draftRows.length}><RefreshCw size={16} className={busy === 'recalculate' ? 'spin' : ''} /> {busy === 'recalculate' ? 'Đang tính lại…' : 'Tính lại lương'}</button>
           {canExport && <button data-ui-key="u-44591d8d625e" className="secondary-button" type="button" onClick={exportDraft} disabled={isBusy || !draftRows.length}><Download size={16} /> {busy === 'export-draft' ? 'Đang xuất…' : 'Xuất excel'}</button>}
           {canSave && <button data-ui-key="u-ce81fd2f3ea0" className="secondary-button" type="button" onClick={saveDraftSnapshot} disabled={isBusy || !draftRows.length}><Save size={16} /> {busy === 'save-draft' ? 'Đang lưu…' : 'Lưu bảng lương nháp'}</button>}
