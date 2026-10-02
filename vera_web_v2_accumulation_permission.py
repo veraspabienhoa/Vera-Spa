@@ -209,6 +209,7 @@ def _apply_adjustments(payload: dict[str, Any], adjustments: list[dict[str, Any]
             "paid_total": paid,
             "remaining": remaining,
             "completed": target > 0 and remaining == 0,
+            "refundable_total": max(0, paid - int(row.get("refunded_total") or 0)),
         })
         employees.append(row)
     result["employees"] = employees

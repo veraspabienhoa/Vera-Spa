@@ -12,7 +12,7 @@ test('accumulation tab follows history and combines completed, active and former
   Date:class extends NativeDate{constructor(...args){super(...(args.length?args:['2026-09-30T09:00:00Z']))}},
   fetch:async url=>{
    const u=new URL(url);requests.push(u)
-   const employees=[{employee_name:'A',role:'nhanvien',target:1000000,paid_total:200000,remaining:800000,periods:[]},{employee_name:'B',role:'leader',target:1000000,paid_total:1000000,remaining:0,completed:true,periods:[]}]
+   const employees=[{employee_name:'A',role:'nhanvien',target:1000000,paid_total:200000,remaining:800000,periods:[{batch:'Kỳ cũ',start:'2026-08-01',end:'2026-08-15',refund:100000}]},{employee_name:'B',role:'leader',target:1000000,paid_total:1000000,remaining:0,completed:true,periods:[]}]
    const body=u.pathname.endsWith('/personal-tracking')?{employees}:u.pathname.endsWith('/accumulation-refunds')?{employees:[{employee_name:'C',employment_status:'Đã nghỉ việc'}],refunds:[{id:'r1',employee_name:'C',amount:500000,start:'2026-09-16',end:'2026-09-30',note:'Hoàn trả'}]}:u.pathname.endsWith('/history')?{records:[],batches:[],employees:[]}:{}
    return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}})
   }}
@@ -31,6 +31,9 @@ test('accumulation tab follows history and combines completed, active and former
  const table=document.querySelector('[aria-label="Tích lũy và hoàn trả nhân viên"]')
  assert.ok(table)
  assert.equal(document.querySelectorAll('.payroll-personal-tracking table').length,1)
+ assert.equal(table.querySelectorAll('tbody > tr').length,1)
+ assert.equal([...document.querySelectorAll('.payroll-accumulation-filters button')].find(button=>button.textContent==='Còn phải đóng (Đang đóng)').getAttribute('aria-pressed'),'true')
+ await act(async()=>[...document.querySelectorAll('.payroll-accumulation-filters button')].find(button=>button.textContent==='Xóa lọc').click())
  assert.equal(table.querySelectorAll('tbody > tr').length,3)
  assert.ok(table.textContent.includes('Đã hoàn thành đóng'))
  assert.ok(table.textContent.includes('Đang còn đóng'))
@@ -48,7 +51,9 @@ test('accumulation tab follows history and combines completed, active and former
  await act(async()=>filterButton('Còn phải đóng (Đang đóng)').click())
  assert.ok(table.querySelector('tbody').textContent.startsWith('A'))
  await act(async()=>filterButton('Đã hoàn trả').click())
- assert.equal(table.querySelectorAll('tbody > tr').length,0)
+ assert.equal(table.querySelectorAll('tbody > tr').length,1)
+ assert.ok(table.querySelector('thead').textContent.includes('Đã hoàn trả'))
+ assert.ok(table.querySelector('tbody').textContent.includes('100.000đ'))
  await act(async()=>filterButton('Xóa lọc').click())
  assert.equal(table.querySelectorAll('tbody > tr').length,3)
  await act(async()=>tabs[0].click())
