@@ -346,7 +346,7 @@ def _before_shift_ready(state, employee, now):
 
 def _combo_extra_subtotal(state, purchase, entries):
     if "component_balances" not in purchase:
-        return 0
+        return sum(int(entry.get("quick_extra_subtotal") or 0) for entry in entries)
     covered = {part["service_id"] for part in purchase["component_balances"]}
     for entry in entries:
         if not entry.get("service_items"):
@@ -1160,32 +1160,34 @@ def _service_values(state: dict[str, Any], payload: dict[str, Any], now: datetim
     return name, duration, _bounded_money(price, label="Giá dịch vụ", allow_blank_as_zero=True)
 
 
-def _service_selection(state, payload, now):
+def _service_selection(state, payload, now, *, quick=False):
     requested = payload.get("service_items")
     if requested is None:
         name, duration, price = _service_values(state, payload, now)
         service = next(row for row in state["services"] if row["name"] == name)
         return name, duration, price, [{"service_id": service["id"], "name": name, "quantity": 1, "unit_price": price, "duration": duration, "ticket_units": service.get("ticket_units", 1)}]
-    if not isinstance(requested, list) or not 1 <= len(requested) <= 30:
-        raise HTTPException(400, "Chọn từ 1 đến 30 dịch vụ.")
+    if not isinstance(requested, list) or not requested or (not quick and len(requested) > 30):
+        raise HTTPException(400, "Hãy chọn dịch vụ hợp lệ (booking tối đa 30 dịch vụ).")
     items, seen = [], set()
     for item in requested:
         if not isinstance(item, dict) or not isinstance(item.get("service_id"), str) or not item["service_id"] or item["service_id"] in seen or isinstance(item.get("quantity"), bool):
             raise HTTPException(400, "Dịch vụ chưa chọn hoặc bị trùng; hãy tăng số lượng ở dòng đã có.")
         seen.add(item["service_id"])
-        quantity = int(_bounded_number(item.get("quantity", 1), label="Số lượng dịch vụ", minimum=1, maximum=30, integer=True))
+        quantity = int(_bounded_number(item.get("quantity", 1), label="Số lượng dịch vụ", minimum=1, maximum=MAX_MONEY if quick else 30, integer=True))
         name, duration, price = _service_values(state, {"service_id": item["service_id"], "request": payload.get("request", "")}, now)
         items.append({"service_id": item["service_id"], "name": name, "quantity": quantity, "unit_price": price, "duration": duration, "ticket_units": _service_ticket_units(state, name)})
     total_quantity = sum(row["quantity"] for row in items)
     duration = sum((row["duration"] or 0) * row["quantity"] for row in items)
     price = sum(row["unit_price"] * row["quantity"] for row in items)
-    if total_quantity > 30 or duration > MAX_SERVICE_DURATION_MINUTES or price > MAX_MONEY:
+    if (not quick and (total_quantity > 30 or duration > MAX_SERVICE_DURATION_MINUTES)) or price > MAX_MONEY:
         raise HTTPException(400, "Tổng dịch vụ vượt giới hạn 30 lượt, 1440 phút hoặc giá trị cho phép.")
-    name = " & ".join(row["name"] for row in items for _ in range(row["quantity"]))
+    name = " & ".join((row["name"] if row["quantity"] == 1 else f'{row["name"]} × {row["quantity"]}') for row in items) if quick else " & ".join(row["name"] for row in items for _ in range(row["quantity"]))
     return name, duration if any(row["duration"] is not None for row in items) else None, price, items
 
 
 def _entry_ticket_units(state, entry):
+    if "combo_generic_base_units" in entry:
+        return int(entry["combo_generic_base_units"])
     if entry.get("price_source") == "combo_ticket":
         return 1
     if entry.get("service_items"):
@@ -1549,7 +1551,7 @@ def _adjust_booking_time(booked):
 
 
 def _quick_booking_at(booking, now):
-    if not isinstance(booking, dict) or set(booking) - {"employee_id", "room", "service_items", "booked_at", "correction_reason"}:
+    if not isinstance(booking, dict) or set(booking) - {"employee_id", "room", "service_items", "extra_service_items", "booked_at", "correction_reason"}:
         raise HTTPException(400, "Thông tin nhập thanh toán nhanh không hợp lệ.")
     raw = booking.get("booked_at")
     booked = _parse_datetime(raw)
@@ -1591,9 +1593,22 @@ def _quick_booking_entry(state, booking, now, payment=None):
     if generic_combo:
         service, duration, price, items = f"Vé combo · {generic_combo.get('combo_name') or 'Combo'}", 0, 0, []
     else:
-        service, duration, price, items = _service_selection(state, selection, booked)
+        service, duration, price, items = _service_selection(state, selection, booked, quick=True)
+    base_units = 1 if generic_combo else sum(item["ticket_units"] * item["quantity"] for item in items)
+    extra_items = []
+    if "extra_service_items" in booking and not isinstance(booking["extra_service_items"], list):
+        raise HTTPException(400, "Danh sách dịch vụ thêm không hợp lệ.")
+    if booking.get("extra_service_items"):
+        extra_name, extra_duration, extra_price, extra_items = _service_selection(state, {"service_items": booking["extra_service_items"]}, booked, quick=True)
+        service += " & " + extra_name
+        duration = (duration or 0) + (extra_duration or 0)
+        price += extra_price
+        if price > MAX_MONEY:
+            raise HTTPException(400, "Tổng dịch vụ vượt giá trị cho phép.")
+        items += extra_items
+    combo_metadata = {"combo_generic_base_units": base_units, "quick_extra_subtotal": sum(row["unit_price"] * row["quantity"] for row in extra_items)} if (payment or {}).get("combo_purchase_id") else {}
     if items and all(re.match(r"^xong hoi(?:\b|$)", _norm(item['name'])) for item in items):
-        return {"employee_id": "", "employee_name": "", "room": "", "service": service,
+        return {**combo_metadata, "employee_id": "", "employee_name": "", "room": "", "service": service,
                 "service_items": items, "duration": duration, "price": price,
                 "price_source": "catalog", "booked_at": _iso(booked), "request": ""}
     if not booking.get("booked_at"):
@@ -1606,7 +1621,7 @@ def _quick_booking_entry(state, booking, now, payment=None):
     room = _catalog_item(state, "rooms", booking)
     if not room or room.get("active") is False:
         raise HTTPException(400, "Hãy chọn phòng/giường đang sử dụng trong danh mục.")
-    return {"employee_id": employee["id"], "employee_name": employee["name"],
+    return {**combo_metadata, "employee_id": employee["id"], "employee_name": employee["name"],
             "room": room["name"], "service": service, "service_items": items,
             "duration": duration, "price": price, "price_source": "combo_ticket" if generic_combo else "catalog",
             "booked_at": _iso(booked), "request": ""}
@@ -3288,8 +3303,11 @@ def _readable_audit(events, *, invoice_view, paid_invoice_view, customers_view):
 
 
 def _report_rows_with_combo_kind(state):
-    sales = {row["id"] for row in state["invoices"] if row.get("purchased_combo_id")}
-    return [dict(row, combo_sale=row.get("invoice_id") in sales) for row in state["reports"]]
+    invoices = {row["id"]: row for row in state["invoices"] if row.get("id")}
+    return [dict(row, combo_sale=bool(invoices.get(row.get("invoice_id"), {}).get("purchased_combo_id")),
+                 **({"invoice_total": invoices[row["invoice_id"]].get("total", 0),
+                     "invoice_discount": invoices[row["invoice_id"]].get("discount", 0)}
+                    if row.get("invoice_id") in invoices else {})) for row in state["reports"]]
 
 
 def _personal_tip_rows(state: dict[str, Any], username: str) -> list[dict[str, Any]]:
@@ -3379,6 +3397,7 @@ def _state_response(
     can_start_outside_shift: bool = False,
     viewer_bank: dict | None = None,
     can_invoice_date_edit: bool = False,
+    can_quick_checkout_backdate: bool = False,
     can_customers_edit: bool = False,
     can_customers_delete: bool = False,
     can_customer_combo_edit: bool = False,
@@ -3555,6 +3574,7 @@ def _state_response(
             "reports_view": can_reports_view, "history_view": can_history_view, "backup": can_backup,
             "hide_recovery": can_recover_hidden,
             "invoice_date_edit": can_invoice_date_edit,
+            "quick_checkout_backdate": can_quick_checkout_backdate,
             "customers_edit": can_customers_edit,
             "customers_delete": can_customers_delete,
             "customer_combo_edit": can_customer_combo_edit,
@@ -5073,7 +5093,9 @@ def install_live_tour_routes(
                 _quick_booking_at(payload["quick_booking"], now)
                 entered = _parse_datetime(payload["quick_booking"]["booked_at"])
                 if entered.date() < now.astimezone(VN_TZ).date():
-                    require_feature(conn, ident, "live_tour_admin")
+                    require_feature(conn, ident, "live_tour_quick_checkout_backdate")
+                    if str(getattr(ident, "role", "") or "").strip().lower() != "admin" and entered.date() < now.astimezone(VN_TZ).date() - timedelta(days=1):
+                        raise HTTPException(403, "Thanh toán nhanh chỉ được lùi tối đa 1 ngày.")
             if action in {"booking", "multi_booking", "update_booking"} and (
                 payload.get("start_now") or any(row.get("start_now") for row in (payload.get("bookings") or []) if isinstance(row, dict))
             ):

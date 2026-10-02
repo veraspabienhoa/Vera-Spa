@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
+import { reportInvoiceMetrics } from '../src/lib/liveTourReportMetrics.js'
 import { defaultTourYesterdayFilters } from '../src/lib/liveTourFilters.js'
 
 const dom = new JSDOM('<body><div id="root"></div></body>', { url: 'https://example.test', pretendToBeVisual: true })
@@ -51,6 +52,7 @@ for (const role of ['admin', 'letan']) test(`reports page passes ${role} authori
   new Function('require', 'module', 'exports', reportsBuild.outputFiles[0].text)(require, module, module.exports)
   try {
     await act(async () => root.render(React.createElement(module.exports.default, { user: { role, permissions: { live_tour_reports_view: true } } })))
+    assert.match(document.querySelector('.live-tour-report-extra-metrics').textContent, /Hóa đơn tổng tiền = 0.*Tổng giảm giá/)
     await act(async () => document.querySelector('button[aria-label="Xóa báo cáo và hủy hóa đơn"]').click())
     const dialog = document.querySelector('[role="dialog"]')
     assert.equal(dialog.querySelector('textarea').required, role !== 'admin')
@@ -130,4 +132,13 @@ test('pending edit switches cash to combo and back only on explicit submit', asy
     assert.equal(writes[1][1].customer_id,'')
     assert.equal(writes[1][1].combo_purchase_id,'')
   } finally {await act(()=>root.unmount())}
+})
+
+test('report metrics count invoices once across all filtered lines and sum discounts once',()=>{
+ const invoices=new Map([['zero',{total:0,discount:100}],['paid',{total:500,discount:200}]])
+ const rows=[{invoice_id:'zero',total:0},{invoice_id:'zero',total:0},{invoice_id:'paid',total:250},{invoice_id:'paid',total:250}]
+ assert.deepEqual(reportInvoiceMetrics(rows,invoices),{zeroInvoices:1,discount:300})
+ assert.deepEqual(reportInvoiceMetrics(rows.filter(row=>row.invoice_id==='paid'),invoices),{zeroInvoices:0,discount:200})
+ assert.deepEqual(reportInvoiceMetrics([{invoice_id:'zero',invoice_total:0,invoice_discount:100},{invoice_id:'zero',invoice_total:0,invoice_discount:100}]),{zeroInvoices:1,discount:100})
+ assert.deepEqual(reportInvoiceMetrics([]),{zeroInvoices:0,discount:0})
 })

@@ -13,7 +13,7 @@ test('automatic combo preview, required date, customer switch and live refresh',
   const dom = new JSDOM('<body><div id="root"></div></body>', { url: 'http://localhost', pretendToBeVisual: true })
   const keys = ['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT', '__quickApi']
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
-  const services = [{ id: 'body', name: 'Body 90', price: 200000, ticket_units: 1, active: true }]
+  const services = [{ id: 'body', name: 'Body 90', price: 200000, ticket_units: 1, active: true }, { id: 'extra', name: 'Mua thêm 30', price: 30000, ticket_units: 0, active: true }]
   const customers = [{ id: 'c1', name: 'Khách Combo', phone: '0901234567', combo_purchases: [{ id: 'p1', combo_name: 'Combo Body', remaining: 3, component_balances: [{ service_id: 'body', total: 3, remaining: 3 }] }] }, { id: 'c2', name: 'Khách thường', combo_purchases: [] }]
   const data = { revision: 1, columns: ['Tên nhân viên', 'Vào ca'], records: [{ _id: 'e1', 'Tên nhân viên': 'An', 'Vào ca': 'Ca 1' }], state: { employees: [{ id: 'e1', name: 'An', work_status: 'Đi làm', shift: 'Ca 1' }], services, customers }, customers, services, catalogs: { rooms: [{ id: 'r1', name: '1.1' }] }, capabilities: { payment: true, booking: true, customers: true }, payment_settings: {} }
   let reads = 0
@@ -36,6 +36,15 @@ test('automatic combo preview, required date, customer switch and live refresh',
     assert.equal(input('Dịch vụ (tự động từ combo)').required, false)
     assert.match(document.querySelector('.live-tour-checkout-preview').textContent, /Body 90/)
     assert.match(document.querySelector('.live-tour-combo-deduction').textContent, /1 lượt/)
+    await choose('Thêm dịch vụ', 'Mua thêm 30')
+    const quantity = document.querySelector('[aria-label="Số lượng Mua thêm 30"]')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(quantity, '35')
+      quantity.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    assert.match(document.querySelector('.live-tour-checkout-preview').textContent, /1\.050\.000/)
+    assert.match(document.querySelector('.live-tour-combo-deduction').textContent, /1 lượt/)
+    assert.ok([...document.querySelectorAll('button')].some(node => node.textContent.trim() === 'Lùi 1 ngày'))
     const before = reads
     await act(async () => window.dispatchEvent(new window.Event('vera:leave-updated')))
     assert.ok(reads > before)
@@ -47,6 +56,8 @@ test('automatic combo preview, required date, customer switch and live refresh',
     await choose('Khách hàng', 'Khách thường')
     assert.equal(input('Dịch vụ').required, true)
     assert.equal(document.querySelector('.live-tour-combo-deduction'), null)
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'locker' } })))
+    assert.equal(document.querySelector('.live-tour-weekly-shift'), null)
   } finally {
     await act(() => root.unmount()); dom.window.close()
     for (const [key, value] of Object.entries(previous)) { if (value) Object.defineProperty(globalThis, key, value); else delete globalThis[key] }

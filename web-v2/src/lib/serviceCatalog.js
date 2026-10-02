@@ -48,7 +48,7 @@ export function catalogIsAvailable(item, day = vietnamDate()) {
 const key = (name) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').trim().toLowerCase().replace(/\s+/g, ' ')
 
 export function comboExtraSubtotal(purchase, entries, services) {
-  if (!purchase?.component_balances) return 0
+  if (!purchase?.component_balances) return entries.reduce((sum, entry) => sum + Number(entry.quick_extra_subtotal || 0), 0)
   const covered = new Set(purchase.component_balances.map(part => part.service_id))
   return entries.reduce((total, entry) => {
     const exact = services.find(service => key(service.name) === key(entry.service))

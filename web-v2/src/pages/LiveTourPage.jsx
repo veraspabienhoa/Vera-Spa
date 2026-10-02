@@ -568,7 +568,7 @@ function LiveTourLegacyModal({ title, onClose, children, className = '' }) {
 }
 
 const EMPTY_FORM = {
-  checkout_source: 'pending', service_id: '', booking_date: '', booking_time: '', booking_reason: '',
+  extra_service_items: [], checkout_source: 'pending', service_id: '', booking_date: '', booking_time: '', booking_reason: '',
   target_employee_id: '', employee_id: '', employee_search: '', room: '', service: '', request: '', appointment: '', customer_id: '', customer_name: '', phone: '',
   discount: '0', discount_mode: 'amount', discount_percent: '0', tip: '0', tip_mode: 'manual', tip_card_ids: [], print_after: false, ticket_price: '', payment_method: 'TIỀN MẶT', bill_no: '', ticket_no: '',
   bank_selection: 'auto', pending_id: '', combo_purchase_id: '', note: '', name: '', shift: '', combo_id: '', quantity: '1', remaining: '', amount: '0', code: '', duration: '60', vip: false,
@@ -646,6 +646,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canReorder = capability('reorder', isAdmin || user?.permissions?.live_tour_reorder === true)
   const canOperate = capability('operate', isAdmin || user?.permissions?.live_tour_operate === true)
   const allowStartOutsideShift = canStartOutsideShift(isAdmin, capability('start_outside_shift', false), clockMs)
+  const canQuickBackdate = capability('quick_checkout_backdate', isAdmin || user?.permissions?.live_tour_quick_checkout_backdate === true)
+  const quickYesterday = vietnamDate(clockMs - 86400000)
   const canPayment = capability('payment', isAdmin || user?.permissions?.live_tour_payment === true)
   const canAdmin = capability('admin', isAdmin || user?.permissions?.live_tour_admin === true)
   const canExport = capability('export', isAdmin || user?.permissions?.live_tour_export === true)
@@ -929,8 +931,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       if (manualQuickBooking && (!canBook || (!quickSteam && (!form.employee_id || !form.room)) || (!form.service_id && !form.combo_purchase_id) || !form.booking_date || !form.booking_time)) {
         setError('Hãy chọn nhân viên, phòng, dịch vụ và ngày giờ booking.'); return
       }
-      if (manualQuickBooking && form.booking_date < vietnamDate(clockMs) && (!canAdmin || form.booking_reason.trim().length < 3)) {
-        setError('Nhập booking trước hôm nay cần quyền Admin và lý do điều chỉnh.'); return
+      if (manualQuickBooking && form.booking_date < vietnamDate(clockMs) && (!canQuickBackdate || (!isAdmin && form.booking_date < quickYesterday) || form.booking_reason.trim().length < 3)) {
+        setError('Nhập booking trước hôm nay cần quyền Lùi 1 ngày và lý do điều chỉnh.'); return
       }
       const paymentMethod = form.combo_purchase_id ? 'COMBO' : form.payment_method === 'COMBO' ? 'TIỀN MẶT' : form.payment_method
       const ticketPrice = Number(form.ticket_price)
@@ -949,7 +951,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       payload = {
         pending_id: form.pending_id || null,
         ...(manualQuickBooking ? { quick_booking: { employee_id: quickSteam ? '' : form.employee_id, room: quickSteam ? '' : form.room,
-          service_items: quickServiceItems,
+          service_items: quickBaseServiceItems, extra_service_items: form.extra_service_items,
           booked_at: `${form.booking_date}T${form.booking_time}:00+07:00`,
           correction_reason: form.booking_reason.trim() } } : {}),
         ...(canCustomers ? { customer_id: form.customer_id || null, customer_name: form.customer_name, customer_phone: form.phone } : {}),
@@ -1172,8 +1174,14 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const services = asArray(data.services).length ? asArray(data.services) : asArray(data.catalogs?.services).length ? asArray(data.catalogs?.services) : asArray(data.state?.services)
   const quickCustomer = customers.find(item => String(item.id) === form.customer_id)
   const quickPurchase = customerComboPurchases(quickCustomer || {}).map(item => availableBookingPurchase(item)).find(item => String(item.id) === form.combo_purchase_id)
-  const quickServiceItems = form.service_id ? [{ service_id: form.service_id, quantity: 1 }]
+  const quickBaseServiceItems = form.service_id ? [{ service_id: form.service_id, quantity: 1 }]
     : quickPurchase ? comboBookingItems(quickPurchase, services, form.booking_date || vietnamDate(clockMs)) : []
+  const quickServiceItems = [...quickBaseServiceItems, ...form.extra_service_items].reduce((items, part) => {
+    const existing = items.find(item => item.service_id === part.service_id)
+    if (existing) existing.quantity += Number(part.quantity)
+    else items.push({ ...part, quantity: Number(part.quantity) })
+    return items
+  }, [])
   const quickSelectedServices = quickServiceItems.map(part => services.find(item => item.id === part.service_id)).filter(Boolean)
   const quickSteam = manualQuickBooking && quickSelectedServices.length > 0 && quickSelectedServices.every(item => /^XONG HOI(?:\b|$)/.test(normalizedColumn(item.name)))
   const chooseQuickCustomer = (customer) => {
@@ -1226,12 +1234,14 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     if (manualQuickBooking) {
       const employee = quickCheckoutEmployees.find((row) => stableEmployeeId(row) === form.employee_id)
       const service = quickSelectedServices.length ? {
-        name: quickSelectedServices.map(item => item.name).join(' & '),
-        price: quickSelectedServices.reduce((sum, item) => sum + Number(item.price || 0), 0),
+        name: [quickPurchase && !quickPurchase.component_balances && !form.service_id ? `Vé combo · ${quickPurchase.combo_name || 'Combo'}` : '', ...quickServiceItems.map(part => `${services.find(item => item.id === part.service_id)?.name || ''}${part.quantity > 1 ? ` × ${part.quantity}` : ''}`)].filter(Boolean).join(' & '),
+        price: quickServiceItems.reduce((sum, part) => sum + Number(services.find(item => item.id === part.service_id)?.price || 0) * part.quantity, 0),
       } : quickPurchase && !quickPurchase.component_balances ? { name: `Vé combo · ${quickPurchase.combo_name || 'Combo'}`, price: 0 } : null
       if (!service) return []
       return [{ employee_id: quickSteam ? '' : employee?.id || '', employee_name: quickSteam ? '' : employee?.name || '', room: quickSteam ? '' : form.room,
         service: service.name, price: service.price, price_source: 'catalog',
+        quick_extra_subtotal: form.extra_service_items.reduce((sum, part) => sum + Number(services.find(item => item.id === part.service_id)?.price || 0) * Number(part.quantity), 0),
+        ...(quickPurchase && !quickPurchase.component_balances ? { combo_generic_base_units: quickBaseServiceItems.length ? quickBaseServiceItems.reduce((sum, part) => sum + Number(services.find(item => item.id === part.service_id)?.ticket_units ?? 1) * part.quantity, 0) : 1 } : {}),
         booked_at: `${form.booking_date}T${form.booking_time}:00+07:00`,
         service_items: quickServiceItems.map(part => ({ ...part, unit_price: services.find(item => item.id === part.service_id)?.price, ticket_units: services.find(item => item.id === part.service_id)?.ticket_units ?? 1 })) }]
     }
@@ -1270,7 +1280,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const checkoutPreviewEntries = checkoutSourceEntries.map((entry) => ({
     ...entry,
     preview_price: previewEntryPrice(entry, services),
-    ticket_units: entry.service_items?.length ? entry.service_items.reduce((sum, item) => sum + Number(item.ticket_units ?? 1) * Number(item.quantity), 0) : previewEntryTicketUnits(entry, services),
+    ticket_units: entry.combo_generic_base_units ?? (entry.service_items?.length ? entry.service_items.reduce((sum, item) => sum + Number(item.ticket_units ?? 1) * Number(item.quantity), 0) : previewEntryTicketUnits(entry, services)),
   }))
   const checkoutPreviewSubtotal = checkoutPreviewEntries.length && checkoutPreviewEntries.every((entry) => Number.isFinite(entry.preview_price))
     ? checkoutPreviewEntries.reduce((sum, entry) => sum + entry.preview_price, 0)
@@ -1620,7 +1630,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             onSearch={(query) => { setEmployeeSearch(query); if (employeePickId) setSelectedIds(new Set()); setEmployeePickId('') }}
             onChange={(id) => { setSelectedRoomKey(''); const record = shiftRecords.find((item) => stableEmployeeId(item) === id); setEmployeePickId(id); setEmployeeSearch(record ? cellValue(record, employeeColumn) : ''); setSelectedIds(new Set(id ? [id] : [])); setWeeklyShiftOpen(Boolean(id)) }}/>
           {canEditAppointment && appointmentEditor(appointmentTarget, true)}
-          <div className="live-tour-shift-controls">{canSetShift && <div className="tour-shift-filter" role="group" aria-label="Xếp ca nhân viên đã chọn">{['Ca 1', 'Ca 2'].map((shift) => <button data-ui-key="u-41489b1c782e" type="button" key={shift} className="secondary-button" title={`${shift}: ghi đè ca tự động đến hết hôm nay`} disabled={selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('set_shift', { shift })}>{shift}</button>)}</div>}<div className="live-tour-weekly-shift" onMouseEnter={() => setWeeklyShiftOpen(true)} onMouseLeave={() => setWeeklyShiftOpen(false)}><button data-ui-key="u-a5427bd006ec" type="button" className="live-tour-weekly-shift-button" onClick={() => setWeeklyShiftOpen(current => !current)} aria-expanded={weeklyShiftOpen}><span className="weekly-desktop">CA TUẦN NÀY{selectedWeeklyShift ? ` · ${selectedWeeklyShift.toUpperCase()}` : ''}</span><span className="weekly-mobile">Ca tuần này{selectedWeeklyShift ? ` · ${selectedWeeklyShift}` : ''}</span></button>{weeklyShiftOpen && <div className="live-tour-weekly-shift-popover" role="dialog" aria-label="Ca tuần này"><strong>Ca tuần này · {weeklyShiftPlan.range}</strong>{selectedWeeklyRows.length > 0 && <div className="weekly-shift-group weekly-shift-selected"><b>Nhân viên đã chọn</b>{selectedWeeklyRows.map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong>{row.fixed ? ' · không tự đổi' : <> → tuần sau <strong>{row.next}</strong></>}</span>)}</div>}{['Ca 1','Ca 2'].map(shift => { const members = weeklyShiftPlan.rows.filter(row => !row.fixed && row.current === shift); return <div key={shift} className="weekly-shift-group"><b>{shift}: {members.length ? members.map(row => row.name).join(', ') : '—'}</b>{members.map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong> → tuần sau <strong>{row.next}</strong></span>)}</div>})}<div className="weekly-shift-group"><b>Cố định: {weeklyShiftPlan.rows.filter(row => row.fixed).map(row => row.name).join(', ') || '—'}</b>{weeklyShiftPlan.rows.filter(row => row.fixed).map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong> · không tự đổi</span>)}</div>{weeklyShiftPlan.rows.some(row => !row.fixed && !['Ca 1','Ca 2'].includes(row.current)) && <div className="weekly-shift-group"><b>Chưa xếp / khác</b>{weeklyShiftPlan.rows.filter(row => !row.fixed && !['Ca 1','Ca 2'].includes(row.current)).map(row => <span key={row.id || row.name}>{row.name} — {row.current}</span>)}</div>}</div>}</div></div>
+          <div className="live-tour-shift-controls">{canSetShift && <div className="tour-shift-filter" role="group" aria-label="Xếp ca nhân viên đã chọn">{['Ca 1', 'Ca 2'].map((shift) => <button data-ui-key="u-41489b1c782e" type="button" key={shift} className="secondary-button" title={`${shift}: ghi đè ca tự động đến hết hôm nay`} disabled={selectedIds.size !== 1 || Boolean(actionBusy)} onClick={() => runSingleSelected('set_shift', { shift })}>{shift}</button>)}</div>}{normalizedRole !== 'locker' && <div className="live-tour-weekly-shift" onMouseEnter={() => setWeeklyShiftOpen(true)} onMouseLeave={() => setWeeklyShiftOpen(false)}><button data-ui-key="u-a5427bd006ec" type="button" className="live-tour-weekly-shift-button" onClick={() => setWeeklyShiftOpen(current => !current)} aria-expanded={weeklyShiftOpen}><span className="weekly-desktop">CA TUẦN NÀY{selectedWeeklyShift ? ` · ${selectedWeeklyShift.toUpperCase()}` : ''}</span><span className="weekly-mobile">Ca tuần này{selectedWeeklyShift ? ` · ${selectedWeeklyShift}` : ''}</span></button>{weeklyShiftOpen && <div className="live-tour-weekly-shift-popover" role="dialog" aria-label="Ca tuần này"><strong>Ca tuần này · {weeklyShiftPlan.range}</strong>{selectedWeeklyRows.length > 0 && <div className="weekly-shift-group weekly-shift-selected"><b>Nhân viên đã chọn</b>{selectedWeeklyRows.map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong>{row.fixed ? ' · không tự đổi' : <> → tuần sau <strong>{row.next}</strong></>}</span>)}</div>}{['Ca 1','Ca 2'].map(shift => { const members = weeklyShiftPlan.rows.filter(row => !row.fixed && row.current === shift); return <div key={shift} className="weekly-shift-group"><b>{shift}: {members.length ? members.map(row => row.name).join(', ') : '—'}</b>{members.map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong> → tuần sau <strong>{row.next}</strong></span>)}</div>})}<div className="weekly-shift-group"><b>Cố định: {weeklyShiftPlan.rows.filter(row => row.fixed).map(row => row.name).join(', ') || '—'}</b>{weeklyShiftPlan.rows.filter(row => row.fixed).map(row => <span key={row.id || row.name}>{row.name} — <strong>{row.current}</strong> · không tự đổi</span>)}</div>{weeklyShiftPlan.rows.some(row => !row.fixed && !['Ca 1','Ca 2'].includes(row.current)) && <div className="weekly-shift-group"><b>Chưa xếp / khác</b>{weeklyShiftPlan.rows.filter(row => !row.fixed && !['Ca 1','Ca 2'].includes(row.current)).map(row => <span key={row.id || row.name}>{row.name} — {row.current}</span>)}</div>}</div>}</div>}</div>
           {isAdmin && <div className="live-tour-admin-controls-toggle">
             <button data-ui-key="u-72d4dc1bc8b9" type="button" className="secondary-button" aria-expanded={adminControlsVisible} aria-controls="live-tour-admin-controls" onClick={() => setAdminControlsVisible((visible) => !visible)}>
               {adminControlsVisible ? 'Ẩn điều khiển' : 'Hiện điều khiển'}
@@ -1776,7 +1786,12 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
                 {!quickSteam && <>
                 <LiveTourSearchSelect label="Phòng / giường" showAllOptions filterOption={roomOptionMatches} required value={form.room} options={catalogRooms.filter((room) => room.active !== false).map((room) => ({ value: room.name, label: room.name, group: bookingRoomGroup(room.name, catalogRooms) }))} onChange={(room) => setForm((current) => ({ ...current, room }))}/>
                 </>}
-                <div className="tour-booking-datetime"><label className="live-tour-field"><span>Ngày booking</span><VeraDateInput required min={canAdmin ? '2000-01-01' : vietnamDate(clockMs)} max={vietnamDate(clockMs)} value={form.booking_date} onChange={(event) => setForm((current) => ({ ...current, booking_date: event.target.value }))}/></label><label className="live-tour-field"><span>Giờ booking</span><input type="time" required value={form.booking_time} onChange={(event) => setForm((current) => ({ ...current, booking_time: event.target.value }))}/></label></div>
+                <div className="wide tour-quick-extra-services">
+                  <LiveTourSearchSelect label="Thêm dịch vụ" value="" options={quickBookingServices.map(service => ({ value: service.id, label: service.name, detail: formatMoney(service.price) }))} onChange={id => { if (id) setForm(current => ({ ...current, extra_service_items: current.extra_service_items.some(part => part.service_id === id) ? current.extra_service_items.map(part => part.service_id === id ? { ...part, quantity: Number(part.quantity) + 1 } : part) : [...current.extra_service_items, { service_id: id, quantity: 1 }] })) }}/>
+                  {form.extra_service_items.map(part => <div className="tour-quick-extra-row" key={part.service_id}><strong>{services.find(service => service.id === part.service_id)?.name || part.service_id}</strong><label>Số lượng<input aria-label={`Số lượng ${services.find(service => service.id === part.service_id)?.name || part.service_id}`} type="number" min="1" step="1" required value={part.quantity} onChange={event => setForm(current => ({ ...current, extra_service_items: current.extra_service_items.map(item => item.service_id === part.service_id ? { ...item, quantity: event.target.value } : item) }))}/></label><button type="button" className="secondary-button danger-button" aria-label={`Xóa dịch vụ thêm ${services.find(service => service.id === part.service_id)?.name || part.service_id}`} onClick={() => setForm(current => ({ ...current, extra_service_items: current.extra_service_items.filter(item => item.service_id !== part.service_id) }))}>Xóa</button></div>)}
+                </div>
+                {canQuickBackdate && <button type="button" className="secondary-button" onClick={() => setForm(current => ({ ...current, booking_date: quickYesterday }))}>Lùi 1 ngày</button>}
+                <div className="tour-booking-datetime"><label className="live-tour-field"><span>Ngày booking</span><VeraDateInput required min={isAdmin ? '2000-01-01' : canQuickBackdate ? quickYesterday : vietnamDate(clockMs)} max={vietnamDate(clockMs)} value={form.booking_date} onChange={(event) => setForm((current) => ({ ...current, booking_date: event.target.value }))}/></label><label className="live-tour-field"><span>Giờ booking</span><input type="time" required value={form.booking_time} onChange={(event) => setForm((current) => ({ ...current, booking_time: event.target.value }))}/></label></div>
                 {form.booking_date && form.booking_date < vietnamDate(clockMs) && <label className="live-tour-field wide"><span>Lý do nhập lùi ngày</span><input required minLength={3} value={form.booking_reason} onChange={(event) => setForm((current) => ({ ...current, booking_reason: event.target.value }))}/></label>}
               </>}
             </>}
