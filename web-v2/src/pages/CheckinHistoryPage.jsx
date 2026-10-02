@@ -116,6 +116,10 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
   usePageRefresh(() => load(), () => Boolean(busy || exporting || selectedCapture))
   const [selectedCapture, setSelectedCapture] = useState(null)
   const [assignmentNotice, setAssignmentNotice] = useState('')
+  const [facegateIp, setFacegateIp] = useState('')
+  const [facegateIpMessage, setFacegateIpMessage] = useState('')
+  const [savingFacegateIp, setSavingFacegateIp] = useState(false)
+  const canManageFacegateIp = user?.role === 'admin' || user?.permissions?.device_facegate_ip_manage === true
   const canAssign = user?.role === 'admin' || user?.permissions?.employee_face_id_manage || user?.permissions?.employee_face_id_all_users_edit
   const [filters, setFilters] = useState(initialCheckinFilters)
   const [records, setRecords] = useState(null)
@@ -132,13 +136,13 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
   const source = filters.source
   const change = patch => { setFilters(value => ({ ...value, ...patch })); setDirty(true); setError('') }
   const preset = value => change({ preset: value, ...checkinDateRange(value), event_date: '' })
-  const load = async event => {
+  const load = async (event, queryFilters = filters) => {
     event?.preventDefault()
     if (!formRef.current?.reportValidity()) return
-    const invalid = checkinRangeError(filters)
+    const invalid = checkinRangeError(queryFilters)
     if (invalid) { setError(invalid); return }
     const id = ++requestId.current
-    const query = checkinQuery(filters)
+    const query = checkinQuery(queryFilters)
     setBusy(true); setError('')
     try {
       const response = await veraApi.checkinHistory(query)
@@ -153,6 +157,41 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
         if ([401, 403].includes(cause.status)) setRecords(null)
       }
     } finally { if (requestId.current === id) setBusy(false) }
+  }
+  const loadFromFacegate = async () => {
+    const address = facegateIp.trim()
+    if (address) {
+      if (!/^192\.168\.1\.(?:[1-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-4])$/.test(address)) {
+        setError('IP FaceGate phải có dạng 192.168.1.x trong mạng nội bộ.')
+        return
+      }
+      setSavingFacegateIp(true); setError(''); setFacegateIpMessage('')
+      try {
+        const registry = await veraApi.deviceRegistry()
+        const device = (registry.devices || []).find(item => item.id === 'facegate-current')
+        if (!device) throw new Error('Chưa có hồ sơ FaceGate trong Quản lý thiết bị.')
+        if ((device.address || '') !== address) {
+          const devices = registry.devices.map(item => item.id === 'facegate-current' ? { ...item, address } : item)
+          await veraApi.saveDeviceRegistry({ expected_revision: registry.revision, devices })
+          setFacegateIpMessage('Đã cập nhật IP FaceGate trong VERA thành ' + address + '. Nếu IP máy vừa đổi, cần cập nhật tuyến ' + address + '/32 trên Tailscale gateway; VERA không sửa tuyến Tailscale.')
+        } else {
+          setFacegateIpMessage('IP FaceGate ' + address + ' đã lưu trong VERA. Nếu tuyến Tailscale đang khác, cần cập nhật tuyến ' + address + '/32 trên gateway.')
+        }
+      } catch (cause) {
+        setError(cause.message || 'Không lưu được IP FaceGate.')
+        return
+      } finally { setSavingFacegateIp(false) }
+    } else {
+      setFacegateIpMessage('')
+    }
+    const directFilters = { ...filters, source: 'facegate', status: '', event_type: '' }
+    setFilters(directFilters)
+    setRecords(null)
+    setLoadedQuery(null)
+    setTruncated(false)
+    setOptions({ statuses: [], types: [] })
+    setDirty(false)
+    await load(null, directFilters)
   }
   const exportExcel = async () => {
     if (!formRef.current?.reportValidity() || dirty || !loadedQuery) return
@@ -176,12 +215,14 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
           <label>Ngày cụ thể<VeraDateInput value={filters.event_date} min={filters.date_from} max={filters.date_to} onChange={event => change({ event_date: event.target.value })} /></label>
           <label>{source === 'facegate' ? 'Tên trên máy' : 'Tên / mã nhân viên'}<input type="search" disabled={source === 'capture'} maxLength={200} value={filters.employee} onChange={event => change({ employee: event.target.value })} placeholder={source === 'capture' ? 'Capture không có mã nhân viên' : 'Tìm tên hoặc mã'} /></label>
           <label>Nguồn dữ liệu<select value={source} onChange={event => { change({ source: event.target.value, ...EMPTY_CHECKIN_DETAILS }); setRecords(null); setOptions({ statuses: [], types: [] }) }}><option value="facegate_saved">FaceGate · Đã lưu trong VERA</option><option value="facegate">FaceGate · Trực tiếp từ máy</option><option value="capture">FaceGate · Capture Log</option><option value="timesoft">TimeSoft · Đã đồng bộ VERA</option></select></label>
+          {canManageFacegateIp && <label>IP Face ID (nếu máy đổi)<input type="text" inputMode="decimal" maxLength={15} value={facegateIp} onChange={event => { setFacegateIp(event.target.value.replace(/[^0-9.]/g, '')); setFacegateIpMessage('') }} placeholder="192.168.1.34 · để trống dùng IP đã lưu" /></label>}
           <label>Mã sự kiện<input type="search" disabled={source === 'timesoft'} maxLength={64} value={filters.event_id} onChange={event => change({ event_id: event.target.value })} placeholder="Tìm mã sự kiện" /></label>
           <label>{source === 'timesoft' ? 'Trạng thái vào' : 'Trạng thái'}<select value={filters.status} onChange={event => change({ status: event.target.value })}><option value="">Tất cả</option>{options.statuses.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
           <label>{source === 'timesoft' ? 'Trạng thái ra' : 'Loại sự kiện'}<select value={filters.event_type} onChange={event => change({ event_type: event.target.value })}><option value="">Tất cả</option>{options.types.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         </div>
         <div className="checkin-quick-dates">{CHECKIN_PRESETS.filter(([id]) => id !== 'custom').map(([id, label]) => <button key={id} type="button" className="secondary-button" aria-pressed={filters.preset === id} onClick={() => preset(id)}>{label}</button>)}<button type="button" className="secondary-button" onClick={() => change(EMPTY_CHECKIN_DETAILS)}>Xóa lọc chi tiết</button></div>
         <div className="device-actions checkin-history-actions">
+          <button className="secondary-button checkin-live-device-button" type="button" disabled={busy || exporting || savingFacegateIp} onClick={loadFromFacegate}><RefreshCw size={16} className={(busy || savingFacegateIp) && source === 'facegate' ? 'spin' : ''} />{savingFacegateIp ? 'Đang lưu IP…' : busy && source === 'facegate' ? 'Đang tải từ máy…' : facegateIp.trim() ? 'Lưu IP và tải lại từ máy Face ID' : 'Tải lại dữ liệu từ máy Face ID'}</button>
           <button className="secondary-button" type="submit"><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang tải…' : 'Xem lịch sử'}</button>
           <button className="secondary-button" type="button" disabled={busy || !records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} />{exporting ? 'Đang xuất…' : 'Xuất excel'}</button>
         </div>
@@ -190,6 +231,7 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
     </form>
     {dirty && records && <p role="status">Bộ lọc đã thay đổi. Bấm Xem lịch sử để cập nhật bảng và xuất Excel.</p>}
     <StableFeedback>{error && <p role="alert">{error}</p>}</StableFeedback>
+    {facegateIpMessage && <p role="status">{facegateIpMessage}</p>}
     {records && <>
       <p>Dữ liệu đã tải: {formatVeraDate(loadedQuery.start)} – {formatVeraDate(loadedQuery.end)}.</p>
       {visible.length === 0 && <p role="status">Không có bản ghi phù hợp bộ lọc.</p>}

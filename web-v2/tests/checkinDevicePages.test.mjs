@@ -4,7 +4,7 @@ import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
 import { MessageChannel } from 'node:worker_threads'
 
-const built = await build({ stdin: { contents: "import React, { act } from 'react'; import { createRoot } from 'react-dom/client'; import History from './src/pages/CheckinHistoryPage'; import Devices from './src/pages/DevicePage'; window.testAct = act; window.mountPage = kind => { window.pageRoot = createRoot(document.getElementById('root')); window.pageRoot.render(kind === 'history' ? <History user={{ permissions: { device_facegate_mapping_manage: true } }} /> : <Devices user={{ permissions: { device_view: true, device_manage: true, device_station_operate: true, device_checkin_confirm: true, device_facegate_ip_manage: true } }} />); };", resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', loader: { '.css': 'empty' }, plugins: [{ name: 'mock-api', setup(b) {
+const built = await build({ stdin: { contents: "import React, { act } from 'react'; import { createRoot } from 'react-dom/client'; import History from './src/pages/CheckinHistoryPage'; import Devices from './src/pages/DevicePage'; window.testAct = act; window.mountPage = kind => { window.pageRoot = createRoot(document.getElementById('root')); window.pageRoot.render(kind === 'history' ? <History user={{ permissions: { device_facegate_mapping_manage: true, device_facegate_ip_manage: true } }} /> : <Devices user={{ permissions: { device_view: true, device_manage: true, device_station_operate: true, device_checkin_confirm: true, device_facegate_ip_manage: true } }} />); };", resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', loader: { '.css': 'empty' }, plugins: [{ name: 'mock-api', setup(b) {
   b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'mock' }))
   b.onLoad({ filter: /.*/, namespace: 'mock' }, () => ({ contents: 'export const veraApi = window.testApi;', loader: 'js' }))
 } }] })
@@ -40,6 +40,41 @@ test('history exports applied filters, blocks stale export, and survives query f
   fail = true; await dom.window.testAct(async () => button(dom, 'Xem lịch sử').click())
   assert.match(dom.window.document.querySelector('[role=alert]').textContent, /Unavailable/)
   assert.equal(button(dom, 'Xuất excel').disabled, true)
+})
+
+test('history reloads the selected dates directly from the FaceGate device', async (context) => {
+  const queries = []
+  const dom = await page('history', { checkinHistory: async query => {
+    queries.push(query)
+    return { records: [{ event_id: 27, occurred_at: '2026-10-02T09:15:00+07:00' }], options: { statuses: ['1'], types: ['0'] } }
+  } }, context)
+  await dom.window.testAct(async () => button(dom, 'Tải lại dữ liệu từ máy Face ID').click())
+  assert.equal(queries.length, 1)
+  assert.equal(queries[0].source, 'facegate')
+  assert.ok(queries[0].start)
+  assert.ok(queries[0].end)
+  assert.match(dom.window.document.querySelector('.checkin-history-page').textContent, /đọc trực tiếp từ máy/)
+  assert.equal(button(dom, 'Tải lại dữ liệu từ máy Face ID').disabled, false)
+})
+
+test('history saves an entered FaceGate IP before refreshing directly from the device', async (context) => {
+  let saved
+  let queried
+  const dom = await page('history', {
+    deviceRegistry: async () => ({ revision: 8, devices: [{ id: 'facegate-current', address: '192.168.1.26', kind: 'faceid' }] }),
+    saveDeviceRegistry: async body => { saved = body; return { revision: 9, devices: body.devices } },
+    checkinHistory: async query => { queried = query; return { records: [], options: { statuses: [], types: [] } } },
+  }, context)
+  const ip = [...dom.window.document.querySelectorAll('input')].find(el => el.closest('label')?.textContent.includes('IP Face ID'))
+  assert.ok(ip)
+  const setInputValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
+  setInputValue.call(ip, '192.168.1.34')
+  await dom.window.testAct(async () => ip.dispatchEvent(new dom.window.Event('input', { bubbles: true })))
+  await dom.window.testAct(async () => button(dom, 'Lưu IP và tải lại từ máy Face ID').click())
+  assert.equal(saved.expected_revision, 8)
+  assert.equal(saved.devices[0].address, '192.168.1.34')
+  assert.equal(queried.source, 'facegate')
+  assert.ok([...dom.window.document.querySelectorAll('[role=status]')].some(el => /Tailscale/.test(el.textContent)))
 })
 
 test('device page retries initial failure and can submit a new device without losing configured device', async (context) => {
