@@ -42,6 +42,21 @@ test('history exports applied filters, blocks stale export, and survives query f
   assert.equal(button(dom, 'Xuất excel').disabled, true)
 })
 
+test('history reloads the selected dates directly from the FaceGate device', async (context) => {
+  const queries = []
+  const dom = await page('history', { checkinHistory: async query => {
+    queries.push(query)
+    return { records: [{ event_id: 27, occurred_at: '2026-10-02T09:15:00+07:00' }], options: { statuses: ['1'], types: ['0'] } }
+  } }, context)
+  await dom.window.testAct(async () => button(dom, 'Tải lại dữ liệu từ máy Face ID').click())
+  assert.equal(queries.length, 1)
+  assert.equal(queries[0].source, 'facegate')
+  assert.ok(queries[0].start)
+  assert.ok(queries[0].end)
+  assert.match(dom.window.document.querySelector('.checkin-history-page').textContent, /đọc trực tiếp từ máy/)
+  assert.equal(button(dom, 'Tải lại dữ liệu từ máy Face ID').disabled, false)
+})
+
 test('device page retries initial failure and can submit a new device without losing configured device', async (context) => {
   let fail = true, saved
   const data = { revision: 3, devices: [{ id: 'facegate-current', name: 'FaceGate', kind: 'faceid', adapter: 'facegate_server', enabled: true, connection: 'network' }], kinds: { faceid: 'FaceID', printer: 'Máy in' }, connections: { network: 'LAN', usb: 'USB' }, adapters: { facegate_server: { label: 'FaceGate', configured: true }, pending: { label: 'Chờ tích hợp' } } }
