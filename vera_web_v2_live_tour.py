@@ -3303,7 +3303,7 @@ def _readable_audit(events, *, invoice_view, paid_invoice_view, customers_view):
 
 
 def _report_rows_with_combo_kind(state):
-    invoices = {row["id"]: row for row in state["invoices"]}
+    invoices = {row["id"]: row for row in state["invoices"] if row.get("id")}
     return [dict(row, combo_sale=bool(invoices.get(row.get("invoice_id"), {}).get("purchased_combo_id")),
                  **({"invoice_total": invoices[row["invoice_id"]].get("total", 0),
                      "invoice_discount": invoices[row["invoice_id"]].get("discount", 0)}
