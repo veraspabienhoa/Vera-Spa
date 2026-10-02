@@ -5,17 +5,18 @@ import {build} from 'esbuild'
 import React,{act} from 'react'
 import {JSDOM} from 'jsdom'
 const bootstrap=new JSDOM('<body/>');globalThis.window=bootstrap.window;globalThis.document=bootstrap.window.document;after(()=>bootstrap.window.close())
-const built=await build({stdin:{contents:`export {default as Panel} from './src/pages/DepartmentPayrollPanel';export {default as Settings} from './src/pages/DepartmentPayrollSettingsPage';export {default as Tabs} from './src/components/PayrollTabs';export {recoverablePage} from './src/lib/recoverablePage'`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react-dom','react/jsx-runtime'],loader:{'.css':'empty'},define:{'import.meta.env':'{"VITE_VERA_API_BASE_URL":"https://api.invalid"}'},plugins:[{name:'auth',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const getCurrentSession=async()=>({access_token:"synthetic"})'}))}}]})
+const built=await build({stdin:{contents:`export {fitPayrollTable} from './src/lib/useFitPayrollTables';export {default as Panel} from './src/pages/DepartmentPayrollPanel';export {default as Settings} from './src/pages/DepartmentPayrollSettingsPage';export {default as Tabs} from './src/components/PayrollTabs';export {recoverablePage} from './src/lib/recoverablePage'`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react-dom','react/jsx-runtime'],loader:{'.css':'empty'},define:{'import.meta.env':'{"VITE_VERA_API_BASE_URL":"https://api.invalid"}'},plugins:[{name:'auth',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const getCurrentSession=async()=>({access_token:"synthetic",refresh_token:"refresh"});export const refreshCurrentSession=async()=>({access_token:"renewed"});export const isSupabaseConfigured=false;export const supabase=null'}))}}]})
 const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),mod,mod.exports)
-const {Panel,Settings,Tabs,recoverablePage}=mod.exports,h=React.createElement
+const {Panel,Settings,Tabs,recoverablePage,fitPayrollTable}=mod.exports,h=React.createElement
 const config={calculation_mode:'hourly',rate_ca1:27000,rate_ca2_before_22:30000,rate_ca2_after_22:33000}
 const rows=[['a','Nhân Viên A','letan','Lễ tân',500000],['b','Quản Lý B','quanly','Quản lý',300000],['c','Nhân Viên C','letan','Lễ tân',0]].map(([id,name,dep,label,combo],i)=>({employee_username:id,employee_name:name,email:`${id}@example.test`,department:dep,department_label:label,tt:i+1,work_days:1,hours_ca1:8,combo_sales:combo,salary:216000,total_salary:216000+combo,net_salary:216000+combo,calculation_config:config,calculation_source:'schedule'}))
-async function fixture(t){
+async function fixture(t, expireSave=false){
  const dom=new JSDOM('<body><div id="root"/></body>',{url:'https://example.test',pretendToBeVisual:true}),requests=[]
  const data={departments:{letan:{department_label:'Lễ tân',config},quanly:{department_label:'Quản lý',config},tapvu:{department_label:'Tạp vụ',config:{calculation_mode:'monthly'}}},salary_config_tables:{operations:[{employee_username:'a',employee_name:'Nhân Viên A',department:'letan',department_label:'Lễ tân',...config}],tapvu:[]},salary_employee_catalog:[]}
  const globals={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(url,options={})=>{
   const path=new URL(url).pathname;requests.push({path,options})
-  const body=path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows,start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:JSON.parse(options.body).rows,message:'Đã lưu'}:{}
+  if(expireSave && path.endsWith('/settings/employees') && requests.filter(r=>r.path===path).length===1) return new Response(JSON.stringify({detail:"expired"}),{status:401})
+  const body=path.endsWith('/settings/employees')?{salary_config_tables:{operations:JSON.parse(options.body).rows,tapvu:[]},message:'Đã lưu cấu hình'}:path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows,start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:JSON.parse(options.body).rows,message:'Đã lưu'}:{}
   return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}})
  }}
  const saved=Object.fromEntries(Object.keys(globals).map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));for(const[k,v]of Object.entries(globals))Object.defineProperty(globalThis,k,{value:v,configurable:true})
@@ -60,4 +61,33 @@ test('configuration import failure preserves tabs and retry resets the correct m
 test('non-Admin roles do not get the configuration tab',async t=>{
  const f=await fixture(t);await f.render(h(Tabs,{user:{role:'letan',permissions:{payroll_calculate:true}},administrative:h('p',null,'Payroll'),configuration:h('p',null,'Secret')}))
  assert.equal(document.querySelectorAll('[role="tab"]').length,1);assert.doesNotMatch(document.body.textContent,/Cấu hình lương|Secret/)
+})
+
+test('configuration saves edited numeric wages and jumps to the hourly table',async t=>{
+ const f=await fixture(t);await f.render(h(Settings,{user:{role:'admin'}}))
+ await f.change(document.querySelector('.department-config-table input'),'45.000')
+ await f.click('Lưu cấu hình')
+ const saved=JSON.parse(f.requests.find(r=>r.path.endsWith('/settings/employees')).options.body)
+ assert.equal(saved.rows[0].rate_ca1,45000)
+ assert.equal(document.querySelector('.department-config-table input').value,'45.000')
+ let jumped=false;document.querySelector('.department-config-table-section').scrollIntoView=()=>{jumped=true}
+ await f.click('BẢNG 1 · LƯƠNG GIỜ');assert.equal(jumped,true)
+})
+
+test('configuration renews an expired session before saving',async t=>{
+ const f=await fixture(t,true);await f.render(h(Settings,{user:{role:'admin'}}))
+ await f.change(document.querySelector('.department-config-table input'),'46.000')
+ await f.click('Lưu cấu hình')
+ const saves=f.requests.filter(r=>r.path.endsWith('/settings/employees'))
+ assert.equal(saves.length,2)
+ assert.equal(saves[1].options.headers.get('Authorization'),'Bearer renewed')
+ assert.equal(JSON.parse(saves[1].options.body).rows[0].rate_ca1,46000)
+ assert.match(document.body.textContent,/Đã lưu cấu hình/)
+})
+
+test('wide payroll tables fit the available width and restore full size after resizing',()=>{
+ const table={parentElement:{clientWidth:800},scrollWidth:2000,style:{}}
+ fitPayrollTable(table);assert.equal(table.style.zoom,'0.4')
+ table.parentElement.clientWidth=2200;fitPayrollTable(table);assert.equal(table.style.zoom,'1')
+ table.parentElement.clientWidth=0;fitPayrollTable(table);assert.equal(table.style.zoom,'1')
 })

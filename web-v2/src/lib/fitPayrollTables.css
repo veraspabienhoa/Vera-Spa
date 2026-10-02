@@ -1,0 +1,6 @@
+body :is(.payroll-tabs-page,.department-payroll-page) {min-width:0;max-width:100%}
+body :is(.payroll-tabs-page,.department-payroll-page) :is(.responsive-data-table,.table-scroll,.report-scroll,.department-config-table,.department-payroll-table) {width:100%;max-width:100%;max-height:none!important;overflow:visible!important}
+body :is(.payroll-tabs-page,.department-payroll-page) table {width:max-content!important;min-width:100%!important;max-width:none;table-layout:auto!important}
+body :is(.payroll-tabs-page,.department-payroll-page) :is(th,td) {white-space:nowrap!important}
+body :is(.payroll-tabs-page,.department-payroll-page) td :is(strong,small) {display:inline;white-space:nowrap}
+body .department-config-table td small {margin-left:6px}

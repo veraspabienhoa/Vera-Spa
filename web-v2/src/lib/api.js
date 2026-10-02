@@ -606,3 +606,5 @@ export const veraApi = {
   syncLeaveSource: () => request('/v2/leave/source-sync', { method: 'POST' }).then(notifyLeaveChange),
   importLeaveExcel: (file) => upload('/v2/leave/import.xlsx', file).then(notifyLeaveChange),
 }
+
+export { request as apiRequest, binaryResponse as apiBinaryResponse }
