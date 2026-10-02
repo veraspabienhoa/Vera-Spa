@@ -75,6 +75,26 @@ def test_new_address_still_uses_existing_reference_guard():
     assert not rows and issues[0]['reason'] == 'unmapped_reference'
 
 
+def test_second_verified_move_preserves_first_address_without_aliases():
+    from vera_facegate_ip_repair import prepare
+    previous = {**mapping(), 'device_name': 'Test Staff'}
+    profiles = [{key: previous[key] for key in ('profile_id', 'device_name', 'registration_ref')}]
+    people = [{'username': previous['username'], 'role': 'nhanvien'}]
+    current, _ = prepare([previous], profiles, people, '192.168.1.35', 'admin',
+                         '2026-10-02T12:00:00+00:00')
+    from vera_facegate_address_history import accepts_event
+    payload = json.loads(event()['payload_json'])
+    assert accepts_event(current[0], payload, '192.168.1.35', event()['occurred_at'])
+    # The original move's own cutoff remains authoritative.
+    assert not accepts_event(current[0], payload, '192.168.1.35',
+                             '2026-09-30T12:00:00+07:00')
+    for key, value in [('username', 'Other'), ('profile_id', 999),
+                       ('confirmed_by', 'other-admin'), ('confirmed_at', 'bad')]:
+        forged = deepcopy(current[0])
+        forged['ip_reconfirmation']['previous_mapping'][key] = value
+        assert not accepts_event(forged, payload, '192.168.1.35', event()['occurred_at'])
+
+
 def test_unknown_status_on_old_address_stays_blocking():
     scan = event()
     payload = json.loads(scan['payload_json'])
