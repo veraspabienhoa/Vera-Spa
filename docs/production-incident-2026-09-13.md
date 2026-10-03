@@ -1,5 +1,22 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 03-10-2026 — Live Tour blocked at the 10:00 counter rollover
+
+The operator screenshot reports “Bảng tua đang chuyển ngày. Hãy làm mới rồi
+thử lại.” when booking. Code confirms resource-mode independent actions reject
+an older counter_business_date, while board refresh only reads the stored
+snapshot. A delayed projection can therefore block booking/start indefinitely.
+The production worker failure itself has not been diagnosed in this change.
+
+Allow the action to upgrade the maintenance fence nonblockingly, read a full
+snapshot and apply the existing counter rollover in the same transaction as the
+action. Concurrent shared holders still yield a retryable 503; revision checks,
+idempotency and attendance/shift permissions remain enforced. All employee
+counters reset together while active service details and financial history are
+preserved. The normal same-day path retains scoped reads and resource locks.
+This is a code fix pending deployment and production operation verification.
+
+
 ## 01-10-2026 — Khôi phục lượt đăng ký Face ID bị gián đoạn
 
 Ảnh/video người vận hành cung cấp cho thấy thẻ Hải My báo chưa đăng ký trong
