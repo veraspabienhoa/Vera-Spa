@@ -31,6 +31,7 @@ test('report selection reads only the visible collection and preserves invoice d
   const data = { reports, get invoices() { throw Error('hidden invoices scanned') }, get performance() { throw Error('hidden performance scanned') } }
   const filters = { date_from: '2026-09-05', date_to: '2026-09-05' }
   assert.deepEqual(selectReportRows(data, 'revenue', filters).map(row => row.id), ['midnight', 'legacy'])
+  assert.deepEqual(selectReportRows(data, 'employee', filters).map(row => row.id), ['midnight', 'legacy'])
   assert.deepEqual(selectReportRows(data, 'tip', filters).map(row => row.id), ['legacy'])
   assert.deepEqual(selectReportRows(data, 'combos', filters).map(row => row.id), ['legacy'])
   assert.deepEqual(selectReportRows(data, 'history', filters), [])
