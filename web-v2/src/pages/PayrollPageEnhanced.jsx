@@ -8,7 +8,7 @@ import ClearableSearchInput from '../components/ClearableSearchInput'
 import { formatVeraDate } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
 import { currentPayrollPeriod } from '../lib/payrollPeriod'
-import { ArrowRightCircle, CheckCircle2, Download, Edit3, Mail, Plus, RefreshCw, Save, Search, Settings2, Trash2, WalletCards } from 'lucide-react'
+import { ArrowRightCircle, CheckCircle2, Download, Edit3, History, Mail, PiggyBank, Plus, RefreshCw, Save, Search, Settings2, Trash2, WalletCards } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
@@ -608,11 +608,14 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   })
 
   return <div className={`feature-page payroll-page payroll-page-enhanced payroll-tab-${activeTab}`}>
+    <nav className="payroll-submenu" aria-label="Menu con Lương KTV">
+      <div className="payroll-submenu-heading"><WalletCards size={18} aria-hidden="true" /><strong>Lương KTV</strong></div>
     <UiToolbar data-ui-key="u-a39c42009c7e" className="payroll-main-tabs" role="tablist" aria-label="Lương KTV">
-      <button data-ui-key="u-6a99f7168de5" data-ui-label-default="Tính lương" type="button" role="tab" aria-selected={activeTab === 'calculate'} className={activeTab === 'calculate' ? 'active' : ''} onClick={() => onTabChange?.('calculate')}><UiCustomText uiKey="u-6a99f7168de5">Tính lương</UiCustomText></button>
-      <button data-ui-key="u-5f140dee458d" data-ui-label-default="Lịch sử bảng lương" type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => onTabChange?.('history')}><UiCustomText uiKey="u-5f140dee458d">Lịch sử bảng lương</UiCustomText></button>
-      {isAdmin && <button type="button" role="tab" aria-selected={activeTab === 'accumulation'} className={activeTab === 'accumulation' ? 'active' : ''} onClick={() => onTabChange?.('accumulation')}>Tích lũy &amp; Hoàn trả</button>}
+      <button data-ui-key="u-6a99f7168de5" data-ui-label-default="Tính lương" type="button" role="tab" aria-selected={activeTab === 'calculate'} className={activeTab === 'calculate' ? 'active' : ''} onClick={() => onTabChange?.('calculate')}><WalletCards size={18} aria-hidden="true" /><UiCustomText uiKey="u-6a99f7168de5">Tính lương</UiCustomText></button>
+      <button data-ui-key="u-5f140dee458d" data-ui-label-default="Lịch sử bảng lương" type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => onTabChange?.('history')}><History size={18} aria-hidden="true" /><UiCustomText uiKey="u-5f140dee458d">Lịch sử bảng lương</UiCustomText></button>
+      {isAdmin && <button type="button" role="tab" aria-selected={activeTab === 'accumulation'} className={activeTab === 'accumulation' ? 'active' : ''} onClick={() => onTabChange?.('accumulation')}><PiggyBank size={18} aria-hidden="true" />Tích lũy &amp; Hoàn trả</button>}
     </UiToolbar>
+    </nav>
     <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
 
     {canCalculate && <section data-ui-key="u-856731095818" className="panel payroll-calculate-panel">
