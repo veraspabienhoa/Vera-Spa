@@ -73,7 +73,7 @@ def test_prior_debt_includes_due_within_period_and_restores_own_settlement(monke
               {'employee_name': 'A', 'amount': 100, 'due_from': '2026-10-01'}]
     monkeypatch.setattr(payroll, '_obligations', lambda c: custom)
     conn = SimpleNamespace(execute=lambda *a, **kw: SimpleNamespace(scalar_one_or_none=lambda: []))
-    assert payroll._obligation_map(conn, START, norm, END) == {norm('A'): 1_480_000}
+    assert payroll._obligation_map(conn, START, norm, END) == {norm('A'): 1_480_100}
     assert payroll._obligation_map(conn, date(2026, 10, 1), norm, date(2026, 10, 15)) == {norm('A'): 100}
 
 
@@ -134,3 +134,51 @@ def test_missing_accumulation_source_does_not_enroll_employee_implicitly(monkeyp
     assert payroll._tichluy_map(None, [employee], START, END, norm)[norm('A')] == 0
     balance = personal._accumulation_balance(employee, [], [{'Tên nhân viên': 'A'}], [], norm)
     assert payroll._tichluy_map(None, [employee], START, END, norm)[norm('A')] == 500_000
+
+
+def test_completed_snapshot_with_current_period_detail_does_not_deduct(monkeypatch):
+    source = [{'Tên nhân viên': 'A', 'Đã tích lũy': 5_000_000,
+               'Chi tiết các kỳ': {'2026-09-16|2026-09-30': 500_000}}]
+    monkeypatch.setattr(payroll, '_employee_accumulation_balances',
+        lambda c, employees, n, exclude=None: {norm('A'): personal._accumulation_balance(
+            {'username': 'A'}, [], source, [], n, exclude)})
+    assert payroll._tichluy_map(None, [{'username': 'A'}], START, END, norm) == {norm('A'): 0}
+
+
+def test_future_due_debt_is_collectible_but_current_deferred_penalty_stays_deferred(monkeypatch):
+    custom = [{'employee_name': 'A', 'amount': 1_480_000, 'due_from': '2026-10-01',
+               'period_start': '2026-09-01', 'period_end': '2026-09-15'},
+              {'employee_name': 'A', 'amount': 1_400_000, 'due_from': '2026-10-01',
+               'period_start': START.isoformat(), 'period_end': END.isoformat()}]
+    monkeypatch.setattr(payroll, '_obligations', lambda c: custom)
+    conn = SimpleNamespace(execute=lambda *a, **kw: SimpleNamespace(scalar_one_or_none=lambda: []))
+    assert payroll._obligation_map(conn, START, norm, END) == {norm('A'): 1_480_000}
+
+
+def test_completion_settles_future_due_existing_debt_once(monkeypatch):
+    import vera_web_v2_payroll_enhancements as enhancements
+    import vera_web_v2_payroll_debt_sync as debt_sync
+    custom = [{'employee_name': 'A', 'amount': 1_480_000, 'due_from': '2026-10-01',
+               'period_start': '2026-09-01', 'period_end': '2026-09-15', 'status': 'Chưa hoàn thành'}]
+    monkeypatch.setattr(payroll, '_obligations', lambda c: custom)
+    monkeypatch.setattr(payroll, '_put_setting', lambda *a: None)
+    monkeypatch.setattr(debt_sync, 'replace_batch_settlements', lambda *a: [])
+    body = payroll.PayrollSave(start=START, end=END, rows=[{'Tên Hệ thống': 'A'}])
+    rows = [{'Tên Hệ thống': 'A', 'Vi phạm kỳ trước': 1_480_000, 'Số tiền thực nhận': 4_840_000}]
+    for _ in range(2):
+        result = enhancements._reconcile_payroll_debts(None, body, rows, 'admin', norm)
+        assert result['applied'] == 1_480_000
+    assert custom[0]['amount'] == 0
+    assert custom[0]['settlements'] == {payroll._period_label(START, END): 1_480_000}
+
+
+def test_unsaved_draft_honors_completed_source_but_official_replacement_keeps_last_payment(monkeypatch):
+    source = [{'Tên nhân viên': 'A', 'Đã tích lũy': 5_000_000,
+               'Chi tiết các kỳ': {'2026-09-16|2026-09-30': 500_000}}]
+    records = []
+    monkeypatch.setattr(personal, '_dataset', lambda conn, key: source if key == 'tichluy' else records)
+    monkeypatch.setattr(payroll, '_setting', lambda *args: [])
+    employee = {'username': 'A'}
+    assert payroll._employee_accumulation_balances(None, [employee], norm, (START, END), saved_only=True)[norm('A')]['remaining'] == 0
+    records.append(history_row(START, END, contribution=500_000))
+    assert payroll._employee_accumulation_balances(None, [employee], norm, (START, END), saved_only=True)[norm('A')]['remaining'] == 500_000

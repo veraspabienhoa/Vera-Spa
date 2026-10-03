@@ -194,14 +194,17 @@ def _reconcile_payroll_debts(
         for row in prepared_rows
         if norm(row.get("Tên Hệ thống"))
     }
+    aliases = {norm(row.get("Họ và tên")): norm(row.get("Tên Hệ thống"))
+               for row in prepared_rows if norm(row.get("Họ và tên"))}
     claims: dict[str, list[dict[str, Any]]] = {}
     for index, item in enumerate(custom_rows):
         employee_key = norm(item.get("employee_name"))
+        employee_key = aliases.get(employee_key, employee_key)
         due = _payroll._parse_date(item.get("due_from"))
         remaining = max(0, _payroll._number(item.get("amount")))
         if not employee_key or not _custom_source_open(item, norm) or remaining <= 0:
             continue
-        if due and due > body.end:
+        if _payroll._obligation_origin(item) == (body.start, body.end):
             continue
         claims.setdefault(employee_key, []).append({
             "kind": "custom",
@@ -215,11 +218,12 @@ def _reconcile_payroll_debts(
     for item in legacy_rows:
         status = norm(item.get("Trạng thái") or item.get("status") or "Chưa hoàn thành")
         employee_key = norm(item.get("Tên nhân viên") or item.get("employee_name"))
+        employee_key = aliases.get(employee_key, employee_key)
         due = _payroll._parse_date(item.get("Bắt đầu trừ từ") or item.get("due_from"))
         remaining = max(0, _payroll._number(item.get("Số tiền") or item.get("amount")))
         if status not in {"", "chua hoan thanh"} or not employee_key or remaining <= 0:
             continue
-        if due and due > body.end:
+        if _payroll._obligation_origin(item) == (body.start, body.end):
             continue
         debt_type = norm(item.get("Loại") or item.get("type"))
         claims.setdefault(employee_key, []).append({

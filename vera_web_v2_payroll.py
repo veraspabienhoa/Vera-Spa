@@ -515,10 +515,14 @@ def _clean_draft_rows(
     *,
     skip_missing: bool = False,
     period: tuple[date, date] | None = None,
+    refresh_financial: bool = False,
 ) -> list[dict[str, Any]]:
     employees = _employee_catalog(conn, norm)
     clean_rows: list[dict[str, Any]] = []
     seen: set[str] = set()
+    balances = _employee_accumulation_balances(conn, list(employees.values()), norm, period, saved_only=True) if refresh_financial else {}
+    refunds = _accumulation_refund_map(conn, *period, norm, list(employees.values())) if refresh_financial else {}
+    debts = _obligation_map(conn, period[0], norm, period[1]) if refresh_financial else {}
     for supplied in supplied_rows:
         key = norm(supplied.get("Tên Hệ thống"))
         if skip_missing and key and key not in employees:
@@ -542,6 +546,16 @@ def _clean_draft_rows(
             "Tên ngân hàng": employee["bank_name"],
             "__employment_status": employee.get("employment_status") or "Đang làm việc",
         })
+        if refresh_financial:
+            row["Tích lũy"] = min(max(0, _number(row.get("Tích lũy"))), balances[key]["remaining"])
+            if norm(employee.get("employment_status")) == norm("Đã nghỉ việc"):
+                row["Tích lũy"] = 0
+                row["Hoàn trả tiền tích lũy"] = refunds.get(key, 0)
+            available = max(0, _net(dict(row))["Số tiền thực nhận"] + _number(row.get("Vi phạm kỳ trước")))
+            full_key = norm(employee.get("full_name"))
+            debt = debts.get(key, 0) + (debts.get(full_key, 0) if full_key != key else 0)
+            row["Vi phạm kỳ trước"] = max(_number(row.get("Vi phạm kỳ trước")), min(debt, available))
+            row = _net(row)
         clean_rows.append(row)
     if not clean_rows:
         raise HTTPException(400, "Bảng lương nháp chưa có nhân viên.")
@@ -653,7 +667,7 @@ def _tip_rows(source: pd.DataFrame, start: date, end: date, norm) -> tuple[pd.Da
 
 
 def _tichluy_map(conn, employees: list[dict[str, Any]], start: date, end: date, norm) -> dict[str, int]:
-    balances = _employee_accumulation_balances(conn, employees, norm, (start, end))
+    balances = _employee_accumulation_balances(conn, employees, norm)
     result = {}
     for employee in employees:
         key = norm(employee["username"])
@@ -665,13 +679,24 @@ def _tichluy_map(conn, employees: list[dict[str, Any]], start: date, end: date, 
     return result
 
 
-def _employee_accumulation_balances(conn, employees, norm, exclude_period=None):
+def _employee_accumulation_balances(conn, employees, norm, exclude_period=None, *, saved_only=False):
     from vera_web_v2_payroll_personal import _accumulation_balance, _dataset
     history = _dataset(conn, "payroll_history")
     source = _dataset(conn, "tichluy")
     adjustments = _setting(conn, "accumulation_manual_adjustments", [])
-    return {norm(employee["username"]): _accumulation_balance(
-        employee, history, source, adjustments, norm, exclude_period) for employee in employees}
+    result = {}
+    for employee in employees:
+        keys = {norm(employee["username"]), norm(employee.get("full_name"))} - {""}
+        replace_period = exclude_period
+        if saved_only and not any(
+            norm(row.get("Tên Hệ thống")) in keys
+            and (_parse_date(row.get("Từ ngày")), _parse_date(row.get("Đến ngày"))) == exclude_period
+            for row in history
+        ):
+            replace_period = None
+        result[norm(employee["username"])] = _accumulation_balance(
+            employee, history, source, adjustments, norm, replace_period)
+    return result
 
 
 def _obligations(conn) -> list[dict[str, Any]]:
@@ -753,6 +778,11 @@ def _obligation_group(records: list[dict[str, Any]], obligation_type: str, norm)
     return {"type": obligation_type, "summary": summary, "details": details}
 
 
+def _obligation_origin(item):
+    return (_parse_date(item.get("period_start") or item.get("Kỳ phát sinh từ")),
+            _parse_date(item.get("period_end") or item.get("Kỳ phát sinh đến")))
+
+
 def _obligation_map(conn, start: date, norm, end: date | None = None) -> dict[str, int]:
     result: dict[str, int] = {}
     sources = list(_obligations(conn))
@@ -764,7 +794,9 @@ def _obligation_map(conn, start: date, norm, end: date | None = None) -> dict[st
         if not _open_obligation(source_status, norm):
             continue
         due = _parse_date(item.get("due_from") or item.get("Bắt đầu trừ từ"))
-        if due and due > (end or start):
+        if due and due > start and not end:
+            continue
+        if end and _obligation_origin(item) == (start, end):
             continue
         # Recalculating a saved period replaces its allocation, so include that
         # allocation in the available balance even when the claim is now closed.
@@ -923,7 +955,7 @@ def _saved_draft(conn, start: date, end: date, norm) -> dict[str, Any] | None:
     valid_rows = [item for item in valid_rows
                   if not suspended(employees[norm(item.get('Tên Hệ thống'))]['username'], start, end)]
     removed_employee_count = len(supplied_rows) - len(valid_rows)
-    rows = _clean_draft_rows(conn, valid_rows, norm) if valid_rows else []
+    rows = _clean_draft_rows(conn, valid_rows, norm, period=(start, end), refresh_financial=True) if valid_rows else []
     if not rows:
         return None
     return {
@@ -1091,9 +1123,8 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             draft = _saved_draft(conn, start, end, norm)
             if draft is None:
                 return {"draft": None, "has_saved_draft": _latest_saved_draft(conn, norm) is not None}
-            conn.execute(text("DELETE FROM vera_app_setting WHERE category='payroll' AND setting_key=:key"), {"key": _draft_key(start, end)})
             has_saved_draft = _latest_saved_draft(conn, norm) is not None
-        return {"draft": {**draft, "saved_at": "", "saved_by": ""},
+        return {"draft": draft,
                 "selected_month": start.strftime("%Y-%m"), "selected_period_no": 1 if start.day <= 15 else 2,
                 "has_saved_draft": has_saved_draft}
 
@@ -1370,10 +1401,10 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 "Email": employee["email"], "Số tài khoản ngân hàng": employee["bank_account"],
                 "Tên ngân hàng": employee["bank_name"], "Số dòng Tip": int(counts.get(key, 0)),
                 "__employment_status": employee.get("employment_status") or "Đang làm việc",
-                "__available_prior_debt": obligations.get(key, 0),
+                "__available_prior_debt": obligations.get(key, 0) + (obligations.get(norm(employee.get("full_name")), 0) if norm(employee.get("full_name")) != key else 0),
             }
             row = _net(row)
-            row["Vi phạm kỳ trước"] = min(obligations.get(key, 0), max(0, row["Số tiền thực nhận"]))
+            row["Vi phạm kỳ trước"] = min(row["__available_prior_debt"], max(0, row["Số tiền thực nhận"]))
             rows.append(_net(row))
         return {
             "period_label": label, "start": start.isoformat(), "end": end.isoformat(),
@@ -1390,7 +1421,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         try:
             require_feature(conn, ident, "payroll_save")
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:payroll:' || :label))"), {"label": label})
-            prepared_rows = _clean_draft_rows(conn, body.rows, norm, period=(body.start, body.end))
+            prepared_rows = _clean_draft_rows(conn, body.rows, norm, period=(body.start, body.end), refresh_financial=True)
             if sum(_number(row.get("Tiền Lương")) for row in prepared_rows) <= 0:
                 raise HTTPException(
                     400,
