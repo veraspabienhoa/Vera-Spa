@@ -616,7 +616,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
 
     {canCalculate && <section data-ui-key="u-856731095818" className="panel payroll-calculate-panel">
-      <div data-ui-key="u-7722410132ee" className="panel-title-row"><div><h2>TÍNH BẢNG LƯƠNG</h2><p>Kỳ 1 là 01–15; Kỳ 2 là 16–cuối tháng. Nợ vi phạm đủ ngày bắt đầu trừ sẽ tự cộng vào “Nợ vi phạm kỳ trước”.</p></div></div>
+      <div data-ui-key="u-7722410132ee" className="panel-title-row"><div><h2>TÍNH BẢNG LƯƠNG</h2><p>Kỳ 1 là 01–15; Kỳ 2 là 16–cuối tháng. Nợ đang mở được tự đưa vào “Nợ vi phạm kỳ trước” trong phạm vi thực nhận dương.</p></div></div>
       <UiToolbar data-ui-key="u-8d0f10645723" className="data-toolbar payroll-period-controls">
         <label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={(event) => { setMonth(event.target.value) }} /></label>
         <label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={(event) => { setPeriodNo(Number(event.target.value)) }}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label>
@@ -668,7 +668,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     </section>}
 
     {canManageObligations && <section data-ui-key="u-ee60725600e2" className="panel">
-      <div data-ui-key="u-a2e96dc0ba72" className="panel-title-row"><div><h2>NỢ VÀ NGHĨA VỤ CHƯA HOÀN THÀNH</h2><p>Khoản còn mở sẽ tự đưa vào “Nợ vi phạm kỳ trước” khi đến ngày bắt đầu trừ. Vi phạm được Admin chuyển kỳ sẽ xuất hiện ở đây.</p></div></div>
+      <div data-ui-key="u-a2e96dc0ba72" className="panel-title-row"><div><h2>NỢ VÀ NGHĨA VỤ CHƯA HOÀN THÀNH</h2><p>Khoản nợ còn mở được tự đối trừ từ thực nhận dương, kể cả khi ngày bắt đầu trừ ở kỳ sau. Vi phạm vừa chuyển từ kỳ đang tính được giữ lại cho kỳ kế tiếp.</p></div></div>
       <form className="payroll-obligation-form" onSubmit={addObligation}><label>Nhân viên<input required list="payroll-employee-options" disabled={isBusy} value={obligationForm.employee_name} onChange={(event) => setObligationForm({ ...obligationForm, employee_name: event.target.value })} /></label><label>Số tiền<VeraMoneyInput required disabled={isBusy} value={obligationForm.amount} onChange={(event) => setObligationForm({ ...obligationForm, amount: event.target.value })} /></label><label>Bắt đầu trừ từ<VeraDateInput required aria-label="Bắt đầu trừ từ" disabled={isBusy} value={obligationForm.due_from} onChange={(event) => setObligationForm({ ...obligationForm, due_from: event.target.value })} /></label><label>Nội dung<input required disabled={isBusy} value={obligationForm.content} onChange={(event) => setObligationForm({ ...obligationForm, content: event.target.value })} /></label><button data-ui-key="u-ef6cecfbc3c8" data-ui-label-default="Thêm nghĩa vụ" className="primary-button" disabled={isBusy}><Plus size={16} /><UiCustomText uiKey="u-ef6cecfbc3c8"> Thêm nghĩa vụ</UiCustomText></button></form>
       <datalist id="payroll-employee-options">{Array.from(new Set([...(history.employees || []), ...draftRows.map((row) => row['Tên Hệ thống'])])).map((name) => <option key={name}>{name}</option>)}</datalist>
       <PayrollObligationTable groups={obligationGroups} obligations={obligations} onRemove={removeObligation} disabled={isBusy} />
