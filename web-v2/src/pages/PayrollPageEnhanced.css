@@ -289,3 +289,9 @@
 .payroll-page-enhanced .payroll-draft-toolbar > .list-actions > button { width: 100%; min-width: 0; white-space: normal; }
 .payroll-page-enhanced .payroll-restore-available { background: var(--green-900, #174c3c); color: #fff; border-color: var(--green-900, #174c3c); }
 @media (max-width: 720px) { .payroll-page-enhanced .payroll-draft-toolbar > .list-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Keep employee identity on three lines despite the shared table-fit styles. */
+body .payroll-page-enhanced .payroll-employee-identity > :is(strong, small) {
+  display: block;
+  line-height: 1.45;
+}
