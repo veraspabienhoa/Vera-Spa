@@ -205,6 +205,10 @@ def action_resources(state, action, payload, idempotency_key):
 
 
 def begin_action(conn, action, payload, expected_revision, idempotency_key, counter_day, *, compact=False):
+    # Report corrections use the same ledger mutation and certified read set.
+    # HTTP authorization and replay identity keep the original report action.
+    action = {'report_invoice_update': 'paid_invoice_update',
+              'report_invoice_delete': 'paid_invoice_delete'}.get(action, action)
     independent = action in INDEPENDENT and not payload.get('start_now') and not any(row.get('start_now') for row in payload.get('bookings', []))
     lock(conn, shared=independent)
     conn.info['live_tour_exclusive'] = not independent

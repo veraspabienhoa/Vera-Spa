@@ -72,7 +72,7 @@ def test_operations_do_not_read_financial_history_or_other_receipts(database, pa
         assert len(actual['pending']) == 1
 
 
-@pytest.mark.parametrize('action', ['paid_invoice_update', 'paid_invoice_delete'])
+@pytest.mark.parametrize('action', ['paid_invoice_update', 'paid_invoice_delete', 'report_invoice_update', 'report_invoice_delete'])
 def test_invoice_corrections_keep_other_ledger_rows_and_retry_once(database, payments, monkeypatch, action):
     client, body, _ = payments
     paid = client.post('/v2/live-tour/action', json=body)

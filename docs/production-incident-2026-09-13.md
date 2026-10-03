@@ -1,5 +1,26 @@
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
+## 03-10-2026 — Báo cáo: lọc ngày và mở điều chỉnh chậm
+
+Video lúc 12:05 cho thấy đổi ngày/nhân viên bị khựng. Mã tại main 1d0d10f
+khởi tạo Intl.DateTimeFormat cho từng dòng, quét ba tập dữ liệu ở mọi render,
+và dựng lại gợi ý vì default array props đổi tham chiếu. Dùng lại formatter,
+chỉ lọc tập đang xem, memo theo dữ liệu/bộ lọc và giữ danh mục mặc định ổn định.
+Nút preset xóa ngày riêng cũ để không giữ điều kiện ngày vô hình.
+
+Sửa/hủy từ Báo cáo dùng cùng read profile và khóa ledger như sửa hóa đơn;
+quyền HTTP và receipt vẫn mang action report riêng. Giao diện nhận receipt
+sau commit rồi đóng hộp sửa; tải báo cáo riêng với kiểm tra thứ tự response.
+Không thay tiền, quyền, idempotency, nguồn chấm công hoặc schema.
+
+Benchmark Node v24.19.0, dữ liệu giả, 20 mẫu/1 user: 3.000 dòng mỗi tập,
+CPU lọc p50 362,494 → 4,332 ms; p95 443,692 → 5,485 ms. Đây là phép đo hàm
+lọc, không phải độ trễ DOM/API/VPS hoặc cam kết toàn hệ thống nhanh 50 lần.
+Xem docs/report-performance-2026-10-03.md về giới hạn và cách đo lại.
+Deploy VPS run 37098678879 đã xác minh bản 1d0d10f và frontend tương ứng;
+bản tối ưu này chưa deploy tại thời điểm ghi hồ sơ.
+
+
 ## 03-10-2026 — Live Tour blocked at the 10:00 counter rollover
 
 The operator screenshot reports “Bảng tua đang chuyển ngày. Hãy làm mới rồi

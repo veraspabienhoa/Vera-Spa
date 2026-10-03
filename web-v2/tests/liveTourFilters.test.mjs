@@ -7,6 +7,7 @@ import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
 import { defaultTourMonthFilters, defaultTourYesterdayFilters, EMPTY_TOUR_FILTERS, filterTourRows, tourFilterOptions } from '../src/lib/liveTourFilters.js'
 import { summarizeEmployeeRevenue } from '../src/lib/liveTourEmployeeRevenue.js'
+import { selectReportRows } from '../src/lib/liveTourReportSelection.js'
 const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
 Object.defineProperties(globalThis, {
   window: { value: dom.window, configurable: true }, document: { value: dom.window.document, configurable: true },
@@ -21,6 +22,22 @@ const rows = [
   { id: 'a', customer_name: 'Khách Đào', customer_phone: '0901234567', entries: [{ employee_name: 'Mỹ Duyên', service: 'Body 90' }, { employee_name: 'An An', service: 'Foot 60' }] },
   { id: 'b', customer_name: 'Khách Bình', entries: [{ employee_name: 'An An', service: 'Body 90' }] },
 ]
+test('report selection reads only the visible collection and preserves invoice date semantics', () => {
+  const reports = [
+    { id: 'midnight', effective_at: '2026-09-04T17:00:00Z', business_date: '2026-09-04', total: 0 },
+    { id: 'before', effective_at: '2026-09-04T16:59:59Z', total: 100 },
+    { id: 'legacy', business_date: '05/09/2026', tip: 50, combo_sale: true },
+  ]
+  const data = { reports, get invoices() { throw Error('hidden invoices scanned') }, get performance() { throw Error('hidden performance scanned') } }
+  const filters = { date_from: '2026-09-05', date_to: '2026-09-05' }
+  assert.deepEqual(selectReportRows(data, 'revenue', filters).map(row => row.id), ['midnight', 'legacy'])
+  assert.deepEqual(selectReportRows(data, 'employee', filters).map(row => row.id), ['midnight', 'legacy'])
+  assert.deepEqual(selectReportRows(data, 'tip', filters).map(row => row.id), ['legacy'])
+  assert.deepEqual(selectReportRows(data, 'combos', filters).map(row => row.id), ['legacy'])
+  assert.deepEqual(selectReportRows(data, 'history', filters), [])
+  const untimed = [{ get effective_at() { throw Error('date parsed without date filter') } }]
+  assert.equal(filterTourRows(untimed, {}).length, 1)
+})
 test('reports can start with the current Vietnam month selected', () => {
   assert.deepEqual(defaultTourMonthFilters(new Date('2026-09-13T05:00:00Z')), {
     ...EMPTY_TOUR_FILTERS, preset: 'month', date_from: '2026-09-01', date_to: '2026-09-30',

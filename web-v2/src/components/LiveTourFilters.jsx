@@ -9,7 +9,8 @@ import { customerMatches } from '../lib/customerSearch'
 import { customerTicketLabel } from '../lib/liveTourComboBooking'
 import { TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
 
-export default function LiveTourFilters({ value, onChange, rows, customers = [], services = [], employees = [], showTotal = false, showTip = false, showDate = false }) {
+const EMPTY_OPTIONS = []
+export default function LiveTourFilters({ value, onChange, rows, customers = EMPTY_OPTIONS, services = EMPTY_OPTIONS, employees = EMPTY_OPTIONS, showTotal = false, showTip = false, showDate = false }) {
   const options = useMemo(() => {
     const result = tourFilterOptions(rows)
     const merge = (key, labels) => {
@@ -18,8 +19,9 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
       result[key] = [...unique.values()].sort((a, b) => a.label.localeCompare(b.label, 'vi'))
     }
     merge('customer', customers.map((customer) => [customer?.name, customer?.phone].filter(Boolean).join(' - ')))
+    const customerByLabel = new Map(customers.map(item => [[item.name, item.phone].filter(Boolean).join(' - '), item]))
     result.customer = result.customer.map(option => {
-      const customer = customers.find(item => [item.name, item.phone].filter(Boolean).join(' - ') === option.label)
+      const customer = customerByLabel.get(option.label)
       return { ...option, badge: customer ? customerTicketLabel(customer) || 'Còn 0 vé combo' : undefined }
     })
     merge('employee', employees.map(employee => employee?.name || employee?.employee_name || employee?.username))
@@ -27,7 +29,7 @@ export default function LiveTourFilters({ value, onChange, rows, customers = [],
     return result
   }, [customers, rows, services, employees])
   const change = patch => onChange({ ...value, ...patch })
-  const choosePreset = (preset, date) => change({ preset, ...(date ? { date_from: date, date_to: date } : preset === 'custom' ? {} : tourDateRange(preset)) })
+  const choosePreset = (preset, date) => change({ preset, ...(date ? { date, date_from: date, date_to: date } : preset === 'custom' ? {} : { date: '', ...tourDateRange(preset) }) })
   return <UiToolbar data-ui-key="u-aee0d456f8e9" className="live-tour-filters" role="group" aria-label="Bộ lọc danh sách">
     <UiToolbar data-ui-key="u-6cab38b8ea72" className="live-tour-filters-row live-tour-filters-dates">
       <ReportDatePreset key={value.preset + value.date_from + value.date_to} className="live-tour-filters-preset" value={value.preset} presets={TOUR_DATE_PRESETS} onChange={choosePreset}/>
