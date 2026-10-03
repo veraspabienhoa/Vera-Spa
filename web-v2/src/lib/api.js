@@ -357,7 +357,7 @@ export const veraApi = {
     if (search.trim()) params.set('search', search.trim())
     return download(`/v2/payroll/history/export.xlsx?${params}`, 'VERA_BangLuong_BanCu.xlsx')
   },
-  exportPayrollDraft: (body) => download('/v2/payroll/draft/export.xlsx', 'VERA_BangLuong_BanMoi.xlsx', {
+  exportPayrollDraft: (body) => download('/v2/payroll/draft/export.xlsx', 'VERA_BangLuong.xlsx', {
     method: 'POST', body: JSON.stringify(body),
   }),
   payrollDraft: (month, periodNo, latestIfMissing = false) => request(`/v2/payroll/draft?${new URLSearchParams({
