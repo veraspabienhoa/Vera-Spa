@@ -37,7 +37,8 @@ def database(monkeypatch):
                 stt integer,payload jsonb DEFAULT '{}'::jsonb)'''))
             conn.execute(text('''CREATE TABLE vera_dataset_cache(dataset_key text PRIMARY KEY,payload jsonb)'''))
             conn.execute(text('''CREATE TABLE vera_work_schedule(work_date date,employee_username text,employee_name text,
-                department text,shift_code text,start_time text,end_time text)'''))
+                department text,shift_code text,start_time text,end_time text,
+                overtime_shift text, overtime_start_time text, overtime_end_time text)'''))
             conn.execute(text('''CREATE TABLE vera_work_shift_definition(department text,shift_code text,start_time text,end_time text)'''))
             conn.execute(text("""INSERT INTO employees(username,full_name,role,work_shift,shift_start_date,rotation_cycle)
                 VALUES ('Ánh Thử','Nguyễn Ánh Thử','nhanvien','Ca 1','2026-09-01','Cố định (Không đổi)')"""))
@@ -287,3 +288,22 @@ def test_missing_reference_stays_blocking_in_postgres_shadow_preview(database):
     assert result['payroll_and_penalties_written'] is False
     with database.connect() as conn:
         assert conn.execute(text('SELECT payload_json FROM vera_facegate_event')).scalar_one() == encoded
+
+
+def test_saved_overtime_definition_is_used_by_attendance_and_alerts(database):
+    import vera_web_v2_attendance_query_perf as attendance
+    import vera_missing_checkin_notifications as alerts
+    with database.begin() as conn:
+        conn.execute(text("UPDATE employees SET role='locker'"))
+        conn.execute(text("INSERT INTO vera_work_shift_definition VALUES ('locker','Ca 1','09:30','17:30'),('locker','Ca 2','17:30','01:30')"))
+        conn.execute(text("""INSERT INTO vera_work_schedule(work_date,employee_username,employee_name,department,
+            shift_code,start_time,end_time,overtime_shift) VALUES (:day,'Ánh Thử','Nguyễn Ánh Thử','locker','Ca 2','','','TC Ca 1')"""), {'day': DAY})
+        mapped = attendance._schedule_map(conn, DAY, DAY)[(DAY, 'anh thu')]
+        scheduled = alerts._scheduled_rows(conn, DAY)[0]
+        assert (mapped['start_time'], mapped['end_time']) == ('09:30', '01:30')
+        assert (scheduled['start_time'], scheduled['end_time']) == ('09:30', '01:30')
+        rows, issues, _ = fg.adapt_events([event('09:32:05')], MAP,
+            [{'username': 'Ánh Thử', 'full_name': 'Nguyễn Ánh Thử', 'role': 'locker'}],
+            ADDRESS, DAY, DAY, lambda profile, day: attendance._vera_shift_fields(profile, day, [], mapped))
+        assert len(rows) == 1 and not issues
+        assert rows[0]['StartWorkTime'] == '09:30'

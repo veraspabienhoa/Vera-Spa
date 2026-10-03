@@ -1,3 +1,19 @@
+## 03-10-2026 — Locker attendance ignores earlier overtime
+
+Read-only production inspection confirmed that a mapped morning scan can be
+present in FaceGate history while the employee has no entry in attendance when
+the schedule is main Ca 2 plus TC Ca 1. Code reads only the main shift window,
+so that scan is rejected as no_vera_shift. Missing-check-in alerts also read
+only the main start time.
+
+Read overtime fields and the corresponding same-department shift definition
+in the existing schedule queries. Use one shared effective attendance window
+for FaceGate projections, attendance and missing-check-in eligibility. Preserve
+main shift labels, caller-owned connections, mapped identity checks, midnight
+checkout assignment and the 15-minute alert threshold. No production schedules,
+scans, financial records or penalties were edited during diagnosis. The fix
+requires backend deployment and re-projection before production verification.
+
 # Sự cố đăng nhập và tải dữ liệu ngày 13/09/2026
 
 ## 03-10-2026 — Báo cáo: lọc ngày và mở điều chỉnh chậm

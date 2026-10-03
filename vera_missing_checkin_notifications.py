@@ -75,14 +75,21 @@ def _faceid_employees(checkin_df: pd.DataFrame, employee_map: dict[str, str]) ->
 
 
 def _scheduled_rows(conn, work_day: date, employee_username: str = '') -> list[dict[str, Any]]:
-    return [dict(row) for row in conn.execute(text("""
+    rows = [dict(row) for row in conn.execute(text("""
         SELECT ws.employee_username,COALESCE(NULLIF(ws.employee_name,''),ws.employee_username) AS employee_name,
                lower(ws.department) AS department,lower(btrim(e.role)) AS employee_role,ws.shift_code,
-               COALESCE(NULLIF(ws.start_time,''),definition.start_time,'') AS start_time
+               COALESCE(NULLIF(ws.start_time,''),definition.start_time,'') AS start_time,
+               COALESCE(NULLIF(ws.end_time,''),definition.end_time,'') AS end_time,
+               COALESCE(ws.overtime_shift,'') AS overtime_shift,
+               COALESCE(NULLIF(ws.overtime_start_time,''),ot.start_time,'') AS overtime_start_time,
+               COALESCE(NULLIF(ws.overtime_end_time,''),ot.end_time,'') AS overtime_end_time
         FROM vera_work_schedule ws
         JOIN employees e ON lower(btrim(e.username))=lower(btrim(ws.employee_username))
         LEFT JOIN vera_work_shift_definition definition
           ON definition.department=ws.department AND lower(definition.shift_code)=lower(ws.shift_code)
+        LEFT JOIN vera_work_shift_definition ot
+          ON ot.department=ws.department AND ot.shift_code=
+            CASE ws.overtime_shift WHEN 'TC Ca 1' THEN 'Ca 1' WHEN 'TC Ca 2' THEN 'Ca 2' END
         WHERE ws.work_date=:work_day
           AND (:employee_username='' OR lower(btrim(e.username))=:employee_username)
           AND COALESCE(e.payload->>'__deleted','false') <> 'true'
@@ -90,6 +97,10 @@ def _scheduled_rows(conn, work_day: date, employee_username: str = '') -> list[d
                        NULLIF(e.payload->>'employment_status',''),'Đang làm việc')='Đang làm việc'
         ORDER BY ws.department,ws.employee_name,ws.employee_username
     """), {"work_day": work_day, "employee_username": employee_username}).mappings().all()]
+    from vera_schedule_attendance_window import attendance_window
+    for row in rows:
+        row["start_time"], row["end_time"] = attendance_window(row)
+    return rows
 
 
 def _manual_shift_overrides(conn, work_day):
