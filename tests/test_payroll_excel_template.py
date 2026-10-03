@@ -55,7 +55,7 @@ def test_new_payroll_excel_matches_attached_template_after_global_styling():
     worksheet = workbook.active
 
     assert worksheet.title == "Bảng lương bản mới K1 Tháng 9"
-    assert not worksheet.merged_cells.ranges
+    assert str(worksheet.merged_cells) == "B2:C2"
     assert worksheet.max_column == 15
     assert worksheet["A1"].value == "BẢNG LƯƠNG NHÂN VIÊN"
     assert worksheet["A2"].value == "KỲ LƯƠNG"
@@ -76,8 +76,13 @@ def test_new_payroll_excel_matches_attached_template_after_global_styling():
     assert worksheet["M4"].number_format == "#,##0"
     assert worksheet["N4"].value == "0019074348179017"
     assert worksheet["N4"].number_format == "@"
-    assert worksheet.column_dimensions["A"].width == 13.44140625
+    assert worksheet.column_dimensions["A"].width == 10.14
     assert worksheet.column_dimensions["O"].width == 46
+    for letter in "DEFGHIJKLM":
+        assert worksheet.column_dimensions[letter].width == 11.14
+    assert worksheet["B2"].alignment.horizontal == "center"
+    for letter in "DEFGHIJKL":
+        assert worksheet[f"{letter}5"].value == f"=SUM({letter}4:{letter}4)"
     assert worksheet.row_dimensions[4].height == 21
     workbook.close()
 

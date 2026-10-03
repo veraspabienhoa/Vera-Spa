@@ -4,6 +4,7 @@ from __future__ import annotations
 from vera_web_v2_hr import TIP_SQL, DEPARTMENT_SQL
 
 import calendar
+from copy import copy
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import formataddr
@@ -870,10 +871,9 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
     ws["A2"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     if len(fields) > 1:
         ws["B2"] = f"Từ ngày {start.strftime('%d-%m-%Y')} đến {end.strftime('%d-%m-%Y')}"
-        for column_index in range(2, len(fields)):
-            ws.cell(2, column_index).alignment = Alignment(
-                horizontal="centerContinuous", vertical="center", wrap_text=True,
-            )
+        if len(fields) >= 3:
+            ws.merge_cells("B2:C2")
+        ws["B2"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         ws.cell(2, len(fields)).alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[2].height = 24
 
@@ -897,7 +897,7 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
         ws.append(values)
 
     template_widths = {
-        "TT": 13.44140625,
+        "TT": 10.14,
         "Tên Hệ thống": 16.44140625,
         "Họ và tên": 27,
         "Tiền Lương": 12,
@@ -926,7 +926,7 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
         elif field == "Số tài khoản ngân hàng":
             for cell in data_cells:
                 cell.number_format = "@"
-        ws.column_dimensions[letter].width = template_widths.get(field, 18)
+        ws.column_dimensions[letter].width = 11.14 if 4 <= column_index <= 13 else template_widths.get(field, 18)
 
     if ws.max_row > header_row:
         ws.auto_filter.ref = f"A{header_row}:{last_column}{ws.max_row}"
@@ -935,16 +935,25 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
     data_end = ws.max_row
     if "Số tiền thực nhận" in fields:
         total_row = data_end + 1
-        net_column = get_column_letter(fields.index("Số tiền thực nhận") + 1)
         ws.cell(total_row, 1, "Tổng số tiền")
-        total = ws.cell(total_row, fields.index("Số tiền thực nhận") + 1,
-                        f'=SUMIF({net_column}4:{net_column}{data_end},">=0",{net_column}4:{net_column}{data_end})' if records else 0)
-        total.number_format = "#,##0"
-        total.alignment = Alignment(horizontal="right", vertical="center")
+        for column_index, field in enumerate(fields, 1):
+            if field not in MONEY_FIELDS:
+                continue
+            letter = get_column_letter(column_index)
+            formula = (f'=SUMIF({letter}4:{letter}{data_end},">=0",{letter}4:{letter}{data_end})'
+                       if field == "Số tiền thực nhận" else f'=SUM({letter}4:{letter}{data_end})')
+            total = ws.cell(total_row, column_index, formula if records else 0)
+            total.number_format = "#,##0"
+            total.alignment = Alignment(horizontal="right", vertical="center")
         for cell in ws[total_row]:
             cell.font = white_bold
             cell.fill = dark_fill
         ws.row_dimensions[total_row].height = 24
+    for row in ws.iter_rows():
+        for cell in row:
+            alignment = copy(cell.alignment)
+            alignment.vertical = "center"
+            cell.alignment = alignment
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.fitToWidth = 1
@@ -1226,7 +1235,7 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         ]
         if str(ident.role or "").lower() != "admin":
             fields = [field for field in fields if field not in {"Số tài khoản ngân hàng", "Tên ngân hàng"}]
-        filename = f"VERA_BangLuong_BanMoi_{label.replace(' ', '_').replace('/', '-')}.xlsx"
+        filename = f"VERA_BangLuong_{label.replace(' ', '_').replace('/', '-')}.xlsx"
         return StreamingResponse(
             BytesIO(_new_payroll_workbook(records, fields, body.start, body.end)),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
