@@ -160,7 +160,8 @@ def test_other_operational_actions_roll_day_without_changing_configuration(datab
         assert len(state['invoices']) == 1 and state['invoices'][0]['total'] == 100
 
 
-def test_1000_counter_transition_is_not_bypassed(database, booking_api):
+@pytest.mark.parametrize("action", ["booking", "start"])
+def test_1000_counter_transition_recovers_without_projection(database, booking_api, action):
     client, _ = booking_api
     revision = seed(database)
     with database.begin() as conn:
@@ -168,11 +169,32 @@ def test_1000_counter_transition_is_not_bypassed(database, booking_api):
         state, _, _ = store.read(conn)
         changed = deepcopy(state)
         changed['counter_business_date'] = (NOW.date() - timedelta(days=1)).isoformat()
+        for row in changed['employees']:
+            row.update(tour_count=4, request_count=2, break_count=3)
+        changed['employees'][1].update(status='Đang thực hiện', service='90 PR VIP', room='21.1',
+                                         started_at=live._iso(NOW.replace(hour=9)))
+        if action == 'start':
+            changed['employees'][0].update(status='Đang chờ', service='90 PR VIP', room='20.1', duration=90)
         revision = store.write(conn, state, changed, 'fixture')
-    before = saved(database)
-    response = client.post('/v2/live-tour/action', json=body(revision))
-    assert response.status_code == 409 and 'chuyển ngày' in response.text
-    assert saved(database) == before
+    before = saved(database)[0]
+    request = body(revision)
+    request['action'] = action
+    response = client.post('/v2/live-tour/action', json=request)
+    assert response.status_code == 200, response.text
+    assert client.post('/v2/live-tour/action', json=request).json()['duplicate'] is True
+    after, current, _ = saved(database)
+    assert current == revision + 1
+    assert after['counter_business_date'] == NOW.date().isoformat()
+    for row in after['employees'][1:]:
+        assert (row['tour_count'], row['request_count'], row['break_count']) == (0, 0, 0)
+    for key in ('status', 'service', 'room', 'started_at'):
+        assert after['employees'][1][key] == before['employees'][1][key]
+    for key in ('invoices', 'reports', 'customers', 'rooms', 'services'):
+        assert after[key] == before[key]
+    # Starting immediately after the rollover must no longer be blocked.
+    if action == 'booking':
+        request.update(action='start', expected_revision=current, idempotency_key='start-after-rollover')
+        assert client.post('/v2/live-tour/action', json=request).status_code == 200
 
 
 def test_disjoint_actions_at_cutoff_do_not_rewind_business_date(database):
@@ -200,9 +222,18 @@ def test_disjoint_actions_at_cutoff_do_not_rewind_business_date(database):
     assert all(row['status'] == 'Đang chờ' for row in state['employees'][:2])
 
 
-def test_rollover_write_failure_rolls_back_booking_and_receipt(database, booking_api, monkeypatch):
+@pytest.mark.parametrize('counter_pending', [False, True])
+def test_rollover_write_failure_rolls_back_booking_and_receipt(database, booking_api, monkeypatch, counter_pending):
     client, _ = booking_api
     revision = seed(database)
+    if counter_pending:
+        with database.begin() as conn:
+            store.lock(conn)
+            state, _, _ = store.read(conn)
+            changed = deepcopy(state)
+            changed['counter_business_date'] = (NOW.date() - timedelta(days=1)).isoformat()
+            changed['employees'][1]['tour_count'] = 4
+            revision = store.write(conn, state, changed, 'fixture')
     before = saved(database)
     write = store.write
 

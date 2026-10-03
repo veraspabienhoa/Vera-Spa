@@ -220,6 +220,15 @@ def begin_action(conn, action, payload, expected_revision, idempotency_key, coun
     if compact and action in AREA_ACTIONS:
         discovery = AREA_COLLECTIONS
     state, _, _ = read(conn, collections=discovery)
+    if state.get('counter_business_date') != counter_day:
+        # The projection worker may be delayed. Complete the 10:00 rollover
+        # with this action instead of rejecting every retry indefinitely.
+        # Resetting counters touches all employees: upgrade the fence before
+        # resource locks, and use a complete snapshot for the atomic write.
+        # Nonblocking upgrade fails safely if another action holds the fence.
+        lock(conn)
+        independent = False
+        compact = False
     resources = action_resources(state, action, payload, idempotency_key)
     try:
         concurrency.lock_resources(conn, resources, wait=False)
