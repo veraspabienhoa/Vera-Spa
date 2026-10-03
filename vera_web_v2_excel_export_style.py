@@ -69,7 +69,7 @@ def style_workbook_bytes(payload: bytes) -> bytes:
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
         ws.freeze_panes = f"A{header_row + 1}"
-        if ws.max_column >= 1 and ws.max_row >= header_row:
+        if not ws.auto_filter.ref and ws.max_column >= 1 and ws.max_row >= header_row:
             ws.auto_filter.ref = f"A{header_row}:{get_column_letter(ws.max_column)}{ws.max_row}"
 
         for column_index in range(1, ws.max_column + 1):
