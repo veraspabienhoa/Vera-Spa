@@ -300,6 +300,9 @@ def test_saved_overtime_definition_is_used_by_attendance_and_alerts(database):
             shift_code,start_time,end_time,overtime_shift) VALUES (:day,'Ánh Thử','Nguyễn Ánh Thử','locker','Ca 2','','','TC Ca 1')"""), {'day': DAY})
         mapped = attendance._schedule_map(conn, DAY, DAY)[(DAY, 'anh thu')]
         scheduled = alerts._scheduled_rows(conn, DAY)[0]
+        from vera_web_v2_department_attendance import scheduled_assignment
+        department = scheduled_assignment(conn, DAY, 'Ánh Thử')
+        assert (department['start_time'], department['end_time']) == ('09:30', '01:30')
         assert (mapped['start_time'], mapped['end_time']) == ('09:30', '01:30')
         assert (scheduled['start_time'], scheduled['end_time']) == ('09:30', '01:30')
         rows, issues, _ = fg.adapt_events([event('09:32:05')], MAP,

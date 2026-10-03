@@ -41,12 +41,17 @@ class Connection:
         return self
     def all(self):
         return self.rows
+    def first(self):
+        return self.rows[0] if self.rows else None
 
 
 def test_attendance_and_notification_readers_use_same_overtime_window():
     conn = Connection([schedule()])
     result = attendance._schedule_map(conn, DAY, DAY)[(DAY, "locker test")]
     alert = alerts._scheduled_rows(conn, DAY)[0]
+    from vera_web_v2_department_attendance import scheduled_assignment
+    department = scheduled_assignment(conn, DAY, "Locker Test")
+    assert (department["start_time"], department["end_time"]) == ("09:30", "01:30")
     assert attendance._vera_shift_fields({"role": "locker"}, DAY, [], result) == ("Ca 2", "09:30", "01:30")
     assert (alert["start_time"], alert["end_time"]) == ("09:30", "01:30")
     assert all("ot.department=ws.department" in statement and "TC Ca 1" in statement for statement in conn.statements)
