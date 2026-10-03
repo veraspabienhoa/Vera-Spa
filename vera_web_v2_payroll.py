@@ -1053,7 +1053,7 @@ def _read_draft_workbook(content: bytes) -> tuple[list[dict[str, Any]], set[str]
         period_ranges: set[tuple[date, date]] = set()
         for values in source_rows[:header_index]:
             text_value = " ".join(str(value or "").strip() for value in values if str(value or "").strip())
-            match = re.search(r"Từ ngày\s+(\d{2}/\d{2}/\d{4})\s+đến\s+(\d{2}/\d{2}/\d{4})", text_value, re.IGNORECASE)
+            match = re.search(r"Từ ngày\s+(\d{2}[-/]\d{2}[-/]\d{4})\s+đến\s+(\d{2}[-/]\d{2}[-/]\d{4})", text_value, re.IGNORECASE)
             if match:
                 parsed_start, parsed_end = _parse_date(match.group(1)), _parse_date(match.group(2))
                 if parsed_start and parsed_end:
@@ -1066,6 +1066,8 @@ def _read_draft_workbook(content: bytes) -> tuple[list[dict[str, Any]], set[str]
             if not any(str(value or "").strip() for value in item.values()):
                 continue
             employee_name = str(item.get("Tên Hệ thống") or "").strip()
+            if str(item.get("TT") or "").strip() == "Tổng số tiền" and not employee_name:
+                continue
             if not employee_name:
                 raise HTTPException(400, f"Dòng {row_number} chưa có Tên Hệ thống.")
             item["Tên Hệ thống"] = employee_name

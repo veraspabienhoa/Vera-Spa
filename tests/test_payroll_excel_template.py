@@ -4,7 +4,7 @@ from io import BytesIO
 from openpyxl import load_workbook
 
 from vera_web_v2_excel_export_style import style_workbook_bytes
-from vera_web_v2_payroll import _new_payroll_workbook
+from vera_web_v2_payroll import _new_payroll_workbook, _read_draft_workbook
 
 
 FIELDS = [
@@ -105,3 +105,15 @@ def test_a4_landscape_print_settings_and_positive_net_total_survive_styling():
     assert ws.page_margins.top == ws.page_margins.bottom == 0.75
     assert str(ws.print_area).endswith('$A$1:$O$8')
     workbook.close()
+
+
+def test_export_with_totals_and_merged_period_can_be_imported_again():
+    start, end = date(2026, 9, 16), date(2026, 9, 30)
+    records = [{"TT": 1, "Tên Hệ thống": "Staff A", "Tiền Lương": 1000000,
+                "Số tiền thực nhận": 900000}]
+    raw = style_workbook_bytes(_new_payroll_workbook(records, FIELDS, start, end))
+    rows, labels, ranges = _read_draft_workbook(raw)
+    assert len(rows) == 1
+    assert rows[0]["Tên Hệ thống"] == "Staff A"
+    assert rows[0]["Số tiền thực nhận"] == 900000
+    assert ranges == {(start, end)}
