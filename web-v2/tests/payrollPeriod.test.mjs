@@ -25,7 +25,8 @@ test('empty current period stays selected until the saved draft is explicitly re
    const u=new URL(url);requests.push(u)
    const old=u.searchParams.get('month')==='2026-08'&&u.searchParams.get('period_no')==='1',fallback=u.searchParams.get('latest_if_missing')==='true'
    let body={}
-   if(u.pathname.endsWith('/draft/restore')){body={draft:savedDraft?{...oldDraft,saved_at:'',saved_by:''}:null,has_saved_draft:false,selected_month:'2026-08',selected_period_no:1};savedDraft=false}
+   if(u.pathname.endsWith('/calculate-from-tips')){body=oldDraft}
+   else if(u.pathname.endsWith('/draft/restore')){body={draft:savedDraft?oldDraft:null,has_saved_draft:savedDraft,selected_month:'2026-08',selected_period_no:1}}
    else if(u.pathname.endsWith('/draft')&&options.method==='PUT'){savedDraft=true;body={draft:oldDraft,message:'Đã lưu'}}
    else if(u.pathname.endsWith('/draft'))body={draft:savedDraft&&(old||fallback)?oldDraft:null,fallback_used:fallback,selected_month:'2026-08',selected_period_no:1}
    else if(u.pathname.endsWith('/history'))body={records:[],batches:[],employees:[]}
@@ -51,10 +52,10 @@ test('empty current period stays selected until the saved draft is explicitly re
  assert.equal(restore.disabled,false)
  await act(async()=>restore.click())
  assert.equal(month.value,'2026-08');assert.equal(period.value,'1')
- assert.match(document.querySelector('.payroll-draft-toolbar').textContent,/Chưa lưu trên máy chủ/)
- assert.equal(savedDraft,false)
- assert.equal(restore.disabled,true)
- assert.equal(restore.classList.contains('primary-button'),false)
+ assert.match(document.querySelector('.payroll-draft-toolbar').textContent,/Đã lưu bởi admin/)
+ assert.equal(savedDraft,true)
+ assert.equal(restore.disabled,false)
+ assert.equal(restore.classList.contains('primary-button'),true)
  assert.match(document.querySelector('.payroll-draft-panel').textContent,/Mỹ Duyên/)
  assert.match(document.body.textContent,/Đã lấy lại bảng lương Kỳ 1 - Tháng 8\/2026/)
  assert.ok(requests.some(u=>u.pathname.endsWith('/draft/restore')))
@@ -65,4 +66,9 @@ test('empty current period stays selected until the saved draft is explicitly re
  assert.equal(savedDraft,true)
  assert.equal(restore.disabled,false)
  assert.ok(restore.classList.contains('primary-button'))
+ savedDraft=false
+ const putsBefore=requests.filter(u=>u.pathname.endsWith('/draft')).length
+ await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Tính lương từ TIP')).click())
+ assert.equal(savedDraft,true)
+ assert.ok(requests.filter(u=>u.pathname.endsWith('/draft')).length>putsBefore)
 })

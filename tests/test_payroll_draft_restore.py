@@ -1,4 +1,4 @@
-"""Restore consumes only the selected saved draft in the caller transaction."""
+"""Restore preserves the saved draft in the caller transaction."""
 from datetime import date
 from types import SimpleNamespace
 from contextlib import contextmanager
@@ -59,7 +59,7 @@ def draft(start='2026-08-01', end='2026-08-15', salary=100):
             'saved_at': '2026-10-02T16:00:00Z', 'saved_by': 'admin'}
 
 
-def test_restore_fallback_returns_rows_and_deletes_only_that_period(monkeypatch):
+def test_restore_fallback_returns_latest_rows_and_preserves_both_periods(monkeypatch):
     key = payroll._draft_key(date(2026,8,1), date(2026,8,15))
     other_key = payroll._draft_key(date(2026,7,1), date(2026,7,15))
     saved = {key: draft(), other_key: draft('2026-07-01','2026-07-15')}
@@ -69,11 +69,11 @@ def test_restore_fallback_returns_rows_and_deletes_only_that_period(monkeypatch)
     assert result['selected_month'] == '2026-08'
     assert result['selected_period_no'] == 1
     assert result['draft']['rows'][0]['Tiền Lương'] == 800
-    assert result['draft']['saved_at'] == ''
+    assert result['draft']['saved_at'] == '2026-10-02T16:00:00Z'
     assert result['has_saved_draft'] is True
-    assert key not in saved
+    assert key in saved
     assert other_key in saved
-    assert events.index(('lock','Kỳ 1 - Tháng 8/2026')) < events.index(('delete', key))
+    assert not any(action == 'delete' for action, _ in events)
     assert events[-1][0] == 'commit'
 
 
