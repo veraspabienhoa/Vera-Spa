@@ -24,6 +24,7 @@ from fastapi import Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.worksheet.page import PageMargins
 from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -868,7 +869,7 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
     ws["A2"] = "KỲ LƯƠNG"
     ws["A2"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     if len(fields) > 1:
-        ws["B2"] = f"Từ ngày {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}"
+        ws["B2"] = f"Từ ngày {start.strftime('%d-%m-%Y')} đến {end.strftime('%d-%m-%Y')}"
         for column_index in range(2, len(fields)):
             ws.cell(2, column_index).alignment = Alignment(
                 horizontal="centerContinuous", vertical="center", wrap_text=True,
@@ -931,6 +932,26 @@ def _new_payroll_workbook(records: list[dict[str, Any]], fields: list[str], star
         ws.auto_filter.ref = f"A{header_row}:{last_column}{ws.max_row}"
         for row_index in range(header_row + 1, ws.max_row + 1):
             ws.row_dimensions[row_index].height = 21
+    data_end = ws.max_row
+    if "Số tiền thực nhận" in fields:
+        total_row = data_end + 1
+        net_column = get_column_letter(fields.index("Số tiền thực nhận") + 1)
+        ws.cell(total_row, 1, "Tổng số tiền")
+        total = ws.cell(total_row, fields.index("Số tiền thực nhận") + 1,
+                        f'=SUMIF({net_column}4:{net_column}{data_end},">=0",{net_column}4:{net_column}{data_end})' if records else 0)
+        total.number_format = "#,##0"
+        total.alignment = Alignment(horizontal="right", vertical="center")
+        for cell in ws[total_row]:
+            cell.font = white_bold
+            cell.fill = dark_fill
+        ws.row_dimensions[total_row].height = 24
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_margins = PageMargins(left=0.25, right=0.25, top=0.75, bottom=0.75, header=0.3, footer=0.3)
+    ws.print_area = f"A1:{last_column}{ws.max_row}"
     ws.freeze_panes = "A4"
     stream = BytesIO()
     wb.save(stream)
@@ -1470,6 +1491,9 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 ON CONFLICT(dataset_key) DO UPDATE SET payload=EXCLUDED.payload,row_count=EXCLUDED.row_count,
                   checksum=EXCLUDED.checksum,source_version='web_v2',updated_at=NOW(),expires_at=EXCLUDED.expires_at
             """), {"payload": serialized, "count": len(merged), "checksum": checksum})
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:payroll-draft:' || :label))"), {"label": label})
+            conn.execute(text("DELETE FROM vera_app_setting WHERE category='payroll' AND setting_key=:key"),
+                         {"key": _draft_key(body.start, body.end)})
             tx.commit()
         except Exception:
             if tx.is_active:

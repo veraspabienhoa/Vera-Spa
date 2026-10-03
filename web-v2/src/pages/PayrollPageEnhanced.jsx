@@ -116,6 +116,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const [obligations, setObligations] = useState([])
   const [obligationGroups, setObligationGroups] = useState([])
   const [obligationForm, setObligationForm] = useState({ employee_name: '', amount: '', content: 'Chưa hoàn thành nghĩa vụ Vi phạm', due_from: '' })
+  const [configOpen, setConfigOpen] = useState(false)
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
   const [emailProgress, setEmailProgress] = useState(null)
@@ -406,7 +407,6 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
       source_name: draft.source_name || 'TIP nhân viên từ Live Tour',
       rows: draft.rows,
     })
-    try { await veraApi.deletePayrollDraft(month, periodNo) } catch { /* official payroll is already saved */ }
     setDraft(null)
     setSavedDraftAvailable(false)
     setSelected([])
@@ -616,7 +616,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : notice.type === 'warning' ? 'warning-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
 
     {canCalculate && <section data-ui-key="u-856731095818" className="panel payroll-calculate-panel">
-      <div data-ui-key="u-7722410132ee" className="panel-title-row"><div><h2>TÍNH BẢNG LƯƠNG</h2><p>Kỳ 1 là 01–15; Kỳ 2 là 16–cuối tháng. Nợ đang mở được tự đưa vào “Nợ vi phạm kỳ trước” trong phạm vi thực nhận dương.</p></div></div>
+      <div data-ui-key="u-7722410132ee" className="panel-title-row"><div><h2>TÍNH BẢNG LƯƠNG</h2></div></div>
       <UiToolbar data-ui-key="u-8d0f10645723" className="data-toolbar payroll-period-controls">
         <label>Tháng lương<input type="month" value={month} disabled={isBusy} onChange={(event) => { setMonth(event.target.value) }} /></label>
         <label>Kỳ lương<select value={periodNo} disabled={isBusy} onChange={(event) => { setPeriodNo(Number(event.target.value)) }}><option value={1}>Kỳ 1</option><option value={2}>Kỳ 2</option></select></label>
@@ -668,7 +668,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     </section>}
 
     {canManageObligations && <section data-ui-key="u-ee60725600e2" className="panel">
-      <div data-ui-key="u-a2e96dc0ba72" className="panel-title-row"><div><h2>NỢ VÀ NGHĨA VỤ CHƯA HOÀN THÀNH</h2><p>Khoản nợ còn mở được tự đối trừ từ thực nhận dương, kể cả khi ngày bắt đầu trừ ở kỳ sau. Vi phạm vừa chuyển từ kỳ đang tính được giữ lại cho kỳ kế tiếp.</p></div></div>
+      <div data-ui-key="u-a2e96dc0ba72" className="panel-title-row"><div><h2>NỢ VÀ NGHĨA VỤ CHƯA HOÀN THÀNH</h2></div></div>
       <form className="payroll-obligation-form" onSubmit={addObligation}><label>Nhân viên<input required list="payroll-employee-options" disabled={isBusy} value={obligationForm.employee_name} onChange={(event) => setObligationForm({ ...obligationForm, employee_name: event.target.value })} /></label><label>Số tiền<VeraMoneyInput required disabled={isBusy} value={obligationForm.amount} onChange={(event) => setObligationForm({ ...obligationForm, amount: event.target.value })} /></label><label>Bắt đầu trừ từ<VeraDateInput required aria-label="Bắt đầu trừ từ" disabled={isBusy} value={obligationForm.due_from} onChange={(event) => setObligationForm({ ...obligationForm, due_from: event.target.value })} /></label><label>Nội dung<input required disabled={isBusy} value={obligationForm.content} onChange={(event) => setObligationForm({ ...obligationForm, content: event.target.value })} /></label><button data-ui-key="u-ef6cecfbc3c8" data-ui-label-default="Thêm nghĩa vụ" className="primary-button" disabled={isBusy}><Plus size={16} /><UiCustomText uiKey="u-ef6cecfbc3c8"> Thêm nghĩa vụ</UiCustomText></button></form>
       <datalist id="payroll-employee-options">{Array.from(new Set([...(history.employees || []), ...draftRows.map((row) => row['Tên Hệ thống'])])).map((name) => <option key={name}>{name}</option>)}</datalist>
       <PayrollObligationTable groups={obligationGroups} obligations={obligations} onRemove={removeObligation} disabled={isBusy} />
@@ -697,12 +697,15 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     </section>
 
     {canEditConfig && <section data-ui-key="u-6d5ef6daf882" className="panel payroll-default-config-panel">
-      <div data-ui-key="u-238aac3ce39b" className="panel-title-row"><div><h2><Settings2 size={17} /> CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH</h2><p>Đã chuyển xuống dưới LỊCH SỬ BẢNG LƯƠNG. Các mức này áp dụng khi tính bảng lương mới.</p></div><button data-ui-key="u-1fc73aabf48a" data-ui-label-default="Lưu cài đặt" className="primary-button" onClick={saveConfig} disabled={isBusy}><Save size={16} /><UiCustomText uiKey="u-1fc73aabf48a"> Lưu cài đặt</UiCustomText></button></div>
+      <div data-ui-key="u-238aac3ce39b" className="panel-title-row"><h2><Settings2 size={17} /> CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH</h2><button className="secondary-button" type="button" aria-expanded={configOpen} onClick={() => setConfigOpen(value => !value)}>{configOpen ? 'Ẩn cài đặt' : 'Hiện cài đặt'}</button></div>
+      {configOpen && <>
       <div className="payroll-config-grid">
         <label>Chi phí sinh hoạt<VeraMoneyInput disabled={isBusy} value={config.default_living_expense} onChange={(event) => setConfig({ ...config, default_living_expense: Number(event.target.value) })} /></label>
         <label>Hỗ trợ Locker<VeraMoneyInput disabled={isBusy} value={config.default_locker_support} onChange={(event) => setConfig({ ...config, default_locker_support: Number(event.target.value) })} /></label>
         <label>Tiền trách nhiệm Leader (Kỳ 2)<VeraMoneyInput disabled={isBusy} value={config.leader_responsibility_allowance} onChange={(event) => setConfig({ ...config, leader_responsibility_allowance: Number(event.target.value) })} /></label>
       </div>
+      <button data-ui-key="u-1fc73aabf48a" data-ui-label-default="Lưu cài đặt" className="primary-button" onClick={saveConfig} disabled={isBusy}><Save size={16} /><UiCustomText uiKey="u-1fc73aabf48a"> Lưu cài đặt</UiCustomText></button>
+      </>}
     </section>}
 
     {isAdmin && canEditConfig && activeTab === 'accumulation' && <PayrollPersonalTracking user={user} unified refunds={accumulationRefunds} formerEmployees={formerEmployees} onRemoveRefund={removeAccumulationRefund} disabled={isBusy}>
