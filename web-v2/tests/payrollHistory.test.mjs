@@ -26,7 +26,7 @@ test('history has twelve columns, full mobile details, filtered totals and safe 
  const panel=document.querySelector('.payroll-history-panel'),table=panel.querySelector('table')
  assert.equal(table.querySelectorAll('thead th').length,12)
  assert.equal(table.querySelectorAll('tbody tr').length,3)
- const expected=['Gửi','Nhân viên','Lương','Trách nhiệm / hỗ trợ','Hoàn trả tích lũy','Tích lũy','Phí sinh hoạt','Vi phạm kỳ này','Nợ vi phạm kỳ trước','Tiền ứng','Hỗ trợ Locker','Thực nhận']
+ const expected=['Gửi','Nhân viên','Lương','Trách nhiệm-hỗ trợ','Hoàn trả tích lũy','Tích lũy','Phí sinh hoạt','Vi phạm kỳ này','Nợ vi phạm kỳ trước','Tiền ứng','Hỗ trợ Locker','Thực nhận']
  assert.deepEqual([...table.querySelectorAll('thead th')].map(th=>th.textContent),expected)
  assert.ok(table.textContent.includes('a@example.test'));assert.ok(table.textContent.includes('Kỳ 2 tháng 9'))
  assert.equal(panel.querySelector('.payroll-history-mobile .payroll-history-summary').children.length,10)
