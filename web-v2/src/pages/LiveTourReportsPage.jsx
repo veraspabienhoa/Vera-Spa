@@ -12,7 +12,8 @@ import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
 import LiveTourEmployeeRevenueBreakdown from '../components/LiveTourEmployeeRevenueBreakdown'
 import LiveTourPaidInvoiceDialog from '../components/LiveTourPaidInvoiceDialog'
 import LiveTourReceipt from '../components/LiveTourReceipt'
-import { defaultTourYesterdayFilters, filterTourRows } from '../lib/liveTourFilters'
+import { defaultTourYesterdayFilters } from '../lib/liveTourFilters'
+import { isComboReport, selectReportRows } from '../lib/liveTourReportSelection'
 import { reportInvoiceMetrics } from '../lib/liveTourReportMetrics'
 import { invoiceMoneyValues } from '../lib/liveTourInvoiceMoney'
 import './SpaManagementPage.css'
@@ -37,6 +38,7 @@ export default function LiveTourReportsPage({ user }) {
   const [context, setContext] = useState(null)
   const [receipt, setReceipt] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [historyRefresh, setHistoryRefresh] = useState(0)
   const [historyNotice, setHistoryNotice] = useState('')
   const [deletingHistory, setDeletingHistory] = useState(false)
@@ -45,8 +47,20 @@ export default function LiveTourReportsPage({ user }) {
   const historyDateTo = filters.date_to
   const historyEmployee = filters.employee
   const running = useRef(false), keys = useRef(new Map())
-  const load = useCallback(async () => { const result = await veraApi.liveTourReports(); setData(result) }, [])
-  useEffect(() => { if (allowed) load().catch(e => setError(e.message)) }, [allowed, load])
+  const loadVersion = useRef(0)
+  const load = useCallback(async () => {
+    const version = ++loadVersion.current
+    setLoading(true)
+    try {
+      const result = await veraApi.liveTourReports()
+      if (version === loadVersion.current) setData(result)
+    } catch (e) { if (version === loadVersion.current) throw e }
+    finally { if (version === loadVersion.current) setLoading(false) }
+  }, [])
+  useEffect(() => {
+    if (allowed) load().catch(e => setError(e.message))
+    return () => { loadVersion.current += 1 }
+  }, [allowed, load, user?.employee_username])
   useEffect(() => {
     if (!allowed || tab !== 'history') return undefined
     let active = true
@@ -75,45 +89,35 @@ export default function LiveTourReportsPage({ user }) {
     const signature = JSON.stringify([mapped, payload])
     if (!keys.current.has(signature)) keys.current.set(signature, crypto.randomUUID())
     try {
-      const result = await veraApi.liveTourAction({ action: mapped, payload, expected_revision: options.expectedRevision, idempotency_key: keys.current.get(signature) })
+      const result = await veraApi.liveTourAction({ action: mapped, payload, expected_revision: options.expectedRevision, idempotency_key: keys.current.get(signature), response_view: 'receipt' })
       keys.current.delete(signature);
-      try { await load() } catch { setError('Đã lưu điều chỉnh. Bấm Làm mới để tải dữ liệu mới nhất.') }
+      // The receipt confirms a committed write. Close the editor immediately;
+      // fetching the report is a separate read and cannot turn success into failure.
+      load().catch(() => setError('Đã lưu điều chỉnh. Bấm Làm mới để tải dữ liệu mới nhất.'))
       return result
     } catch (e) { setError(e.message); return null }
     finally { running.current = false; setBusy(false) }
   }
   const invoiceById = useMemo(() => new Map(data.invoices.map(invoice => [invoice.id, invoice])), [data.invoices])
-  const appliedFilters = { ...filters, total_amount: tab === 'revenue' ? filters.total_amount : '', tip_amount: tab === 'tip' ? filters.tip_amount : '' }
-  const invoices = filterTourRows(data.invoices, appliedFilters, true)
-  const reports = filterTourRows(data.reports, appliedFilters, true)
-  const performance = filterTourRows(data.performance || [], appliedFilters)
-  const performanceRows = performance.filter(row => {
-    if (performanceTiming === 'all') return true
-    const delta = Number(row.completion_delta_minutes)
-    if (performanceTiming === 'early') return delta < 0
-    if (performanceTiming === 'late') return delta > 0
-    return delta === 0
-  })
-  const rows = tab === 'history' ? history.rows : tab === 'performance' ? performanceRows : tab === 'tip'
-    ? reports.filter(row => Number(row.tip || 0) > 0)
-    : tab === 'invoices' ? invoices
-      : reports.filter(row => tab !== 'combos' || row.combo_sale || row.combo_units || /combo/i.test(row.service || ''))
+  const appliedFilters = useMemo(() => ({ ...filters, total_amount: tab === 'revenue' ? filters.total_amount : '', tip_amount: tab === 'tip' ? filters.tip_amount : '' }), [filters, tab])
+  const rows = useMemo(() => tab === 'history' ? history.rows : selectReportRows(data, tab, appliedFilters, performanceTiming), [data, tab, appliedFilters, performanceTiming, history.rows])
+  const filterOptionsRows = useMemo(() => tab === 'history' ? history.rows : tab === 'performance' ? data.performance || [] : tab === 'combos' ? data.reports.filter(isComboReport) : data.reports, [data, history.rows, tab])
   const pagination = useTablePage(rows, JSON.stringify([tab, filters, performanceTiming]))
-  const reportInvoiceCount = new Set(rows.map(row => String(row?.invoice_id || row?.bill_no || '').trim()).filter(Boolean)).size
-  const invoiceMetrics = reportInvoiceMetrics(rows, invoiceById)
+  const reportInvoiceCount = useMemo(() => new Set(rows.map(row => String(row?.invoice_id || row?.bill_no || '').trim()).filter(Boolean)).size, [rows])
+  const invoiceMetrics = useMemo(() => reportInvoiceMetrics(rows, invoiceById), [rows, invoiceById])
   const grants = data.capabilities
   const refresh = async () => { setBusy(true); setError(''); try { await load() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   if (!allowed) return <div data-ui-key="u-58587e19c2e9" className="panel">Tài khoản chưa có quyền Xem báo cáo.</div>
   return <div className="feature-page spa-page live-tour-reports-page">
-    <div data-ui-key="u-9e11e35c221d" className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Báo cáo</h1><p>Hóa đơn, doanh thu, TIP và các giao dịch combo.</p></div><button data-ui-key="u-801a859b2628" data-ui-label-default="Làm mới" className="secondary-button" disabled={busy} onClick={refresh}><UiCustomText uiKey="u-801a859b2628">Làm mới</UiCustomText></button></div>
-    <StableFeedback>{error && <p className="error-box" role="alert">{error}</p>}</StableFeedback>
+    <div data-ui-key="u-9e11e35c221d" className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Báo cáo</h1><p>Hóa đơn, doanh thu, TIP và các giao dịch combo.</p></div><button data-ui-key="u-801a859b2628" data-ui-label-default="Làm mới" className="secondary-button" disabled={busy || loading} onClick={refresh}><UiCustomText uiKey="u-801a859b2628">Làm mới</UiCustomText></button></div>
+    <StableFeedback>{loading && <p role="status">Đang cập nhật báo cáo…</p>}{error && <p className="error-box" role="alert">{error}</p>}</StableFeedback>
     <section data-ui-key="u-cc5b99345633" className="panel spa-content">
       <UiToolbar data-ui-key="u-ad5f380e835e" className="spa-tabs" role="tablist" aria-label="Loại báo cáo">{[['revenue', 'Doanh thu'], ['employee', 'Theo nhân viên'], ...(isAdmin ? [['tip', 'Tiền Tip'], ['performance', 'Thời gian dịch vụ']] : []), ['combos', 'Combo'], ['history', 'Lịch sử Live Tour']].map(([key,label]) => <button data-ui-key="u-a7458184ac7f" key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}</UiToolbar>
-      <div className={tab === 'history' ? 'history-filter-scope' : ''}><LiveTourFilters showDate={tab !== 'history'} value={filters} onChange={setFilters} showTotal={tab === 'revenue'} showTip={tab === 'tip'} rows={tab === 'history' ? history.rows : tab === 'performance' ? data.performance || [] : tab === 'combos' ? data.reports.filter(r => r.combo_sale || r.combo_units || /combo/i.test(r.service || '')) : data.reports}/></div>
+      <div className={tab === 'history' ? 'history-filter-scope' : ''}><LiveTourFilters showDate={tab !== 'history'} value={filters} onChange={setFilters} showTotal={tab === 'revenue'} showTip={tab === 'tip'} rows={filterOptionsRows}/></div>
       {tab === 'performance' && <div className="performance-status-filter" role="group" aria-label="Lọc kết quả thời gian dịch vụ">{[['all', 'Tất cả'], ['ontime', 'Đúng giờ'], ['late', 'Trễ'], ['early', 'Sớm']].map(([key, label]) => <button data-ui-key="u-ee49af6dd36a" type="button" key={key} className="secondary-button" aria-pressed={performanceTiming === key} onClick={() => setPerformanceTiming(key)}>{label}</button>)}</div>}
       {tab === 'tip' && <div className="live-tour-report-metrics"><div className="live-tour-report-metric"><span>Nhân viên có Tip</span><strong>{new Set(rows.map(row => row.employee_id || row.employee_name)).size}</strong></div><div className="live-tour-report-metric"><span>Tổng tiền Tip</span><strong>{money(rows.reduce((sum, row) => sum + Number(row.tip || 0), 0))}</strong></div></div>}
       {tab === 'revenue' && <LiveTourRevenueSummary rows={rows} invoiceCount={reportInvoiceCount}/>}
-      {tab === 'employee' && <LiveTourEmployeeRevenueBreakdown rows={reports}/>}
+      {tab === 'employee' && <LiveTourEmployeeRevenueBreakdown rows={rows}/>}
       {tab !== 'performance' && <p>{rows.length} dòng</p>}
       {grants.export && <button data-ui-key="u-7dae37cfbfcd" data-ui-label-default="Xuất excel" className="secondary-button" onClick={() => (tab === 'history' ? veraApi.exportLiveTourBoardHistory(filters) : veraApi.exportLiveTourExcel(tab === 'tip' ? 'tip' : tab === 'performance' ? 'performance' : tab === 'employee' ? 'employee' : 'reports', { ...appliedFilters, preset: '', ...(tab === 'combos' ? { report_kind: 'combos' } : {}), ...(tab === 'performance' ? { performance_timing: performanceTiming } : {}) })).catch(e => setError(e.message))}><UiCustomText uiKey="u-7dae37cfbfcd">Xuất excel</UiCustomText></button>}
       {tab === 'revenue' && <div className="live-tour-report-extra-metrics" aria-label="Thống kê hóa đơn theo bộ lọc"><div><span>Hóa đơn tổng tiền = 0</span><strong>{invoiceMetrics.zeroInvoices}</strong></div><div><span>Tổng giảm giá</span><strong>{money(invoiceMetrics.discount)}</strong></div></div>}
@@ -125,7 +129,7 @@ export default function LiveTourReportsPage({ user }) {
       {tab !== 'employee' && tab !== 'history' && (tab === 'performance' ? <div className="responsive-data-table live-tour-report-table performance-report-table"><table data-ui-key="u-f2da963e5c35"><thead><tr><th data-ui-key="u-b3569a36e464" data-ui-label-default="Nhân viên / dịch vụ"><UiCustomText uiKey="u-b3569a36e464">Nhân viên / dịch vụ</UiCustomText></th><th data-ui-key="u-5b5eab3eb26f" data-ui-label-default="Booking"><UiCustomText uiKey="u-5b5eab3eb26f">Booking</UiCustomText></th><th data-ui-key="u-758efc84d79d" data-ui-label-default="TG bắt đầu thực hiện"><UiCustomText uiKey="u-758efc84d79d">TG bắt đầu thực hiện</UiCustomText></th><th data-ui-key="u-28590208a06b" data-ui-label-default="TG bắt đầu thực hiện YC"><UiCustomText uiKey="u-28590208a06b">TG bắt đầu thực hiện YC</UiCustomText></th><th data-ui-key="u-14a27c2fe79e" data-ui-label-default="Hoàn thành"><UiCustomText uiKey="u-14a27c2fe79e">Hoàn thành</UiCustomText></th><th data-ui-key="u-ad92fbd067f7" data-ui-label-default="Quy định"><UiCustomText uiKey="u-ad92fbd067f7">Quy định</UiCustomText></th><th data-ui-key="u-cba24e881324" data-ui-label-default="Thực tế"><UiCustomText uiKey="u-cba24e881324">Thực tế</UiCustomText></th><th data-ui-key="u-dbad5aa81df7" data-ui-label-default="Kết quả"><UiCustomText uiKey="u-dbad5aa81df7">Kết quả</UiCustomText></th><th data-ui-key="u-d8920956d970" data-ui-label-default="TG Xông Hơi"><UiCustomText uiKey="u-d8920956d970">TG Xông Hơi</UiCustomText></th></tr></thead><tbody>{pagination.rows.map(row => <tr key={row.id}><td data-label="Nhân viên / dịch vụ"><strong>{row.employee_name}</strong><br/>{[row.service, row.room].filter(Boolean).join(' · ')}</td><td data-label="Booking">{formatVeraDateTime(row.booked_at)}</td><td data-label="TG bắt đầu thực hiện">{formatVeraDateTime(performanceStart(row, false))}</td><td data-label="TG bắt đầu thực hiện YC">{formatVeraDateTime(performanceStart(row, true))}</td><td data-label="Hoàn thành">{formatVeraDateTime(row.completed_at)}</td><td data-label="Quy định">{row.duration == null ? '—' : `${row.duration} phút`}</td><td data-label="Thực tế">{row.actual_duration_minutes} phút</td><td data-label="Kết quả"><span className={Number(row.completion_delta_minutes) < 0 ? 'report-early' : Number(row.completion_delta_minutes) > 0 ? 'report-late' : 'report-ontime'}>{row.completion_result}</span></td><td data-label="TG Xông Hơi">{row.steam_minutes == null ? '—' : `${row.steam_minutes} phút`}</td></tr>)}</tbody></table></div> : <div className="responsive-data-table live-tour-report-table"><table data-ui-key="u-d03584ec2dff"><thead><tr><th data-ui-key="u-c511da5cd528" data-ui-label-default="Ngày giờ hóa đơn"><UiCustomText uiKey="u-c511da5cd528">Ngày giờ hóa đơn</UiCustomText></th><th data-ui-key="u-02c82b3dc8a3" data-ui-label-default="Hóa đơn / khách hàng"><UiCustomText uiKey="u-02c82b3dc8a3">Hóa đơn / khách hàng</UiCustomText></th><th data-ui-key="u-a79d19f13b4d" data-ui-label-default="Nhân viên / dịch vụ / phòng"><UiCustomText uiKey="u-a79d19f13b4d">Nhân viên / dịch vụ / phòng</UiCustomText></th>{tab !== 'tip' && <><th data-ui-key="u-3d09af303979" data-ui-label-default="Tiền dịch vụ" className="report-money-column"><UiCustomText uiKey="u-3d09af303979">Tiền dịch vụ</UiCustomText></th><th data-ui-key="u-7c39d2a9327f" data-ui-label-default="Giảm giá" className="report-money-column"><UiCustomText uiKey="u-7c39d2a9327f">Giảm giá</UiCustomText></th></>}<th data-ui-key="u-ae41b83fe0c2" data-ui-label-default="Tiền Tip" className="report-money-column"><UiCustomText uiKey="u-ae41b83fe0c2">Tiền Tip</UiCustomText></th>{tab !== 'tip' && <th data-ui-key="u-9d5d83332a57" data-ui-label-default="Tổng tiền" className="report-money-column"><UiCustomText uiKey="u-9d5d83332a57">Tổng tiền</UiCustomText></th>}<th data-ui-key="u-759cbaffd995" data-ui-label-default="Thao tác" className="report-actions-column"><UiCustomText uiKey="u-759cbaffd995">Thao tác</UiCustomText></th></tr></thead><tbody>{pagination.rows.map(row => {
         const invoice = tab === 'invoices' ? row : invoiceById.get(row.invoice_id)
         const amounts = invoiceMoneyValues(invoice || row)
-        return <tr key={row.id}><td data-label="Ngày giờ hóa đơn">{formatVeraDateTime(row.effective_at || row.business_date)}</td><td data-label="Hóa đơn / khách hàng">{row.bill_no}<br/>{row.customer_name || 'Khách lẻ'}</td><td data-label="Nhân viên / dịch vụ / phòng">{row.entries ? row.entries.map(e => [e.employee_name, e.service, e.room].filter(Boolean).join(' · ')).join('; ') : [row.employee_name, row.service, row.room].filter(Boolean).join(' · ')}</td>{tab !== 'tip' && <><td className="report-money-cell" data-label="Tiền dịch vụ">{money(amounts.service)}</td><td className="report-money-cell" data-label="Giảm giá">{money(amounts.discount)}</td></>}<td className="report-money-cell" data-label="Tiền Tip">{money(row.tip ?? amounts.tip)}</td>{tab !== 'tip' && <td className="report-money-cell report-total-cell" data-label="Tổng tiền">{money(amounts.total)}</td>}<td className="report-actions-cell" data-label="Thao tác">{invoice && <UiToolbar data-ui-key="u-70ed053ad7b0" className="spa-actions report-invoice-actions"><button data-ui-key="u-4364fc470e5e" data-ui-label-default="Xem" className="secondary-button" aria-label="Xem hóa đơn" title="Xem hóa đơn" onClick={() => setReceipt(invoice)}><UiCustomText uiKey="u-4364fc470e5e">Xem</UiCustomText></button>{grants.reports_edit && <button data-ui-key="u-e6973c1a4bef" data-ui-label-default="Sửa" className="secondary-button" aria-label="Sửa báo cáo hóa đơn" title="Sửa báo cáo hóa đơn" disabled={busy} onClick={() => { setError(''); setContext({ item: invoice, mode: 'edit', revision: data.revision }) }}><UiCustomText uiKey="u-e6973c1a4bef">Sửa</UiCustomText></button>}{grants.reports_delete && <button data-ui-key="u-fd737e2f6f78" data-ui-label-default="Xóa" className="secondary-button danger-button" aria-label="Xóa báo cáo và hủy hóa đơn" title="Xóa báo cáo và hủy hóa đơn" disabled={busy} onClick={() => { setError(''); setContext({ item: invoice, mode: 'delete', revision: data.revision }) }}><UiCustomText uiKey="u-fd737e2f6f78">Xóa</UiCustomText></button>}</UiToolbar>}</td></tr>
+        return <tr key={row.id}><td data-label="Ngày giờ hóa đơn">{formatVeraDateTime(row.effective_at || row.business_date)}</td><td data-label="Hóa đơn / khách hàng">{row.bill_no}<br/>{row.customer_name || 'Khách lẻ'}</td><td data-label="Nhân viên / dịch vụ / phòng">{row.entries ? row.entries.map(e => [e.employee_name, e.service, e.room].filter(Boolean).join(' · ')).join('; ') : [row.employee_name, row.service, row.room].filter(Boolean).join(' · ')}</td>{tab !== 'tip' && <><td className="report-money-cell" data-label="Tiền dịch vụ">{money(amounts.service)}</td><td className="report-money-cell" data-label="Giảm giá">{money(amounts.discount)}</td></>}<td className="report-money-cell" data-label="Tiền Tip">{money(row.tip ?? amounts.tip)}</td>{tab !== 'tip' && <td className="report-money-cell report-total-cell" data-label="Tổng tiền">{money(amounts.total)}</td>}<td className="report-actions-cell" data-label="Thao tác">{invoice && <UiToolbar data-ui-key="u-70ed053ad7b0" className="spa-actions report-invoice-actions"><button data-ui-key="u-4364fc470e5e" data-ui-label-default="Xem" className="secondary-button" aria-label="Xem hóa đơn" title="Xem hóa đơn" onClick={() => setReceipt(invoice)}><UiCustomText uiKey="u-4364fc470e5e">Xem</UiCustomText></button>{grants.reports_edit && <button data-ui-key="u-e6973c1a4bef" data-ui-label-default="Sửa" className="secondary-button" aria-label="Sửa báo cáo hóa đơn" title="Sửa báo cáo hóa đơn" disabled={busy || loading} onClick={() => { setError(''); setContext({ item: invoice, mode: 'edit', revision: data.revision }) }}><UiCustomText uiKey="u-e6973c1a4bef">Sửa</UiCustomText></button>}{grants.reports_delete && <button data-ui-key="u-fd737e2f6f78" data-ui-label-default="Xóa" className="secondary-button danger-button" aria-label="Xóa báo cáo và hủy hóa đơn" title="Xóa báo cáo và hủy hóa đơn" disabled={busy || loading} onClick={() => { setError(''); setContext({ item: invoice, mode: 'delete', revision: data.revision }) }}><UiCustomText uiKey="u-fd737e2f6f78">Xóa</UiCustomText></button>}</UiToolbar>}</td></tr>
       })}</tbody></table></div>)}
       {!rows.length && <p>Không có dữ liệu phù hợp bộ lọc.</p>}
     </section>

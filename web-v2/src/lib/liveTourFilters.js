@@ -7,7 +7,9 @@ export function invoiceNumbers(row) {
   return [row.bill_no, ...(row.bill_numbers || []), ...['before', 'after', 'invoice', 'pending', 'payload'].flatMap(key => invoiceNumbers(row[key]))].filter(Boolean)
 }
 export const TOUR_DATE_PRESETS = [['all', 'Tất cả'], ['today', 'Hôm nay'], ['yesterday', 'Hôm qua'], ['week', 'Tuần này'], ['last-week', 'Tuần trước'], ['month', 'Tháng này'], ['last-month', 'Tháng trước'], ['custom', 'Tùy chỉnh']]
-const day = (value) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value)
+// Constructing ICU formatters for every row blocks the browser on large reports.
+const dayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' })
+const day = value => dayFormatter.format(value)
 export function tourDateRange(preset, now = new Date()) {
   if (['all', 'custom'].includes(preset)) return { date_from: '', date_to: '' }
   const today = new Date(`${day(now)}T12:00:00+07:00`)
@@ -43,11 +45,12 @@ export function invoiceRowDate(row) {
   return tourRowDate({ effective_at: row?.effective_at || row?.business_date })
 }
 export function filterTourRows(rows, filters, invoiceDates = false) {
+  const hasDateFilter = Boolean(filters.date || filters.date_from || filters.date_to)
   return rows.filter(row => {
     if (filters.total_amount != null && filters.total_amount !== '' && Number(row.total || 0) !== Number(String(filters.total_amount).replace(/[^0-9]/g, ''))) return false
     if (filters.tip_amount != null && filters.tip_amount !== '' && Number(row.tip || 0) !== Number(String(filters.tip_amount).replace(/[^0-9]/g, ''))) return false
     if (filters.bill_no && !invoiceNumbers(row).some(number => String(number).toLowerCase().includes(filters.bill_no.trim().toLowerCase()))) return false
-    const date = invoiceDates ? invoiceRowDate(row) : tourRowDate(row)
+    const date = hasDateFilter ? (invoiceDates ? invoiceRowDate(row) : tourRowDate(row)) : ''
     if (filters.date && date !== filters.date) return false
     if ((filters.date_from && (!date || date < filters.date_from)) || (filters.date_to && (!date || date > filters.date_to))) return false
     if (filters.customer && !customerMatches(row, filters.customer)) return false

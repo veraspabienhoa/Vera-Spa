@@ -142,3 +142,35 @@ test('report metrics count invoices once across all filtered lines and sum disco
  assert.deepEqual(reportInvoiceMetrics([{invoice_id:'zero',invoice_total:0,invoice_discount:100},{invoice_id:'zero',invoice_total:0,invoice_discount:100}]),{zeroInvoices:1,discount:100})
  assert.deepEqual(reportInvoiceMetrics([]),{zeroInvoices:0,discount:0})
 })
+
+test('report editor opens without rescanning history and closes on receipt before the report reload', async () => {
+  const root = createRoot(document.querySelector('#root'))
+  const date = defaultTourYesterdayFilters().date_from
+  const item = { id: 'invoice', bill_no: 'TEST-FAST', business_date: date, effective_at: `${date}T09:00:00+07:00`,
+    payment_method: 'TIỀN MẶT', total: 100, entries: [{ employee_name: 'Test', service: 'Body', price: 100 }] }
+  let reads = 0, reloads = 0, finishReload
+  const reports = Array.from({ length: 3000 }, (_, i) => ({ id: `r${i}`, invoice_id: item.id,
+    get effective_at() { reads++; return item.effective_at }, employee_name: 'Test', total: 100 }))
+  const data = { revision: 7, invoices: [item], reports, capabilities: { paid_invoice_view: true, reports_edit: true } }
+  const writes = []
+  globalThis.__invoiceReportsApi = {
+    liveTourReports: () => ++reloads === 1 ? Promise.resolve(data) : new Promise(resolve => { finishReload = resolve }),
+    liveTourAction: async body => { writes.push(body); return { ok: true, revision: 8, result: { invoice: item } } },
+  }
+  const module = { exports: {} }
+  new Function('require', 'module', 'exports', reportsBuild.outputFiles[0].text)(require, module, module.exports)
+  try {
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin' } })))
+    reads = 0
+    await act(async () => document.querySelector('button[aria-label="Sửa báo cáo hóa đơn"]').click())
+    assert.ok(reads < 500, `Opening editor rescanned ${reads} dates`)
+    await act(async () => document.querySelector('[role="dialog"] button[type="submit"]').click())
+    assert.equal(writes.length, 1)
+    assert.equal(writes[0].response_view, 'receipt')
+    assert.equal(reloads, 2)
+    assert.equal(document.querySelector('[role="dialog"]'), null, 'must not wait for the report GET after commit')
+    assert.match(document.body.textContent, /Đang cập nhật báo cáo/)
+    await act(async () => finishReload({ ...data, revision: 8 }))
+    assert.doesNotMatch(document.body.textContent, /Đang cập nhật báo cáo/)
+  } finally { await act(() => root.unmount()) }
+})
