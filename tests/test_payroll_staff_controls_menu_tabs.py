@@ -34,7 +34,7 @@ def test_payroll_has_column_totals_and_requested_quick_filters():
     page = read_ui_source(Path("web-v2/src/pages/PayrollPageEnhanced.jsx"))
 
     for label in (
-        "Lương", "Trách nhiệm / hỗ trợ", "Hoàn trả tích lũy", "Tích lũy",
+        "Lương", "Trách nhiệm-hỗ trợ", "Hoàn trả tích lũy", "Tích lũy",
         "Phí sinh hoạt", "Vi phạm kỳ này", "Nợ vi phạm kỳ trước", "Tiền ứng",
         "Hỗ trợ Locker", "Thực nhận",
     ):
