@@ -170,10 +170,15 @@ def scheduled_assignment(conn, work_day: date, employee: str) -> dict[str, Any] 
         SELECT lower(ws.department) AS department, ws.shift_code,
                COALESCE(NULLIF(ws.start_time,''),d.start_time,'') AS start_time,
                COALESCE(NULLIF(ws.end_time,''),d.end_time,'') AS end_time,
-               ws.overtime_shift,ws.overtime_start_time,ws.overtime_end_time
+               ws.overtime_shift,
+               COALESCE(NULLIF(ws.overtime_start_time,''),ot.start_time,'') AS overtime_start_time,
+               COALESCE(NULLIF(ws.overtime_end_time,''),ot.end_time,'') AS overtime_end_time
         FROM vera_work_schedule ws
         LEFT JOIN vera_work_shift_definition d
           ON d.department=ws.department AND lower(d.shift_code)=lower(ws.shift_code)
+        LEFT JOIN vera_work_shift_definition ot
+          ON ot.department=ws.department AND ot.shift_code=
+            CASE ws.overtime_shift WHEN 'TC Ca 1' THEN 'Ca 1' WHEN 'TC Ca 2' THEN 'Ca 2' END
         WHERE ws.work_date=:work_day
           AND (lower(btrim(ws.employee_username))=lower(btrim(:employee))
                OR lower(btrim(ws.employee_name))=lower(btrim(:employee)))
@@ -182,6 +187,8 @@ def scheduled_assignment(conn, work_day: date, employee: str) -> dict[str, Any] 
     if not row:
         return None
     result = dict(row)
+    from vera_schedule_attendance_window import attendance_window
+    result["start_time"], result["end_time"] = attendance_window(result)
     if _norm(result.get("shift_code")) == "nghi":
         result["is_off"] = True
     return result

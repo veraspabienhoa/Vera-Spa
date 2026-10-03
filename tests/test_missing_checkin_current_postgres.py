@@ -20,8 +20,8 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
         conn.execute(text('''CREATE TABLE vera_dataset_cache(dataset_key text, payload jsonb, source_version text, updated_at timestamptz, expires_at timestamptz);
             CREATE TABLE employees(username text,full_name text,role text,payload jsonb,work_shift text,rotation_cycle text,shift_start_date text);
             CREATE TABLE vera_app_setting(category text,setting_key text,value_json jsonb);
-            CREATE TABLE vera_work_schedule(employee_username text,employee_name text,department text,shift_code text,start_time text,work_date date);
-            CREATE TABLE vera_work_shift_definition(department text,shift_code text,start_time text);
+            CREATE TABLE vera_work_schedule(employee_username text,employee_name text,department text,shift_code text,start_time text,work_date date,end_time text,overtime_shift text,overtime_start_time text,overtime_end_time text);
+            CREATE TABLE vera_work_shift_definition(department text,shift_code text,start_time text,end_time text);
             CREATE TABLE leave_records(employee_name text,leave_date date,source_sheet_id text,leave_reason text DEFAULT '');'''))
         conn.execute(text("INSERT INTO vera_app_setting VALUES ('shift','shift_definitions',CAST(:defs AS jsonb))"),{'defs':json.dumps(definitions)})
         conn.execute(text("INSERT INTO employees VALUES ('Test Employee','Test Employee Full Name','nhanvien','{}','Ca 1','Theo chu kỳ Tuần','2026-08-17')"))
@@ -52,7 +52,7 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
             for role in ('leader','letan','locker','tapvu','support','quanly','giamdoc'):
                 conn.execute(text("INSERT INTO employees VALUES (:name,:name,:role,'{}','Ca 1','','2026-08-17')"),
                              {'name':f'Test {role}','role':role})
-                conn.execute(text("INSERT INTO vera_work_schedule VALUES (:name,:name,'nhanvien','Ca 1','10:00','2026-09-27')"),
+                conn.execute(text("INSERT INTO vera_work_schedule(employee_username,employee_name,department,shift_code,start_time,work_date) VALUES (:name,:name,'nhanvien','Ca 1','10:00','2026-09-27')"),
                              {'name':f'Test {role}'})
             assert {r['employee'] for r in read('letan')} == {'Test Employee','Test leader','Test letan'}
             expected = {'Test Employee','Test leader','Test letan','Test locker','Test tapvu','Test support'}
@@ -85,7 +85,7 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
             conn.execute(text("INSERT INTO leave_records(employee_name,leave_date,source_sheet_id) VALUES ('Test Employee','2026-09-27','manual')"));assert read()==[]
             assert read('nhanvien', username='Test Employee')==[]
             conn.execute(text('DELETE FROM leave_records'))
-            conn.execute(text("INSERT INTO vera_work_schedule VALUES ('Test Employee','Test Employee','nhanvien','Nghỉ','','2026-09-27')"));assert read()==[]
+            conn.execute(text("INSERT INTO vera_work_schedule(employee_username,employee_name,department,shift_code,start_time,work_date) VALUES ('Test Employee','Test Employee','nhanvien','Nghỉ','','2026-09-27')"));assert read()==[]
         finally:
             event.remove(database,'checkout',no_checkout)
     event.remove(database,'before_cursor_execute',sql_listener)

@@ -126,10 +126,16 @@ def _schedule_map(conn, start: date, end: date) -> dict[tuple[date, str], dict[s
                    lower(COALESCE(ws.department,'')) AS department,
                    COALESCE(ws.shift_code,'') AS shift_code,
                    COALESCE(NULLIF(ws.start_time,''), d.start_time, '') AS start_time,
-                   COALESCE(NULLIF(ws.end_time,''), d.end_time, '') AS end_time
+                   COALESCE(NULLIF(ws.end_time,''), d.end_time, '') AS end_time,
+                   COALESCE(ws.overtime_shift,'') AS overtime_shift,
+                   COALESCE(NULLIF(ws.overtime_start_time,''), ot.start_time, '') AS overtime_start_time,
+                   COALESCE(NULLIF(ws.overtime_end_time,''), ot.end_time, '') AS overtime_end_time
             FROM vera_work_schedule ws
             LEFT JOIN vera_work_shift_definition d
               ON d.department=ws.department AND lower(d.shift_code)=lower(ws.shift_code)
+            LEFT JOIN vera_work_shift_definition ot
+              ON ot.department=ws.department AND ot.shift_code=
+                CASE ws.overtime_shift WHEN 'TC Ca 1' THEN 'Ca 1' WHEN 'TC Ca 2' THEN 'Ca 2' END
             WHERE ws.work_date BETWEEN :start_date AND :end_date
         """), {"start_date": start, "end_date": end}).mappings().all()
     except Exception:
@@ -137,6 +143,8 @@ def _schedule_map(conn, start: date, end: date) -> dict[tuple[date, str], dict[s
     output: dict[tuple[date, str], dict[str, Any]] = {}
     for row in rows:
         item = dict(row)
+        from vera_schedule_attendance_window import attendance_window
+        item["start_time"], item["end_time"] = attendance_window(item)
         work_day = item.get("work_date")
         if not isinstance(work_day, date):
             continue
