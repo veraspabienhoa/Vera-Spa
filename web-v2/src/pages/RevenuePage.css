@@ -31,3 +31,12 @@
 .revenue-page .revenue-tip-preset[aria-pressed="true"]{background:#123b2c;box-shadow:inset 0 0 0 2px #e0bf76}
 .revenue-page .revenue-tip-current{margin-top:22px;min-width:0;flex-wrap:wrap;white-space:normal}
 @media(max-width:760px){.revenue-page .revenue-tip-current{margin-top:0}.revenue-page .revenue-tip-preset{min-height:44px}}
+
+.revenue-page .revenue-tip-current { justify-content:center; gap:8px; padding:8px; text-align:center; }
+.revenue-page .revenue-tip-current > button {
+  display:flex; align-items:center; justify-content:center; min-height:44px;
+  max-width:100%; padding:8px 14px; border:1px solid #214e3e;
+  border-radius:10px; background:#214e3e; color:#fff;
+  font-weight:800; white-space:normal; line-height:1.4; text-align:center;
+}
+.revenue-page .revenue-tip-current > small { flex-basis:100%; text-align:center; }
