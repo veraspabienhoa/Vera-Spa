@@ -1226,3 +1226,24 @@ tr:last-child td { border-bottom: 0; }
   .approved-leave-filter-buttons button span { min-width: 17px; font-size: 8px; }
   .approved-leave-status { margin-top: 7px; padding: 3px 6px; font-size: 8px; white-space: normal; }
 }
+
+/* Leave registration: readable dates and a matching native calendar hit area. */
+@media (max-width: 760px) {
+  .leave-date-input-group { min-width: 0; max-width: 100%; gap: 6px; }
+  .leave-date-input-group .date-input-label { font-size: 11px; line-height: 1.4; }
+  .leave-date-input-group .vera-date-input { min-height: 50px; }
+  .leave-date-input-group .vera-date-input > input[type="text"] {
+    min-height: 50px; font-size: 16px; font-weight: 700;
+    padding: 10px 56px 10px 12px !important;
+    border-radius: 10px; font-variant-numeric: tabular-nums;
+  }
+  .leave-date-input-group .vera-date-input > .vera-date-picker-button {
+    top: 3px; right: 3px; width: 44px; height: 44px; min-height: 44px;
+    padding: 0; transform: none !important; color: #fff; background: var(--green-800);
+  }
+  .leave-date-input-group .vera-date-picker-button svg { width: 20px; height: 20px; }
+  .leave-date-input-group .vera-date-input > .vera-native-date-picker {
+    top: 3px; right: 3px; width: 44px !important; height: 44px !important;
+    transform: none;
+  }
+}
