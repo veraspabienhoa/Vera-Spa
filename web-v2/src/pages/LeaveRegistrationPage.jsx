@@ -1157,7 +1157,7 @@ export default function LeaveRegistrationPage({ user }) {
 
 function DatePickerControl({ label, value, onChange, min, max }) {
   return (
-    <div className="date-input-group">
+    <div className="date-input-group leave-date-input-group">
       <span className="date-input-label">{label}</span>
       <VeraDateInput
         aria-label={label}
