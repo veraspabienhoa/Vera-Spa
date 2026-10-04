@@ -1,3 +1,4 @@
+import ActionSuccessDialog from '../components/ActionSuccessDialog'
 import usePageRefresh from '../lib/usePageRefresh'
 import useFilterScrollAnchor from '../lib/useFilterScrollAnchor'
 import UiToolbar from '../components/UiToolbar'
@@ -730,6 +731,8 @@ export default function LeaveRegistrationPage({ user }) {
 
   return (
     <div ref={leavePageRef}>
+      {message && <ActionSuccessDialog message={message} title="Đăng ký lịch nghỉ thành công" onClose={() => setMessage('')} />}
+      {listActionNotice?.status === 'success' && <ActionSuccessDialog message={listActionNotice.message} title={listActionNotice.action === 'edit' ? 'Sửa lịch nghỉ thành công' : 'Xóa lịch nghỉ thành công'} onClose={() => setListActionNotice(null)} />}
       <div data-ui-key="u-2f745fc2db4b" className="page-heading-row">
         <div><h1 className="page-title">Đăng ký nghỉ</h1></div>
         <button data-ui-key="u-a75ced431985" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={17} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-a75ced431985"> Làm mới</UiCustomText></button>
@@ -889,7 +892,7 @@ export default function LeaveRegistrationPage({ user }) {
             <textarea value={form.detail} onChange={(e) => setForm((current) => ({ ...current, detail: e.target.value }))} rows="3" placeholder="Ghi chú nếu cần" />
 
             {dateIsPast && <div className="warning-box"><strong>Ngày chỉ xem.</strong> Nhân viên không thể đăng ký cho ngày trong quá khứ.</div>}
-            {message && <div className="success-box">{message}</div>}
+            
             {warnings.map((warning) => <div className="warning-box" key={warning}>{warning}</div>)}
             {error && <div className="error-box">{error}</div>}
             <button data-ui-key="u-7712757bd8c0" className="primary-button" type="submit" disabled={saving || !canCreate}>{saving ? 'Đang kiểm tra & ghi…' : 'Ghi'}</button>
@@ -1045,7 +1048,7 @@ export default function LeaveRegistrationPage({ user }) {
               {canDeleteVisibleRecord && <button data-ui-key="u-dad1744abe2f" data-ui-label-default="Xóa đã chọn" type="button" className="danger-button compact" onClick={deleteSelected} disabled={managing || deletableSelectedUids.length === 0}><Trash2 size={15} /><UiCustomText uiKey="u-dad1744abe2f"> Xóa đã chọn</UiCustomText></button>}
               {canViewPenalty && <div className="penalty-chip">Phạt: {loadState.records === 'ready' ? `${totalPenalty.toLocaleString('vi-VN')}đ` : '…'}</div>}
           </UiToolbar>
-          {listActionNotice && (
+          {listActionNotice?.status === 'error' && (
             <div
               className={`list-action-notice ${listActionNotice.status} ${listActionNotice.action}`}
               role={listActionNotice.status === 'error' ? 'alert' : 'status'}

@@ -1,0 +1,9 @@
+.employee-profile-modal.action-success-dialog { width: min(480px, 100%); padding: 20px; border-radius: 20px; background: #f3faf5; color: #194b3b; overflow-wrap: anywhere; }
+.action-success-dialog header { display: flex; align-items: center; gap: 12px; }
+.action-success-dialog header > svg { flex-shrink: 0; color: #23804c; }
+.action-success-dialog h2 { flex: 1; min-width: 0; margin: 0; font-size: 20px; }
+.action-success-dialog p { margin: 18px 0; line-height: 1.6; white-space: pre-wrap; }
+.action-success-dialog header button { flex-shrink: 0; display: grid; place-items: center; padding: 8px; min-width: 44px; min-height: 44px; border-radius: 12px; }
+.action-success-dialog footer { display: flex; justify-content: flex-end; }
+.action-success-dialog footer button { min-height: 44px; border-radius: 12px; padding: 10px 24px; }
+@media (max-width: 760px) { .employee-profile-modal.action-success-dialog { padding: 16px; } .action-success-dialog footer button { width: 100%; } }
