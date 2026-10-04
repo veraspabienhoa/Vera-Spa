@@ -78,9 +78,9 @@ const PANEL_TABS = [
   ['catalog', 'Danh mục'],
 ]
 const EXPORT_KINDS = [
-  ['revenue', 'Xuất excel Doanh thu'],
-  ['tip', 'Xuất excel TIP'],
-  ['customers', 'Xuất excel Khách hàng'],
+  ['revenue', 'Doanh thu'],
+  ['tip', 'Tiền TIP'],
+  ['customers', 'Khách hàng'],
   ['pending', 'Chờ thanh toán'],
   ['history', 'Lịch sử'],
   ['breaks', 'Nghỉ giữa ca'],
