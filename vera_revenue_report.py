@@ -10,7 +10,7 @@ VERSION = 2
 PERIOD_KEY = 'report_period_'
 
 
-def resolve_period(conn, start=None, end=None, *, mode):
+def resolve_period(conn, start=None, end=None, *, mode, calendar_filter=False):
     today = source.datetime.now(source.VN_TZ).date()
     if (start is None) != (end is None):
         raise HTTPException(400, 'Chọn đủ Từ ngày tính TIP và Đến ngày.')
@@ -33,30 +33,34 @@ def resolve_period(conn, start=None, end=None, *, mode):
         except (ValueError, TypeError, AttributeError):
             start, end = today.replace(day=1 if today.day <= 15 else 16), today
         start, end = max(start, source.START_DATE), min(end, today)
-    if not source.START_DATE <= start <= end <= today:
+    # Read-only first-half preset is a complete calendar period, including
+    # the upcoming 15th. Saving periods keeps the existing today limit.
+    complete_first_half = calendar_filter and start == today.replace(day=1) and end == today.replace(day=15)
+    if not (source.START_DATE <= start <= end and (end <= today or complete_first_half)):
         raise HTTPException(400, 'Kỳ báo cáo/TIP phải từ 05-09-2025 đến hôm nay và Từ ngày không sau Đến ngày.')
     return start, end
 
 
-def snapshot(conn, start=None, end=None):
+def snapshot(conn, start=None, end=None, *, calendar_filter=False):
     """Caller owns one REPEATABLE READ connection for settings, money and TIP."""
     shared = source.mode(conn)
     default_period = start is None and end is None
-    start, end = resolve_period(conn, start, end, mode=shared['source'])
+    start, end = resolve_period(conn, start, end, mode=shared['source'], calendar_filter=calendar_filter)
+    actual_end = min(end, source.datetime.now(source.VN_TZ).date())
     if shared['source'] == 'auto':
-        totals = source.totals(source.daily(conn, source.START_DATE, end, include_entries=False))
+        totals = source.totals(source.daily(conn, source.START_DATE, actual_end, include_entries=False))
     else:
         row = conn.execute(text("""SELECT
             COALESCE(SUM(amount) FILTER (WHERE transaction_type='Thu'),0) AS income,
             COALESCE(SUM(amount) FILTER (WHERE transaction_type='Chi'),0) AS expense
             FROM vera_revenue_entry WHERE NOT is_deleted
             AND COALESCE(transaction_date,(entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)
-              BETWEEN :start AND :end"""), {'start':source.START_DATE,'end':end}).mappings().one()
+              BETWEEN :start AND :end"""), {'start':source.START_DATE,'end':actual_end}).mappings().one()
         income, expense = float(row['income']), float(row['expense'])
         totals = dict(total_income=income, total_revenue=income, total_expense=expense,
                       net_income=round(income-expense,2), service_revenue=0, tip_revenue=0,
                       historical_income=income)
-    tip = round(source.tip_total(conn, start, end, auto=True), 2) if start <= end else 0
+    tip = round(source.tip_total(conn, start, actual_end, auto=True), 2) if start <= end else 0
     today = source.datetime.now(source.VN_TZ).date()
     return {
         'ok': True, 'default_period': default_period, 'report_version': VERSION, 'report_basis': 'live_tour_and_purchases' if shared['source']=='auto' else 'manual_ledger',

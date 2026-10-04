@@ -646,7 +646,7 @@ def install_revenue_leave_list_routes(
         response.headers["Cache-Control"] = "no-store"
         with engine_instance().connect().execution_options(isolation_level="REPEATABLE READ") as conn:
             require_feature(conn, ident, REVENUE_FEATURE)
-            return period_report_permissions(conn, ident, revenue_report.snapshot(conn, start, end))
+            return period_report_permissions(conn, ident, revenue_report.snapshot(conn, start, end, calendar_filter=True))
 
     @app.put("/v2/revenue/report-period")
     def save_report_period(body: RevenueTipPeriod, ident=Depends(current_identity)):

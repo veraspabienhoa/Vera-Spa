@@ -58,3 +58,12 @@ test('Revenue and Reports agree across the period boundary and backdated timesta
   assert.equal(revenueTipRowDate({ business_date: '2026-09-25', booked_at: '2026-09-24T16:59:59Z' }), '2026-09-25')
   assert.equal(revenueTipTotal([backdated], '2026-09-24', '2026-09-24'), 123)
 })
+
+ test('TIP presets keep full halves, leap February and January year rollover', async () => {
+  const { revenueTipPreset } = await import('../src/lib/revenueTipPeriod.js')
+  assert.deepEqual(revenueTipPreset('2026-10-04','current_first'), {start:'2026-10-01',end:'2026-10-15'})
+  assert.deepEqual(revenueTipPreset('2026-01-04','previous_second'), {start:'2025-12-16',end:'2025-12-31'})
+  assert.deepEqual(revenueTipPreset('2024-03-02','previous_second'), {start:'2024-02-16',end:'2024-02-29'})
+  assert.deepEqual(revenueTipPreset('2025-03-02','previous_second'), {start:'2025-02-16',end:'2025-02-28'})
+  assert.equal(revenueTipPreset('2026-02-30','current_first'), null)
+})

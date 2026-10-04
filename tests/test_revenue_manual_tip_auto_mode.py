@@ -16,4 +16,6 @@ def test_revenue_manual_tip_auto_mode_and_period_contract():
     assert 'grid-template-areas:"title title" "date ." "income income-note" "expense expense-note" "save save"' in page
     assert "Dùng ngày này · {autoMode ? formatVeraDate(today) : data?.current_date_label || '—'}" in page
     assert "canViewAdminRevenueSummary && canEditTip" in page
-    assert "{!hybridMode && <button" in page
+    assert "Lưu Tiền TIP" not in page
+    assert "Tip kỳ 2 tháng trước" in page
+    assert "Tip kỳ 1 tháng này" in page

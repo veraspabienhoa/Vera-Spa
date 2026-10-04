@@ -66,7 +66,7 @@ def test_revenue_entry_defaults_notes_fits_kpis_and_exports_excel():
 
 def test_revenue_tip_and_mobile_ledger_layout_are_bounded():
     page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
-    assert "grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr) auto" in page
+    assert "grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr)" in page
     assert page.count("Báo cáo tới ngày") >= 1
     assert "Dùng ngày này · {autoMode ? formatVeraDate(today) : data?.current_date_label || '—'}" in page
     assert 'className="report-table ledger-table"' in page
