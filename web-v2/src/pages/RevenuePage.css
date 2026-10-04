@@ -50,3 +50,17 @@
   }
   .revenue-page .ledger-summary-head > .ledger-import svg { flex-shrink:0; }
 }
+
+.revenue-entry-launch { margin:14px 0; }
+.revenue-entry-launch > button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; }
+.employee-profile-modal.revenue-entry-modal { width:min(760px,100%); padding:18px; }
+.revenue-entry-modal-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.revenue-entry-modal-heading h2 { margin:0; font-size:20px; color:#173329; }
+.revenue-entry-modal-heading button { flex-shrink:0; min-width:44px; min-height:44px; border-radius:10px; }
+.revenue-entry-modal .revenue-entry-form { margin-bottom:0; grid-template-areas:"date ." "income income-note" "expense expense-note" "save save"; }
+@media(max-width:760px) {
+  .revenue-entry-launch > button { width:100%; }
+  .employee-profile-modal.revenue-entry-modal { padding:12px; }
+  .revenue-entry-modal-heading h2 { font-size:18px; }
+  .revenue-entry-modal .revenue-entry-form { grid-template-areas:"date" "income" "income-note" "expense" "expense-note" "save"; }
+}
