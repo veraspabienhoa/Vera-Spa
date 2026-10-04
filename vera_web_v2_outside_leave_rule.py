@@ -345,7 +345,9 @@ def _apply_restrictions_and_penalties(
                     source="AUTO UPDATE 24/7 - QUY TẮC RA NGOÀI",
                     minutes=minutes,
                 )
-            if message == "SKIP_GRACE_PERIOD":
+            if message == "SKIP_ROLE_NOT_ELIGIBLE":
+                item["break_auto_penalty_status"] = message
+            elif message == "SKIP_GRACE_PERIOD":
                 item["break_auto_penalty_grace"] = True
                 item["break_auto_penalty_status"] = message
             else:

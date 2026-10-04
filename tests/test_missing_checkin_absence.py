@@ -206,6 +206,7 @@ def test_registered_absence_cohort_keeps_uids_ordinals_and_money(database, scena
 def test_real_penalty_transaction_rollback_and_replay(database, scenario, monkeypatch):
     import vera_notification_delivery as delivery
     s = scenario
+    monkeypatch.setattr(rule.auto_check, 'automatic_penalty_employee_eligible', lambda conn, employee, work_date: True)
     monkeypatch.setattr(rule.auto_check, 'save_violation', REAL_SAVE)
     monkeypatch.setattr(rule.auto_check, 'ensure_schema', REAL_SCHEMA)
     monkeypatch.setattr(rule.auto_check.progressive_penalty, 'load_weekend_unpaid_enabled', lambda conn: False)
@@ -297,3 +298,14 @@ def test_unpermitted_replacement_archives_and_rolls_back(database):
         assert conn.execute(text('SELECT record_uid FROM leave_records')).scalar() == 'approved'
         assert conn.execute(text('SELECT status FROM vera_auto_check_event')).scalar() == 'superseded'
         assert conn.execute(text("SELECT replaced_rows->0->>'penalty' FROM vera_absence_replacement_audit")).scalar() == '400000'
+
+
+@pytest.mark.parametrize('role', ['locker', 'letan', 'tapvu', 'support', 'quanly', 'admin'])
+def test_non_ktv_schedule_never_creates_absence(scenario, monkeypatch, role):
+    import vera_missing_checkin_notifications as alerts
+    s = scenario
+    monkeypatch.setattr(alerts, '_staff_scheduled_rows', lambda *args: [dict(
+        employee_username='Test', employee_name='Test', employee_role=role, shift_code='Ca 2',
+        overtime_shift='TC Ca 1', overtime_start_time='09:30')])
+    assert rule.process(s.conn, now=s.now)['added'] == 0
+    assert not s.saved and not s.notices

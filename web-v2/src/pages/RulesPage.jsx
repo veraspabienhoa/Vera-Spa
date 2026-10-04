@@ -412,8 +412,8 @@ export default function RulesPage() {
       <div data-ui-key="u-b88ff8c44721" className="page-heading-row rules-heading">
         <div>
           <span className="eyebrow"><FileText size={14} /> Quy định vận hành</span>
-          <h1 className="page-title">Bảng nội quy</h1>
-          <p className="page-subtitle">Quản lý đầy đủ lý do nghỉ, ngày phép, mức phạt và quyền đăng ký/hủy đang áp dụng.</p>
+          <h1 className="page-title">Nội quy KTV</h1>
+          <p className="page-subtitle">Quản lý lý do nghỉ, ngày phép, mức phạt và quyền đăng ký/hủy. Tự động phạt theo Nội quy KTV chỉ áp dụng cho Leader và Nhân viên.</p>
         </div>
         <button data-ui-key="u-f3eeda5d3c4e" data-ui-label-default="Làm mới" className="secondary-button" onClick={discard} disabled={loading || busy === 'save'}>
           <RefreshCw size={17} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-f3eeda5d3c4e"> Làm mới
@@ -635,7 +635,7 @@ export default function RulesPage() {
       </section>
 
       <section data-ui-key="u-70dcbd5c56b7" className="panel rules-grid-panel">
-        <div data-ui-key="u-002b1c2b9b6f" className="panel-title-row"><div><h2>BẢNG NỘI QUY</h2><p>{visibleRows.length} / {rows.length} dòng · {data?.updated_by ? `Cập nhật bởi ${data.updated_by}` : 'Chưa có người cập nhật'}.</p></div>{dirty && <span className="rules-unsaved-chip">Chưa ghi</span>}</div>
+        <div data-ui-key="u-002b1c2b9b6f" className="panel-title-row"><div><h2>BẢNG NỘI QUY KTV</h2><p>{visibleRows.length} / {rows.length} dòng · {data?.updated_by ? `Cập nhật bởi ${data.updated_by}` : 'Chưa có người cập nhật'}.</p></div>{dirty && <span className="rules-unsaved-chip">Chưa ghi</span>}</div>
         <StableDataRegion loading={loading}><>
           <div className="rules-desktop-table table-wrap">
             <table data-ui-key="u-6422d71adff5" className="rules-table">

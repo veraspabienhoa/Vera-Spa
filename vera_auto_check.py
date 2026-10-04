@@ -364,10 +364,25 @@ def event_rows(conn, *, start: date | None = None, end: date | None = None, limi
     return rows
 
 
+AUTO_PENALTY_ROLES = frozenset({"leader", "nhanvien"})
+
+
+def automatic_penalty_employee_eligible(conn, employee: str, work_date: date) -> bool:
+    """Resolve the current employee role on the caller's connection; fail closed."""
+    from vera_web_v2_department_attendance import employee_role, scheduled_assignment
+    if employee_role(conn, employee) not in AUTO_PENALTY_ROLES:
+        return False
+    assignment = scheduled_assignment(conn, work_date, employee)
+    department = str((assignment or {}).get("department") or "").strip().lower()
+    return not department or department in AUTO_PENALTY_ROLES
+
+
 def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, detail: str, source: str, minutes=0) -> tuple[bool, str]:
     reason = str(reason_item.get("name") or "").strip()
     if not automatic_late_penalty_eligible(reason, minutes):
         return True, "SKIP_GRACE_PERIOD"
+    if not automatic_penalty_employee_eligible(conn, employee, work_date):
+        return True, "SKIP_ROLE_NOT_ELIGIBLE"
     ensure_schema(conn)
     event_key = f"{work_date.isoformat()}|{_norm(employee)}|{_norm(reason)}"
     inserted = conn.execute(text("""
