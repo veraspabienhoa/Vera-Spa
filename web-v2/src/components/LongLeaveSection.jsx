@@ -448,13 +448,9 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
 
 function DateField({ label, value, min, max, onChange }) {
   return (
-    <label className="long-leave-date-field">
+    <label className="long-leave-date-field leave-date-input-group">
       <span>{label}</span>
-      <div className="long-leave-date-control">
-        <span>{formatDateDisplay(value)}</span>
-        <CalendarDays size={17} aria-hidden="true" />
-        <VeraDateInput value={value} min={min} max={max} onChange={(event) => onChange(event.target.value)} required aria-label={label} />
-      </div>
+      <VeraDateInput value={value} min={min} max={max} onChange={(event) => onChange(event.target.value)} required aria-label={label} />
     </label>
   )
 }
