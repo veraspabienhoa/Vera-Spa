@@ -40,3 +40,13 @@
   font-weight:800; white-space:normal; line-height:1.4; text-align:center;
 }
 .revenue-page .revenue-tip-current > small { flex-basis:100%; text-align:center; }
+
+@media (max-width:760px) {
+  .revenue-page .ledger-summary-head > .ledger-import {
+    margin:0; width:100%; min-width:0; min-height:44px; height:100%;
+    align-self:stretch; display:flex; align-items:center; justify-content:center;
+    gap:6px; padding:8px 6px; white-space:normal; text-align:center;
+    line-height:1.4; box-sizing:border-box;
+  }
+  .revenue-page .ledger-summary-head > .ledger-import svg { flex-shrink:0; }
+}
