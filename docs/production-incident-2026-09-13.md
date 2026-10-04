@@ -1,3 +1,24 @@
+## 04-10-2026 — Automatic Nội quy KTV penalties must exclude other departments
+
+User screenshot shows Mạnh Đạt, 03-10-2026, 1,000,000đ, absence detail:
+Ca 2 past 19:00 without check-in, FaceGate sync 19:00:16, policy revision 0.
+User confirms Locker, main Ca 2 plus overtime Ca 1 starting 09:30, with a
+check-in. Raw production scans and the deployed code at penalty time have not
+been independently inspected; do not attribute this event to the overtime bug
+without matching archived evidence.
+
+Confirmed code defect: missing-check-in absence accepts Locker and other staff
+roles. User specifies all automatic official-catalog penalties apply only to
+leader and nhanvien. Guard the shared writer using employees.role on its caller
+connection, before schema/event/leave/outbox writes. Absence excludes other
+schedule roles before any replacement. Worker counts excluded writes as skips;
+attendance does not display a penalty amount for excluded employees. Preserve
+attendance, schedules, overtime evidence and manual department rules. Rename
+the navigation and official catalog to Nội quy KTV and explain eligible roles.
+No production penalty rows have been edited; the historical 1,000,000đ record
+requires an authorized adjustment on production. Deployment and actual Locker
+and KTV operation verification are still required.
+
 ## 04-10-2026 — Leave tabs, report export controls and active filters
 
 Source changes based on main 7ce2da21: leave registration has three small tabs,

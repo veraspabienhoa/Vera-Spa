@@ -43,7 +43,7 @@ const items = [
   { id: 'long-leave', label: 'Phép năm', icon: ClipboardList, ready: true, anyPermission: ['long_leave', 'long_leave_form', 'long_leave_stats', 'resignation_form'] },
   { id: 'profile', label: 'Hồ sơ & mật khẩu', icon: UserRound, ready: true, permission: 'profile' },
   { id: 'live-tour-recovery', label: 'Khôi phục Live Tour', icon: RefreshCw, ready: true, adminOnly: true },
-  { id: 'rules', label: 'Nội quy', icon: FileText, ready: true, permission: 'official_rules_view' },
+  { id: 'rules', label: 'Nội quy KTV', icon: FileText, ready: true, permission: 'official_rules_view' },
 ]
 
 const BREAK_ALERT_DISMISSED_KEY = 'vera-break-alerts-admin-dismissed'

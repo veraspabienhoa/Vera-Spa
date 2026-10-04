@@ -147,7 +147,9 @@ def process(conn, *, now=None):
     auto_check.ensure_schema(conn)
     for row in sorted(schedules, key=lambda r: str(r.get('employee_username') or '')):
         username = str(row.get('employee_username') or '').strip()
-        if not username or username not in mapped or row.get('employee_role') not in {'nhanvien', 'leader', 'letan', 'locker', 'tapvu', 'support'}:
+        if not username or username not in mapped or row.get('employee_role') not in auto_check.AUTO_PENALTY_ROLES:
+            continue
+        if str(row.get('department') or '').strip().lower() not in {'', *auto_check.AUTO_PENALTY_ROLES}:
             continue
         lock_transition(conn, [('leave_employee', username)], legacy_keys=['vera:phase4:leave_primary'])
         # A reviewed/revoked event is still a completed decision for this day.

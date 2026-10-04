@@ -820,7 +820,7 @@ def process_tour_penalties(engine, cfg: dict, employee_map: dict, catalog: dict)
                 conn, work_date=today, employee=employee, reason_item=reason_item,
                 detail=" · ".join(detail_parts), source="AUTO UPDATE 24/7 - BẢNG TOUR", minutes=minutes,
             )
-        if ok and msg == "SKIP_DUPLICATE":
+        if ok and msg in {"SKIP_DUPLICATE", "SKIP_ROLE_NOT_ELIGIBLE", "SKIP_GRACE_PERIOD"}:
             result["skipped"] += 1
         elif ok:
             result["added"] += 1
@@ -1340,7 +1340,7 @@ def process_break_return_penalties(engine, catalog: dict) -> dict:
                     source="ĐỒNG BỘ TIMESOFT - NGHỈ GIỮA CA",
                     minutes=late_minutes,
                 )
-            if ok and message == "SKIP_DUPLICATE":
+            if ok and message in {"SKIP_DUPLICATE", "SKIP_ROLE_NOT_ELIGIBLE", "SKIP_GRACE_PERIOD"}:
                 result["skipped"] += 1
             elif ok:
                 result["added"] += 1
@@ -1511,7 +1511,7 @@ def process_timesoft_penalties(
                     source=("ĐỒNG BỘ TIMESOFT - CHẤM CÔNG BỘ PHẬN" if department in department_attendance.DEPARTMENTS else "ĐỒNG BỘ TIMESOFT - PHẠT TRỰC TIẾP"),
                     minutes=penalty_minutes,
                 )
-            if ok and msg == "SKIP_DUPLICATE":
+            if ok and msg in {"SKIP_DUPLICATE", "SKIP_ROLE_NOT_ELIGIBLE", "SKIP_GRACE_PERIOD"}:
                 result["skipped"] += 1
             elif ok:
                 result["added"] += 1
