@@ -92,6 +92,7 @@ async function fixture(role, initial = 'auto', legacy = false, rowCount = 1, sav
       }
       if (path.endsWith('/ledger/export.xlsx')) return {ok:true,blob:async()=>new Blob(['synthetic full export'])}
       if (path.endsWith('/live-tour/reports')) return response({reports:[{business_date:'2026-09-20',tip:20}]})
+      if (path === '/v2/revenue/entry') return response({message:'Đã lưu Thu Chi'})
       if (path.endsWith('/tip-summary')) return response({ source, period_tip: 20 })
       if (path.endsWith('/tip-period')) { const body=JSON.parse(options.body); savedEnd=body.end_date; return response({ period_tip:20, balance:1549.75, period_tip_start:body.start_date, period_tip_end:body.end_date }) }
       throw new Error(`Unexpected request ${path}`)
@@ -135,7 +136,9 @@ for (const role of ['admin','giamdoc','quanly','letan','nhanvien']) {
 test('admin persists global mode and Auto keeps five Manual cards and read-only TIP filters', async () => {
   const f=await fixture('admin','manual')
   try {
-    assert.ok(f.doc.querySelector('.revenue-entry-form'))
+    assert.equal(f.doc.querySelector('.revenue-entry-form'), null)
+    await act(async () => f.button('Nhập doanh thu - chi phí').click())
+    assert.ok(f.doc.querySelector('.revenue-entry-modal[role=dialog] .revenue-entry-form'))
     await act(async()=>f.button('Auto · Tự động hệ thống').click())
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
     assert.deepEqual(f.calls.find(c=>c.path.endsWith('/source')&&c.method==='PUT').body,{source:'auto',revision:1})
@@ -150,7 +153,9 @@ test('admin persists global mode and Auto keeps five Manual cards and read-only 
 test('an already open Manual page locks after another admin changes the shared mode', async()=>{
   const f=await fixture('letan','manual')
   try {
-    assert.ok(f.doc.querySelector('.revenue-entry-form'))
+    assert.equal(f.doc.querySelector('.revenue-entry-form'), null)
+    await act(async () => f.button('Nhập doanh thu - chi phí').click())
+    assert.ok(f.doc.querySelector('.revenue-entry-modal[role=dialog] .revenue-entry-form'))
     await f.externalMode('auto')
     assert.equal(f.doc.querySelector('.revenue-entry-form'),null)
     assert.equal(f.button('Sửa dòng đã chọn'),undefined)
@@ -161,7 +166,9 @@ test('an already open Manual page locks after another admin changes the shared m
  test('older VPS keeps Manual usable until backend deployment', async()=>{
   const f=await fixture('admin','manual',true)
   try {
-    assert.ok(f.doc.querySelector('.revenue-entry-form'))
+    assert.equal(f.doc.querySelector('.revenue-entry-form'), null)
+    await act(async () => f.button('Nhập doanh thu - chi phí').click())
+    assert.ok(f.doc.querySelector('.revenue-entry-modal[role=dialog] .revenue-entry-form'))
     assert.match(f.doc.querySelector('.ledger-table').textContent,/05-09-2025/)
     assert.match(f.doc.body.textContent,/Cần chạy Deploy VPS Production/)
     assert.equal(f.button('Auto · Tự động hệ thống').disabled,true)
@@ -429,7 +436,7 @@ test('revenue date presets are ordered and compact date search sends a read-only
   try {
     const labels = ['Tất cả','Hôm nay','Hôm qua','Tuần này','Tuần trước','Tháng này','Tháng trước','Tùy chỉnh']
     const buttons = [...f.doc.querySelectorAll('.detail-filter-actions button')]
-    assert.deepEqual(buttons.slice(0,8).map(b => b.textContent), labels)
+    assert.deepEqual(buttons.slice(0,7).map(b => b.textContent), labels.slice(0,7))
     const input = f.doc.querySelector('.detail-filter-panel .report-date-preset input')
     await act(async () => input.focus())
     assert.deepEqual([...f.doc.querySelectorAll('[role=option]')].map(b => b.textContent), labels)
@@ -477,5 +484,31 @@ test('first half before the 15th still requests the complete calendar period', a
     const query = new URL(f.calls.filter(c => c.path.endsWith('/period-report')).at(-1).url).searchParams
     assert.equal(query.get('start'), '2026-10-01'); assert.equal(query.get('end'), '2026-10-15')
     assert.equal(f.calls.some(c => c.method !== 'GET'), false)
+  } finally { await f.close() }
+})
+
+
+test('Manual entry dialog preserves a draft on close, reports validation inside it and opens without writes', async () => {
+  const f = await fixture('admin','manual')
+  try {
+    assert.equal(f.doc.querySelector('.revenue-entry-form'),null)
+    await act(async()=>f.button('Nhập doanh thu - chi phí').click())
+    const modal = f.doc.querySelector('.revenue-entry-modal')
+    assert.equal(modal.getAttribute('aria-modal'),'true')
+    await f.change(modal.querySelector('.entry-note input'),'Ghi chú đang nhập')
+    await act(async()=>f.button('Lưu Thu + Chi').click())
+    assert.match(modal.querySelector('[role=alert]').textContent,/lớn hơn 0/)
+    await act(async()=>modal.querySelector('[aria-label="Đóng nhập doanh thu"]').click())
+    assert.equal(f.doc.querySelector('.revenue-entry-modal'),null)
+    await act(async()=>f.button('Nhập doanh thu - chi phí').click())
+    assert.equal(f.doc.querySelector('.entry-note input').value,'Ghi chú đang nhập')
+    assert.equal(f.calls.some(c=>c.method!=='GET'),false)
+    await f.change(f.doc.querySelector('.entry-amount input'),'1000')
+    await act(async()=>f.button('Lưu Thu + Chi').click())
+    assert.equal(f.doc.querySelector('.revenue-entry-modal'),null)
+    const write=f.calls.find(c=>c.path==='/v2/revenue/entry')
+    assert.equal(write.method,'POST'); assert.equal(write.body.income_amount,1000)
+    assert.equal(write.body.income_note,'Ghi chú đang nhập')
+    assert.match(f.doc.body.textContent,/Đã lưu Thu Chi/)
   } finally { await f.close() }
 })
