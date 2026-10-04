@@ -1,5 +1,6 @@
 import useTablePage from '../lib/useTablePage'
 import TablePager from '../components/TablePager'
+import CustomerCountShareDialog from '../components/CustomerCountShareDialog'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -43,6 +44,7 @@ export default function LiveTourReportsPage({ user }) {
   const [historyNotice, setHistoryNotice] = useState('')
   const [deletingHistory, setDeletingHistory] = useState(false)
   const [error, setError] = useState('')
+  const [pdfFilters, setPdfFilters] = useState(null)
   const historyDateFrom = filters.date_from
   const historyDateTo = filters.date_to
   const historyEmployee = filters.employee
@@ -110,6 +112,7 @@ export default function LiveTourReportsPage({ user }) {
   const refresh = async () => { setBusy(true); setError(''); try { await load() } catch (e) { setError(e.message) } finally { setBusy(false) } }
   if (!allowed) return <div data-ui-key="u-58587e19c2e9" className="panel">Tài khoản chưa có quyền Xem báo cáo.</div>
   return <div className="feature-page spa-page live-tour-reports-page">
+    {pdfFilters && <CustomerCountShareDialog filters={pdfFilters} onClose={() => setPdfFilters(null)}/>}
     <div data-ui-key="u-9e11e35c221d" className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Báo cáo</h1><p>Hóa đơn, doanh thu, TIP và các giao dịch combo.</p></div><button data-ui-key="u-801a859b2628" data-ui-label-default="Làm mới" className="secondary-button" disabled={busy || loading} onClick={refresh}><UiCustomText uiKey="u-801a859b2628">Làm mới</UiCustomText></button></div>
     <StableFeedback>{loading && <p role="status">Đang cập nhật báo cáo…</p>}{error && <p className="error-box" role="alert">{error}</p>}</StableFeedback>
     <section data-ui-key="u-cc5b99345633" className="panel spa-content">
@@ -121,7 +124,10 @@ export default function LiveTourReportsPage({ user }) {
       {tab === 'employee' && <LiveTourEmployeeRevenueBreakdown rows={rows}/>}
       {tab !== 'performance' && <p>{rows.length} dòng</p>}
       <UiToolbar className="report-summary-toolbar">
+      <div className="report-export-actions">
       {grants.export && <button data-ui-key="u-7dae37cfbfcd" data-ui-label-default="Xuất excel" className="secondary-button" onClick={() => (tab === 'history' ? veraApi.exportLiveTourBoardHistory(filters) : veraApi.exportLiveTourExcel(tab === 'tip' ? 'tip' : tab === 'performance' ? 'performance' : tab === 'employee' ? 'employee' : 'reports', { ...appliedFilters, preset: '', ...(tab === 'combos' ? { report_kind: 'combos' } : {}), ...(tab === 'performance' ? { performance_timing: performanceTiming } : {}) })).catch(e => setError(e.message))}><UiCustomText uiKey="u-7dae37cfbfcd">Xuất excel</UiCustomText></button>}
+      {tab === 'revenue' && grants.export && <button type="button" data-ui-key="u-customer-count-pdf" className="primary-button report-share-pdf-button" disabled={busy || loading} onClick={() => setPdfFilters({ ...appliedFilters })}>Chia sẻ số khách · PDF</button>}
+      </div>
       {tab === 'revenue' && <div className="live-tour-report-extra-metrics" aria-label="Thống kê hóa đơn theo bộ lọc"><div><span>Hóa đơn chưa thanh toán</span><strong>{grants.pending_view && grants.invoice_view ? unpaidInvoiceCount : '—'}</strong></div><div><span>Hóa đơn tổng tiền = 0</span><strong>{invoiceMetrics.zeroInvoices}</strong></div><div><span>Tổng giảm giá</span><strong>{money(invoiceMetrics.discount)}</strong></div></div>}
       {tab !== 'employee' && <TablePager pagination={pagination} label="Báo cáo" alwaysVisible/>}
       </UiToolbar>
