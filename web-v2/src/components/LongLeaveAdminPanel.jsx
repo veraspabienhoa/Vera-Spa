@@ -116,9 +116,13 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
     }
   }
 
-  return <section data-ui-key="u-d0934921f18d" className="panel long-leave-admin-panel">
+  return <section data-ui-key="u-d0934921f18d" className={`panel long-leave-admin-panel${rows.length > 0 ? ' has-pending' : ''}`}>
     <style>{`
       .long-leave-admin-panel{display:grid;gap:12px;margin-bottom:16px;border-color:#d8e4dd;background:#fbfdfc}
+      .long-leave-admin-panel.has-pending{background:#fff3d4;border:2px solid #b77a18;box-shadow:0 0 0 3px rgba(183,122,24,.12)}
+      .long-leave-admin-panel.has-pending .long-leave-admin-heading h2{color:#71460b}
+      .long-leave-pending-count{display:inline-flex;align-items:center;gap:7px;margin-top:8px;padding:8px 12px;border-radius:10px;background:#80520f;color:#fff;font-size:13px;font-weight:850;line-height:1.4}
+      .long-leave-pending-count svg{flex-shrink:0}
       .long-leave-admin-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
       .long-leave-admin-heading h2{margin:0;color:#10251e;font-size:20px}.long-leave-admin-heading p{margin:4px 0 0;color:#6c7771;font-size:11px}
       .long-leave-pending-list{display:grid;gap:10px}.long-leave-pending-card{display:grid;gap:10px;padding:13px;border:1px solid #dfe7e3;border-radius:14px;background:#fff}
@@ -134,6 +138,7 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
     <div data-ui-key="u-7fd1bacfe432" className="long-leave-admin-heading">
       <div>
         <h2>ADMIN · ĐƠN CHỜ DUYỆT</h2>
+        {rows.length > 0 && <div className="long-leave-pending-count" role="status" aria-live="polite"><Clock3 size={17} aria-hidden="true" />{rows.length} đơn chờ Admin duyệt</div>}
         <p>Phép năm / Nghỉ làm đẹp / Nghỉ việc · hiển thị đầy đủ thông tin trước khi quyết định.</p>
       </div>
       <button data-ui-key="u-bbacc6bc597e" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-bbacc6bc597e"> Làm mới</UiCustomText></button>
