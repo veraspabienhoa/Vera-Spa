@@ -220,7 +220,12 @@ test('a delayed save refreshes the current filters instead of reopening the earl
     f.calls.length = 0
     await act(async () => completeSave({}))
     assert.deepEqual(f.calls.find(([name]) => name === 'leaveDailyStats').slice(1, 4), currentRange)
-    assert.match(f.dom.window.document.body.textContent, /LƯU SỬA THÀNH CÔNG/)
+    const successDialog = f.dom.window.document.querySelector('.action-success-dialog[role="dialog"]')
+    assert.ok(successDialog)
+    assert.equal(successDialog.getAttribute('aria-modal'), 'true')
+    assert.match(successDialog.textContent, /Sửa lịch nghỉ thành công/)
+    await act(async () => successDialog.querySelector('footer button').click())
+    assert.equal(f.dom.window.document.querySelector('.action-success-dialog'), null)
   } finally { completeSave({}); await f.dispose() }
 })
 
