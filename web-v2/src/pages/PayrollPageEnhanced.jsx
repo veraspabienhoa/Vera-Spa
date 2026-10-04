@@ -77,7 +77,7 @@ function isNonPositive(row) {
   return Number(row?.['Số tiền thực nhận'] || 0) <= 0
 }
 
-export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onTabChange }) {
+export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onTabChange, configExtra = null, onConfigOpenChange }) {
   usePageRefresh(() => reload(), () => Boolean(busy || JSON.stringify(config) !== configBaseline))
   const permissions = user?.permissions || {}
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
@@ -700,14 +700,18 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     </section>
 
     {canEditConfig && <section data-ui-key="u-6d5ef6daf882" className="panel payroll-default-config-panel">
-      <div data-ui-key="u-238aac3ce39b" className="panel-title-row"><h2><Settings2 size={17} /> CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH</h2><button className="secondary-button" type="button" aria-expanded={configOpen} onClick={() => setConfigOpen(value => !value)}>{configOpen ? 'Ẩn cài đặt' : 'Hiện cài đặt'}</button></div>
+      <div data-ui-key="u-238aac3ce39b" className="panel-title-row"><h2><Settings2 size={17} /> {configExtra ? 'CÀI ĐẶT KHẤU TRỪ & PHÍ SINH HOẠT' : 'CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH'}</h2><button className="secondary-button" type="button" aria-expanded={configOpen} onClick={() => { const next = !configOpen; setConfigOpen(next); onConfigOpenChange?.(next) }}>{configOpen ? 'Ẩn cài đặt' : 'Hiện cài đặt'}</button></div>
       {configOpen && <>
+      <div className="payroll-default-settings">
+      {configExtra && <h3>Khấu trừ mặc định</h3>}
       <div className="payroll-config-grid">
         <label>Chi phí sinh hoạt<VeraMoneyInput disabled={isBusy} value={config.default_living_expense} onChange={(event) => setConfig({ ...config, default_living_expense: Number(event.target.value) })} /></label>
         <label>Hỗ trợ Locker<VeraMoneyInput disabled={isBusy} value={config.default_locker_support} onChange={(event) => setConfig({ ...config, default_locker_support: Number(event.target.value) })} /></label>
         <label>Tiền trách nhiệm Leader (Kỳ 2)<VeraMoneyInput disabled={isBusy} value={config.leader_responsibility_allowance} onChange={(event) => setConfig({ ...config, leader_responsibility_allowance: Number(event.target.value) })} /></label>
       </div>
       <button data-ui-key="u-1fc73aabf48a" data-ui-label-default="Lưu cài đặt" className="primary-button" onClick={saveConfig} disabled={isBusy}><Save size={16} /><UiCustomText uiKey="u-1fc73aabf48a"> Lưu cài đặt</UiCustomText></button>
+      </div>
+      {configExtra}
       </>}
     </section>}
 
