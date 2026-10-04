@@ -317,3 +317,44 @@ def test_tip_export_money_filter_matches_visible_rows_and_validates_amount(monke
         assert all(row[2] == amount for row in rows)
     assert client.get('/v2/live-tour/export.xlsx',params={'kind':'tip','tip_amount':-1}).status_code == 422
     assert client.get('/v2/live-tour/export.xlsx',params={'kind':'tip','tip_amount':'invalid'}).status_code == 422
+
+@pytest.mark.parametrize('grants,expected', [
+    ({'live_tour_export', 'live_tour_paid_invoice_view'}, 200),
+    ({'live_tour_export', 'live_tour_reports_view'}, 403),
+    ({'live_tour_paid_invoice_view'}, 403),
+])
+def test_paid_invoice_export_uses_independent_read_and_export_grants(monkeypatch, grants, expected):
+    state, invoice = paid_state()
+    before = deepcopy(state)
+    client, shared = scoped_client(monkeypatch, state, grants)
+    response = client.get('/v2/live-tour/export.xlsx', params={'kind': 'paid'})
+    assert response.status_code == expected
+    assert shared['state'] == before
+    if expected == 200:
+        book = load_workbook(BytesIO(response.content))
+        assert book.active.title == 'Hoa_don_da_thanh_toan'
+        assert book.active.max_row == 2
+        assert book.active.cell(2, 2).value == invoice['bill_no']
+        assert book.active.cell(2, 9).value == invoice['total']
+
+
+def test_paid_invoice_export_keeps_date_and_zero_amount_filters(monkeypatch):
+    state, invoice = paid_state()
+    invoice['total'] = 0
+    client, _ = scoped_client(monkeypatch, state, {'live_tour_export', 'live_tour_paid_invoice_view'})
+    for params, count in [({'total_amount': 0}, 2), ({'total_amount': 1}, 1),
+                          ({'date_from': '2020-01-01', 'date_to': '2020-01-02'}, 1)]:
+        response = client.get('/v2/live-tour/export.xlsx', params={'kind': 'paid', **params})
+        assert response.status_code == 200
+        assert load_workbook(BytesIO(response.content)).active.max_row == count
+
+
+@pytest.mark.parametrize('pending_grants,visible', [(set(), False),
+    ({'live_tour_pending_view'}, False),
+    ({'live_tour_pending_view', 'live_tour_invoice_view'}, True)])
+def test_report_unpaid_collection_respects_both_read_grants(monkeypatch, pending_grants, visible):
+    state, pending = pending_state()
+    client, _ = scoped_client(monkeypatch, state, {'live_tour_reports_view'} | pending_grants)
+    response = client.get('/v2/live-tour/reports')
+    assert response.status_code == 200
+    assert [item['id'] for item in response.json()['pending']] == ([pending['id']] if visible else [])

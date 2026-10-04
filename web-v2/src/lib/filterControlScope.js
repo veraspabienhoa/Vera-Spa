@@ -1,0 +1,2 @@
+// Shared filter containers; keep the matching CSS scope in clear-borders.css.
+export const FILTER_CONTROL_SCOPE = '[class*="filter"], .data-toolbar, .viewed-date-toolbar, .date-input-group, .reconcile-toolbar, .history-controls, .history-toolbar, .revenue-period, .storage-dates, .audit-custom-range, .attendance-date-custom, .payroll-search-toolbar, .auto-check-custom, .schedule-custom-range, .employee-id-actions'

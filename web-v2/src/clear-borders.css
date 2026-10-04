@@ -592,3 +592,18 @@ body .payroll-submenu .payroll-main-tabs button svg {flex-shrink:0}
 body .payroll-submenu .payroll-main-tabs button[aria-selected="true"] {border:2px solid #1f513f;background:#dceee3;color:#173f2e;font-weight:800;box-shadow:inset 3px 0 #1f513f}
 body .payroll-submenu .payroll-main-tabs button:focus-visible {outline:3px solid #c69831;outline-offset:3px}
 @media(max-width:600px){body .payroll-page-enhanced > .payroll-submenu{padding:10px}body .payroll-submenu .payroll-main-tabs{grid-template-columns:minmax(0,1fr)}}
+
+/* Filter values stay visible without observers or document-wide render scans. */
+:where([class*="filter"], .data-toolbar, .viewed-date-toolbar, .date-input-group, .reconcile-toolbar, .history-controls, .history-toolbar, .revenue-period, .storage-dates, .audit-custom-range, .attendance-date-custom, .payroll-search-toolbar, .auto-check-custom, .schedule-custom-range, .employee-id-actions) :is(
+  input[value]:not([value=""]):not([data-filter-active="false"] input):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not(.vera-native-date-picker),
+  select:has(option:checked:not([value=""]):not([value="all"]):not([value="All"]):not([value="Tất cả"]))
+) {
+  background-color: #fff2bf !important;
+  border-color: #b78019 !important;
+  color: #49330b;
+}
+.leave-registration-tabs { display: flex; gap: 8px; margin: 12px 0; }
+.leave-registration-tabs button { background: #e9f0ec; border: 1px solid #77958a; border-radius: 8px; padding: 8px 16px; }
+.leave-registration-tabs button[aria-selected="true"] { background: #20654f; color: white; }
+.leave-tab-content { display: block; }
+.leave-tab-content > [hidden] { display: none !important; }

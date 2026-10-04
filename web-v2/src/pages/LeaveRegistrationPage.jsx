@@ -108,6 +108,7 @@ export default function LeaveRegistrationPage({ user }) {
   usePageRefresh(() => load(), () => Boolean(busy || saving || managing || mutationRef.current || changedRecords.length))
   const initialRange = useMemo(() => rangeForFilter('Hôm nay'), [])
   const [date, setDate] = useState(today())
+  const [activeTab, setActiveTab] = useState('registration')
   const [rangeFilter, setRangeFilter] = useState('Hôm nay')
   const [requestedRangeStart, setRangeStart] = useState(initialRange[0])
   const [requestedRangeEnd, setRangeEnd] = useState(initialRange[1])
@@ -815,8 +816,11 @@ export default function LeaveRegistrationPage({ user }) {
 
       {watchError && <div className="error-box watch-error-box">{watchError}</div>}
 
-      <div className="content-grid">
-        <section data-ui-key="u-3ad934e889f0" className="panel registration-panel">
+      <UiToolbar className="leave-registration-tabs" role="tablist" aria-label="Đăng ký nghỉ">
+        {[['registration', 'Đăng ký'], ['statistics', 'Thống kê'], ['list', 'Danh sách']].map(([key, label]) => <button type="button" key={key} id={`leave-tab-${key}`} role="tab" aria-selected={activeTab === key} aria-controls={`leave-panel-${key}`} onClick={() => setActiveTab(key)}>{label}</button>)}
+      </UiToolbar>
+      <div className="content-grid leave-tab-content">
+        <section data-ui-key="u-3ad934e889f0" className="panel registration-panel" id="leave-panel-registration" role="tabpanel" aria-labelledby="leave-tab-registration" hidden={activeTab !== 'registration'}>
           <div data-ui-key="u-d92c5005f472" className="panel-title-row">
             <div><h2>ĐĂNG KÝ MỚI</h2></div>
           </div>
@@ -893,7 +897,7 @@ export default function LeaveRegistrationPage({ user }) {
           </form>
         </section>
 
-        <section data-ui-key="u-1da4ebbbf42b" className="panel daily-summary-panel">
+        <section data-ui-key="u-1da4ebbbf42b" className="panel daily-summary-panel" id="leave-panel-statistics" role="tabpanel" aria-labelledby="leave-tab-statistics" hidden={activeTab !== 'statistics'}>
           <div data-ui-key="u-18eec50740be" className="panel-title-row">
             <div>
               <h2>THỐNG KÊ</h2>
@@ -1024,7 +1028,7 @@ export default function LeaveRegistrationPage({ user }) {
           </div>
         </section>
 
-        <section data-ui-key="u-6a4d9baaa43d" className="panel leave-list-panel"
+        <section data-ui-key="u-6a4d9baaa43d" className="panel leave-list-panel" id="leave-panel-list" role="tabpanel" aria-labelledby="leave-tab-list" hidden={activeTab !== 'list'}
           data-leave-start={listRangeStart} data-leave-end={listRangeEnd} data-leave-employee={employeeSearch}>
           <div data-ui-key="u-8b2d8ad1d8f1" className="panel-title-row">
             <div>

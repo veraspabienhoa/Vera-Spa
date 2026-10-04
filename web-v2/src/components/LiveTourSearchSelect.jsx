@@ -5,7 +5,7 @@ import { searchTextMatches, scrollSearchOption } from '../lib/searchText'
 import './LiveTourSearchSelect.css'
 import ClearableSearchInput from './ClearableSearchInput'
 
-export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, advanceOnSelect = false, invalid = false }) {
+export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, advanceOnSelect = false, invalid = false, filterActive }) {
   const id = useId(), root = useRef(null), input = useRef(null), menu = useRef(null), side = useRef(null)
   const typing = useRef(false)
   const selected = options.find((item) => item.value === value)
@@ -68,7 +68,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
     if (open) scrollSearchOption(menu.current, menu.current?.querySelector(`[id="${id}-${activeIndex}"]`))
   }, [activeIndex, id, open])
 
-  return <div className={`live-tour-search-select ${className}`} ref={root} onBlur={(event) => {
+  return <div className={`live-tour-search-select ${className}`} data-filter-active={filterActive} ref={root} onBlur={(event) => {
     if (!root.current?.contains(event.relatedTarget) && !menu.current?.contains(event.relatedTarget)) { close(); if (!freeSearch) setQuery(selected?.label || '') }
   }}>
     {!hideLabel && <label htmlFor={id}>{label}</label>}
