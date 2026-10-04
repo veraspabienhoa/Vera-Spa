@@ -39,6 +39,7 @@ CAPABILITY_FEATURES = {
 }
 
 EXPORT_FEATURES = {
+    "paid": ("live_tour_paid_invoice_view",),
     "revenue": ("live_tour_reports_view",),
     "tip": ("live_tour_reports_view",),
     "reports": ("live_tour_reports_view",),

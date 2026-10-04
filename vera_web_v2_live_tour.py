@@ -3845,7 +3845,7 @@ def _export_rows(
     if kind == "custom":
         title, headers, rows = _export_rows(state, "board", now, include_hidden=include_hidden, bounds=bounds)
         return "Tuy_chinh", headers, rows
-    if kind == "revenue":
+    if kind in {"revenue", "paid"}:
         headers = ["Ngày", "Số bill", "Khách hàng", "Điện thoại", "Tên nhân viên", "Tiền dịch vụ", "Giảm giá", "Tiền Tip", "Tổng tiền", "Thanh toán", "Người tạo"]
         rows = [[item.get("business_date"), item.get("bill_no"), item.get("customer_name"), item.get("customer_phone"),
                  ", ".join(dict.fromkeys(entry["employee_name"] for entry in item.get("entries", []) if entry.get("employee_name"))),
@@ -3853,7 +3853,7 @@ def _export_rows(
                  item.get("discount") or 0, item.get("tip") or 0, item.get("total") or 0,
                  item.get("payment_method"), item.get("actor")]
                 for item in state["invoices"] if _event_in_export_bounds(item, bounds)]
-        return "Doanh_thu", headers, rows
+        return "Hoa_don_da_thanh_toan" if kind == "paid" else "Doanh_thu", headers, rows
     if kind == "tip":
         headers = ["Ngày", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Tip", "Người tạo"]
         rows = [[item.get("business_date"), item.get("employee_name"), item.get("service"), item.get("room"), item.get("bill_no"), item.get("tip"), item.get("actor")] for item in _report_rows_with_combo_kind(state) if int(item.get('tip') or 0) > 0 and _event_in_export_bounds(item, bounds)]
@@ -4964,7 +4964,7 @@ def install_live_tour_routes(
         public = _state_response(state, revision, now, **grants)
         is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
         return {"revision": revision, "invoices": public["state"]["invoices"],
-                "reports": public["report_rows"], "performance": _service_performance_rows(state) if is_admin else [],
+                "reports": public["report_rows"], "pending": public["pending_payments"], "performance": _service_performance_rows(state) if is_admin else [],
                 "capabilities": public["capabilities"], "payment_settings": public["payment_settings"]}
 
     @app.get("/v2/live-tour/board-history")
@@ -5291,7 +5291,7 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         export_kind = kind.strip().lower()
         if export_kind not in {
-            "board", "custom", "revenue", "tip", "reports", "customers", "pending", "history",
+            "board", "custom", "revenue", "paid", "tip", "reports", "customers", "pending", "history",
             "breaks", "customer_detail", "performance", "employee",
         }:
             raise HTTPException(400, "Loại báo cáo Live Tour không hợp lệ.")
@@ -5303,7 +5303,7 @@ def install_live_tour_routes(
             time_from=time_from.strip(), time_to=time_to.strip(),
         )
         bounds['tip_amount'] = tip_amount
-        bounds.update(total_amount=total_amount, employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"revenue", "tip", "reports", "pending", "performance", "employee"}, invoice_dates=export_kind in {"revenue", "tip", "reports", "employee"})
+        bounds.update(total_amount=total_amount, employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"paid", "revenue", "tip", "reports", "pending", "performance", "employee"}, invoice_dates=export_kind in {"paid", "revenue", "tip", "reports", "employee"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):

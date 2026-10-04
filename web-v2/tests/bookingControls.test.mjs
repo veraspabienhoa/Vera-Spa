@@ -359,3 +359,42 @@ test('draft ticket checks aggregate per owner and component even without the sha
   assert.ok(groups.every(group => !group.error && group.remaining === 0))
   assert.match(multiBookingCombos([row], [], data.services)[0].error, /thiếu dữ liệu/)
 })
+
+test('filter date clears on click without loading and keeps partial typing', async () => {
+  const changes = []
+  function Filter() {
+    const [value, set] = useState('2026-09-03')
+    return React.createElement('div', { className: 'live-tour-filters' }, React.createElement(DateInput, {
+      value, onChange: e => { changes.push(e.target.value); set(e.target.value) },
+    }))
+  }
+  const dispose = await render(Filter)
+  try {
+    const input = document.querySelector('input[type="text"]')
+    await act(() => { input.focus(); input.click() })
+    assert.equal(input.value, '')
+    assert.deepEqual(changes, [])
+    await type(input, '0410')
+    await act(() => input.click())
+    assert.equal(input.value, '04-10')
+    assert.equal(input.checkValidity(), false)
+    await type(input, '04102026')
+    assert.equal(input.value, '04-10-2026')
+    assert.deepEqual(changes, ['2026-10-04'])
+    await act(() => input.click())
+    assert.equal(input.value, '')
+    await act(() => input.blur())
+    assert.equal(changes.at(-1), '')
+  } finally { await dispose() }
+})
+
+test('form dates and readonly filter dates retain their value on click', async () => {
+  for (const props of [{}, { readOnly: true, clearOnFocus: true }, { clearOnFocus: false }]) {
+    const dispose = await render(() => React.createElement(DateInput, { value: '2026-09-03', ...props }))
+    try {
+      const input = document.querySelector('input[type="text"]')
+      await act(() => { input.focus(); input.click() })
+      assert.equal(input.value, '03-09-2026')
+    } finally { await dispose() }
+  }
+})

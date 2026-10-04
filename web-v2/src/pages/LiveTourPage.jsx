@@ -78,14 +78,14 @@ const PANEL_TABS = [
   ['catalog', 'Danh mục'],
 ]
 const EXPORT_KINDS = [
-  ['revenue', 'Xuất doanh thu'],
-  ['tip', 'Xuất tiền TIP'],
-  ['customers', 'Xuất khách hàng'],
-  ['pending', 'Xuất chờ thanh toán'],
-  ['history', 'Xuất lịch sử'],
-  ['breaks', 'Xuất nghỉ giữa ca'],
+  ['revenue', 'Xuất excel Doanh thu'],
+  ['tip', 'Xuất excel TIP'],
+  ['customers', 'Xuất excel Khách hàng'],
+  ['pending', 'Chờ thanh toán'],
+  ['history', 'Lịch sử'],
+  ['breaks', 'Nghỉ giữa ca'],
 ]
-const FILTERED_EXPORT_KINDS = new Set(['revenue', 'tip', 'pending', 'history', 'breaks'])
+const FILTERED_EXPORT_KINDS = new Set(['revenue', 'paid', 'tip', 'pending', 'history', 'breaks'])
 const PRIVATE_CACHE_KEYS = new Set(['customer_id', 'customer_name', 'customer_phone', 'phone'])
 
 function hasLiveTourExportAccess(kind, capabilities) {
@@ -93,6 +93,7 @@ function hasLiveTourExportAccess(kind, capabilities) {
   if (kind === 'board' || kind === 'custom') return true
   if (kind === 'history' || kind === 'breaks') return capabilities.history
   if (kind === 'customers') return capabilities.customers
+  if (kind === 'paid') return capabilities.paidInvoiceView
   if (kind === 'pending') return capabilities.pending && capabilities.invoiceView
   if (kind === 'revenue' || kind === 'tip') return capabilities.reports
   if (kind === 'customer_detail') return capabilities.customers && capabilities.invoiceView && capabilities.paidInvoiceView && capabilities.pending && capabilities.reports
@@ -100,7 +101,7 @@ function hasLiveTourExportAccess(kind, capabilities) {
 }
 
 function compactExportQuery(filters) {
-  return Object.fromEntries(Object.entries(filters).filter(([, value]) => String(value || '').trim()))
+  return Object.fromEntries(Object.entries(filters).filter(([, value]) => String(value ?? '').trim()))
 }
 
 function liveTourCacheKey(user) {
@@ -1690,7 +1691,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
       {activePanel === 'pending' && canPending && <LiveTourPendingPanel actionBusy={actionBusy} asArray={asArray} canExportKind={canExportKind} canInvoiceDelete={canInvoiceDelete} canInvoiceEdit={canInvoiceEdit} canInvoiceView={canInvoiceView} canPayment={canPayment} data={data} exportData={panelActions.exportData} itemId={itemId} openModal={panelActions.openModal} pendingPayments={pendingPayments} setError={setError} setPendingContext={setPendingContext}/>}
 
-      {activePanel === 'invoices' && details.ready && canPaidInvoiceView && <LiveTourInvoicesPanel actionBusy={actionBusy} asArray={asArray} canPaidInvoiceDelete={canPaidInvoiceDelete} canPaidInvoiceEdit={canPaidInvoiceEdit} data={data} formatMoney={formatMoney} setError={setError} setPendingContext={setPendingContext} setReceipt={setReceipt} visibleInvoices={visibleInvoices} invoiceTotal={details.total} page={details.page} pages={details.pages}/>}
+      {activePanel === 'invoices' && details.ready && canPaidInvoiceView && <LiveTourInvoicesPanel canExportKind={canExportKind} exportData={panelActions.exportData} actionBusy={actionBusy} asArray={asArray} canPaidInvoiceDelete={canPaidInvoiceDelete} canPaidInvoiceEdit={canPaidInvoiceEdit} data={data} formatMoney={formatMoney} setError={setError} setPendingContext={setPendingContext} setReceipt={setReceipt} visibleInvoices={visibleInvoices} invoiceTotal={details.total} page={details.page} pages={details.pages}/>}
 
       {activePanel === 'customers' && canCustomers && <LiveTourCustomersPanel canCustomers={canCustomers} canExportKind={canExportKind} canImportCombo={canImportCombo} canPayment={canPayment} capabilities={capabilities} customerComboPurchases={customerComboPurchases} customerSearch={customerSearch} data={data} exportData={panelActions.exportData} filteredCustomers={filteredCustomers} isAdmin={isAdmin} itemId={itemId} itemLabel={itemLabel} openCustomerHistory={panelActions.openCustomerHistory} openModal={panelActions.openModal} setCustomerContext={setCustomerContext} setCustomerSearch={setCustomerSearch} setError={setError} stableCustomerId={stableCustomerId}/>}
 

@@ -134,3 +134,16 @@
 @media(max-width:760px){.employee-revenue-section{padding:10px}.employee-revenue-head{display:grid}.employee-revenue-kpis{grid-template-columns:1fr}.employee-revenue-charts{grid-template-columns:1fr}.employee-revenue-chart-head{display:grid}.employee-revenue-chart-actions{display:grid;grid-template-columns:1fr 1fr;align-items:end}.employee-revenue-chart-actions label,.employee-revenue-chart-actions select,.employee-revenue-chart-actions button{width:100%;box-sizing:border-box}.employee-revenue-chart-row{grid-template-columns:minmax(80px,.8fr) minmax(80px,1.4fr) auto;gap:5px}.employee-revenue-chart-row strong{min-width:68px;font-size:9px}}
 
 .live-tour-report-extra-metrics{display:flex;justify-content:center;flex-wrap:wrap;gap:10px;margin:12px 0}.live-tour-report-extra-metrics>div{display:grid;gap:5px;padding:10px 14px;border:1px solid #547466;border-radius:10px;background:#f1f8f3}.live-tour-report-extra-metrics strong{font-size:18px}
+
+.live-tour-reports-page .report-summary-toolbar {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 12px;
+  overflow-x: auto; margin: 12px 0; padding-bottom: 4px;
+}
+.live-tour-reports-page .report-summary-toolbar > * { flex: 0 0 auto; }
+.live-tour-reports-page .report-summary-toolbar .live-tour-report-extra-metrics {
+  display: flex; flex-wrap: nowrap; margin: 0; gap: 12px;
+}
+.live-tour-reports-page .report-summary-toolbar .table-pager {
+  display: flex; flex-wrap: nowrap; margin: 0; width: auto; white-space: nowrap;
+}
+.live-tour-reports-page .report-summary-toolbar button { white-space: nowrap; }

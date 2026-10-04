@@ -20,7 +20,7 @@ export default function ReportDatePreset({ value, presets, onChange, label = 'Th
   const options = presets.map(([id, title]) => ({ value: id, label: title }))
   if (date) options.push({ value: `date:${date}`, label: formatVeraDate(date), detail: 'Xem dữ liệu ngày này' })
   return <LiveTourSearchSelect className={`report-date-preset ${className}`} label={label}
-    required value={value} options={options} searchValue={query}
+    filterActive={Boolean(value && value !== 'all')} required value={value} options={options} searchValue={query}
     placeholder="Gõ thời gian hoặc ngày ddmmyyyy" onSearch={setDraft}
     filterOption={(option, text) => draft === null || option.value === `date:${date}` || searchTextMatches(option.label, text)}
     onChange={next => {

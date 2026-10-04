@@ -1,3 +1,19 @@
+## 04-10-2026 — Leave tabs, report export controls and active filters
+
+Source changes based on main 7ce2da21: leave registration has three small tabs,
+retaining mounted forms and month loaders while switching; Live Tour report
+exports show their six distinct labels. Paid invoice export requires both its
+read grant and export grant, uses the whole filtered ledger, and does not require
+report-view access. The report endpoint exposes pending invoices only with both
+existing pending/invoice read grants. Revenue metrics and paging share one row.
+
+Shared filter controls highlight nonempty values (including zero money). Date
+filter focus/click clears the displayed draft, without issuing a request on click;
+a complete validated date applies the new filter, while empty blur clears it.
+Partial/invalid input retains browser validity protection. Ordinary editable
+form dates retain their existing behavior. No production writes or deployment
+were performed; deployment and business readback remain unverified.
+
 ## 03-10-2026 — Locker attendance ignores earlier overtime
 
 Read-only production inspection confirmed that a mapped morning scan can be

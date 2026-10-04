@@ -1,6 +1,7 @@
 import { CalendarDays } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { FILTER_CONTROL_SCOPE } from '../lib/filterControlScope'
 import { ISO_DATE, formatVeraDate, parseVeraDate } from '../lib/veraDate'
 
 function typedDate(value) {
@@ -10,7 +11,7 @@ function typedDate(value) {
 
 export default function VeraDateInput({
   value = '', onChange, min = '', max = '', disabled = false, readOnly = false,
-  required = false, className = '', name, id, onDraftValidity, 'aria-label': ariaLabel,
+  clearOnFocus, required = false, className = '', name, id, onDraftValidity, 'aria-label': ariaLabel,
 }) {
   const [display, setDisplay] = useState(() => formatVeraDate(value))
   const [invalid, setInvalid] = useState(false)
@@ -44,6 +45,17 @@ export default function VeraDateInput({
     setInvalid(hasError)
     textRef.current?.setCustomValidity((!iso || outOfRange) ? 'Ngày phải đúng định dạng dd-mm-yyyy và nằm trong phạm vi cho phép.' : '')
     if (iso && !outOfRange) emit(iso)
+  }
+
+  const beginDateEdit = (event) => {
+    const filterField = clearOnFocus ?? Boolean(event.currentTarget.closest(FILTER_CONTROL_SCOPE))
+    if (!filterField || disabled || readOnly || !display || display !== formatVeraDate(value)) return
+    // Clear the draft immediately, but apply the filter only after a complete date
+    // or an intentional empty blur. Clicking alone must not trigger another load.
+    setDisplay('')
+    setInvalid(false)
+    onDraftValidity?.(false)
+    textRef.current?.setCustomValidity('Nhập ngày mới theo định dạng dd-mm-yyyy.')
   }
 
   const changeText = (event) => {
@@ -94,6 +106,8 @@ export default function VeraDateInput({
       required={required}
       aria-label={ariaLabel}
       aria-invalid={invalid || undefined}
+      onFocus={beginDateEdit}
+      onClick={beginDateEdit}
       onChange={changeText}
       onBlur={() => validateAndEmit(display, false)}
     />

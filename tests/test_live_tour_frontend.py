@@ -299,7 +299,7 @@ def test_live_tour_export_access_depends_on_the_requested_data_kind():
 
     assert "disabled={!canExportKind('pending')}" in source
     assert "disabled={!canExportKind('customers')}" in source
-    assert "disabled={!canExportKind(kind)}" in source
+    assert "disabled={!canExportKind(kind) || Boolean(actionBusy)}" in source
     assert "disabled={!canExportKind('board') || Boolean(actionBusy)}" in source
     assert "disabled={!canExportKind('history')}" in source
 

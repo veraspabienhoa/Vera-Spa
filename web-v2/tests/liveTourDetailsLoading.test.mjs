@@ -63,7 +63,7 @@ test('paid invoice heading keeps filtered total 64 on both pages and shows 50 th
   function Screen(props){
     details=hookModule.exports.default(props)
     return details.ready ? React.createElement(Panel,{data:details.data,visibleInvoices:details.data.state.invoices,
-      invoiceTotal:details.total,page:details.page,pages:details.pages,asArray:value=>value||[],formatMoney:String}) : null
+      canExportKind:()=>false,exportData:()=>{},invoiceTotal:details.total,page:details.page,pages:details.pages,asArray:value=>value||[],formatMoney:String}) : null
   }
   const root=createRoot(document.querySelector('#root'))
   const props={board:board(1),panel:'invoices',filters:{date_from:'2026-09-26',date_to:'2026-09-26'},lookupOpen:false}
