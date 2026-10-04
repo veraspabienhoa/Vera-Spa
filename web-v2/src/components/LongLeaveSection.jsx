@@ -1,3 +1,4 @@
+import ActionSuccessDialog from './ActionSuccessDialog'
 import StableFeedback from './StableFeedback'
 import usePageRefresh from '../lib/usePageRefresh'
 import UiToolbar from './UiToolbar'
@@ -236,7 +237,8 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
         </UiCustomText></button>
       </div>
 
-      <StableFeedback>{notice && (
+      {notice?.status === 'success' && <ActionSuccessDialog message={notice.message} onClose={() => setNotice(null)} />}
+      <StableFeedback>{notice?.status === 'error' && (
         <div className={`long-leave-notice ${notice.status}`} role={notice.status === 'error' ? 'alert' : 'status'}>
           {notice.status === 'success' ? <CheckCircle2 size={17} /> : <Clock3 size={17} />}
           <span>{notice.message}</span>
