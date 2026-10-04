@@ -1,3 +1,4 @@
+import EmployeeProfileModal from '../components/EmployeeProfileModal'
 import PurchasePage from './PurchasePage'
 import ReportDatePreset from '../components/ReportDatePreset'
 import useTablePage from '../lib/useTablePage'
@@ -253,6 +254,8 @@ export default function RevenuePage({ user }) {
   const [entryExpenseNote, setEntryExpenseNote] = useState('')
   const [expenseNoteEdited, setExpenseNoteEdited] = useState(false)
   const [savingEntry, setSavingEntry] = useState(false)
+  const [entryModalOpen, setEntryModalOpen] = useState(false)
+  const [entryError, setEntryError] = useState('')
   const [filterPreset, setFilterPreset] = useState('this_month')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
@@ -479,7 +482,8 @@ export default function RevenuePage({ user }) {
 
   const submitRevenueEntry = async (event) => {
     event?.preventDefault?.()
-    if (autoMode || !sourceReady) return
+    if (autoMode || !sourceReady || savingEntry) return
+    setEntryError('')
     setSavingEntry(true)
     setError('')
     setNotice('')
@@ -512,11 +516,12 @@ export default function RevenuePage({ user }) {
       setEntryIncomeNote(defaultRevenueNote('Doanh thu', entryDate))
       setEntryExpenseNote(defaultRevenueNote('Chi phí', entryDate))
       if (commonReport) setManualLedger(true)
+      setEntryModalOpen(false)
       setNotice(result.message || 'Đã ghi Thu Chi vào Chi tiết Doanh thu - Chi phí.')
       setRevision((value) => value + 1)
       setReconcileRevision((value) => value + 1)
     } catch (err) {
-      setError(err.message || 'Không ghi được Thu Chi.')
+      setEntryError(err.message || 'Không ghi được Thu Chi.')
     } finally {
       setSavingEntry(false)
     }
@@ -652,6 +657,7 @@ export default function RevenuePage({ user }) {
     { key: 'tip', label: 'TIỀN TIP TRONG KỲ', value: data?.period_tip, icon: CircleDollarSign },
     { key: 'balance', label: 'CÒN LẠI', value: data?.balance, icon: WalletCards },
   ]
+  useEffect(() => { if (autoMode) setEntryModalOpen(false) }, [autoMode])
   const canEditTip = Boolean(data?.can_edit_tip)
   const canCreateEntry = Boolean(sourceReady && !sharedSource.changing && !autoMode && data?.source === revenueSource && data?.can_create_entry)
   const canEditEntry = Boolean(sourceReady && !sharedSource.changing && !autoMode && data?.source === revenueSource && data?.can_edit_entry)
@@ -708,15 +714,19 @@ export default function RevenuePage({ user }) {
       ? (independentSources ? 'Auto · Tự động hệ thống · Thu = dịch vụ thực thu + TIP từ Live Tour; Chi = Nhập mua. Tự kiểm tra thay đổi mỗi 5 giây khi mở trang. Đã khóa nhập, sửa, xóa và import Manual.' : 'Auto · Tự động hệ thống · Áp dụng cho mọi tài khoản. Lịch sử Manual từ 05-09-2025 đến 24-09-2026; từ 25-09-2026, Thu = tiền dịch vụ thực thu + TIP, Chi = Nhập mua. Tự kiểm tra thay đổi mỗi 5 giây khi mở trang. Đã khóa nhập, sửa, xóa và import Manual.')
       : 'Manual · Nhập Thu/Chi theo quyền được cấp.'}</div>
 
-    {canCreateEntry && !autoMode && <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
-      <h2>NHẬP DOANH THU - CHI PHÍ</h2>
+    {canCreateEntry && <div className="revenue-entry-launch"><button type="button" className="primary-button" onClick={() => { setEntryError(''); setEntryModalOpen(true) }}><CircleDollarSign size={18} />Nhập doanh thu - chi phí</button></div>}
+    {entryModalOpen && canCreateEntry && <EmployeeProfileModal className="revenue-entry-modal" labelledBy="revenue-entry-title" busy={savingEntry} onClose={() => setEntryModalOpen(false)}>
+      <div className="revenue-entry-modal-heading"><h2 id="revenue-entry-title">NHẬP DOANH THU - CHI PHÍ</h2><button type="button" className="secondary-button" disabled={savingEntry} onClick={() => setEntryModalOpen(false)} aria-label="Đóng nhập doanh thu">✕</button></div>
+      {entryError && <div className="error-box" role="alert">{entryError}</div>}
+      <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
       <label className="entry-date">Ngày giao dịch<VeraDateInput aria-label="Ngày giao dịch" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
       <label className="entry-amount">Số tiền Thu<VeraMoneyInput value={entryIncomeAmount} onChange={(event) => setEntryIncomeAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
       <label className="entry-note">Ghi chú Thu<input className={!entryIncomeAmount && !incomeNoteEdited ? 'auto-note-empty' : ''} type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => { setIncomeNoteEdited(true); setEntryIncomeNote(event.target.value) }} placeholder="Doanh thu + ngày giao dịch" disabled={savingEntry}/></label>
       <label className="entry-amount entry-expense">Số tiền Chi<VeraMoneyInput value={entryExpenseAmount} onChange={(event) => setEntryExpenseAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
       <label className="entry-note entry-expense-note">Ghi chú Chi<input className={!entryExpenseAmount && !expenseNoteEdited ? 'auto-note-empty' : ''} type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => { setExpenseNoteEdited(true); setEntryExpenseNote(event.target.value) }} placeholder="Chi phí + ngày giao dịch" disabled={savingEntry}/></label>
       <button data-ui-key="u-4c1eb92b9b18" type="submit" className="primary-button" disabled={savingEntry}><Save size={16}/>{savingEntry ? 'Đang ghi…' : 'Lưu Thu + Chi'}</button>
-    </form>}
+      </form>
+    </EmployeeProfileModal>}
 
     {independentSources && <p className="revenue-meta">{autoMode ? 'Auto độc lập: Thu từ Live Tour theo Ngày giờ hóa đơn, Chi từ Nhập mua theo Ngày mua. Không cộng sổ Manual.' : 'Manual: Thu và Chi từ sổ nhập tay. Auto có nguồn dữ liệu và kỳ lưu riêng.'}</p>}
     {canViewAdminRevenueSummary && <section data-ui-key="u-4e91fcf9b37c" className="revenue-period" aria-label="Khoảng dữ liệu Doanh thu">
@@ -780,7 +790,7 @@ export default function RevenuePage({ user }) {
           <label>User<input value={purchaseUserFilter} onChange={(event) => setPurchaseUserFilter(event.target.value)} placeholder="Tìm user" /></label>
         </div> : null}
         <UiToolbar data-ui-key="u-d3c2154b8b3d" className="detail-filter-actions report-date-buttons">
-          {reconcileFilters.map(([value, label]) => <button data-ui-key="u-983619469a80" type="button" key={value} className={`secondary-button ${detailPreset === value ? 'active' : ''}`} aria-pressed={detailPreset === value} onClick={() => { if (value === 'custom' && detailPreset !== 'custom') { setDetailStart(detailData?.start_date || ''); setDetailEnd(detailData?.end_date || '') } setDetailPreset(value) }}>{label}</button>)}
+          {reconcileFilters.filter(([value]) => value !== 'custom').map(([value, label]) => <button data-ui-key="u-983619469a80" type="button" key={value} className={`secondary-button ${detailPreset === value ? 'active' : ''}`} aria-pressed={detailPreset === value} onClick={() => { if (value === 'custom' && detailPreset !== 'custom') { setDetailStart(detailData?.start_date || ''); setDetailEnd(detailData?.end_date || '') } setDetailPreset(value) }}>{label}</button>)}
           <button data-ui-key="u-e82fca1fc852" data-ui-label-default="Xóa lọc chi tiết" type="button" className="secondary-button" onClick={() => { setLedgerDate(''); setLedgerType(''); setLedgerAmountFilter(''); setLedgerNoteFilter(''); setLedgerEnteredDate(''); setLedgerEnteredByFilter(''); setPurchaseDate(''); setPurchaseItemFilter(''); setPurchaseBuyerFilter(''); setPurchaseUserFilter(''); setPurchaseAmountFilter(''); setPurchaseEnteredFilter('') }}><UiCustomText uiKey="u-e82fca1fc852">Xóa lọc chi tiết</UiCustomText></button>
         </UiToolbar>
       </div>
