@@ -3,7 +3,7 @@ import FacegateAttendancePreview from '../components/FacegateAttendancePreview'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { Download, History, RefreshCw } from 'lucide-react'
+import { Download, RefreshCw } from 'lucide-react'
 import VeraDateInput from '../components/VeraDateInput'
 import { veraApi } from '../lib/api'
 import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
@@ -203,7 +203,7 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
   const visible = records || []
 
   return <section className="checkin-history-page">
-    <div className="page-heading"><div><span className="eyebrow"><History size={16} /> FACE ID · CHẤM CÔNG</span>{embedded ? <h2>LỊCH SỬ CHECK IN</h2> : <h1>LỊCH SỬ CHECK IN</h1>}<p>Tra cứu nhật ký thiết bị hoặc dữ liệu chấm công đã đồng bộ vào VERA.</p></div></div>
+    <div className="page-heading"><div>{embedded ? <h2>LỊCH SỬ CHECK IN</h2> : <h1>LỊCH SỬ CHECK IN</h1>}<p>Tra cứu nhật ký thiết bị hoặc dữ liệu chấm công đã đồng bộ vào VERA.</p></div></div>
     <form ref={formRef} className="checkin-filters" onSubmit={load} onInput={() => setDirty(true)}>
       <fieldset disabled={busy || exporting}>
         <div className="checkin-filter-dates">
@@ -227,7 +227,6 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
           <button className="secondary-button" type="button" disabled={busy || !records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} />{exporting ? 'Đang xuất…' : 'Xuất excel'}</button>
         </div>
       </fieldset>
-      <small>Tra cứu tối đa 63 ngày/lượt. “Tất cả” lấy 63 ngày gần nhất. Danh sách trạng thái và loại sự kiện được cập nhật sau khi tải. Excel lấy dữ liệu mới nhất theo bộ lọc đã áp dụng.</small>
     </form>
     {dirty && records && <p role="status">Bộ lọc đã thay đổi. Bấm Xem lịch sử để cập nhật bảng và xuất Excel.</p>}
     <StableFeedback>{error && <p role="alert">{error}</p>}</StableFeedback>
