@@ -38,3 +38,17 @@ export function revenueTipTotal(rows, startDate, endDate) {
     return sum + revenueTipValue(row?.tip)
   }, 0) * 100) / 100
 }
+
+// Calendar presets anchored to the Vietnam business day supplied by the caller.
+export function revenueTipPreset(today, preset) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today || '')) return null
+  const [year, month, day] = today.split('-').map(Number)
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  if (parsed.toISOString().slice(0, 10) !== today) return null
+  if (preset === 'previous_second') {
+    const end = new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10)
+    return { start: `${end.slice(0, 7)}-16`, end }
+  }
+  if (preset === 'current_first') return { start: `${today.slice(0, 7)}-01`, end: `${today.slice(0, 7)}-15` }
+  return null
+}

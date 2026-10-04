@@ -132,7 +132,7 @@ for (const role of ['admin','giamdoc','quanly','letan','nhanvien']) {
   })
 }
 
-test('admin persists global mode and Auto keeps five Manual cards and date-only TIP save', async () => {
+test('admin persists global mode and Auto keeps five Manual cards and read-only TIP filters', async () => {
   const f=await fixture('admin','manual')
   try {
     assert.ok(f.doc.querySelector('.revenue-entry-form'))
@@ -143,9 +143,7 @@ test('admin persists global mode and Auto keeps five Manual cards and date-only 
     assert.equal(f.doc.querySelectorAll('.revenue-grid .revenue-card').length,5)
     assert.ok(f.doc.querySelector('[aria-label="Ngày bắt đầu Tiền TIP"]'))
     assert.equal(f.doc.querySelector('[aria-label="Tiền TIP trong kỳ tự động"]').readOnly,true)
-    assert.equal(f.button('Lưu Tiền TIP').disabled,false)
-    await act(async()=>f.button('Lưu Tiền TIP').click())
-    assert.deepEqual(f.calls.find(c=>c.path.endsWith('/tip-period')).body,{start_date:'2026-09-16',end_date:'2026-09-26'})
+    assert.equal(f.button('Lưu Tiền TIP'),undefined)
   } finally { await f.close() }
 })
 
@@ -167,12 +165,12 @@ test('an already open Manual page locks after another admin changes the shared m
     assert.match(f.doc.querySelector('.ledger-table').textContent,/05-09-2025/)
     assert.match(f.doc.body.textContent,/Cần chạy Deploy VPS Production/)
     assert.equal(f.button('Auto · Tự động hệ thống').disabled,true)
-    assert.equal(f.button('Lưu Tiền TIP').disabled,false)
+    assert.equal(f.button('Lưu Tiền TIP'),undefined)
   } finally { await f.close() }
 })
 
 
-test('Auto uses the displayed end date for every total and keeps it through refresh and saving', async()=>{
+test('Auto uses the displayed end date for every total and keeps it through refresh', async()=>{
   const f=await fixture('admin')
   try {
     const summaries=()=>f.calls.filter(c=>c.path.endsWith('/summary'))
@@ -182,7 +180,6 @@ test('Auto uses the displayed end date for every total and keeps it through refr
     assert.equal(f.doc.querySelector('.revenue-report-date-form'),null,'one end date, no separate report form')
     for (const invalid of ['24-09-20','31-09-2026','27-09-2026']) {
       await f.change(date,invalid)
-      await act(async()=>f.button('Lưu Tiền TIP').click())
       assert.equal(summaries().length,n,'invalid/partial date does not query with an old value')
       assert.equal(f.calls.some(c=>c.method==='PUT'),false,'invalid/partial date cannot save the previous date')
     }
@@ -196,9 +193,7 @@ test('Auto uses the displayed end date for every total and keeps it through refr
     await f.change(f.doc.querySelector('[aria-label="Ngày bắt đầu Tiền TIP"]'),'17-09-2026')
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,300))})
     assert.equal(summaries().length,n+1,'TIP start must not move the revenue start away from 05-09-2025')
-    await act(async()=>f.button('Lưu Tiền TIP').click())
-    assert.match(amount('balance'),/880đ/,'save response cannot replace the selected report balance')
-    assert.deepEqual(f.calls.find(c=>c.path.endsWith('/tip-period')).body,{start_date:'2026-09-17',end_date:'2026-09-24'})
+    assert.match(amount('balance'),/880đ/,'date filtering cannot replace the selected report balance')
     await f.externalMode('auto')
     assert.equal(new URL(summaries().at(-1).url).searchParams.get('end'),'2026-09-24')
     assert.match(amount('income'),/1\.000đ/)
@@ -212,7 +207,7 @@ test('Auto uses the displayed end date for every total and keeps it through refr
     assert.equal(f.doc.querySelector('.revenue-report-cutoff strong').textContent,'26-09-2026')
     assert.equal(date.value,'26-09-2026')
     assert.match(amount('income'),/1\.760đ/)
-    assert.equal(f.calls.filter(c=>c.method!=='GET').length,1,'only explicit TIP saving writes')
+    assert.equal(f.calls.filter(c=>c.method!=='GET').length,0,'date filtering never writes')
   } finally {await f.close()}
 })
 
@@ -255,8 +250,6 @@ for(const initial of ['manual','auto']) test(`${initial}: one shared response ke
     const detail=f.calls.filter(c=>c.path.endsWith('/purchase-reconcile')).at(-1)
     assert.equal(new URL(detail.url).searchParams.get('report_end'),'2026-09-24')
     assert.equal(new URL(detail.url).searchParams.get('canonical'),'true')
-    await act(async()=>f.button('Lưu Tiền TIP').click())
-    assert.deepEqual(f.calls.find(c=>c.path.endsWith('/report-period')).body,{start_date:'2026-09-16',end_date:'2026-09-24'})
     await f.externalMode(initial==='auto'?'manual':'auto')
     assert.equal(new URL(reports().at(-1).url).searchParams.get('end'),'2026-09-24')
     assert.match(money('income'),/1\.000đ/);assert.match(money('expense'),/100đ/);assert.match(money('tip'),/20đ/);assert.match(money('balance'),/880đ/)
@@ -303,12 +296,10 @@ test('independent Auto accepts start-first single-day editing and hides old TIP 
     assert.deepEqual(Object.fromEntries(new URL(requests().at(-1).url).searchParams),{start:'2026-09-25',end:'2026-09-25'})
     assert.equal(tip(),'15.450.000đ')
     assert.equal(f.doc.querySelector('[aria-label="Ngày bắt đầu Tiền TIP"]').getAttribute('aria-invalid'),null)
-    await act(async()=>f.button('Lưu Tiền TIP').click())
-    assert.deepEqual(f.calls.filter(c=>c.method==='PUT').at(-1).body,{start_date:'2026-09-25',end_date:'2026-09-25'})
     const count=requests().length
     await f.change(start,'25-09-20')
     assert.equal(tip(),'—')
-    assert.equal(f.button('Lưu Tiền TIP').disabled,true)
+    assert.equal(f.button('Lưu Tiền TIP'),undefined)
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,280))})
     assert.equal(requests().length,count,'incomplete text cannot reuse a previous date')
   } finally { await f.close() }
@@ -452,6 +443,39 @@ test('revenue date presets are ordered and compact date search sends a read-only
     assert.equal(params.get('preset'), 'custom')
     assert.equal(params.get('start'), '2026-09-30')
     assert.equal(params.get('end'), '2026-09-30')
+    assert.equal(f.calls.some(c => c.method !== 'GET'), false)
+  } finally { await f.close() }
+})
+
+for (const source of ['manual','auto','manual_tip_auto']) test(`${source}: TIP half-month presets set both dates, read without saving`, async () => {
+  const f = await fixture('admin', source, false, 1, '2026-09-26', 2)
+  try {
+    assert.equal(f.button('Lưu Tiền TIP'), undefined)
+    assert.equal(f.doc.body.textContent.includes('Đổi Đến ngày sẽ tự tính'), false)
+    const start = f.doc.querySelector('[aria-label="Ngày bắt đầu Tiền TIP"]')
+    const end = f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]')
+    for (const [label, from, to] of [['Tip kỳ 2 tháng trước','16-08-2026','31-08-2026'],['Tip kỳ 1 tháng này','01-09-2026','15-09-2026']]) {
+      await act(async () => f.button(label).click())
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+      assert.equal(start.value, from); assert.equal(end.value, to)
+      assert.equal(f.button(label).getAttribute('aria-pressed'), 'true')
+      const query = new URL(f.calls.filter(c => c.path.endsWith(source === 'manual_tip_auto' ? '/tip-summary' : '/period-report')).at(-1).url).searchParams
+      assert.equal(query.get('start'), from.split('-').reverse().join('-'))
+      assert.equal(query.get('end'), to.split('-').reverse().join('-'))
+    }
+    assert.equal(f.calls.some(c => c.method !== 'GET'), false)
+  } finally { await f.close() }
+})
+
+test('first half before the 15th still requests the complete calendar period', async () => {
+  const f = await fixture('admin', 'auto', false, 1, '2026-09-26', 2)
+  try {
+    await f.updateLedger([], '2026-10-04')
+    await act(async () => f.button('Tip kỳ 1 tháng này').click())
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    assert.equal(f.doc.querySelector('[aria-label="Đến ngày Tiền TIP"]').value, '15-10-2026')
+    const query = new URL(f.calls.filter(c => c.path.endsWith('/period-report')).at(-1).url).searchParams
+    assert.equal(query.get('start'), '2026-10-01'); assert.equal(query.get('end'), '2026-10-15')
     assert.equal(f.calls.some(c => c.method !== 'GET'), false)
   } finally { await f.close() }
 })

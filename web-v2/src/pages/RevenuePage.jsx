@@ -12,7 +12,7 @@ import UiCustomText from '../components/UiCustomText'
 import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, RefreshCw, Save, Upload, TrendingDown, TrendingUp, WalletCards } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
-import { defaultRevenueTipStart, revenueTipTotal } from '../lib/revenueTipPeriod'
+import { defaultRevenueTipStart, revenueTipTotal, revenueTipPreset } from '../lib/revenueTipPeriod'
 import './RevenuePage.css'
 import VeraDateInput from '../components/VeraDateInput'
 import VeraMoneyInput from '../components/VeraMoneyInput'
@@ -168,18 +168,6 @@ async function importRevenueExcel(file, mode) {
   return payload
 }
 
-async function savePeriodTip(amount, startDate, endDate, autoMode, commonReport = false) {
-  if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
-  const response = await fetch(`${apiBase}/v2/revenue/${commonReport ? 'report-period' : autoMode ? 'tip-period' : 'tip'}`, {
-    method: 'PUT',
-    headers: await authorizedHeaders(true),
-    body: JSON.stringify({ ...(autoMode || commonReport ? {} : { amount: Number(amount || 0) }), start_date: startDate || null, end_date: endDate || null }),
-  })
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
-  return payload
-}
-
 const defaultRevenueNote = (kind, transactionDate) => `${kind} ${formatVeraDate(transactionDate) || ''}`.trim()
 
 function AutoFitMoney({ children }) {
@@ -216,7 +204,7 @@ function statusTextClass(status) {
 }
 
 export default function RevenuePage({ user }) {
-  usePageRefresh(() => { setRevision(value => value + 1); setReconcileRevision(value => value + 1) }, () => Boolean(busy || savingTip || savingEntry || importingRevenue || entryEditor))
+  usePageRefresh(() => { setRevision(value => value + 1); setReconcileRevision(value => value + 1) }, () => Boolean(busy || savingEntry || importingRevenue || entryEditor))
   const [data, setData] = useState(null)
   const [tip, setTip] = useState(0)
   const [tipStart, setTipStart] = useState('')
@@ -228,7 +216,6 @@ export default function RevenuePage({ user }) {
   const [tipBusy, setTipBusy] = useState(false)
   const [tipLoadError, setTipLoadError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [savingTip, setSavingTip] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
@@ -247,7 +234,6 @@ export default function RevenuePage({ user }) {
   const [manualLedger, setManualLedger] = useState(false)
   const canonicalLedger = commonReport && (independentSources || !(manualLedger && revenueSource !== 'auto'))
   const ledgerFollowsReportEnd = canonicalLedger && !independentSources
-  const tipEditorRef = useRef(null)
   // Auto uses the displayed TIP end date as its report cutoff too. A cleared
   // input must not silently switch the report back to all dates.
   const summaryEnd = commonReport || revenueSource === 'auto' ? tipEnd || data?.end_date || '' : ''
@@ -483,28 +469,12 @@ export default function RevenuePage({ user }) {
     return () => controller.abort()
   }, [activeTab, detailEnd, detailPreset, detailStart, isAdmin, reconcileRevision])
 
-  const submitTip = async () => {
-    setSavingTip(true)
-    setError('')
-    setNotice('')
-    try {
-      const invalidDate = [...(tipEditorRef.current?.querySelectorAll('input') || [])].find(input => !input.checkValidity())
-      if (invalidDate) { invalidDate.reportValidity(); return }
-      if (!Number.isFinite(Number(tip)) || Number(tip) < 0) throw new Error('Tiền TIP trong kỳ phải là số không âm.')
-      if (!tipStart || !tipEnd) throw new Error('Chọn đủ Ngày bắt đầu và Đến ngày cho Tiền TIP trong kỳ.')
-      if (tipStart > tipEnd) throw new Error('Ngày bắt đầu Tiền TIP không được sau Đến ngày.')
-      const result = await savePeriodTip(tip, tipStart, tipEnd, autoMode, commonReport)
-      if (commonReport) setData(result)
-      else setData((current) => current ? ({ ...current, period_tip: result.period_tip, balance: Math.round((Number(current.net_income ?? (Number(current.total_income || 0) - Number(current.total_expense || 0))) - Number(result.period_tip || 0)) * 100) / 100, period_tip_start: result.period_tip_start, period_tip_end: result.period_tip_end }) : current)
-      setTip(Number(result.period_tip || 0))
-      setTipStart(result.period_tip_start || tipStart)
-      setTipEnd(result.period_tip_end || tipEnd)
-      setNotice(result.message || 'Đã lưu Tiền TIP trong kỳ.')
-    } catch (err) {
-      setError(err.message || 'Không lưu được Tiền TIP trong kỳ.')
-    } finally {
-      setSavingTip(false)
-    }
+  const applyTipPreset = preset => {
+    const range = revenueTipPreset(today, preset)
+    if (!range) return
+    setTipStartValid(true); setTipEndValid(true)
+    setAutoEndFollowsToday(false)
+    setTipStart(range.start); setTipEnd(range.end)
   }
 
   const submitRevenueEntry = async (event) => {
@@ -619,7 +589,7 @@ export default function RevenuePage({ user }) {
   }, [systemTipMode, autoMode, independentSources])
 
   const realtimeError = useRevenueRealtime(sourceReady && (autoMode || commonReport || independentSources),
-    Boolean(busy || (detailTabActive && detailBusy) || (activeTab === 'overview' && reconcileBusy) || tipBusy || savingTip || savingEntry || importingRevenue || entryEditor),
+    Boolean(busy || (detailTabActive && detailBusy) || (activeTab === 'overview' && reconcileBusy) || tipBusy || savingEntry || importingRevenue || entryEditor),
     () => { setRevision(value => value + 1); setReconcileRevision(value => value + 1); void sharedSource.refresh() },
     Boolean(error || (detailTabActive && detailError) || (activeTab === 'overview' && reconcileError) || tipLoadError))
 
@@ -698,7 +668,7 @@ export default function RevenuePage({ user }) {
       .revenue-period-card svg{color:#8b6b22;flex:0 0 auto}.revenue-period-card span{display:block;font-size:11px;font-weight:900;letter-spacing:.05em;color:#68736f;text-transform:uppercase}.revenue-period-card strong{display:block;margin-top:3px;font-size:18px;color:#173329}
       .revenue-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.revenue-action-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;min-height:43px}.revenue-action-link.disabled{opacity:.45;pointer-events:none}
             .revenue-entry-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);grid-template-areas:"title title" "date ." "income income-note" "expense expense-note" "save save";gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #cbded3;border-radius:15px;background:#f5faf7}.revenue-entry-form h2{grid-area:title;margin:0;color:#173329;font-size:18px}.revenue-entry-form label{display:grid;gap:5px;font-size:12px;font-weight:900;color:#425c51}.revenue-entry-form input{min-height:42px}.revenue-entry-form .entry-date{grid-area:date}.revenue-entry-form .entry-date .vera-date-input{width:100%;max-width:none}.revenue-entry-form .entry-amount:not(.entry-expense){grid-area:income}.revenue-entry-form .entry-note:not(.entry-expense-note){grid-area:income-note}.revenue-entry-form .entry-expense{grid-area:expense}.revenue-entry-form .entry-expense-note{grid-area:expense-note}.revenue-entry-form .entry-amount input{text-align:right;font-weight:850}.revenue-entry-form .entry-expense input{background:#fff4e5;border-color:#d99145}.revenue-entry-form .entry-expense-note input{background:#fff8ee;border-color:#d9a86f}.revenue-entry-form input.auto-note-empty{color:#9aa39f;font-weight:650}.revenue-entry-form > button{grid-area:save;min-height:42px;white-space:nowrap;width:100%}.revenue-entry-help{grid-column:1/-1;margin:0;color:#66776f;font-size:11px}
-      .revenue-tip-editor{display:grid;grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr) auto;gap:10px;align-items:end;margin-bottom:14px;padding:14px;border:1px solid #dfd5b9;border-radius:15px;background:#fffaf0}.revenue-tip-editor label{display:grid;gap:5px;font-size:12px;font-weight:900;min-width:0}.revenue-tip-editor input{font-size:16px;font-weight:800;min-width:0}.revenue-tip-editor .revenue-tip-amount input{text-align:right;font-size:18px}.revenue-tip-editor small{grid-column:1/-1;color:#75694d;line-height:1.45}.revenue-tip-current{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:42px;padding:0 8px;border:1px solid #dfd5b9;border-radius:10px;background:#fff;color:#75694d;font-size:11px;font-weight:900;white-space:nowrap}.revenue-tip-current button{min-height:30px;padding:4px 8px;font-size:11px;white-space:nowrap}
+      .revenue-tip-editor{display:grid;grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr);gap:10px;align-items:start;margin-bottom:14px;padding:14px;border:1px solid #dfd5b9;border-radius:15px;background:#fffaf0}.revenue-tip-editor label{display:grid;gap:5px;font-size:12px;font-weight:900;min-width:0}.revenue-tip-editor input{font-size:16px;font-weight:800;min-width:0}.revenue-tip-editor .revenue-tip-amount input{text-align:right;font-size:18px}.revenue-tip-editor small{grid-column:1/-1;color:#75694d;line-height:1.45}.revenue-tip-current{display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:42px;padding:0 8px;border:1px solid #dfd5b9;border-radius:10px;background:#fff;color:#75694d;font-size:11px;font-weight:900;white-space:nowrap}.revenue-tip-current button{min-height:30px;padding:4px 8px;font-size:11px;white-space:nowrap}
       .revenue-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.revenue-card{padding:18px;border:1px solid #dfe7e2;border-radius:18px;background:#fff;min-width:0}.revenue-card-head{display:flex;align-items:center;gap:9px;color:#5d6f66;font-size:12px;font-weight:900;letter-spacing:.05em}.revenue-card-value{width:100%;min-width:0;margin-top:14px;font-size:30px;line-height:1.05;font-weight:900;color:#173329;white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}.revenue-card.net{background:#f7faf8;border-color:#d2e0d8}.revenue-card.tip{background:#fffaf0;border-color:#e4d5ad}.revenue-card.balance{background:#f3f8f5;border-color:#cbded3}
       .revenue-formula{margin-top:14px;padding:12px 14px;border:1px solid #cbded3;border-radius:13px;background:#f3f8f5;color:#244a3a;font-size:13px;font-weight:800;text-align:center}.revenue-meta{margin-top:10px;padding:12px 14px;border:1px solid #e4eae6;border-radius:13px;background:#fafcfb;color:#68736f;font-size:12px}
       .reconcile-panel{margin-top:20px;padding:16px;border:1px solid #dfe7e2;border-radius:18px;background:#fff}.reconcile-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px}.reconcile-head h2{margin:3px 0 0;font-size:20px;color:#173329}.reconcile-head p{margin:4px 0 0;color:#68736f;font-size:12px;max-width:850px}.reconcile-filter{display:flex;align-items:end;gap:8px;flex-wrap:wrap}.reconcile-filter label{display:grid;gap:5px;font-size:11px;font-weight:900;color:#53635c}.reconcile-filter select,.reconcile-filter input{min-height:40px;min-width:145px}
@@ -727,9 +697,9 @@ export default function RevenuePage({ user }) {
 
     {isAdmin && <section data-ui-key="u-c8da699c05ac" className="revenue-source-toolbar">
       <div className="revenue-source-toggle" role="group" aria-label="Nguồn dữ liệu doanh thu">
-        <button data-ui-key="u-2cf563011ccb" data-ui-label-default="Manual · Thủ công" type="button" className={revenueSource === 'manual' ? 'active' : ''} disabled={!sourceReady || !sharedSourceSupported || sharedSource.changing || savingEntry || savingTip || Boolean(importingRevenue) || (!autoMode && Boolean(entryEditor))} onClick={() => sharedSource.change('manual')}><UiCustomText uiKey="u-2cf563011ccb">Manual · Thủ công</UiCustomText></button>
-        <button data-ui-key="u-38afe49fa1cb" data-ui-label-default="Auto · Tự động hệ thống" type="button" className={revenueSource === 'auto' ? 'active' : ''} disabled={!sourceReady || !sharedSourceSupported || sharedSource.changing || savingEntry || savingTip || Boolean(importingRevenue) || (!autoMode && Boolean(entryEditor))} onClick={() => sharedSource.change('auto')}><UiCustomText uiKey="u-38afe49fa1cb">Auto · Tự động hệ thống</UiCustomText></button>
-        <button data-ui-key="u-967badc6d902" data-ui-label-default="Dịch vụ Manual · Tip Auto" type="button" className={revenueSource === 'manual_tip_auto' ? 'active' : ''} disabled={!sourceReady || !sharedSourceSupported || sharedSource.changing || savingEntry || savingTip || Boolean(importingRevenue) || (!autoMode && Boolean(entryEditor))} onClick={() => sharedSource.change('manual_tip_auto')}><UiCustomText uiKey="u-967badc6d902">Dịch vụ Manual · Tip Auto</UiCustomText></button>
+        <button data-ui-key="u-2cf563011ccb" data-ui-label-default="Manual · Thủ công" type="button" className={revenueSource === 'manual' ? 'active' : ''} disabled={!sourceReady || !sharedSourceSupported || sharedSource.changing || savingEntry || Boolean(importingRevenue) || (!autoMode && Boolean(entryEditor))} onClick={() => sharedSource.change('manual')}><UiCustomText uiKey="u-2cf563011ccb">Manual · Thủ công</UiCustomText></button>
+        <button data-ui-key="u-38afe49fa1cb" data-ui-label-default="Auto · Tự động hệ thống" type="button" className={revenueSource === 'auto' ? 'active' : ''} disabled={!sourceReady || !sharedSourceSupported || sharedSource.changing || savingEntry || Boolean(importingRevenue) || (!autoMode && Boolean(entryEditor))} onClick={() => sharedSource.change('auto')}><UiCustomText uiKey="u-38afe49fa1cb">Auto · Tự động hệ thống</UiCustomText></button>
+        <button data-ui-key="u-967badc6d902" data-ui-label-default="Dịch vụ Manual · Tip Auto" type="button" className={revenueSource === 'manual_tip_auto' ? 'active' : ''} disabled={!sourceReady || !sharedSourceSupported || sharedSource.changing || savingEntry || Boolean(importingRevenue) || (!autoMode && Boolean(entryEditor))} onClick={() => sharedSource.change('manual_tip_auto')}><UiCustomText uiKey="u-967badc6d902">Dịch vụ Manual · Tip Auto</UiCustomText></button>
       </div>
     </section>}
 
@@ -756,13 +726,11 @@ export default function RevenuePage({ user }) {
       </article>
     </section>}
 
-    {canViewAdminRevenueSummary && canEditTip && <section data-ui-key="u-a5723df4546d" className="revenue-tip-editor" ref={tipEditorRef}>
+    {canViewAdminRevenueSummary && canEditTip && <section data-ui-key="u-a5723df4546d" className="revenue-tip-editor">
       <label className="revenue-tip-amount">TIỀN TIP TRONG KỲ<input type="text" inputMode="none" value={datedReportReady ? money(commonReport ? data?.period_tip : tip) : '—'} readOnly aria-label="Tiền TIP trong kỳ tự động" /></label>
-      <label>Từ ngày tính TIP<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} min={autoMode ? '2025-09-05' : undefined} max={autoMode ? today : data?.current_date || undefined} disabled={savingTip} onDraftValidity={setTipStartValid} onChange={(event) => setTipStart(event.target.value)} /></label>
-      <label>{commonReport || autoMode ? 'Đến ngày (báo cáo và TIP)' : 'Đến ngày tính TIP'}<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} min={autoMode ? '2025-09-05' : undefined} max={autoMode ? today : data?.current_date || undefined} disabled={savingTip} onDraftValidity={setTipEndValid} onChange={(event) => { setAutoEndFollowsToday(false); setTipEnd(event.target.value) }} /></label>
-      <div className="revenue-tip-current"><button data-ui-key="u-225f35c741ac" type="button" className="secondary-button" disabled={savingTip || busy || (!autoMode && !data?.current_date)} onClick={() => { setTipEndValid(true); setAutoEndFollowsToday(true); setTipEnd(autoMode ? today : data?.current_date || '') }}>Dùng ngày này · {autoMode ? formatVeraDate(today) : data?.current_date_label || '—'}</button>{autoMode && <small>{autoEndFollowsToday ? 'Tự cập nhật theo ngày hiện tại' : 'Đang xem ngày đã chọn'}</small>}</div>
-      {!hybridMode && <button data-ui-key="u-e90fac269afb" type="button" className="primary-button" onClick={submitTip} disabled={savingTip || busy || tipBusy || Boolean(tipLoadError) || !tipRangeValid}><Save size={16}/> {savingTip ? 'Đang lưu…' : 'Lưu Tiền TIP'}</button>}
-      {(commonReport || autoMode) && <p className="revenue-auto-date-note">Đổi Đến ngày sẽ tự tính Tổng thu, Tổng chi và Còn lại từ 05-09-2025 đến hết ngày chọn. TIP tính theo Từ ngày tính TIP → Đến ngày.</p>}
+      <div className="revenue-tip-date-control"><label>Từ ngày tính TIP<VeraDateInput aria-label="Ngày bắt đầu Tiền TIP" value={tipStart} min={autoMode ? '2025-09-05' : undefined} max={autoMode ? today : data?.current_date || undefined} onDraftValidity={setTipStartValid} onChange={(event) => setTipStart(event.target.value)} /></label><button type="button" className="secondary-button revenue-tip-preset" aria-pressed={tipStart === revenueTipPreset(today, 'previous_second')?.start && tipEnd === revenueTipPreset(today, 'previous_second')?.end} onClick={() => applyTipPreset('previous_second')}>Tip kỳ 2 tháng trước</button></div>
+      <div className="revenue-tip-date-control"><label>{commonReport || autoMode ? 'Đến ngày (báo cáo và TIP)' : 'Đến ngày tính TIP'}<VeraDateInput aria-label="Đến ngày Tiền TIP" value={tipEnd} min={autoMode ? '2025-09-05' : undefined} max={tipStart === `${today.slice(0, 7)}-01` && tipEnd === `${today.slice(0, 7)}-15` ? tipEnd : autoMode ? today : data?.current_date || undefined} onDraftValidity={setTipEndValid} onChange={(event) => { setAutoEndFollowsToday(false); setTipEnd(event.target.value) }} /></label><button type="button" className="secondary-button revenue-tip-preset" aria-pressed={tipStart === revenueTipPreset(today, 'current_first')?.start && tipEnd === revenueTipPreset(today, 'current_first')?.end} onClick={() => applyTipPreset('current_first')}>Tip kỳ 1 tháng này</button></div>
+      <div className="revenue-tip-current"><button data-ui-key="u-225f35c741ac" type="button" className="secondary-button" disabled={busy || (!autoMode && !data?.current_date)} onClick={() => { setTipEndValid(true); setAutoEndFollowsToday(true); setTipEnd(autoMode ? today : data?.current_date || '') }}>Dùng ngày này · {autoMode ? formatVeraDate(today) : data?.current_date_label || '—'}</button>{autoMode && <small>{autoEndFollowsToday ? 'Tự cập nhật theo ngày hiện tại' : 'Đang xem ngày đã chọn'}</small>}</div>
       <small>{hybridMode ? 'Dịch vụ Manual · Tip Auto: ' : ''}Tiền TIP tự động cộng từ TIP của nhân viên trong báo cáo hóa đơn Live Tour theo đúng khoảng Ngày bắt đầu → Đến ngày. Kỳ 1 mặc định bắt đầu ngày 01, kỳ 2 mặc định bắt đầu ngày 16; Đến ngày mặc định bằng Ngày hiện tại. Đổi một trong hai ngày sẽ tự lọc và tính lại số TIP ngay.</small>
     </section>}
 
