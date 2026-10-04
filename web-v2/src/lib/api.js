@@ -572,6 +572,17 @@ export const veraApi = {
   spaCustomers: () => request('/v2/live-tour/customers'),
   spaSettings: () => request('/v2/live-tour/settings'),
   liveTourCustomerHistory: (customerId) => request(`/v2/live-tour/customers/${encodeURIComponent(customerId)}/history`),
+  readCustomerCountPdf: async (query = {}, options = {}) => {
+    const params = new URLSearchParams()
+    for (const key of ['date_from', 'date_to', 'date', 'employee', 'customer', 'service', 'bill_no', 'total_amount']) {
+      const value = String(query[key] ?? '').trim()
+      if (value) params.set(key, value)
+    }
+    const response = await binaryResponse(`/v2/live-tour/customer-count.pdf?${params}`, { ...options, cache: 'no-store' }, 'Không tạo được báo cáo PDF')
+    const blob = await response.blob()
+    if (blob.type.split(';')[0] !== 'application/pdf') throw new Error('Máy chủ không trả về file PDF hợp lệ.')
+    return blob
+  },
   exportLiveTourExcel: (kind = 'board', query = {}) => {
     const params = liveTourExportParams(kind, query)
     return download(`/v2/live-tour/export.xlsx?${params}`, `VeraSpa_LiveTour_${kind}.xlsx`)

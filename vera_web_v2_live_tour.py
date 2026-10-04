@@ -5274,6 +5274,47 @@ def install_live_tour_routes(
         actor = str(ident.employee_username or ident.full_name or "admin")
         return job_queue.recover_expired(engine_instance, PROJECTION_QUEUE, actor)
 
+    @app.get("/v2/live-tour/customer-count.pdf")
+    def live_tour_customer_count_pdf(
+        date_from: str = Query(default="", max_length=10), date_to: str = Query(default="", max_length=10),
+        selected_date: str = Query(default="", alias="date", max_length=10),
+        employee: str = Query(default="", max_length=200), customer: str = Query(default="", max_length=200),
+        service: str = Query(default="", max_length=200), bill_no: str = Query(default="", max_length=100),
+        total_amount: int | None = Query(default=None, ge=0, le=MAX_MONEY),
+        ident: identity_type = Depends(current_identity),
+    ):
+        from vera_customer_count_pdf import customer_counts, customer_count_pdf
+        _parse_export_bounds(date_from=date_from, date_to=date_to)
+        if selected_date:
+            _parse_export_bounds(date_from=selected_date, date_to=selected_date)
+        now = datetime.now(timezone)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_reports_view")
+            require_feature(conn, ident, "live_tour_export")
+            state, _ = read_collections_view(conn, now, {"reports", "invoices"})
+            grants = permissions(conn, ident)
+        # Keep exactly the customer visibility of the report screen before filtering.
+        report_rows = _report_rows_with_combo_kind(state)
+        if not (grants["can_customers_view"] or grants["can_paid_invoice_view"]):
+            report_rows = _redact_customer_pii(report_rows)
+        # Detached snapshot; PDF rendering never holds a DB connection or board lock.
+        rows = [row for row in report_rows
+                if list_queries.matches(row, date_from=date_from, date_to=date_to, employee=employee,
+                                        customer=customer, service=service, bill_no=bill_no, invoice_dates=True)
+                and (not selected_date or list_queries.matches(row, date_from=selected_date, date_to=selected_date, invoice_dates=True))
+                and (total_amount is None or int(row.get("total") or 0) == total_amount)]
+        start, end = (selected_date, selected_date) if selected_date else (date_from, date_to)
+        summary = customer_counts(rows, date_from=start, date_to=end)
+        scope = dict(date_from=start, date_to=end, date=selected_date, employee=employee,
+                     customer=customer, service=service, bill_no=bill_no, total_amount=total_amount)
+        try:
+            content = customer_count_pdf(summary, scope, generated_at=now)
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        return StreamingResponse(BytesIO(content), media_type="application/pdf",
+                                 headers={"Content-Disposition": "attachment; filename=VERA_SoLuongKhach.pdf",
+                                          "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
     @app.get("/v2/live-tour/export.xlsx")
     def live_tour_export_excel(
         kind: str = Query(default="board"), include_hidden: bool = Query(default=False),
