@@ -198,6 +198,10 @@
   .live-tour-page .tour-topbar .tour-heading-actions button{min-width:0;max-width:100%;min-height:40px;padding:7px 6px;font-size:11px;white-space:normal;overflow-wrap:anywhere;justify-content:center;border-radius:10px}
   .live-tour-page .tour-topbar .tour-heading-actions .live-tour-combo-approval-button{min-height:48px}
   .live-tour-page .tour-topbar .tour-heading-actions button svg{flex-shrink:0}
+  /* Mobile: Customers precedes Reports; later actions retain their sequence. */
+  .live-tour-page .tour-heading-actions > [data-ui-key="u-526d6f86e6a4"] { order: 1; }
+  .live-tour-page .tour-heading-actions > [data-ui-key="u-526d6f86e6a4"] ~ button:not([data-ui-key="u-29cfad1ad280"]) { order: 2; }
+
   .live-tour-page .tour-control-layout .tour-metrics{grid-template-columns:repeat(10,minmax(0,1fr))!important;width:100%;min-width:0;gap:2px!important;overflow:hidden!important}
   .live-tour-page .metric-grid.small .metric-card.tour-metric-card{min-width:0;padding:2px!important}
   .live-tour-page .metric-grid.small .metric-card.tour-metric-card span{min-width:0;white-space:normal!important;overflow-wrap:anywhere;text-align:left}
