@@ -99,3 +99,20 @@ Workflow có sẵn các giá trị public production của VERA; repository Vari
 - Bộ lọc thống kê hỗ trợ Hôm qua/Hôm nay/Tuần này/Tuần sau/Tháng này/Tháng sau/Tùy chỉnh. Bảng theo ngày lấy trực tiếp từ PostgreSQL và dùng cấu hình `leave_rules/daily_quota` để cảnh báo khi Có phép hoặc Phát sinh đã đủ hạn mức.
 - Các RPC dự phòng chỉ cấp `EXECUTE` cho `authenticated` và `service_role`; `anon` bị thu hồi quyền.
 - Tài khoản hệ thống `admin` không được cộng vào thống kê nhân viên đang làm việc.
+
+### Tabs opened before a deployment (04-10-2026)
+
+The Vite `retainAssets` plugin carries hashed JS/CSS and supporting assets from
+`/opt/vera-spa/current/web-v2/dist` into the new build for seven days. Build the
+new release before switching `current`; if the serving directory differs, set
+`VERA_PREVIOUS_WEB_DIST` to the actual previous release's dist directory. Do not
+build into that same directory. Old HTML, service workers, build-info and source
+maps are excluded. `asset-history.json` keeps original retention timestamps.
+Verify an old page module URL still returns JavaScript after deployment, as well
+as the existing commit/health checks. Pages-only builds without the previous VPS
+release do not provide this retention for the production domain.
+
+For already expired or missing modules, the page boundary checks the live entry
+with no-cache and offers an explicit update that keeps the requested page.
+It never reloads automatically or retries business writes. A `PAGE_RENDER` code
+means a rendering exception; a `PAGE_MODULE_LOAD` code means JS/CSS loading failed.
