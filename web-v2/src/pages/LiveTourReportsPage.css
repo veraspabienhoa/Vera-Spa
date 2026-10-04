@@ -147,3 +147,52 @@
   display: flex; flex-wrap: nowrap; margin: 0; width: auto; white-space: nowrap;
 }
 .live-tour-reports-page .report-summary-toolbar button { white-space: nowrap; }
+
+/* Mobile report actions must fit the page rather than require horizontal scrolling. */
+@media (max-width: 760px) {
+  .live-tour-reports-page .report-summary-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible;
+  }
+  .live-tour-reports-page .report-summary-toolbar > * {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .live-tour-reports-page .report-summary-toolbar > button {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px;
+  }
+  .live-tour-reports-page .report-summary-toolbar button {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+  }
+  .live-tour-reports-page .report-summary-toolbar .live-tour-report-extra-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+  .live-tour-reports-page .live-tour-report-extra-metrics > div {
+    min-width: 0;
+    padding: 10px;
+    overflow-wrap: anywhere;
+  }
+  .live-tour-reports-page .live-tour-report-extra-metrics > div:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  .live-tour-reports-page .report-summary-toolbar .table-pager {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    white-space: normal;
+    gap: 8px;
+  }
+}

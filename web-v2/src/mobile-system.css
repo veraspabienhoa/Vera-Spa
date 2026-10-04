@@ -84,3 +84,9 @@
 @media(max-width:360px){
   .payroll-page-enhanced .payroll-calculate-panel>.data-toolbar{grid-template-columns:minmax(0,1fr)}
 }
+
+/* Shared action rows: long labels can wrap without expanding their page. */
+@media(max-width:760px){
+  .main-area :is(.data-toolbar,.list-actions,.page-actions,.button-row){min-width:0;max-width:100%;box-sizing:border-box;flex-wrap:wrap}
+  .main-area :is(.data-toolbar,.list-actions,.page-actions,.button-row)>:is(button,a){min-width:0;max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;line-height:1.3}
+}
