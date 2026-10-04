@@ -2,7 +2,7 @@ import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
-import { ChevronDown, ChevronRight, RefreshCw, Save, Settings2, Undo2 } from 'lucide-react'
+import { RefreshCw, Save, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import PayrollPage from './PayrollPageEnhanced'
 import PayrollDebtAdminPanel from './PayrollDebtAdminPanel'
@@ -24,44 +24,6 @@ async function payrollV38Request(path, options = {}) {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   return payload
-}
-
-function PayrollAdminSectionOrder({ enabled, version }) {
-  useEffect(() => {
-    if (!enabled) return undefined
-    let disposed = false
-    let observer = null
-    let timer = null
-
-    const markDefaultConfig = () => {
-      if (disposed) return
-      const root = document.querySelector('.payroll-v38-stack.full .payroll-page-enhanced')
-      if (!root) {
-        timer = window.setTimeout(markDefaultConfig, 80)
-        return
-      }
-      const sections = Array.from(root.querySelectorAll('section.panel'))
-      sections.forEach((section) => {
-        const heading = section.querySelector('h2')?.textContent || ''
-        section.classList.toggle('payroll-default-config-section', heading.includes('CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH'))
-      })
-      observer = new MutationObserver(() => {
-        Array.from(root.querySelectorAll('section.panel')).forEach((section) => {
-          const heading = section.querySelector('h2')?.textContent || ''
-          section.classList.toggle('payroll-default-config-section', heading.includes('CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH'))
-        })
-      })
-      observer.observe(root, { childList: true, subtree: true })
-    }
-
-    markDefaultConfig()
-    return () => {
-      disposed = true
-      if (timer) window.clearTimeout(timer)
-      observer?.disconnect()
-    }
-  }, [enabled, version])
-  return null
 }
 
 export default function PayrollPageV38({ user }) {
@@ -166,43 +128,18 @@ export default function PayrollPageV38({ user }) {
 
   const configured = data.overrides || []
 
-  return <div className={`payroll-v38-stack${canFullPayroll ? ' full' : ''}`}>
-    <style>{`
-      .payroll-v38-stack.full{display:flex;flex-direction:column}
-      .payroll-v38-stack.full>.payroll-page-enhanced{display:contents}
-      .payroll-v38-stack.full .payroll-main-heading{order:-2}
-      .payroll-v38-stack.full .payroll-main-tabs{order:-1}
-      .payroll-main-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
-      .payroll-main-tabs button{min-height:42px;padding:9px 18px;border:1px solid #b8d0c3;border-radius:12px;background:#fff;color:#24473a;font:inherit;font-weight:900;cursor:pointer}
-      .payroll-main-tabs button.active{background:#1f513f;color:#fff;border-color:#1f513f}
-      .payroll-page-enhanced.payroll-tab-calculate>.payroll-history-panel{display:none}
-      .payroll-page-enhanced.payroll-tab-history>section.panel:not(.payroll-history-panel){display:none}
-      .payroll-page-enhanced.payroll-tab-accumulation>section.panel{display:none}
-      @media(max-width:700px){.payroll-main-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-main-tabs button{width:100%;padding:8px 6px;white-space:nowrap}}
-      .payroll-v38-stack.full>.payroll-personal-tracking{order:900}
-      .payroll-v38-stack.full .payroll-default-config-section{order:910}
-      .payroll-v38-stack.full>.payroll-v38-config{order:920}
-      .payroll-v38-config .v38-collapse-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-      .payroll-v38-config .v38-collapsed-note{margin-top:8px;color:#6b7771;font-size:12px}
-    `}</style>
-    <PayrollAdminSectionOrder enabled={canFullPayroll} version={payrollVersion} />
-    {canFullPayroll && <PayrollPage key={payrollVersion} user={user} activeTab={payrollTab} onTabChange={setPayrollTab} />}
-    {showPersonalTracking && !isAdmin && payrollTab === 'calculate' && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
-    {isAdmin && canFullPayroll && payrollTab === 'calculate' && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
-    {canFullPayroll && canEditConfig && payrollTab === 'calculate' && <div className="feature-page payroll-page payroll-v38-config">
-      <section data-ui-key="u-644a635241c1" className="panel">
+  const livingSettings = <div className="payroll-v38-config payroll-settings-subgroup">
+      <div data-ui-key="u-644a635241c1">
         <div data-ui-key="u-716cdc9927e0" className="panel-title-row">
           <div>
-            <h2><Settings2 size={17} /> CÀI ĐẶT PHÍ SINH HOẠT</h2>
+            <h3>Phí sinh hoạt & hỗ trợ Locker theo nhân viên</h3>
             <p>Mức riêng thay cho khấu trừ mặc định khi tính bảng lương mới. Tiền Lương = 0 vẫn tự đưa Phí sinh hoạt và Hỗ trợ Locker về 0 theo quy tắc 3.7.</p>
           </div>
           <UiToolbar data-ui-key="u-f1a54c4c26fa" className="v38-collapse-actions">
             {overridesOpen && <button data-ui-key="u-3aba63e653a9" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={() => loadOverrides()} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-3aba63e653a9"> Làm mới</UiCustomText></button>}
-            <button data-ui-key="u-6d58ab3c4305" className="secondary-button" type="button" onClick={() => setOverridesOpen((value) => !value)}>{overridesOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>} {overridesOpen ? 'Ẩn' : 'Hiện'}</button>
           </UiToolbar>
         </div>
 
-        {!overridesOpen && <div className="v38-collapsed-note">Khu vực Mức riêng mặc định được ẩn.</div>}
         {overridesOpen && <>
           <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
 
@@ -227,7 +164,30 @@ export default function PayrollPageV38({ user }) {
           <div className="responsive-data-table" style={{ marginTop: 16 }}><table data-ui-key="u-8547cf88b902"><thead><tr><th data-ui-key="u-e06e9c351279" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-e06e9c351279">Nhân viên</UiCustomText></th><th data-ui-key="u-9b0f15f36d29" data-ui-label-default="Phí sinh hoạt riêng"><UiCustomText uiKey="u-9b0f15f36d29">Phí sinh hoạt riêng</UiCustomText></th><th data-ui-key="u-cc7458cc7d40" data-ui-label-default="Hỗ trợ Locker riêng"><UiCustomText uiKey="u-cc7458cc7d40">Hỗ trợ Locker riêng</UiCustomText></th></tr></thead><tbody>{configured.map((item) => <tr key={item.employee_name}><td><strong>{item.employee_name}</strong></td><td>{money(item.living_expense)}</td><td>{money(item.locker_support)}</td></tr>)}</tbody></table></div>
           {!configured.length && <div className="setup-note">Chưa có mức riêng. Tất cả Nhân viên/Leader đang dùng mức mặc định.</div>}
         </>}
-      </section>
-    </div>}
+      </div>
+    </div>
+
+  return <div className={`payroll-v38-stack${canFullPayroll ? ' full' : ''}`}>
+    <style>{`
+      .payroll-v38-stack.full{display:flex;flex-direction:column}
+      .payroll-v38-stack.full>.payroll-page-enhanced{display:contents}
+      .payroll-v38-stack.full .payroll-main-heading{order:-2}
+      .payroll-v38-stack.full .payroll-main-tabs{order:-1}
+      .payroll-main-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+      .payroll-main-tabs button{min-height:42px;padding:9px 18px;border:1px solid #b8d0c3;border-radius:12px;background:#fff;color:#24473a;font:inherit;font-weight:900;cursor:pointer}
+      .payroll-main-tabs button.active{background:#1f513f;color:#fff;border-color:#1f513f}
+      .payroll-page-enhanced.payroll-tab-calculate>.payroll-history-panel{display:none}
+      .payroll-page-enhanced.payroll-tab-history>section.panel:not(.payroll-history-panel){display:none}
+      .payroll-page-enhanced.payroll-tab-accumulation>section.panel{display:none}
+      @media(max-width:700px){.payroll-main-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-main-tabs button{width:100%;padding:8px 6px;white-space:nowrap}}
+      .payroll-v38-stack.full>.payroll-personal-tracking{order:900}
+      .payroll-v38-stack.full .payroll-default-config-panel{order:910}
+      .payroll-settings-subgroup{margin-top:20px;padding-top:18px;border-top:1px solid #c4d6cb}.payroll-settings-subgroup h3{margin:0;font-size:16px;color:#214c3b}.payroll-default-settings h3{margin:0 0 12px;font-size:16px;color:#214c3b}
+      .payroll-v38-config .v38-collapse-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+      .payroll-v38-config .v38-collapsed-note{margin-top:8px;color:#6b7771;font-size:12px}
+    `}</style>
+    {canFullPayroll && <PayrollPage key={payrollVersion} user={user} activeTab={payrollTab} onTabChange={setPayrollTab} configExtra={livingSettings} onConfigOpenChange={setOverridesOpen} />}
+    {showPersonalTracking && !isAdmin && payrollTab === 'calculate' && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
+    {isAdmin && canFullPayroll && payrollTab === 'calculate' && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
   </div>
 }
