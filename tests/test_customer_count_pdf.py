@@ -22,7 +22,7 @@ def test_one_invoice_one_visit_sorted_vietnam_dates_zero_days_and_missing_ids():
 def test_a4_landscape_unicode_dates_total_empty_and_multi_page():
     rows = [dict(invoice_id=str(i), business_date=(date(2026, 10, 1) + timedelta(days=i)).isoformat()) for i in range(31)]
     summary = customer_counts(rows)
-    pdf = customer_count_pdf(summary, {'date_from':'2026-10-01', 'date_to':'2026-10-31', 'employee':'Mạnh Đạt', 'total_amount':0}, generated_at=datetime(2026, 10, 4, tzinfo=timezone.utc))
+    pdf = customer_count_pdf(summary, {'date_from':'2026-10-02', 'date_to':'2026-10-31', 'employee':'Mạnh Đạt', 'total_amount':0}, generated_at=datetime(2026, 10, 4, tzinfo=timezone.utc))
     reader = PdfReader(BytesIO(pdf))
     assert len(reader.pages) == 3
     assert all(abs(float(page.mediabox.width) - 841.89) < 1 and abs(float(page.mediabox.height) - 595.28) < 1 for page in reader.pages)
@@ -74,3 +74,16 @@ def test_customer_filter_does_not_bypass_report_redaction(monkeypatch):
     monkeypatch.setattr(pdf, 'customer_count_pdf', lambda summary, *_a, **_k: summaries.append(summary) or b'%PDF-1.4')
     assert client.get('/v2/live-tour/customer-count.pdf', params={'customer':'Private customer'}).status_code == 200
     assert summaries[-1]['total'] == 0
+
+
+@pytest.mark.parametrize('start,end,pages', [('2026-10-01','2026-10-31',1), ('2024-02-01','2024-02-29',1), ('2025-02-01','2025-02-28',1), ('2026-09-01','2026-10-31',2)])
+def test_full_month_is_one_page_even_without_invoices(start, end, pages):
+    summary = customer_counts([], date_from=start, date_to=end)
+    reader = PdfReader(BytesIO(customer_count_pdf(summary, {'date_from':start,'date_to':end})))
+    assert len(reader.pages) == pages
+    for page in reader.pages:
+        text = page.extract_text()
+        assert 'Tháng ' in text and 'Số khách' in text
+        assert abs(float(page.mediabox.width) - 841.89) < 1
+        assert abs(float(page.mediabox.height) - 595.28) < 1
+    assert 'Tháng 10-2026' in reader.pages[-1].extract_text() if end.startswith('2026-10') else True
