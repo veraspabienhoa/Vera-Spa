@@ -28,7 +28,7 @@ export default function LeaveQuotaCheck({ buttonTarget }) {
       if (revision.current === current) setBusy(false)
     }
   }
-  const button = <button className="leave-quota-check-button" data-ui-key="u-67672e9aae74" type="button" disabled={busy} onClick={check}><ShieldAlert size={22} aria-hidden="true"/>{busy ? 'Đang kiểm tra…' : 'Kiểm tra vượt hạn mức · Tháng này'}</button>
+  const button = <button className="leave-quota-check-button" data-ui-key="u-67672e9aae74" type="button" disabled={busy} onClick={check}><ShieldAlert size={22} aria-hidden="true"/>{busy ? 'Đang kiểm tra…' : 'KT hạn mức · Tháng này'}</button>
   return <>
     {buttonTarget ? createPortal(button, buttonTarget) : button}
     {(busy || error || result) && <div className="leave-list-personal-summary-note leave-quota-check">
