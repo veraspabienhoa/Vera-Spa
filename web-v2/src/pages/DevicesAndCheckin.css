@@ -48,3 +48,16 @@
 .device-mobile-records article img{display:block;border-radius:8px}
 .device-mobile-records article small{color:#4d6b59}
 @media(max-width:700px){.device-mobile-actions{grid-template-columns:1fr}.device-mobile-station{padding:12px}.device-mobile-station .device-actions{display:flex;flex-wrap:wrap;gap:7px}.device-mobile-camera-facing{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.device-mobile-camera-facing>span{grid-column:1/-1;text-align:center}.device-mobile-camera-facing button{min-width:0;width:100%}}
+
+/* Match the requested two-row layout on mobile and desktop. */
+.checkin-history-page .checkin-filter-details {
+  grid-template-columns: minmax(0,1.35fr) repeat(2,minmax(0,1fr));
+}
+@media(max-width:640px) {
+  .checkin-history-page .checkin-filter-details { gap:8px; }
+  .checkin-history-page .checkin-filter-details label { font-size:11px; overflow-wrap:anywhere; }
+  .checkin-history-page .checkin-filter-details :is(input,select) { padding:6px; font-size:12px; }
+  .checkin-history-page .checkin-filter-details .vera-date-input input { padding-right:34px; }
+  .checkin-history-page .checkin-filter-details .vera-date-input .vera-date-picker-button { width:30px; }
+  .checkin-history-page .checkin-filter-details .vera-date-input > .vera-native-date-picker { width:30px; }
+}

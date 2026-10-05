@@ -57,24 +57,20 @@ test('history reloads the selected dates directly from the FaceGate device', asy
   assert.equal(button(dom, 'Tải lại dữ liệu từ máy Face ID').disabled, false)
 })
 
-test('history saves an entered FaceGate IP before refreshing directly from the device', async (context) => {
-  let saved
+test('history follows the six-field order and reloads without updating device IP', async (context) => {
+  let writes = 0
   let queried
   const dom = await page('history', {
-    deviceRegistry: async () => ({ revision: 8, devices: [{ id: 'facegate-current', address: '192.168.1.26', kind: 'faceid' }] }),
-    saveDeviceRegistry: async body => { saved = body; return { revision: 9, devices: body.devices } },
+    deviceRegistry: async () => { throw Error('History must not read registry') },
+    saveDeviceRegistry: async () => { writes += 1 },
     checkinHistory: async query => { queried = query; return { records: [], options: { statuses: [], types: [] } } },
   }, context)
-  const ip = [...dom.window.document.querySelectorAll('input')].find(el => el.closest('label')?.textContent.includes('IP Face ID'))
-  assert.ok(ip)
-  const setInputValue = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set
-  setInputValue.call(ip, '192.168.1.34')
-  await dom.window.testAct(async () => ip.dispatchEvent(new dom.window.Event('input', { bubbles: true })))
-  await dom.window.testAct(async () => button(dom, 'Lưu IP và tải lại từ máy Face ID').click())
-  assert.equal(saved.expected_revision, 8)
-  assert.equal(saved.devices[0].address, '192.168.1.34')
+  const labels = [...dom.window.document.querySelectorAll('.checkin-filter-details > label')].map(el => el.firstChild.textContent)
+  assert.deepEqual(labels, ['Ngày cụ thể', 'Nguồn dữ liệu', 'Loại sự kiện', 'Tên / mã nhân viên', 'Mã sự kiện', 'Trạng thái'])
+  assert.doesNotMatch(dom.window.document.querySelector('.checkin-filters').textContent, /IP Face ID/)
+  await dom.window.testAct(async () => button(dom, 'Tải lại dữ liệu từ máy Face ID').click())
+  assert.equal(writes, 0)
   assert.equal(queried.source, 'facegate')
-  assert.ok([...dom.window.document.querySelectorAll('[role=status]')].some(el => /Tailscale/.test(el.textContent)))
 })
 
 test('device page retries initial failure and can submit a new device without losing configured device', async (context) => {
