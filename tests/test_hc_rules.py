@@ -254,3 +254,43 @@ def test_catalog_crud_revision_and_admin_permissions(database, monkeypatch):
     assert client.put('/v2/rules/hc/catalog', json={'rules': [], 'expected_revision': 1}).status_code == 403
     ident.role = 'admin'
     assert client.put('/v2/rules/hc/catalog', json={'rules': [], 'expected_revision': 1}).json()['rules'] == []
+
+
+
+def test_independent_rule_department_cutoffs_and_legacy_defaults():
+    row, data, current = fixture()
+    current['rules'] = hc.default_rules()
+    hc.materialize_switches(current)
+    current['departments']['locker']['rules']['late']['enabled'] = False
+    decision = {'kind': 'late', 'start': at('09:00')}
+    assert hc.active_rule(current, 'locker', decision) is None
+    assert hc.active_rule(current, 'locker', {'kind': 'absence', 'start': at('09:00')})['id'] == 'absence'
+    current['departments']['locker']['rules']['late'].update(enabled=True, enabled_since=at('09:01').isoformat())
+    assert hc.active_rule(current, 'locker', decision) is None
+    assert hc.active_rule(current, 'locker', {'kind': 'late', 'start': at('10:00')})['id'] == 'late'
+    assert hc.active_rule(current, 'letan', decision) is None
+    current['rules'].append(dict(id='custom', kind='manual', enabled=True))
+    assert not hc.rule_switch(current, 'locker', current['rules'][-1])['enabled']
+
+
+def test_pair_toggle_preserves_other_rules_and_departments(database, monkeypatch):
+    with database.begin() as conn:
+        setup_tables(conn)
+    monkeypatch.setattr(hc, 'definitions', lambda conn: {'locker': {'name': 'Locker', 'salary_mode': 'hourly'}, 'letan': {'name': 'Lễ tân', 'salary_mode': 'hourly'}})
+    ident = SimpleNamespace(role='admin', employee_username='admin')
+    app = FastAPI()
+    hc.install_routes(app, engine_instance=lambda: database, current_identity=lambda: ident,
+                      require_feature=lambda *args: None, identity_type=SimpleNamespace)
+    client = TestClient(app)
+    url = '/v2/rules/hc/locker/items/late'
+    result = client.put(url, json={'enabled': True, 'expected_revision': 0})
+    assert result.status_code == 200
+    departments = {d['code']: d for d in result.json()['departments']}
+    assert departments['locker']['rules']['late']['enabled']
+    assert not departments['locker']['rules']['absence']['enabled']
+    assert not departments['letan']['rules']['late']['enabled']
+    assert client.put(url, json={'enabled': False, 'expected_revision': 0}).status_code == 409
+    assert client.put('/v2/rules/hc/admin/items/late', json={'enabled': True, 'expected_revision': 1}).status_code == 400
+    assert client.put('/v2/rules/hc/locker/items/missing', json={'enabled': True, 'expected_revision': 1}).status_code == 404
+    ident.role = 'letan'
+    assert client.put(url, json={'enabled': False, 'expected_revision': 1}).status_code == 403

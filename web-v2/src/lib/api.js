@@ -312,6 +312,7 @@ export const veraApi = {
   importStaffExcel: (file) => upload('/v2/staff/import.xlsx', file),
   saveHcCatalog: (body) => request('/v2/rules/hc/catalog', { method: 'PUT', body: JSON.stringify(body) }),
   hcRules: () => request('/v2/rules/hc'),
+  saveHcRuleDepartment: (department, ruleId, body) => request(`/v2/rules/hc/${encodeURIComponent(department)}/items/${encodeURIComponent(ruleId)}`, { method: 'PUT', body: JSON.stringify(body) }),
   saveHcRules: (department, body) => request(`/v2/rules/hc/${encodeURIComponent(department)}`, { method: 'PUT', body: JSON.stringify(body) }),
   rules: () => request('/v2/rules'),
   saveRules: (body) => request('/v2/rules', { method: 'PUT', body: JSON.stringify(body) }),

@@ -19,11 +19,12 @@ export default function HcRulesPage({ user }) {
   }
   useEffect(() => { void load() }, [])
   usePageRefresh(load, () => Boolean(busy || draft))
-  const toggle = async item => {
-    setBusy(item.code); setError(''); setNotice('')
+  const toggle = async (item, rule) => {
+    const enabled = item.rules?.[rule.id]?.enabled === true
+    setBusy(`${rule.id}:${item.code}`); setError(''); setNotice('')
     try {
-      setData(await veraApi.saveHcRules(item.code, { enabled: !item.enabled, expected_revision: data.revision }))
-      setNotice(`${item.name}: đã ${item.enabled ? 'tắt' : 'kích hoạt'} phạt tự động.`)
+      setData(await veraApi.saveHcRuleDepartment(item.code, rule.id, { enabled: !enabled, expected_revision: data.revision }))
+      setNotice(`${rule.name} · ${item.name}: đã ${enabled ? 'tắt' : 'kích hoạt'}.`)
     } catch (cause) { setError(cause.message || 'Không lưu được Nội quy HC.') }
     finally { setBusy('') }
   }
@@ -56,6 +57,15 @@ export default function HcRulesPage({ user }) {
           <label><input type="checkbox" checked={rule.enabled} disabled={Boolean(busy)} onChange={e => changeRule(index, { enabled: e.target.checked })} /> Áp dụng hạng mục</label>
           <button className="secondary-button" disabled={Boolean(busy)} onClick={() => { if (window.confirm(`Xóa nội quy “${rule.name}”? Các khoản phạt đã ghi giữ nguyên.`)) setDraft(rows => rows.filter((_, i) => i !== index)) }}>Xóa nội quy</button>
         </> : <><h3>{rule.name}</h3><p>{rule.description}</p><p>{rule.mode === 'fixed' ? `${Number(rule.value).toLocaleString('vi-VN')}đ / vi phạm` : `Lương tương ứng × ${rule.value}`} · {rule.enabled ? 'Áp dụng' : 'Đã tắt'} · {rule.kind === 'manual' ? 'Ghi nhận thủ công' : 'Tự động khi bộ phận kích hoạt'}</p></>}
+        {!draft && <div className="hc-department-grid">{data?.departments.map(item => {
+          const enabled = item.rules?.[rule.id]?.enabled === true
+          return <article className={`hc-department ${enabled ? 'enabled' : ''}`} key={item.code}>
+            <h4>{item.name}</h4><p>{enabled ? 'Đã kích hoạt' : 'Đã tắt'}</p>
+            {!rule.enabled && <p>Hạng mục đang tắt chung.</p>}
+            {item.salary_mode === 'tip' && rule.kind !== 'manual' && <p>Chưa có đơn giá lương giờ/tháng: chưa tự phạt.</p>}
+            {canEdit && <button type="button" className="primary-button" aria-label={`${enabled ? 'Tắt' : 'Kích hoạt'} ${rule.name} · ${item.name}`} aria-pressed={enabled} disabled={Boolean(busy)} onClick={() => toggle(item, rule)}>{busy === `${rule.id}:${item.code}` ? 'Đang lưu…' : enabled ? 'Tắt kích hoạt' : 'Kích hoạt'}</button>}
+          </article>
+        })}</div>}
       </div>)}
       {draft && <div className="hc-catalog-actions">
         <button className="secondary-button" disabled={Boolean(busy) || draft.length >= 100} onClick={() => setDraft(rows => [...rows, { id: `rule_${crypto.randomUUID()}`, name: '', description: '', kind: 'manual', mode: 'fixed', value: 100000, enabled: false }])}>Thêm nội quy</button>
@@ -64,10 +74,5 @@ export default function HcRulesPage({ user }) {
         <button className="secondary-button" disabled={Boolean(busy)} onClick={() => setDraft(null)}>Hủy</button>
       </div>}
     </article>
-    <div className="hc-department-grid">{data?.departments.map(item => <article className={`panel hc-department ${item.enabled ? 'enabled' : ''}`} key={item.code}>
-      <h2>{item.name}</h2><p>{item.enabled ? 'Đang kích hoạt phạt tự động' : 'Đã tắt phạt tự động'}</p>
-      {item.salary_mode === 'tip' && <p>Chưa có đơn giá lương giờ/tháng: chưa tự phạt.</p>}
-      {canEdit && <button type="button" className="primary-button" aria-pressed={item.enabled} disabled={Boolean(busy || draft)} onClick={() => toggle(item)}>{busy === item.code ? 'Đang lưu…' : item.enabled ? 'Tắt kích hoạt' : 'Kích hoạt'}</button>}
-    </article>)}</div>
   </section>
 }
