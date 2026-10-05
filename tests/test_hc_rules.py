@@ -198,3 +198,15 @@ def test_schedule_query_uses_hr_assignment_and_vera_shift_definitions(database):
         row = hc.scheduled_rows(conn, DAY)[0]
         assert row['hc_department'] == 'locker' and row['employee_role'] == 'support'
         assert (row['main_start'], row['main_end'], row['ot_start'], row['ot_end']) == ('13:00','23:00','09:00','13:00')
+
+
+def test_late_crossing_earlier_overtime_and_main_prices_each_rate_once_without_gaps():
+    row, data, current = fixture('13:15')
+    row.update(main_start='13:00', main_end='23:00', shift_code='Ca 2', overtime_shift='TC Ca 1', ot_start='09:00', ot_end='13:00')
+    decision = hc.candidate(row, DAY, data, current, at('18:00'), [])
+    assert hc.decision_penalty(CONFIG, row, DAY, decision) == 260000
+    assert [s['shift'] for s in decision['wage_segments']] == ['Ca 1', 'Ca 2']
+    row['ot_end'] = '11:00'
+    assert hc.decision_penalty(CONFIG, row, DAY, decision) == 140000
+    row['ot_end'] = '15:00'
+    assert hc.decision_penalty(CONFIG, row, DAY, decision) == 260000

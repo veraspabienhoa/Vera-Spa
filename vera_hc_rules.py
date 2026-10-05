@@ -101,7 +101,7 @@ def interval(day, left, right):
     return start, end
 
 
-def wage(config, start, end, shift):
+def wage(config, start, end, shift, *, work_day=None):
     """Exact configured wage for an interval; no allowances, overtime or fallback zero."""
     if end <= start:
         return Decimal(0)
@@ -119,7 +119,7 @@ def wage(config, start, end, shift):
     seconds = Decimal(str((end-start).total_seconds()))
     if ca1:
         return number('rate_ca1') * seconds / Decimal(3600)
-    cutoff = datetime.combine(start.date(), time(22), tzinfo=VN_TZ)
+    cutoff = datetime.combine(work_day or start.date(), time(22), tzinfo=VN_TZ)
     before = max(0, (min(end, cutoff)-start).total_seconds())
     after = (end-start).total_seconds()-before
     return sum(number(key) * Decimal(str(duration)) / Decimal(3600)
@@ -128,6 +128,30 @@ def wage(config, start, end, shift):
 
 def penalty(config, start, end, shift):
     return int((2 * wage(config, start, end, shift)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+
+def decision_penalty(config, row, day, decision):
+    """Price missed scheduled time once; split main/OT rates and exclude gaps."""
+    periods = [(interval(day, row['main_start'], row['main_end']), row['shift_code'])]
+    ot = interval(day, row.get('ot_start'), row.get('ot_end')) if row.get('overtime_shift') else None
+    if decision['kind'] == 'late' and ot:
+        main = periods[0][0]
+        if row['overtime_shift'] == 'Từ giờ tới giờ' and main[1].date() > day and ot[0].hour < main[0].hour and ot[1].hour <= main[0].hour:
+            ot = tuple(t+timedelta(days=1) for t in ot)
+        shift = row['overtime_shift'].replace('TC ', '') if row['overtime_shift'].startswith('TC ') else 'Giờ làm'
+        periods.append((ot, shift))
+    left, right = decision['start'], decision['end']
+    edges = sorted({left, right, *(max(left, min(right, t)) for period, _ in periods for t in period)})
+    total = Decimal(0)
+    segments = []
+    for a, b in zip(edges, edges[1:]):
+        shift = next((shift for period, shift in periods if period[0] <= a and b <= period[1]), None)
+        if not shift or b <= a:
+            continue
+        total += wage(config, a, b, shift, work_day=day)
+        segments.append({'start': a.isoformat(), 'end': b.isoformat(), 'shift': shift})
+    decision['wage_segments'] = segments
+    return int((2*total).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
 def scheduled_rows(conn, day):
@@ -284,7 +308,7 @@ def process(conn, *, now=None):
                 if department not in department_configs:
                     department_configs[department] = pay._settings(conn, department)['config']
                 config = configs.get(username.casefold(), department_configs[department])
-                amount = penalty(config, decision['start'], decision['end'], decision['shift'])
+                amount = decision_penalty(config, row, day, decision)
             except (ValueError, HTTPException):
                 result['pending'] += 1
                 continue
