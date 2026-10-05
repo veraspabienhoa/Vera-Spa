@@ -310,6 +310,8 @@ export const veraApi = {
     return download(`/v2/staff/export.xlsx${query ? `?${query}` : ''}`, 'VeraSpa_DanhSachNhanSu.xlsx')
   },
   importStaffExcel: (file) => upload('/v2/staff/import.xlsx', file),
+  hcRules: () => request('/v2/rules/hc'),
+  saveHcRules: (department, body) => request(`/v2/rules/hc/${encodeURIComponent(department)}`, { method: 'PUT', body: JSON.stringify(body) }),
   rules: () => request('/v2/rules'),
   saveRules: (body) => request('/v2/rules', { method: 'PUT', body: JSON.stringify(body) }),
   saveDepartmentRules: (department, body) => request(`/v2/rules/department/${encodeURIComponent(department)}`, { method: 'PUT', body: JSON.stringify(body) }),

@@ -1,3 +1,31 @@
+## 05-10-2026 — Separate HC automatic rules (source changes, not deployed)
+
+Add independent Admin activation per active HR department, excluding Leader,
+nhanvien, admin and giamdoc both by assigned department and employee role.
+New switches default off; a shift already started before activation is never
+backfilled. Existing KTV eligibility and historical penalties remain unchanged.
+
+HC lateness costs twice configured wages for the elapsed late interval; full-day
+unauthorized absence costs twice the main shift wages, excluding overtime and
+allowances. Monthly wages convert basic salary / standard month days / standard
+day hours. Hourly Ca 2 wages preserve the payroll cutoff at 22:00, including
+hours after midnight. Individual salary configuration overrides department rates.
+
+The FaceGate sync worker evaluates only today/yesterday with fresh complete
+archives, verified mappings and explicit VERA schedules. Missing schedules,
+ambiguous evidence, approved leave, existing penalties and absent rates suppress
+automatic writes. Absence requires archives synchronized after the main shift
+end. HC event, zero-day financial leave record and notification outbox share one
+caller-owned transaction; a unique employee/day key prevents duplicate penalties,
+even after manual deletion of the associated financial record. Network delivery
+remains outside that transaction. Policy revisions protect concurrent toggles.
+
+No production records have been changed and runtime behavior is not yet verified
+on production. Deploy verification must include an excluded KTV account, one HC
+account with earlier overtime, each department switch, the money in the HC payroll,
+and an active worker synchronization. Historic incorrect Locker penalties still
+require a separately authorized adjustment.
+
 ## 04-10-2026 — Automatic Nội quy KTV penalties must exclude other departments
 
 User screenshot shows Mạnh Đạt, 03-10-2026, 1,000,000đ, absence detail:

@@ -45,6 +45,10 @@ def archive_days():
             with engine.begin() as conn:
                 absence_result = process_absences(conn)
             print(json.dumps({'absence_rule': absence_result}))
+            from vera_hc_rules import process as process_hc_rules
+            with engine.begin() as conn:
+                hc_result = process_hc_rules(conn)
+            print(json.dumps({'hc_rules': hc_result}))
         finally:
             engine.dispose()
         print(json.dumps({'ok': True, 'source': 'facegate', 'published': reports}))
