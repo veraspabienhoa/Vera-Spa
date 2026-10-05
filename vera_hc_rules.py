@@ -3,6 +3,7 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 import json
 import uuid
+from typing import Literal
 
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -21,6 +22,35 @@ class Toggle(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class Rule(BaseModel):
+    id: str = Field(min_length=1, max_length=80, pattern=r'^[a-zA-Z0-9_-]+$')
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default='', max_length=2000)
+    kind: Literal['late', 'absence', 'manual']
+    mode: Literal['multiplier', 'fixed']
+    value: Decimal = Field(gt=0, le=1000000000, allow_inf_nan=False)
+    enabled: bool = True
+    effective_since: str | None = None
+
+
+class Catalog(BaseModel):
+    rules: list[Rule] = Field(max_length=100)
+    expected_revision: int = Field(ge=0)
+
+
+def default_rules():
+    return [dict(id=kind, name=name, description='', kind=kind, mode='multiplier', value=2, enabled=True)
+            for kind, name in [('late', 'Đi trễ'), ('absence', 'Nghỉ không phép')]]
+
+
+def persist(conn, current, actor):
+    conn.execute(text('''INSERT INTO vera_app_setting(category,setting_key,value_json,revision,source,updated_by,created_at,updated_at)
+        VALUES('leave_rules',:key,CAST(:value AS jsonb),1,'hc_rules',:actor,NOW(),NOW())
+        ON CONFLICT(category,setting_key) DO UPDATE SET value_json=EXCLUDED.value_json,
+        revision=vera_app_setting.revision+1,source=EXCLUDED.source,updated_by=EXCLUDED.updated_by,updated_at=NOW()'''),
+        {'key': KEY, 'value': json.dumps({'departments': current['departments'], 'rules': current['rules']}), 'actor': actor})
+
+
 def definitions(conn):
     return {k: v for k, v in hr.departments(conn).items() if k not in EXCLUDED}
 
@@ -28,7 +58,7 @@ def definitions(conn):
 def policy(conn):
     row = conn.execute(text("SELECT value_json,revision FROM vera_app_setting WHERE category='leave_rules' AND setting_key=:key"), {'key': KEY}).mappings().first()
     value = (row or {}).get('value_json') or {}
-    return {'departments': value.get('departments', {}), 'revision': int((row or {}).get('revision') or 0)}
+    return {'rules': value.get('rules', default_rules()), 'departments': value.get('departments', {}), 'revision': int((row or {}).get('revision') or 0)}
 
 
 def dashboard(conn):
@@ -37,7 +67,7 @@ def dashboard(conn):
         {'code': code, 'name': value['name'], 'salary_mode': value['salary_mode'],
          'enabled': current['departments'].get(code, {}).get('enabled') is True,
          'enabled_since': current['departments'].get(code, {}).get('enabled_since')}
-        for code, value in definitions(conn).items()], 'multiplier': 2}
+        for code, value in definitions(conn).items()], 'multiplier': 2, 'rules': current['rules']}
 
 
 def install_routes(app, *, engine_instance, current_identity, require_feature, identity_type):
@@ -45,6 +75,37 @@ def install_routes(app, *, engine_instance, current_identity, require_feature, i
     def read(ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
             require_feature(conn, ident, 'official_rules_view')
+            return dashboard(conn)
+
+    @app.put('/v2/rules/hc/catalog')
+    def catalog(body: Catalog, ident: identity_type = Depends(current_identity)):
+        if str(ident.role).strip().lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được thay đổi Nội quy HC.')
+        ids = [r.id for r in body.rules]
+        kinds = [r.kind for r in body.rules if r.kind != 'manual']
+        if len(set(ids)) != len(ids) or len(set(kinds)) != len(kinds):
+            raise HTTPException(400, 'Mã nội quy hoặc loại tự động bị trùng.')
+        if any(not r.name.strip() or (r.mode == 'multiplier' and r.value > 100) or
+               (r.kind == 'manual' and r.mode != 'fixed') for r in body.rules):
+            raise HTTPException(400, 'Tên, hệ số (tối đa 100) hoặc mức tiền nội quy không hợp lệ.')
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, 'official_rules_edit')
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:hc-rules'))"))
+            current = policy(conn)
+            if current['revision'] != body.expected_revision:
+                raise HTTPException(409, 'Nội quy đã thay đổi. Hãy làm mới rồi thử lại.')
+            old = {r['id']: r for r in current['rules']}
+            rules = []
+            for item in body.rules:
+                rule = item.model_dump(exclude={'effective_since'})
+                rule['name'] = rule['name'].strip()
+                rule['value'] = float(rule['value'])
+                previous = old.get(item.id)
+                unchanged = previous and all(previous.get(k) == v for k, v in rule.items())
+                rule['effective_since'] = previous.get('effective_since') if unchanged else datetime.now(VN_TZ).isoformat()
+                rules.append(rule)
+            current['rules'] = rules
+            persist(conn, current, ident.employee_username)
             return dashboard(conn)
 
     @app.put('/v2/rules/hc/{department}')
@@ -63,11 +124,7 @@ def install_routes(app, *, engine_instance, current_identity, require_feature, i
             current['departments'][department] = {'enabled': body.enabled,
                 'enabled_since': old.get('enabled_since') if old.get('enabled') and body.enabled else datetime.now(VN_TZ).isoformat(),
                 'updated_by': ident.employee_username}
-            conn.execute(text('''INSERT INTO vera_app_setting(category,setting_key,value_json,revision,source,updated_by,created_at,updated_at)
-                VALUES('leave_rules',:key,CAST(:value AS jsonb),1,'hc_rules',:actor,NOW(),NOW())
-                ON CONFLICT(category,setting_key) DO UPDATE SET value_json=EXCLUDED.value_json,
-                revision=vera_app_setting.revision+1,source=EXCLUDED.source,updated_by=EXCLUDED.updated_by,updated_at=NOW()'''),
-                {'key': KEY, 'value': json.dumps({'departments': current['departments']}), 'actor': ident.employee_username})
+            persist(conn, current, ident.employee_username)
             return dashboard(conn)
 
 
@@ -130,7 +187,7 @@ def penalty(config, start, end, shift):
     return int((2 * wage(config, start, end, shift)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
-def decision_penalty(config, row, day, decision):
+def decision_penalty(config, row, day, decision, rule=None):
     """Price missed scheduled time once; split main/OT rates and exclude gaps."""
     periods = [(interval(day, row['main_start'], row['main_end']), row['shift_code'])]
     ot = interval(day, row.get('ot_start'), row.get('ot_end')) if row.get('overtime_shift') else None
@@ -151,7 +208,10 @@ def decision_penalty(config, row, day, decision):
         total += wage(config, a, b, shift, work_day=day)
         segments.append({'start': a.isoformat(), 'end': b.isoformat(), 'shift': shift})
     decision['wage_segments'] = segments
-    return int((2*total).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+    rule = rule or {'mode': 'multiplier', 'value': 2}
+    value = Decimal(str(rule['value']))
+    amount = value if rule['mode'] == 'fixed' else value * total
+    return int(amount.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
 def scheduled_rows(conn, day):
@@ -227,7 +287,7 @@ def write_penalty(conn, row, day, decision, amount, revision, config):
     from vera_notification_delivery import enqueue
     uid = str(uuid.uuid4())
     basis = {**decision, 'start': decision['start'].isoformat(), 'end': decision['end'].isoformat(),
-             'config': config, 'revision': revision, 'multiplier': 2}
+             'config': config, 'revision': revision, 'rule': decision.get('rule', {'mode': 'multiplier', 'value': 2})}
     event = conn.execute(text('''INSERT INTO vera_hc_penalty_event(work_date,employee_name,department,kind,amount,basis,leave_record_uid)
         VALUES(:day,:employee,:department,:kind,:amount,CAST(:basis AS jsonb),:uid)
         ON CONFLICT(work_date,employee_name) DO NOTHING RETURNING id'''),
@@ -236,7 +296,9 @@ def write_penalty(conn, row, day, decision, amount, revision, config):
     if not event:
         return False
     reason = ('Đi trễ' if decision['kind'] == 'late' else 'Nghỉ KHÔNG phép') + ' · Nội quy HC'
-    detail = f"Nội quy HC v{revision} · {decision['start']:%H:%M} → {decision['end']:%H:%M} · {decision['minutes']:.2f} phút · 2 × lương giờ · {amount:,}đ"
+    rule = decision.get('rule', {'mode': 'multiplier', 'value': 2})
+    pricing = f"{rule['value']:g} × lương giờ" if rule['mode'] == 'multiplier' else f"{rule['value']:g}đ / vi phạm"
+    detail = f"Nội quy HC v{revision} · {decision['start']:%H:%M} → {decision['end']:%H:%M} · {decision['minutes']:.2f} phút · {pricing} · {amount:,}đ"
     # Zero leave days: the penalty must not invent a second leave day or alter attendance.
     payload = {'record_uid': uid, 'Lý do nghỉ': reason, 'Phạt vi phạm': amount,
                'Số ngày tính': 0, 'hc_basis': basis, '__source_sheet_id': 'postgres:hc_rules', '__source_row': -event}
@@ -303,12 +365,18 @@ def process(conn, *, now=None):
             decision = candidate(row, day, latest, current, now, leaves)
             if not decision:
                 continue
+            rule = next((r for r in current.get('rules', default_rules()) if r['kind'] == decision['kind'] and r['enabled']), None)
+            if not rule:
+                continue
+            if rule.get('effective_since') and decision['start'] < datetime.fromisoformat(rule['effective_since']).astimezone(VN_TZ):
+                continue
+            decision['rule'] = rule
             department = row['hc_department']
             try:
                 if department not in department_configs:
                     department_configs[department] = pay._settings(conn, department)['config']
                 config = configs.get(username.casefold(), department_configs[department])
-                amount = decision_penalty(config, row, day, decision)
+                amount = decision_penalty(config, row, day, decision, rule)
             except (ValueError, HTTPException):
                 result['pending'] += 1
                 continue
