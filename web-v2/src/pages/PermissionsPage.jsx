@@ -3,7 +3,7 @@ import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { searchTextMatches } from '../lib/searchText'
-import { RefreshCw, Save, Search, ShieldCheck } from 'lucide-react'
+import { RefreshCw, Save, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { veraApi } from '../lib/api'
 
@@ -143,13 +143,11 @@ export default function PermissionsPage() {
       .permission-account-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
       .permission-account-actions small{color:#65736d}
       .permission-account-state{font-weight:900;color:#1f513f}
-      .permission-dependency-note{margin:8px 0 0;padding:9px 11px;border-radius:9px;background:#eef7f2;color:#315345;font-size:11px;line-height:1.45}
       .permission-pages{display:grid;gap:14px}
       .permission-page-card{border:1px solid #dce7e1;border-radius:15px;overflow:hidden;background:#fff}
       .permission-page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#f4f8f6;border-bottom:1px solid #e4ece8}
       .permission-page-head h2{margin:0;font-size:16px;color:#173329}
       .permission-page-head span{font-size:11px;font-weight:900;color:#52675e}
-      .permission-page-help{padding:9px 14px 0;margin:0;color:#65736d;font-size:11px}
       .permission-page-actions{padding:12px 14px}
       .permission-view-permission{border-color:#9fc8b6!important;background:#eef8f3!important}
       .permission-view-permission strong:after{content:' · MỞ TRANG';font-size:9px;color:#2d6a50;font-weight:900}
@@ -168,13 +166,11 @@ export default function PermissionsPage() {
           <small>Trạng thái: <span className="permission-account-state">{inherit ? 'Đang kế thừa theo nhóm' : 'Đang phân quyền riêng'}</span>. Có thể bấm trực tiếp vào bất kỳ quyền nào để tạo ghi đè riêng.</small>
         </UiToolbar>
       </>}
-      <label className="permission-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm quyền…" /></label>
-      <p className="permission-dependency-note"><strong>Quyền phụ thuộc được tự động đồng bộ.</strong> Mỗi khối bên dưới tương ứng một trang/menu. Có thể chọn riêng từng tác vụ. Nếu một tác vụ cần quyền mở trang, hệ thống tự bật quyền nền đó; khi tắt quyền mở trang, các tác vụ phụ thuộc cũng tự tắt.</p>
+      <label className="permission-search"><input aria-label="Tìm quyền" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm quyền…" /></label>
     </section>
     <div className="permission-pages">
       {pages.map((page) => <section data-ui-key="u-3507366ab96e" className="permission-page-card" key={page.id}>
         <div className="permission-page-head"><h2>{page.label}</h2><span>{page.items.filter(([key]) => allowed.includes(key)).length}/{page.items.length} quyền</span></div>
-        <p className="permission-page-help">Chọn đúng tác vụ được phép sử dụng trên trang này.{page.view_feature ? ' Quyền MỞ TRANG là quyền nền của menu.' : ''}</p>
         <UiToolbar data-ui-key="u-96946da0cd4c" className="permission-check-grid permission-page-actions">
           {page.items.map(([key, value]) => <label key={key} className={`${allowed.includes(key) ? 'checked' : ''} ${page.view_feature === key ? 'permission-view-permission' : ''}`.trim()}><input type="checkbox" checked={allowed.includes(key)} onChange={() => toggle(key)} /><span><strong>{value}</strong><small>{key}</small></span></label>)}
         </UiToolbar>

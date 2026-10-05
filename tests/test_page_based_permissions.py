@@ -27,7 +27,7 @@ def test_permissions_page_renders_each_menu_page_with_individual_actions():
     assert "permission-view-permission" in page
     assert "page.items.map(([key, value])" in page
     assert "onChange={() => toggle(key)}" in page
-    assert "Quyền MỞ TRANG là quyền nền của menu" in page
+    assert "Quyền MỞ TRANG là quyền nền của menu" not in page
 
 
 def test_page_permissions_keep_dependency_auto_sync():
@@ -38,3 +38,9 @@ def test_page_permissions_keep_dependency_auto_sync():
     assert "allowed = permission_closure(set(body.allowed_features))" in backend
     assert "return expandDependencies([...current, feature])" in page
     assert "const blocked = new Set([feature, ...dependentFeatures(feature)])" in page
+
+
+def test_creation_day_leave_permission_is_explicit_and_has_page_dependency():
+    from vera_web_v2_permissions import FEATURE_GROUPS, FEATURE_DEPENDENCIES
+    assert "leave_created_today_edit_delete" in FEATURE_GROUPS["Lịch nghỉ"]
+    assert FEATURE_DEPENDENCIES["leave_created_today_edit_delete"] == {"leave_manage"}

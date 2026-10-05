@@ -64,6 +64,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "leave_detail_edit": "Sửa trực tiếp danh sách", "leave_detail_delete": "Xóa dòng trong danh sách",
         "leave_manage_edit": "Quản lý lịch nghỉ · Sửa", "leave_manage_delete": "Quản lý lịch nghỉ · Xóa",
         "leave_today_khong_phep_edit_delete": "Sửa/Xóa không phép ngày hiện tại",
+        "leave_created_today_edit_delete": "Sửa/Xóa tất cả lịch nghỉ nhập trong ngày",
         "employee_penalty_view": "Xem tiền phạt vi phạm",
     },
     "Phép năm / Làm đẹp / Nghỉ việc": {
@@ -173,7 +174,7 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
     {"id": "leave", "label": "Đăng ký nghỉ / Quản lý lịch nghỉ", "view_feature": "leave", "features": [
         "leave", "leave_manage", "leave_create", "leave_quota_check", "leave_export", "leave_email",
         "leave_detail_edit", "leave_detail_delete", "leave_manage_edit", "leave_manage_delete",
-        "leave_today_khong_phep_edit_delete", "employee_penalty_view",
+        "leave_today_khong_phep_edit_delete", "leave_created_today_edit_delete", "employee_penalty_view",
     ]},
     {"id": "schedule", "label": "Lịch làm việc", "view_feature": "", "features": [
         "work_schedule_quanly", "work_schedule_letan", "work_schedule_locker", "work_schedule_tapvu",
@@ -339,6 +340,7 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     "leave_manage_edit": {"leave_manage"},
     "leave_manage_delete": {"leave_manage"},
     "leave_today_khong_phep_edit_delete": {"leave_manage"},
+    "leave_created_today_edit_delete": {"leave_manage"},
     "employee_penalty_view": {"leave_manage"},
 
     # Phép năm / Làm đẹp / Nghỉ việc

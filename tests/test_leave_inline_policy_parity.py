@@ -173,3 +173,20 @@ def test_batch_with_old_forbidden_record_rolls_back_before_any_delete(permission
     assert exc.value.status_code == 403
     assert tx.rolled_back
     assert not any('DELETE FROM' in statement for statement in statements)
+
+
+@pytest.mark.parametrize("role", ["letan", "quanly", "nhanvien", "leader", "locker", "tapvu"])
+@pytest.mark.parametrize("offset", [-3, 0, 3])
+def test_explicit_created_today_grant_edits_and_deletes_any_employee(permissions, monkeypatch, role, offset):
+    grant = lambda conn, ident, feature: feature == "leave_created_today_edit_delete"
+    monkeypatch.setattr(api, "_feature_allowed", grant)
+    permissions._feature_allowed = grant
+    ident = SimpleNamespace(role=role, employee_username="Người khác", allowed=False)
+    row = record(offset)
+    row["created_at"] = "2026-09-10T17:00:00Z"
+    assert allowed(lambda: permissions._validate_edit_permission(None, row, "Lý do khác", ident))
+    assert allowed(lambda: permissions._validate_delete_permission(None, row, ident))
+    row["created_at"] = "2026-09-10T16:59:59Z"
+    if offset < 0:
+        assert not allowed(lambda: permissions._validate_edit_permission(None, row, "Lý do khác", ident))
+        assert not allowed(lambda: permissions._validate_delete_permission(None, row, ident))

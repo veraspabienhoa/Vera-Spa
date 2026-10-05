@@ -1,3 +1,15 @@
+## 05-10-2026 — Explicit permission for creation-day leave corrections
+
+Add leave_created_today_edit_delete, default ungranted for non-Admin accounts,
+to the leave permission page with the existing leave_manage dependency. It
+permits edits/deletes for any employee only when immutable created_at falls
+on today's Vietnam calendar date. Never substitute leave_date or updated_at;
+missing/naive timestamps do not grant access. Existing rights remain unchanged.
+Both canonical validators and the installed reception/manager guard honor this
+grant; edit queries now fetch created_at under their existing row lock. Reason
+catalog choices match the grant, while saved edits still use canonical reason
+amounts and weekend validation. No production records were modified or deployed.
+
 ## 05-10-2026 — HC activation per rule and department (source change)
 
 Admin switches now target an individual rule/department pair. The worker checks

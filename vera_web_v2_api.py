@@ -43,7 +43,7 @@ from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import URL
 
 from vera_google_credentials import google_credentials
-from vera_leave_created_today import may_delete_created_today
+from vera_leave_created_today import may_delete_created_today, may_manage_created_today
 from vera_employee_self_service_policy import load_policy as load_employee_self_service_policy
 from vera_employee_self_service_policy import notice_days as employee_self_service_notice_days
 from vera_letan_leave_policy import load_policy as load_letan_leave_policy
@@ -1113,6 +1113,8 @@ def _validate_delete_permission(conn, row: dict, ident: Identity) -> None:
     role = ident.role
     if role == "admin":
         return
+    if may_manage_created_today(row, datetime.now(VN_TZ), _feature_allowed(conn, ident, "leave_created_today_edit_delete")):
+        return
     if may_delete_created_today(role, row, datetime.now(VN_TZ)):
         return
     target = row["leave_date"]
@@ -1157,6 +1159,9 @@ def _validate_edit_permission(conn, row: dict, new_reason: str, ident: Identity)
         # must still exist so its calculated values remain canonical, but
         # allowed-role, allowed-day, cancellation and timing rules do not
         # restrict Admin.
+        return _reason_item(conn, new_reason), True
+
+    if may_manage_created_today(row, datetime.now(VN_TZ), _feature_allowed(conn, ident, "leave_created_today_edit_delete")):
         return _reason_item(conn, new_reason), True
 
     item = _catalog_rule_for_edit(conn, new_reason, target, role)
@@ -2598,7 +2603,7 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
         old = conn.execute(text("""
             SELECT record_uid, source_sheet_id, source_row, leave_date, employee_name,
                    leave_reason, leave_type, detail, calculated_days, accumulated_leave,
-                   penalty, update_date, update_time, updated_by, weekday_label
+                   penalty, update_date, update_time, updated_by, weekday_label, created_at
             FROM leave_records WHERE record_uid=:uid FOR UPDATE
         """), {"uid": str(record_uid or "").strip()}).mappings().first()
         if not old:

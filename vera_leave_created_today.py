@@ -5,6 +5,10 @@ from datetime import datetime
 def may_delete_created_today(role, row, now):
     if str(role or '').strip().lower() not in {'letan', 'quanly'}:
         return False
+    return is_created_today(row, now)
+
+
+def is_created_today(row, now):
     created = row.get('created_at')
     if isinstance(created, str):
         try:
@@ -16,3 +20,7 @@ def may_delete_created_today(role, row, now):
     if not isinstance(created, datetime) or created.tzinfo is None:
         return False
     return created.astimezone(now.tzinfo).date() == now.date()
+
+
+def may_manage_created_today(row, now, allowed):
+    return allowed is True and is_created_today(row, now)
