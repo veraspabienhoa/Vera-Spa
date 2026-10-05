@@ -10,6 +10,7 @@ const sameContext = (a, b) => a.start === b.start && a.end === b.end && a.employ
 export default function LeaveListPersonalStats({ user }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const [target, setTarget] = useState(null)
+  const [quotaButtonTarget, setQuotaButtonTarget] = useState(null)
   const [context, setContext] = useState({ start: '', end: '', employee: '', displayStart: '', displayEnd: '' })
   const [summary, setSummary] = useState(emptyLeaveDaySummary)
   const [allowances, setAllowances] = useState([])
@@ -27,6 +28,8 @@ export default function LeaveListPersonalStats({ user }) {
       let host = panel.querySelector('[data-leave-list-personal-stats="true"]')
       if (!host) { host = document.createElement('div'); host.dataset.leaveListPersonalStats = 'true'; panel.insertBefore(host, tableWrap); ownedHost = host }
       setTarget((current) => current === host ? current : host)
+      const buttonHost = panel.querySelector('[data-leave-quota-button-host="true"]')
+      setQuotaButtonTarget(current => current === buttonHost ? current : buttonHost)
       const start = panel.dataset.leaveStart || ''
       const end = panel.dataset.leaveEnd || ''
       const next = { start, end, employee: String(panel.dataset.leaveEmployee || '').trim(),
@@ -114,7 +117,7 @@ export default function LeaveListPersonalStats({ user }) {
         <div>Định mức: {formatLeaveDays(item.base)} · Đã ứng từ tháng trước: {formatLeaveDays(item.deducted)} · Còn được nghỉ: {formatLeaveDays(item.remaining)} ngày</div>
         <div>Nghỉ bệnh: {formatLeaveDays(item.sick)} · Ứng thêm: {formatLeaveDays(item.borrowed)} · Trừ phép tháng kế tiếp: {formatLeaveDays(item.next_deduction)} ngày</div>
       </div>)}
-      {(isAdmin || user?.permissions?.leave_quota_check === true) && <LeaveQuotaCheck start={context.start} end={context.end} />}
+      {(isAdmin || user?.permissions?.leave_quota_check === true) && <LeaveQuotaCheck buttonTarget={quotaButtonTarget} />}
       {error && <div className="leave-list-personal-summary-error">{error}</div>}
     </section>
   </>, target)
