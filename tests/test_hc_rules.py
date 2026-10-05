@@ -210,3 +210,10 @@ def test_late_crossing_earlier_overtime_and_main_prices_each_rate_once_without_g
     assert hc.decision_penalty(CONFIG, row, DAY, decision) == 140000
     row['ot_end'] = '15:00'
     assert hc.decision_penalty(CONFIG, row, DAY, decision) == 260000
+
+
+def test_activation_after_earlier_overtime_started_does_not_backfill_it():
+    row, data, current = fixture('13:15')
+    row.update(main_start='13:00', main_end='23:00', shift_code='Ca 2', overtime_shift='TC Ca 1', ot_start='09:00', ot_end='13:00')
+    current['departments']['locker']['enabled_since'] = at('10:00').isoformat()
+    assert hc.candidate(row, DAY, data, current, at('18:00'), []) is None

@@ -197,7 +197,7 @@ def candidate(row, day, data, current, now, leaves):
     effective = attendance_window({**row, 'start_time': row['main_start'], 'end_time': row['main_end'],
                                    'overtime_start_time': row.get('ot_start'), 'overtime_end_time': row.get('ot_end')})
     window = interval(day, *effective)
-    if not window:
+    if not window or window[0] < datetime.fromisoformat(since).astimezone(VN_TZ):
         return None
     if arrivals:
         arrival = min(arrivals)
