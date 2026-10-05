@@ -1255,3 +1255,11 @@ tr:last-child td { border-bottom: 0; }
 @media (max-width: 760px) {
   .long-leave-form .long-leave-date-field { grid-column: 1 / -1; }
 }
+
+/* Keep the net amount inside the last column and place search above the table. */
+.department-payroll-table th:last-child, .department-payroll-table td:last-child { min-width: 12ch; padding-inline: 16px; text-align: center; }
+.department-payroll-table td:last-child > strong { display: inline-block; white-space: nowrap; }
+.department-payroll-table-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.department-payroll-table-search { display: grid; gap: 5px; flex: 1 1 280px; min-width: 0; margin-right: auto; }
+.department-payroll-table-search input { width: 100%; min-width: 0; }
+@media (max-width: 820px) { .department-payroll-table-search { flex-basis: 100%; } }
