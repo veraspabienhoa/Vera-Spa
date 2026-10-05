@@ -69,18 +69,23 @@ def test_revenue_tip_and_mobile_ledger_layout_are_bounded():
     assert "grid-template-columns:minmax(230px,1.45fr) minmax(155px,.9fr) minmax(155px,.9fr) minmax(190px,1fr)" in page
     assert page.count("Báo cáo tới ngày") >= 1
     assert "Dùng ngày này · {autoMode ? formatVeraDate(today) : data?.current_date_label || '—'}" in page
-    assert 'className="report-table ledger-table"' in page
+    assert 'className="report-table ledger-table fit-data-table"' in page
     assert ".detail-filter-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in page
     assert '.ledger-check-column{width:42px!important' in page
-    assert '.ledger-table td{display:grid!important' in page
     assert ".revenue-page{overflow-x:hidden}" in page
 
 
-def test_mobile_ledger_shows_every_column_as_card_fields():
+def test_mobile_ledger_keeps_every_column_in_a_fitted_table():
     page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
     for label in ("Ngày", "Loại giao dịch", "Số tiền", "Ghi chú", "Ngày nhập", "Giờ nhập", "Người nhập"):
         assert f'data-label="{label}"' in page
-    assert ".ledger-table thead{display:none}" in page
-    assert ".ledger-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in page
-    assert ".ledger-table td{display:grid!important" in page
+    css = Path("web-v2/src/pages/RevenuePage.css").read_text(encoding="utf-8")
+    assert ".revenue-page .report-table.fit-data-table" in css
+    assert "table-layout: fixed" in css
+    assert ".fit-data-table thead { display: table-header-group; }" in css
+    assert ".fit-data-table tbody { display: table-row-group; padding: 0; }" in css
+    assert ".fit-data-table tr { display: table-row; }" in css
+    assert "display: table-cell !important" in css
+    assert ".fit-data-table td::before { content: none; }" in css
+    assert "overflow-wrap: anywhere" in css
     assert ".detail-filter-actions{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}" in page
