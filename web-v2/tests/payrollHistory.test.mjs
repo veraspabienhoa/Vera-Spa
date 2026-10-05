@@ -23,6 +23,9 @@ test('history has twelve columns, full mobile details, filtered totals and safe 
  const {createRoot}=await import('react-dom/client');root=createRoot(document.getElementById('root'))
  await act(async()=>root.render(React.createElement(mod.exports.default,{user:{role:'admin'},activeTab:'history'})))
 
+ assert.equal(document.querySelector('#ktv-payroll-history-content').hidden,true)
+ await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Hiện lịch sử').click())
+ assert.equal(document.querySelector('#ktv-payroll-history-content').hidden,false)
  const panel=document.querySelector('.payroll-history-panel'),table=panel.querySelector('table')
  assert.equal(table.querySelectorAll('thead th').length,12)
  assert.equal(table.querySelectorAll('tbody tr').length,3)
