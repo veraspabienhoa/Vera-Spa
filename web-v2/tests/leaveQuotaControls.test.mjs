@@ -18,8 +18,8 @@ const built = await build({
 })
 
 async function fixture({ description = '', fail = false, role = 'admin' } = {}) {
-  const dom = new JSDOM('<body><section class="leave-list-panel" data-leave-start="2026-09-26" data-leave-end="2026-09-26" data-leave-employee=""><div class="panel-title-row"></div><div class="leave-list-wrap"></div></section><div id="root"></div></body>')
-  dom.window.document.querySelector('.panel-title-row').textContent = description
+  const dom = new JSDOM('<body><section class="leave-list-panel" data-leave-start="2026-09-26" data-leave-end="2026-09-26" data-leave-employee=""><div class="panel-title-row"><div data-leave-quota-button-host="true"></div></div><div class="leave-list-wrap"></div></section><div id="root"></div></body>')
+  dom.window.document.querySelector('.panel-title-row').prepend(description)
   const calls = [], names = ['window', 'document', 'navigator', 'MutationObserver', 'IS_REACT_ACT_ENVIRONMENT', '__quotaApi']
   const descriptors = Object.fromEntries(names.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   Object.defineProperties(globalThis, {
@@ -65,7 +65,8 @@ for (const description of ['', 'Tháng đang xem: 09-2026. Bộ lọc chỉ áp 
       assert.equal(f.button().disabled, false)
       assert.match(f.doc.querySelector('.leave-list-personal-summary-head').textContent, /26-09-2026 – 26-09-2026/)
       await act(async () => f.button().click())
-      assert.equal(f.button().parentElement, f.doc.querySelector('.leave-quota-check-result').parentElement)
+      assert.ok(f.button().closest('.panel-title-row'))
+      assert.ok(f.doc.querySelector('.leave-quota-check-result').closest('.leave-list-personal-summary'))
       assert.equal(f.button().parentElement.querySelector('.stable-feedback'), null)
       const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit' }).formatToParts(new Date())
       const year = parts.find(p => p.type === 'year').value

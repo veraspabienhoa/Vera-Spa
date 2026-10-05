@@ -1,11 +1,12 @@
 import './LeaveQuotaCheck.css'
+import { createPortal } from 'react-dom'
 import { ShieldAlert } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { formatVeraDate } from '../lib/veraDate'
 
 const labels = { days: 'Ngày nghỉ', weekends: 'Cuối tuần Nhóm 3', generated: 'Phát sinh' }
-export default function LeaveQuotaCheck() {
+export default function LeaveQuotaCheck({ buttonTarget }) {
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -27,8 +28,10 @@ export default function LeaveQuotaCheck() {
       if (revision.current === current) setBusy(false)
     }
   }
-  return <div className="leave-list-personal-summary-note leave-quota-check">
-    <button className="leave-quota-check-button" data-ui-key="u-67672e9aae74" type="button" disabled={busy} onClick={check}><ShieldAlert size={22} aria-hidden="true"/>{busy ? 'Đang kiểm tra…' : 'Kiểm tra vượt hạn mức · Tháng này'}</button>
+  const button = <button className="leave-quota-check-button" data-ui-key="u-67672e9aae74" type="button" disabled={busy} onClick={check}><ShieldAlert size={22} aria-hidden="true"/>{busy ? 'Đang kiểm tra…' : 'Kiểm tra vượt hạn mức · Tháng này'}</button>
+  return <>
+    {buttonTarget ? createPortal(button, buttonTarget) : button}
+    {(busy || error || result) && <div className="leave-list-personal-summary-note leave-quota-check">
     <div className="leave-quota-check-result" aria-live="polite" aria-busy={busy}>
       {error && <p role="alert">{error}</p>}
       {busy && <p>Đang kiểm tra hạn mức…</p>}
@@ -39,5 +42,6 @@ export default function LeaveQuotaCheck() {
         {item.borrowed > 0 && <div>Nghỉ bệnh được duyệt: {Number(item.sick_days).toLocaleString('vi-VN')} ngày · Ứng thêm: {Number(item.borrowed).toLocaleString('vi-VN')} ngày (trừ phép tháng kế tiếp).</div>}
       </div>)}</div></>}
     </div>
-  </div>
+  </div>}
+  </>
 }
