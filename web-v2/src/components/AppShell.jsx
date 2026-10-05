@@ -43,8 +43,7 @@ const items = [
   { id: 'long-leave', label: 'Phép năm', icon: ClipboardList, ready: true, anyPermission: ['long_leave', 'long_leave_form', 'long_leave_stats', 'resignation_form'] },
   { id: 'profile', label: 'Hồ sơ & mật khẩu', icon: UserRound, ready: true, permission: 'profile' },
   { id: 'live-tour-recovery', label: 'Khôi phục Live Tour', icon: RefreshCw, ready: true, adminOnly: true },
-  { id: 'hc-rules', label: 'Nội quy HC', icon: FileText, ready: true, permission: 'official_rules_view' },
-  { id: 'rules', label: 'Nội quy KTV', icon: FileText, ready: true, permission: 'official_rules_view' },
+  { id: 'rules', label: 'Nội qui', icon: FileText, ready: true, permission: 'official_rules_view' },
 ]
 
 const BREAK_ALERT_DISMISSED_KEY = 'vera-break-alerts-admin-dismissed'
@@ -421,7 +420,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           }).sort((a,b) => (uiItems['u-menu-'+a.id]?.order ?? items.indexOf(a)) - (uiItems['u-menu-'+b.id]?.order ?? items.indexOf(b))).map(({ id, label, icon: Icon, ready }) => (
             <Fragment key={id}><a data-ui-key={`u-menu-${id}`}
               key={id}
-              className={`nav-item ${(currentPage === id || (currentPage === 'checkin-history' && id === 'snapshot') || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
+              className={`nav-item ${(currentPage === id || (currentPage === 'hc-rules' && id === 'rules') || (currentPage === 'checkin-history' && id === 'snapshot') || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               href={ready ? menuPageUrl(id) : '#'}
               onClick={(event) => chooseFromLink(event, id, ready)}
               onPointerEnter={() => { if (ready) onPageIntent?.(id) }}

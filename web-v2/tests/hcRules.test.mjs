@@ -7,7 +7,7 @@ import {JSDOM} from 'jsdom'
 const initial = new JSDOM('<body/>')
 globalThis.window = initial.window; globalThis.document = initial.window.document
 after(() => initial.window.close())
-const bundle = await build({stdin:{contents:"export {default as Page} from './src/pages/HcRulesPage'",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react-dom','react/jsx-runtime'],loader:{'.css':'empty'},plugins:[{name:'mock-api',setup(b){b.onResolve({filter:/lib\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const veraApi={hcRules:()=>globalThis.hcApi.load(),saveHcCatalog:(...a)=>globalThis.hcApi.catalog(...a),saveHcRuleDepartment:(...a)=>globalThis.hcApi.save(...a)}'}))}}]})
+const bundle = await build({stdin:{contents:"export {default as Page} from './src/pages/HcRulesPage'",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react-dom','react/jsx-runtime'],loader:{'.css':'empty'},plugins:[{name:'mock-api',setup(b){b.onResolve({filter:/lib\/api$/},()=>({path:'api',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const veraApi={rules:async()=>({department_rules:{},can_edit_department_rules:false}),hcRules:()=>globalThis.hcApi.load(),saveHcCatalog:(...a)=>globalThis.hcApi.catalog(...a),saveHcRuleDepartment:(...a)=>globalThis.hcApi.save(...a)}'}))}}]})
 const mod={exports:{}};new Function('require','module','exports',bundle.outputFiles[0].text)(createRequire(import.meta.url),mod,mod.exports)
 async function fixture(t, role='admin') {
  const dom=new JSDOM('<body><div id="root"/></body>',{url:'https://example.test'}), saved={}

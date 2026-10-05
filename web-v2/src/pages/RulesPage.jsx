@@ -17,7 +17,6 @@ import LetanLeavePolicyRules from './LetanLeavePolicyRules'
 
 let nextRowId = 1
 const makeRows = (rows = []) => rows.map((values) => ({ id: `rule-${nextRowId++}`, values: { ...values } }))
-const departmentRuleLabels = { locker: 'Locker', letan: 'Lễ tân' }
 
 function displayDateTime(value) {
   if (!value) return 'Chưa có'
@@ -48,7 +47,7 @@ function Notice({ notice, onClose }) {
 }
 
 export default function RulesPage() {
-  usePageRefresh(() => load(), () => Boolean(loading || busy || dirty || quotaDirty || lateThresholdDirty || employeeSelfServiceDirty || letanLeavePolicyDirty || Object.keys(departmentRuleLabels).some(departmentRulesDirty)))
+  usePageRefresh(() => load(), () => Boolean(loading || busy || dirty || quotaDirty || lateThresholdDirty || employeeSelfServiceDirty || letanLeavePolicyDirty))
   const [data, setData] = useState(null)
   const [columns, setColumns] = useState([])
   const [rows, setRows] = useState([])
@@ -64,8 +63,6 @@ export default function RulesPage() {
   const [employeeSelfServiceOriginal, setEmployeeSelfServiceOriginal] = useState('')
   const [letanLeavePolicy, setLetanLeavePolicy] = useState({ enabled: true, groups: [], revision: 0 })
   const [letanLeavePolicyOriginal, setLetanLeavePolicyOriginal] = useState('')
-  const [departmentRules, setDepartmentRules] = useState({ locker: [], letan: [] })
-  const [departmentRulesOriginal, setDepartmentRulesOriginal] = useState({ locker: '[]', letan: '[]' })
   const [selected, setSelected] = useState([])
   const [expanded, setExpanded] = useState([])
   const [search, setSearch] = useState('')
@@ -114,12 +111,6 @@ export default function RulesPage() {
     }
     setLetanLeavePolicy(nextLetanLeavePolicy)
     setLetanLeavePolicyOriginal(JSON.stringify(nextLetanLeavePolicy))
-    const nextDepartmentRules = Object.fromEntries(Object.keys(departmentRuleLabels).map((department) => [
-      department,
-      (result.department_rules?.[department]?.rules || []).map((item) => ({ ...item })),
-    ]))
-    setDepartmentRules(nextDepartmentRules)
-    setDepartmentRulesOriginal(Object.fromEntries(Object.entries(nextDepartmentRules).map(([department, rules]) => [department, JSON.stringify(rules)])))
     setSelected([])
     setExpanded([])
     setDeleteColumn('')
@@ -149,13 +140,11 @@ export default function RulesPage() {
   const canEditWeekendUnpaidNthPenalty = data?.can_edit_weekend_unpaid_nth_penalty === true
   const canEditEmployeeSelfServicePolicy = data?.can_edit_employee_self_service_policy === true
   const canEditLetanLeavePolicy = data?.can_edit_letan_leave_policy === true
-  const canEditDepartmentRules = data?.can_edit_department_rules === true
   const dirty = documentSignature(columns, rows) !== originalSignature
   const quotaDirty = JSON.stringify(quotaRows) !== quotaOriginalSignature
   const lateThresholdDirty = Number(lateThreshold) !== Number(lateThresholdOriginal)
   const employeeSelfServiceDirty = JSON.stringify(employeeSelfServicePolicy) !== employeeSelfServiceOriginal
   const letanLeavePolicyDirty = JSON.stringify(letanLeavePolicy) !== letanLeavePolicyOriginal
-  const departmentRulesDirty = (department) => JSON.stringify(departmentRules[department] || []) !== departmentRulesOriginal[department]
   const requiredColumns = new Set(data?.required_columns || [])
   const deletableColumns = columns.filter((column) => !requiredColumns.has(column))
   const reasonOptions = useMemo(() => uniqueOptions(rows, 'Lý do nghỉ'), [rows])
@@ -182,27 +171,6 @@ export default function RulesPage() {
     setQuotaRows((current) => current.map((item) => (
       item.weekday === weekday ? { ...item, [field]: number } : item
     )))
-  }
-
-  const updateDepartmentRule = (department, id, field, value) => {
-    setDepartmentRules((current) => ({
-      ...current,
-      [department]: current[department].map((item) => item.id === id ? { ...item, [field]: value } : item),
-    }))
-  }
-
-  const addDepartmentRule = (department) => {
-    setDepartmentRules((current) => ({
-      ...current,
-      [department]: [...current[department], { id: crypto.randomUUID(), name: '', amount: 0, note: '', enabled: true }],
-    }))
-  }
-
-  const removeDepartmentRule = (department, id) => {
-    setDepartmentRules((current) => ({
-      ...current,
-      [department]: current[department].filter((item) => item.id !== id),
-    }))
   }
 
   const toggleSelected = (id) => {
@@ -360,16 +328,6 @@ export default function RulesPage() {
     setNotice({ type: 'success', message: result.message })
   })
 
-  const saveDepartmentRules = (department) => run(`department-${department}`, async () => {
-    if (!departmentRulesDirty(department)) throw new Error(`Nội quy ${departmentRuleLabels[department]} chưa có thay đổi cần áp dụng.`)
-    const result = await veraApi.saveDepartmentRules(department, {
-      rules: departmentRules[department],
-      expected_revision: Number(data?.department_rules?.[department]?.revision || 0),
-    })
-    await load(true)
-    setNotice({ type: 'success', message: result.message })
-  })
-
   const importExcel = (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -386,7 +344,7 @@ export default function RulesPage() {
   }
 
   const discard = () => {
-    if ((dirty || quotaDirty || lateThresholdDirty || Object.keys(departmentRuleLabels).some(departmentRulesDirty)) && !window.confirm('Bỏ toàn bộ thay đổi chưa ghi?')) return
+    if ((dirty || quotaDirty || lateThresholdDirty) && !window.confirm('Bỏ toàn bộ thay đổi chưa ghi?')) return
     load()
   }
 
@@ -404,9 +362,7 @@ export default function RulesPage() {
         .rules-page .rules-table input{width:100%;min-width:0;box-sizing:border-box;padding:7px 5px}
         .rules-page .rules-table th{font-size:11px;line-height:1.15}
         .rules-page .rules-table td{font-size:12px;line-height:1.2}
-        .department-rules-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.department-rules-card{display:grid;gap:10px;padding:13px;border:1px solid #dce6e1;border-radius:12px;background:#f9fcfa}.department-rules-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.department-rules-card h3{margin:0;color:#173d31}.department-rules-list{display:grid;gap:8px}.department-rule-row{display:grid;grid-template-columns:auto minmax(140px,1.3fr) minmax(110px,.7fr) minmax(140px,1fr) auto;gap:6px;align-items:center}.department-rule-row input[type=text],.department-rule-row input[type=number]{width:100%;min-width:0}.department-rules-empty{padding:16px;text-align:center;border:1px dashed #cbdad3;border-radius:10px;color:#718078}.department-rules-actions{display:flex;justify-content:flex-end}
         @media(max-width:900px){.rules-page .rules-desktop-table{display:none!important}.rules-page .rules-mobile-list{display:grid!important}}
-        @media(max-width:900px){.department-rules-grid{grid-template-columns:1fr}.department-rule-row{grid-template-columns:auto 1fr auto}.department-rule-row .department-rule-amount,.department-rule-row .department-rule-note{grid-column:2/3}}
         @media(max-width:720px){.rules-filter-row{grid-template-columns:1fr}.rules-page .rules-control-panel{padding:12px}}
       `}</style>
       <div data-ui-key="u-b88ff8c44721" className="page-heading-row rules-heading">
@@ -581,34 +537,6 @@ export default function RulesPage() {
             {busy === 'quota' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />} Áp dụng nội quy mới
           </button>}
         </div>
-      </section>
-
-      <section data-ui-key="u-c044cb90c7c2" className="panel department-rules-panel">
-        <div data-ui-key="u-6de79bf12a5d" className="panel-title-row">
-          <div>
-            <h2>NỘI QUY LOCKER / LỄ TÂN</h2>
-            <p>Admin nhập nội dung và mức phạt tại đây. Khi bấm áp dụng, cùng cấu hình này được sử dụng trong hệ thống và bảng lương bộ phận.</p>
-          </div>
-        </div>
-        <div className="department-rules-grid">{Object.entries(departmentRuleLabels).map(([department, label]) => {
-          const rules = departmentRules[department] || []
-          const ruleDirty = departmentRulesDirty(department)
-          return <div data-ui-key="u-c91b62368f20" className="department-rules-card" key={department}>
-            <div data-ui-key="u-2057f6a29fd5" className="department-rules-card-head"><h3>{label.toUpperCase()}</h3>{ruleDirty && <span className="rules-unsaved-chip">Chưa áp dụng</span>}</div>
-            <div className="department-rules-list">{rules.map((rule) => <div className="department-rule-row" key={rule.id}>
-              <input type="checkbox" checked={rule.enabled !== false} disabled={!canEditDepartmentRules} onChange={(event) => updateDepartmentRule(department, rule.id, 'enabled', event.target.checked)} aria-label={`Áp dụng ${rule.name || label}`} />
-              <input type="text" placeholder="Nội dung vi phạm" value={rule.name || ''} disabled={!canEditDepartmentRules} onChange={(event) => updateDepartmentRule(department, rule.id, 'name', event.target.value)} />
-              <input className="department-rule-amount" type="number" min="0" inputMode="numeric" placeholder="Mức phạt" value={numberInputDisplayValue(rule.amount)} disabled={!canEditDepartmentRules} onChange={(event) => updateDepartmentRule(department, rule.id, 'amount', Number(event.target.value))} />
-              <input className="department-rule-note" type="text" placeholder="Ghi chú" value={rule.note || ''} disabled={!canEditDepartmentRules} onChange={(event) => updateDepartmentRule(department, rule.id, 'note', event.target.value)} />
-              {canEditDepartmentRules && <button data-ui-key="u-cedb2f83521b" type="button" className="icon-button danger" onClick={() => removeDepartmentRule(department, rule.id)} aria-label={`Xóa nội quy ${label}`}><Trash2 size={15} /></button>}
-            </div>)}</div>
-            {!rules.length && <div className="department-rules-empty">Chưa có nội dung phạt. Admin sẽ nhập sau.</div>}
-            {canEditDepartmentRules && <UiToolbar data-ui-key="u-7a5b303285d8" className="department-rules-actions">
-              <button data-ui-key="u-151d867779a2" data-ui-label-default="Thêm nội quy" type="button" className="secondary-button" onClick={() => addDepartmentRule(department)}><Plus size={15} /><UiCustomText uiKey="u-151d867779a2"> Thêm nội quy</UiCustomText></button>
-              <button data-ui-key="u-1fe5427e0433" type="button" className="primary-button" disabled={!ruleDirty || busy === `department-${department}`} onClick={() => saveDepartmentRules(department)}>{busy === `department-${department}` ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />} Áp dụng {label}</button>
-            </UiToolbar>}
-          </div>
-        })}</div>
       </section>
 
       <section data-ui-key="u-31b21f743960" className="panel rules-control-panel">
