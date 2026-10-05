@@ -66,7 +66,7 @@ def rule_switch(current, department, rule):
     if 'rules' in cfg:
         return cfg['rules'].get(rule['id'], {'enabled': False})
     # Existing automatic switches retain their original activation date only.
-    return cfg if rule['kind'] in {'late', 'absence'} else {'enabled': False}
+    return {**cfg, 'enabled': cfg.get('enabled') is True} if rule['kind'] in {'late', 'absence'} else {'enabled': False}
 
 
 def materialize_switches(current):

@@ -21,7 +21,9 @@ def test_locker_and_letan_rules_share_the_payroll_system_settings():
 
 
 def test_rules_page_starts_empty_and_allows_admin_to_apply_later():
-    page = source("web-v2/src/pages/RulesPage.jsx")
+    page = source("web-v2/src/pages/DepartmentRulesPanel.jsx")
+    assert "DepartmentRulesPanel" in source("web-v2/src/pages/HcRulesPage.jsx")
+    assert "NỘI QUY LOCKER / LỄ TÂN" not in source("web-v2/src/pages/RulesPage.jsx")
     client = source("web-v2/src/lib/api.js")
 
     assert "NỘI QUY LOCKER / LỄ TÂN" in page

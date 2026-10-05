@@ -7,6 +7,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import AppShell from './components/AppShell'
 import EmployeeProfileModal from './components/EmployeeProfileModal'
 import PayrollTabs from './components/PayrollTabs'
+import RulesTabs from './components/RulesTabs'
 import LongLeaveAdminPanel from './components/LongLeaveAdminPanel'
 import ProfileCompletionReminder from './components/ProfileCompletionReminder'
 import LoginPage from './pages/LoginPage'
@@ -275,8 +276,7 @@ export default function App() {
         </>}
         {page === 'employees' && <><EmployeePage user={shellUser} registerNavigationGuard={registerEmployeeNavigation} /><EmployeeManagementEnhancements user={shellUser} /><EmployeeExactSearch /></>}
         {page === 'contract-1' && <ContractPage user={shellUser} />}
-        {page === 'rules' && <RulesPage user={shellUser} />}
-        {page === 'hc-rules' && <HcRulesPage user={shellUser} />}
+        {(page === 'rules' || page === 'hc-rules') && <RulesTabs initialTab={page === 'hc-rules' ? 'administrative' : 'ktv'} administrative={<HcRulesPage user={shellUser} />} ktv={<RulesPage user={shellUser} />} />}
         {page === 'profile' && <ProfilePage user={shellUser} forcePasswordChange={shellUser.must_change_password} onPasswordChanged={signOut} />}
         {page === 'hr' && <HumanResourcesPage user={shellUser} />}
         {(page === 'payroll' || page === 'department-payroll' || page === 'payroll-config') && <PayrollTabs user={shellUser} initialTab={page === 'payroll-config' ? 'configuration' : page === 'department-payroll' ? 'administrative' : 'ktv'} ktv={<PayrollPage user={shellUser} />} administrative={<DepartmentPayrollPanel user={shellUser} />} configuration={<DepartmentPayrollSettingsPage user={shellUser} />} />}

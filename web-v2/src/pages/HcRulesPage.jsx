@@ -3,6 +3,7 @@ import { RefreshCw, ShieldAlert } from 'lucide-react'
 import { veraApi } from '../lib/api'
 import usePageRefresh from '../lib/usePageRefresh'
 import './HcRulesPage.css'
+import DepartmentRulesPanel from './DepartmentRulesPanel'
 
 export default function HcRulesPage({ user }) {
   const [data, setData] = useState(null)
@@ -74,5 +75,6 @@ export default function HcRulesPage({ user }) {
         <button className="secondary-button" disabled={Boolean(busy)} onClick={() => setDraft(null)}>Hủy</button>
       </div>}
     </article>
+    <DepartmentRulesPanel />
   </section>
 }

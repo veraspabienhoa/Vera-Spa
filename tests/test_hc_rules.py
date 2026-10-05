@@ -294,3 +294,11 @@ def test_pair_toggle_preserves_other_rules_and_departments(database, monkeypatch
     assert client.put('/v2/rules/hc/locker/items/missing', json={'enabled': True, 'expected_revision': 1}).status_code == 404
     ident.role = 'letan'
     assert client.put(url, json={'enabled': False, 'expected_revision': 1}).status_code == 403
+
+
+def test_unconfigured_department_switch_has_explicit_disabled_state():
+    current = {'departments': {}, 'rules': hc.default_rules()}
+    for rule in current['rules']:
+        assert hc.rule_switch(current, 'letan', rule)['enabled'] is False
+    current['departments']['letan'] = {'enabled_since': at('08:00').isoformat()}
+    assert hc.rule_switch(current, 'letan', current['rules'][0])['enabled'] is False
