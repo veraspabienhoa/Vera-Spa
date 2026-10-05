@@ -1,3 +1,15 @@
+## 05-10-2026 — HC activation per rule and department (source change)
+
+Admin switches now target an individual rule/department pair. The worker checks
+that pair and its activation timestamp as well as the catalog effective date.
+Enabling one pair cannot enable another; late overtime still uses the effective
+attendance start. Existing legacy switches retain the automatic late/absence
+activation dates. New catalog entries default off in all departments. Catalog
+edits preserve surviving switches and remove deleted rule IDs. Concurrent writes
+remain revision checked under the existing transaction lock. Events include the
+pair activation snapshot; saved financial history is unchanged. Manual catalog
+rules remain manual, without an automatic detector. Production not verified.
+
 ## 05-10-2026 — Separate HC automatic rules (source changes, not deployed)
 
 Add independent Admin activation per active HR department, excluding Leader,

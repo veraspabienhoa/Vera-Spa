@@ -61,12 +61,40 @@ def policy(conn):
     return {'rules': value.get('rules', default_rules()), 'departments': value.get('departments', {}), 'revision': int((row or {}).get('revision') or 0)}
 
 
+def rule_switch(current, department, rule):
+    cfg = current['departments'].get(department, {})
+    if 'rules' in cfg:
+        return cfg['rules'].get(rule['id'], {'enabled': False})
+    # Existing automatic switches retain their original activation date only.
+    return cfg if rule['kind'] in {'late', 'absence'} else {'enabled': False}
+
+
+def materialize_switches(current):
+    for department, cfg in current['departments'].items():
+        cfg['rules'] = {r['id']: dict(rule_switch(current, department, r)) for r in current['rules']}
+
+
+def active_rule(current, department, decision):
+    rule = next((r for r in current.get('rules', default_rules())
+                 if r['kind'] == decision['kind'] and r['enabled']), None)
+    if not rule:
+        return None
+    switch = rule_switch(current, department, rule)
+    since = switch.get('enabled_since')
+    if not switch.get('enabled') or not since:
+        return None
+    cutoff = max(datetime.fromisoformat(t).astimezone(VN_TZ) for t in
+                 [since, rule.get('effective_since') or since])
+    return rule if decision['start'] >= cutoff else None
+
+
 def dashboard(conn):
     current = policy(conn)
     return {'revision': current['revision'], 'departments': [
         {'code': code, 'name': value['name'], 'salary_mode': value['salary_mode'],
          'enabled': current['departments'].get(code, {}).get('enabled') is True,
-         'enabled_since': current['departments'].get(code, {}).get('enabled_since')}
+         'enabled_since': current['departments'].get(code, {}).get('enabled_since'),
+         'rules': {r['id']: rule_switch(current, code, r) for r in current['rules']}}
         for code, value in definitions(conn).items()], 'multiplier': 2, 'rules': current['rules']}
 
 
@@ -104,7 +132,32 @@ def install_routes(app, *, engine_instance, current_identity, require_feature, i
                 unchanged = previous and all(previous.get(k) == v for k, v in rule.items())
                 rule['effective_since'] = previous.get('effective_since') if unchanged else datetime.now(VN_TZ).isoformat()
                 rules.append(rule)
+            materialize_switches(current)
             current['rules'] = rules
+            materialize_switches(current)
+            persist(conn, current, ident.employee_username)
+            return dashboard(conn)
+
+    @app.put('/v2/rules/hc/{department}/items/{rule_id}')
+    def toggle_item(department: str, rule_id: str, body: Toggle, ident: identity_type = Depends(current_identity)):
+        if str(ident.role).strip().lower() != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được kích hoạt Nội quy HC.')
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, 'official_rules_edit')
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:hc-rules'))"))
+            if department not in definitions(conn):
+                raise HTTPException(400, 'Bộ phận không thuộc Nội quy HC.')
+            current = policy(conn)
+            if current['revision'] != body.expected_revision:
+                raise HTTPException(409, 'Nội quy đã thay đổi. Hãy làm mới rồi thử lại.')
+            if not any(r['id'] == rule_id for r in current['rules']):
+                raise HTTPException(404, 'Hạng mục nội quy không còn tồn tại.')
+            materialize_switches(current)
+            cfg = current['departments'].setdefault(department, {'rules': {}})
+            old = cfg['rules'].get(rule_id, {})
+            cfg['rules'][rule_id] = {'enabled': body.enabled,
+                'enabled_since': old.get('enabled_since') if old.get('enabled') and body.enabled else datetime.now(VN_TZ).isoformat(),
+                'updated_by': ident.employee_username}
             persist(conn, current, ident.employee_username)
             return dashboard(conn)
 
@@ -120,10 +173,17 @@ def install_routes(app, *, engine_instance, current_identity, require_feature, i
             current = policy(conn)
             if current['revision'] != body.expected_revision:
                 raise HTTPException(409, 'Nội quy đã thay đổi. Hãy làm mới rồi thử lại.')
+            materialize_switches(current)
             old = current['departments'].get(department, {})
             current['departments'][department] = {'enabled': body.enabled,
                 'enabled_since': old.get('enabled_since') if old.get('enabled') and body.enabled else datetime.now(VN_TZ).isoformat(),
                 'updated_by': ident.employee_username}
+            cfg = current['departments'][department]
+            cfg['rules'] = {r['id']: {'enabled': body.enabled,
+                'enabled_since': old.get('rules', {}).get(r['id'], {}).get('enabled_since')
+                    if body.enabled and old.get('rules', {}).get(r['id'], {}).get('enabled')
+                    else datetime.now(VN_TZ).isoformat(),
+                'updated_by': ident.employee_username} for r in current['rules']}
             persist(conn, current, ident.employee_username)
             return dashboard(conn)
 
@@ -237,6 +297,10 @@ def candidate(row, day, data, current, now, leaves):
     username = row['employee_username']
     department = str(row.get('hc_department') or '').strip().lower()
     cfg = current['departments'].get(department, {})
+    if 'rules' in cfg:
+        switches = [rule_switch(current, department, r) for r in current.get('rules', default_rules()) if r['enabled'] and r['kind'] != 'manual']
+        active = [v for v in switches if v.get('enabled') and v.get('enabled_since')]
+        cfg = {'enabled': bool(active), 'enabled_since': min((v['enabled_since'] for v in active), default=None)}
     if department in EXCLUDED or str(row.get('employee_role') or '').strip().lower() in EXCLUDED:
         return None
     if not cfg.get('enabled') or row.get('department') != department or row.get('hc_department') not in current.get('eligible_departments', {department}):
@@ -337,7 +401,8 @@ def process(conn, *, now=None):
     conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:hc-rules'))"))
     current = policy(conn)
     result = {'added': 0, 'pending': 0}
-    if not any(v.get('enabled') for v in current['departments'].values()):
+    if not any(rule_switch(current, d, r).get('enabled') and r['enabled'] and r['kind'] != 'manual'
+               for d in current['departments'] for r in current.get('rules', default_rules())):
         return {**result, 'reason': 'disabled'}
     ensure_schema(conn)
     current['eligible_departments'] = set(definitions(conn))
@@ -365,12 +430,11 @@ def process(conn, *, now=None):
             decision = candidate(row, day, latest, current, now, leaves)
             if not decision:
                 continue
-            rule = next((r for r in current.get('rules', default_rules()) if r['kind'] == decision['kind'] and r['enabled']), None)
+            rule = active_rule(current, row['hc_department'], decision)
             if not rule:
                 continue
-            if rule.get('effective_since') and decision['start'] < datetime.fromisoformat(rule['effective_since']).astimezone(VN_TZ):
-                continue
             decision['rule'] = rule
+            decision['rule_department_activation'] = dict(rule_switch(current, row['hc_department'], rule))
             department = row['hc_department']
             try:
                 if department not in department_configs:
