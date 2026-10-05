@@ -50,9 +50,18 @@ const employeeDateAllowed = (recordDate, leaveType, today, policy) => (
   Boolean(recordDate && today) && recordDate >= today && recordDate >= addIsoDays(today, employeeNoticeDays(leaveType, policy))
 )
 
-export function canEditLeaveRecord({ role, allowedByPermission, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy, letanLeavePolicy }) {
+export function isLeaveCreatedToday(createdAt, today) {
+  if (typeof createdAt !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(createdAt)) return false
+  const created = new Date(createdAt)
+  return Number.isFinite(created.getTime()) && new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(created) === today
+}
+
+export function canEditLeaveRecord({ role, allowedByPermission, manageCreatedToday, createdAt, recordDate, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy, letanLeavePolicy }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
+  if (manageCreatedToday && isLeaveCreatedToday(createdAt, today)) return true
   if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
     if (employeeSelfServicePolicy?.enabled !== false) {
       // The server checks both old and new types. A future paid row can
@@ -69,16 +78,11 @@ export function canEditLeaveRecord({ role, allowedByPermission, recordDate, curr
   return Boolean(allowedByPermission)
 }
 
-export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, createdAt, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy, letanLeavePolicy }) {
+export function canDeleteLeaveRecord({ role, allowedByPermission, manageCreatedToday, recordDate, createdAt, currentReason, currentLeaveType, today, isOwnRecord, employeeSelfServicePolicy, letanLeavePolicy }) {
   const roleKey = String(role || '').trim().toLowerCase()
   if (roleKey === 'admin') return true
-  if (EDITOR_ROLES.has(roleKey) && typeof createdAt === 'string'
-      && /(?:Z|[+-]\d{2}:\d{2})$/.test(createdAt)) {
-    const created = new Date(createdAt)
-    if (Number.isFinite(created.getTime()) && new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(created) === today) return true
-  }
+  if (manageCreatedToday && isLeaveCreatedToday(createdAt, today)) return true
+  if (EDITOR_ROLES.has(roleKey) && isLeaveCreatedToday(createdAt, today)) return true
   if (EMPLOYEE_SELF_SERVICE_ROLES.has(roleKey)) {
     if (employeeSelfServicePolicy?.enabled !== false) {
       return Boolean(isOwnRecord) && employeeDateAllowed(recordDate, currentLeaveType, today, employeeSelfServicePolicy)
@@ -96,6 +100,7 @@ export function canDeleteLeaveRecord({ role, allowedByPermission, recordDate, cr
 // candidate. Authorization and all catalog rules are still checked on save.
 export function canChangeLeaveReason(context, nextReason) {
   if (!canEditLeaveRecord(context)) return false
+  if (context.manageCreatedToday && isLeaveCreatedToday(context.createdAt, context.today)) return true
   const group = letanReasonChoices(context.role, context.recordDate, context.currentReason, context.today, context.letanLeavePolicy)
   if (group && !group.some((name) => normalizeReason(name) === normalizeReason(nextReason.name))) return false
   const role = String(context.role || '').trim().toLowerCase()

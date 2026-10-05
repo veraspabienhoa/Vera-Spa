@@ -80,3 +80,17 @@ test('Quản lý uses the same past-day and same-group boundaries as Lễ tân',
     assert.equal(canDeleteLeaveRecord(future), allowed)
   }
 })
+
+
+test('Explicit grant manages any employee record only on its Vietnam creation day', () => {
+  for (const role of ['letan', 'quanly', 'nhanvien', 'leader', 'locker', 'tapvu']) {
+    const context = { ...row(role, '2026-09-03', 'Nghỉ CÓ phép', false),
+      manageCreatedToday: true, isOwnRecord: false, createdAt: '2026-09-03T17:00:00Z' }
+    assert.equal(canEditLeaveRecord(context), true)
+    assert.equal(canDeleteLeaveRecord(context), true)
+    for (const createdAt of ['2026-09-03T16:59:59Z', '2026-09-04T17:00:00Z', 'invalid', '2026-09-04T00:00:00', null]) {
+      assert.equal(canEditLeaveRecord({ ...context, createdAt }), false)
+      assert.equal(canDeleteLeaveRecord({ ...context, createdAt }), false)
+    }
+  }
+})

@@ -33,7 +33,7 @@ from typing import Any
 
 import pandas as pd
 from fastapi import HTTPException
-from vera_leave_created_today import may_delete_created_today
+from vera_leave_created_today import may_delete_created_today, may_manage_created_today
 
 from vera_letan_leave_policy import (
     DEFAULT_GROUPS,
@@ -139,7 +139,13 @@ def _install_admin_reason_catalog(app, api_module) -> None:
             continue
 
         def admin_reason_catalog(date_value, ident):
-            if _role(ident) != "admin":
+            with api_module._engine_instance().connect() as conn:
+                if _role(ident) != "admin" and not api_module._feature_allowed(conn, ident, "leave_created_today_edit_delete"):
+                    # Release this read connection before the canonical endpoint.
+                    unrestricted = False
+                else:
+                    unrestricted = True
+            if not unrestricted:
                 return original_call(date_value=date_value, ident=ident)
 
             with api_module._engine_instance().connect() as conn:
@@ -191,6 +197,9 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
             # timing restrictions for Admin before consulting the catalog rule.
             return original_edit(conn, row, new_reason, ident)
 
+        if may_manage_created_today(row, datetime.now(vn_tz), api_module._feature_allowed(conn, ident, "leave_created_today_edit_delete")):
+            return original_edit(conn, row, new_reason, ident)
+
         policy = load_letan_leave_policy(conn)
         if not policy["enabled"]:
             return original_edit(conn, row, new_reason, ident)
@@ -237,6 +246,9 @@ def install_letan_leave_guard(app, *, api_module, vn_tz) -> None:
         role = _role(ident)
         if role not in EDITOR_ROLES:
             # Includes Admin: canonical delete already returns immediately.
+            return original_delete(conn, row, ident)
+
+        if may_manage_created_today(row, datetime.now(vn_tz), api_module._feature_allowed(conn, ident, "leave_created_today_edit_delete")):
             return original_delete(conn, row, ident)
 
         # This explicit creation-day grant affects deletion only. Existing

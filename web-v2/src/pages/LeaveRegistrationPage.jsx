@@ -28,6 +28,7 @@ import {
   canChangeLeaveReason,
   canDeleteLeaveRecord,
   canEditLeaveRecord,
+  isLeaveCreatedToday,
   EMPLOYEE_SELF_SERVICE_ROLES,
   letanReasonChoices,
 } from '../lib/leaveRecordPermissions'
@@ -170,6 +171,7 @@ export default function LeaveRegistrationPage({ user }) {
   const employeeSelfService = EMPLOYEE_SELF_SERVICE_ROLES.has(role) && employeeSelfServicePolicy.enabled !== false
   const canChooseEmployee = ['admin', 'quanly', 'letan'].includes(role)
   const canViewPenalty = role === 'admin' || user?.permissions?.employee_penalty_view === true
+  const manageCreatedToday = user?.permissions?.leave_created_today_edit_delete === true
   const canEdit = role === 'admin'
     || user?.permissions?.leave_manage_edit === true
     || user?.permissions?.leave_detail_edit === true
@@ -178,9 +180,11 @@ export default function LeaveRegistrationPage({ user }) {
     || user?.permissions?.leave_manage_delete === true
     || user?.permissions?.leave_detail_delete === true
     || user?.permissions?.leave_today_khong_phep_edit_delete === true
+  const recordReasonChoices = (item) => manageCreatedToday && isLeaveCreatedToday(item?.created_at, today()) ? null : letanReasonChoices(role, item?.leave_date, item?.leave_reason, today(), letanLeavePolicy)
   const recordPermissionContext = (item) => ({
     role,
     allowedByPermission: canEdit,
+    manageCreatedToday,
     recordDate: item?.leave_date,
     createdAt: item?.created_at,
     currentReason: item?.leave_reason,
@@ -333,6 +337,8 @@ export default function LeaveRegistrationPage({ user }) {
       .filter((item) => canEditLeaveRecord({
         role,
         allowedByPermission: canEdit,
+        manageCreatedToday,
+        createdAt: item?.created_at,
         recordDate: item?.leave_date,
         currentReason: item?.leave_reason,
         currentLeaveType: item?.leave_type,
@@ -354,7 +360,7 @@ export default function LeaveRegistrationPage({ user }) {
     }
     void loadEditableDateReasons()
     return () => { active = false }
-  }, [busy, canEdit, date, employeeSelfServicePolicy, letanLeavePolicy, records, role, user?.employee_username, fetchRecordReasons])
+  }, [busy, canEdit, manageCreatedToday, date, employeeSelfServicePolicy, letanLeavePolicy, records, role, user?.employee_username, fetchRecordReasons])
 
   useEffect(() => {
     refreshWatchDates()
@@ -434,14 +440,14 @@ export default function LeaveRegistrationPage({ user }) {
     const catalog = isApiConfigured
       ? (recordReasonsByDate[item?.leave_date] || (item?.leave_date === date ? reasons : []))
       : reasons
-    const group = letanReasonChoices(role, item?.leave_date, item?.leave_reason, today(), letanLeavePolicy)
+    const group = recordReasonChoices(item)
     if (!group) return catalog.filter((reason) => canChangeLeaveReason(recordPermissionContext(item), reason))
     return group.map((name) => catalog.find((reason) => normalizeSearch(reason.name) === normalizeSearch(name)) || ({ name }))
   }
 
   const reasonValueForRecord = (item) => {
     if (reasonDrafts[item.record_uid]) return reasonDrafts[item.record_uid]
-    const group = letanReasonChoices(role, item?.leave_date, item?.leave_reason, today(), letanLeavePolicy)
+    const group = recordReasonChoices(item)
     if (!group) return item.leave_reason
     return group.find((reason) => normalizeSearch(reason) === normalizeSearch(item.leave_reason)) || group[2]
   }
@@ -1134,12 +1140,12 @@ export default function LeaveRegistrationPage({ user }) {
                     <td><strong>{shortEmployeeName(item.employee_name)}</strong></td>
                     <td className="reason-edit-cell">
                       {canEditRecord(item) ? (
-                        <select aria-label={`Sửa lý do nghỉ của ${shortEmployeeName(item.employee_name)} ngày ${formatDateDisplay(item.leave_date)}`} value={reasonValueForRecord(item)} onFocus={() => { if (!recordReasonsByDate[item.leave_date] && !letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy)) void fetchRecordReasons(item.leave_date) }} onChange={(event) => setReasonDrafts((current) => ({ ...current, [item.record_uid]: event.target.value }))} disabled={managing || !isApiConfigured || (!recordReasonsByDate[item.leave_date] && !letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy))}>
-                          {!letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy) && !reasonOptionsForRecord(item).some((reason) => reason.name === item.leave_reason) && <option value={item.leave_reason}>{item.leave_reason}</option>}
+                        <select aria-label={`Sửa lý do nghỉ của ${shortEmployeeName(item.employee_name)} ngày ${formatDateDisplay(item.leave_date)}`} value={reasonValueForRecord(item)} onFocus={() => { if (!recordReasonsByDate[item.leave_date] && !recordReasonChoices(item)) void fetchRecordReasons(item.leave_date) }} onChange={(event) => setReasonDrafts((current) => ({ ...current, [item.record_uid]: event.target.value }))} disabled={managing || !isApiConfigured || (!recordReasonsByDate[item.leave_date] && !recordReasonChoices(item))}>
+                          {!recordReasonChoices(item) && !reasonOptionsForRecord(item).some((reason) => reason.name === item.leave_reason) && <option value={item.leave_reason}>{item.leave_reason}</option>}
                           {reasonOptionsForRecord(item).map((reason) => <option key={reason.name} value={reason.name}>{reason.name}</option>)}
                         </select>
                       ) : <span>{item.leave_reason}</span>}
-                      {canEditRecord(item) && isApiConfigured && !recordReasonsByDate[item.leave_date] && !letanReasonChoices(role, item.leave_date, item.leave_reason, today(), letanLeavePolicy) && (
+                      {canEditRecord(item) && isApiConfigured && !recordReasonsByDate[item.leave_date] && !recordReasonChoices(item) && (
                         recordReasonErrors[item.leave_date]
                           ? <div role="alert"><small>{recordReasonErrors[item.leave_date]}</small><button data-ui-key="u-26f8c2b95ba3" data-ui-label-default="Thử tải lại lý do" type="button" className="text-button" disabled={managing} onClick={() => fetchRecordReasons(item.leave_date)}><UiCustomText uiKey="u-26f8c2b95ba3">Thử tải lại lý do</UiCustomText></button></div>
                           : <small role="status">Đang tải lý do nghỉ cho ngày {formatDateDisplay(item.leave_date)}…</small>
