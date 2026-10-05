@@ -64,3 +64,30 @@
   .revenue-entry-modal-heading h2 { font-size:18px; }
   .revenue-entry-modal .revenue-entry-form { grid-template-areas:"date" "income" "income-note" "expense" "expense-note" "save"; }
 }
+
+/* Keep every ledger and purchase-report column in the page width. */
+.revenue-page .report-table.fit-data-table {
+  display: table; width: 100%; max-width: 100%; min-width: 0;
+  table-layout: fixed; border-collapse: collapse;
+}
+.revenue-page .fit-data-table thead { display: table-header-group; }
+.revenue-page .fit-data-table tbody { display: table-row-group; padding: 0; }
+.revenue-page .fit-data-table tr { display: table-row; }
+.revenue-page .fit-data-table :is(th,td) {
+  display: table-cell !important; width: auto !important; min-width: 0;
+  box-sizing: border-box; padding: 8px 5px; white-space: normal; overflow-wrap: anywhere;
+  vertical-align: top; line-height: 1.4;
+}
+.revenue-page .fit-data-table td::before { content: none; }
+.revenue-page .fit-data-table .money { white-space: normal; text-align: right; }
+.revenue-page .fit-data-table .ledger-check-column { width: 32px !important; }
+@media(max-width:760px) {
+  .revenue-page .fit-data-table :is(th,td) {
+    padding: 5px 2px; font-size: clamp(8px,2.1vw,11px);
+    letter-spacing: 0; text-transform: none;
+  }
+  .revenue-page .fit-data-table input[type=checkbox] {
+    width: min(20px,100%); height: 20px; margin: 0;
+  }
+  .revenue-page .fit-data-table .ledger-check-column { width: 24px !important; }
+}
