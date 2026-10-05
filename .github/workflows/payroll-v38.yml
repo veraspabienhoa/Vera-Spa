@@ -109,7 +109,7 @@ jobs:
               'saved payroll reopen API is enabled': 'install_payroll_saved_edit_routes' in wrapper,
               'Web V2 loads Payroll 3.8 page': "import('./pages/PayrollPageV38')" in app,
               'V38 uses enhanced payroll UI': "./PayrollPageEnhanced" in page,
-              'V38 retains payroll navigation with history at bottom': all(token in page for token in ("useState('calculate')", "activeTab={payrollTab}", "payrollTab !== 'accumulation'")) and all(token in enhanced_page for token in ('payroll-main-tabs', '>Tính lương</button>', '>Lịch sử bảng lương</button>', 'payroll-history-panel')),
+              'V38 displays payroll history in its own tab': all(token in page for token in ("useState('calculate')", "activeTab={payrollTab}", "payrollTab === 'calculate'")) and all(token in enhanced_page for token in ('payroll-main-tabs', '>Tính lương</button>', '>Lịch sử bảng lương</button>', 'payroll-history-panel')),
               'payroll history is below default config and collapsed initially': enhanced_page.find('<h2>LỊCH SỬ BẢNG LƯƠNG</h2>') > enhanced_page.find('CÀI ĐẶT KHẤU TRỪ MẶC ĐỊNH') and 'hidden={!historyOpen}' in enhanced_page and 'useState(false)' in enhanced_page,
               'employee search exists in current payroll': 'Tìm tên nhân viên' in enhanced_page and 'draftSearch' in enhanced_page,
               'complete payroll button exists': 'Hoàn thành bảng lương' in enhanced_page,

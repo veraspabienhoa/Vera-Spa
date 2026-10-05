@@ -606,7 +606,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   }
   const viewSavedPayroll = batchId => {
     setBatch(batchId); setEmployee(''); setHistorySearch(''); setHistoryNonPositiveOnly(false); setHistoryFormerOnly(false)
-    onTabChange?.('calculate')
+    onTabChange?.('history')
     showHistory()
   }
   const searchableBatches = savedBatches.map(item => ({ id: item.batch, label: item.batch,

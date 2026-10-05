@@ -176,7 +176,9 @@ export default function PayrollPageV38({ user }) {
       .payroll-main-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}
       .payroll-main-tabs button{min-height:42px;padding:9px 18px;border:1px solid #b8d0c3;border-radius:12px;background:#fff;color:#24473a;font:inherit;font-weight:900;cursor:pointer}
       .payroll-main-tabs button.active{background:#1f513f;color:#fff;border-color:#1f513f}
-      .payroll-page-enhanced.payroll-tab-accumulation>section.panel:not(.payroll-history-panel){display:none}
+      .payroll-page-enhanced.payroll-tab-calculate>.payroll-history-panel{display:none}
+      .payroll-page-enhanced.payroll-tab-history>section.panel:not(.payroll-history-panel){display:none}
+      .payroll-page-enhanced.payroll-tab-accumulation>section.panel{display:none}
       @media(max-width:700px){.payroll-main-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-main-tabs button{width:100%;padding:8px 6px;white-space:nowrap}}
       .payroll-v38-stack.full>.payroll-personal-tracking{order:900}
       .payroll-v38-stack.full .payroll-default-config-panel{order:910}
@@ -185,7 +187,7 @@ export default function PayrollPageV38({ user }) {
       .payroll-v38-config .v38-collapsed-note{margin-top:8px;color:#6b7771;font-size:12px}
     `}</style>
     {canFullPayroll && <PayrollPage key={payrollVersion} user={user} activeTab={payrollTab} onTabChange={setPayrollTab} configExtra={livingSettings} onConfigOpenChange={setOverridesOpen} />}
-    {showPersonalTracking && !isAdmin && payrollTab !== 'accumulation' && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
-    {isAdmin && canFullPayroll && payrollTab !== 'accumulation' && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
+    {showPersonalTracking && !isAdmin && payrollTab === 'calculate' && <PayrollPersonalTracking user={user} standalone={!canFullPayroll} />}
+    {isAdmin && canFullPayroll && payrollTab === 'calculate' && <PayrollDebtAdminPanel user={user} portalVersion={payrollVersion} onChanged={() => setPayrollVersion((value) => value + 1)} />}
   </div>
 }
