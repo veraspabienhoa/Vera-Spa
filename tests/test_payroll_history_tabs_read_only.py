@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_payroll_history_stays_at_bottom_and_defaults_hidden():
+def test_payroll_history_is_displayed_in_its_own_tab():
     wrapper = read_ui_source((ROOT / "web-v2/src/pages/PayrollPageV38.jsx"))
     page = read_ui_source((ROOT / "web-v2/src/pages/PayrollPageEnhanced.jsx"))
     assert "const [payrollTab, setPayrollTab] = useState('calculate')" in wrapper
@@ -17,7 +17,9 @@ def test_payroll_history_stays_at_bottom_and_defaults_hidden():
     assert 'hidden={!historyOpen}' in page
     assert page.index('payroll-history-panel') > page.index('payroll-default-config-panel')
     assert 'PayrollHistorySearch' in page
-    assert 'payroll-tab-history>section.panel:not(.payroll-history-panel)' not in wrapper
+    assert 'payroll-tab-history>section.panel:not(.payroll-history-panel)' in wrapper
+    assert 'payroll-tab-calculate>.payroll-history-panel{display:none}' in wrapper
+    assert "onTabChange?.('history')\n    showHistory()" in page
 
 
 def test_saved_payroll_can_be_reopened_and_history_can_be_emailed():
