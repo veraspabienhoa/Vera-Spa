@@ -628,7 +628,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
       <div className="payroll-submenu-heading"><WalletCards size={18} aria-hidden="true" /><strong>Lương KTV</strong></div>
     <UiToolbar data-ui-key="u-a39c42009c7e" className="payroll-main-tabs" role="tablist" aria-label="Lương KTV">
       <button data-ui-key="u-6a99f7168de5" data-ui-label-default="Tính lương" type="button" role="tab" aria-selected={activeTab === 'calculate'} className={activeTab === 'calculate' ? 'active' : ''} onClick={() => onTabChange?.('calculate')}><WalletCards size={18} aria-hidden="true" /><UiCustomText uiKey="u-6a99f7168de5">Tính lương</UiCustomText></button>
-      <button data-ui-key="u-5f140dee458d" data-ui-label-default="Lịch sử bảng lương" type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => { onTabChange?.('history'); showHistory() }}><History size={18} aria-hidden="true" /><UiCustomText uiKey="u-5f140dee458d">Lịch sử bảng lương</UiCustomText></button>
+      <button data-ui-key="u-5f140dee458d" data-ui-label-default="Lịch sử bảng lương" type="button" role="tab" aria-selected={activeTab === 'history'} className={activeTab === 'history' ? 'active' : ''} onClick={() => { setHistoryOpen(false); onTabChange?.('history') }}><History size={18} aria-hidden="true" /><UiCustomText uiKey="u-5f140dee458d">Lịch sử bảng lương</UiCustomText></button>
       {isAdmin && <button type="button" role="tab" aria-selected={activeTab === 'accumulation'} className={activeTab === 'accumulation' ? 'active' : ''} onClick={() => onTabChange?.('accumulation')}><PiggyBank size={18} aria-hidden="true" />Tích lũy &amp; Hoàn trả</button>}
     </UiToolbar>
     </nav>
