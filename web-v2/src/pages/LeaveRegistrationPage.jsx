@@ -892,7 +892,7 @@ export default function LeaveRegistrationPage({ user }) {
             <textarea value={form.detail} onChange={(e) => setForm((current) => ({ ...current, detail: e.target.value }))} rows="3" placeholder="Ghi chú nếu cần" />
 
             {dateIsPast && <div className="warning-box"><strong>Ngày chỉ xem.</strong> Nhân viên không thể đăng ký cho ngày trong quá khứ.</div>}
-            
+
             {warnings.map((warning) => <div className="warning-box" key={warning}>{warning}</div>)}
             {error && <div className="error-box">{error}</div>}
             <button data-ui-key="u-7712757bd8c0" className="primary-button" type="submit" disabled={saving || !canCreate}>{saving ? 'Đang kiểm tra & ghi…' : 'Ghi'}</button>
@@ -1034,8 +1034,9 @@ export default function LeaveRegistrationPage({ user }) {
         <section data-ui-key="u-6a4d9baaa43d" className="panel leave-list-panel" id="leave-panel-list" role="tabpanel" aria-labelledby="leave-tab-list" hidden={activeTab !== 'list'}
           data-leave-start={listRangeStart} data-leave-end={listRangeEnd} data-leave-employee={employeeSearch}>
           <div data-ui-key="u-8b2d8ad1d8f1" className="panel-title-row">
-            <div>
+            <div className="leave-list-title-actions">
               <h2>DANH SÁCH</h2>
+              <div className="leave-list-quota-action" data-leave-quota-button-host="true" />
             </div>
             <button data-ui-key="u-4c4154cfd167" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={busy}>
               <RefreshCw size={15} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-4c4154cfd167"> Làm mới
