@@ -36,6 +36,7 @@ const RANGE_FILTERS = [
   ['week', 'Tuần này'],
   ['next_week', 'Tuần sau'],
   ['month', 'Tháng này'],
+  ['last_month', 'Tháng trước'],
   ['next_month', 'Tháng sau'],
   ['custom', 'Tùy chỉnh'],
 ]
@@ -314,6 +315,7 @@ export default function WorkSchedulePage({ user }) {
     if (rangeMode === 'last_week') return weekDays(base, -1)
     if (rangeMode === 'week') return weekDays(base)
     if (rangeMode === 'next_week') return weekDays(base, 1)
+    if (rangeMode === 'last_month') return monthDays(moveMonth(currentMonthValue(), -1))
     if (rangeMode === 'next_month') return monthDays(moveMonth(currentMonthValue(), 1))
     if (rangeMode === 'selected_month') return monthDays(month)
     if (rangeMode === 'custom') {
@@ -327,7 +329,7 @@ export default function WorkSchedulePage({ user }) {
   const rangeEnd = isoDate(days[days.length - 1])
   const rangeKey = `${rangeStart}_${rangeEnd}`
   const isWeekView = ['last_week', 'week', 'next_week'].includes(rangeMode) && days.length === 7
-  const isMonthView = ['month', 'next_month', 'selected_month'].includes(rangeMode) && days.length >= 28
+  const isMonthView = ['month', 'last_month', 'next_month', 'selected_month'].includes(rangeMode) && days.length >= 28
 
   const availableDepartments = useMemo(() => {
     if (String(user?.role || '').toLowerCase() === 'admin') return DEPARTMENTS
@@ -389,6 +391,7 @@ export default function WorkSchedulePage({ user }) {
     setRangeMode(mode)
     setPastePanelOpen(false)
     if (mode === 'month') setMonth(currentMonthValue())
+    if (mode === 'last_month') setMonth(moveMonth(currentMonthValue(), -1))
     if (mode === 'next_month') setMonth(moveMonth(currentMonthValue(), 1))
   }
 
@@ -1042,6 +1045,7 @@ export default function WorkSchedulePage({ user }) {
       @media(max-width:700px){.schedule-tools{width:100%}.schedule-copy-button,.schedule-save,.schedule-config-button{flex:1;justify-content:center}.schedule-month-picker{width:100%;justify-content:space-between}.schedule-filter-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.schedule-filter-bar button{padding:7px 2px;font-size:10px}.schedule-custom-range{display:grid;grid-template-columns:1fr 1fr;width:100%;max-width:100%}.schedule-custom-range input{min-width:0;width:100%}.paste-range-panel{grid-template-columns:1fr 1fr}.shift-editor-row{grid-template-columns:1fr 1fr}.shift-editor-row label:first-child{grid-column:1/-1}.schedule-scroll.week-view{overflow-x:hidden}.schedule-scroll.week-view .schedule-grid{min-width:0;width:100%;table-layout:fixed}.schedule-scroll.week-view .schedule-grid thead th{min-width:0;padding:3px 1px;font-size:9px}.schedule-scroll.week-view .weekday-full{display:none}.schedule-scroll.week-view .weekday-short{display:block}.schedule-scroll.week-view .schedule-grid thead th.employee-head,.schedule-scroll.week-view .schedule-grid td.employee-cell,.schedule-scroll.week-view .schedule-grid tfoot td.summary-label{width:72px;min-width:72px;max-width:72px;padding:3px;white-space:normal;word-break:break-word}.schedule-scroll.week-view .schedule-grid td{padding:2px 1px;min-width:0}.schedule-scroll.week-view .employee-cell strong{font-size:9px;line-height:1.1}.schedule-scroll.week-view .employee-role,.schedule-scroll.week-view tr.own-row td.employee-cell strong:after,.schedule-scroll.week-view .system-name-edit{display:none}.schedule-scroll.week-view .schedule-cell-editor{display:none}.schedule-scroll.week-view .mobile-cell-summary{display:block;padding:5px 1px;border-radius:6px;font-size:9px;font-weight:900;line-height:1.1;color:#244a3a}.schedule-scroll.week-view .mobile-cell-summary.ca1{background:#dff3cc}.schedule-scroll.week-view .mobile-cell-summary.ca2{background:#fff8a8}.schedule-scroll.week-view .mobile-cell-summary.off{background:#ffe0b8}.schedule-scroll.week-view .month-head{font-size:10px;height:28px}.schedule-scroll.week-view .schedule-grid thead tr:nth-child(2) th{top:28px}.schedule-scroll.week-view .shift-total-cell{min-width:0;font-size:8px}.schedule-scroll.week-view .shift-total-cell b{font-size:11px}.schedule-scroll.week-view .shift-total-cell small{font-size:7px}.mobile-week-editor{display:grid;gap:8px;padding:10px;border:1px solid #d5e3dd;border-radius:12px;background:#f8fbfa}.mobile-week-editor .shift-select,.mobile-week-editor .ot-select,.mobile-week-editor .manager-status,.mobile-week-editor .manager-time,.mobile-week-editor .letan-ot-time{width:100%}}
     `}</style>
     <style>{`
+      .statistics-month-filters{padding:0 8px 8px}.statistics-month-filters button{min-height:44px}.statistics-month-filters.schedule-filter-bar{display:flex;flex-wrap:wrap}
       .combo-sale-editor{display:grid;gap:10px;padding:12px;border:1px solid #d8e5df;border-radius:12px;background:#f8fbfa}
       .combo-sale-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
       .combo-sale-head label{display:flex;align-items:center;gap:7px;font-weight:800;color:#1f6047}
@@ -1133,6 +1137,12 @@ export default function WorkSchedulePage({ user }) {
     </div></StableDataRegion>
     {!loading && <div className="schedule-scroll monthly-statistics">
       <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · đến ngày hiện tại · {DEPARTMENT_INFO[department].label}</h3>
+      <div className="schedule-filter-bar statistics-month-filters" role="group" aria-label="Lọc bảng thống kê tháng">
+        {[['month', 'Tháng này'], ['last_month', 'Tháng trước']].map(([mode, label]) => {
+          const targetMonth = mode === 'month' ? currentMonthValue() : moveMonth(currentMonthValue(), -1)
+          return <button type="button" key={mode} className={month === targetMonth ? 'active' : ''} aria-pressed={month === targetMonth} onClick={() => selectRange(mode)}>{label}</button>
+        })}
+      </div>
       <table data-ui-key="u-8fdcd960382d">
         <thead><tr><th data-ui-key="u-aa04bfca6a93" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-aa04bfca6a93">Nhân viên</UiCustomText></th><th data-ui-key="u-60cb3725cefa" data-ui-label-default="Ngày làm việc"><UiCustomText uiKey="u-60cb3725cefa">Ngày làm việc</UiCustomText></th><th data-ui-key="u-633c4405c5b1" data-ui-label-default="Ngày nghỉ"><UiCustomText uiKey="u-633c4405c5b1">Ngày nghỉ</UiCustomText></th><th data-ui-key="u-1d9cca3c2396" data-ui-label-default="Ngày Ca 1"><UiCustomText uiKey="u-1d9cca3c2396">Ngày Ca 1</UiCustomText></th><th data-ui-key="u-6b76f996ba14" data-ui-label-default="Ngày Ca 2"><UiCustomText uiKey="u-6b76f996ba14">Ngày Ca 2</UiCustomText></th><th data-ui-key="u-3692d119b2c2" data-ui-label-default="Giờ tăng ca"><UiCustomText uiKey="u-3692d119b2c2">Giờ tăng ca</UiCustomText></th></tr></thead>
         <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.offDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr>)}</tbody>
