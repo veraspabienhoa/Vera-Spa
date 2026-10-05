@@ -82,8 +82,8 @@ def test_employee_config_supports_department_search_and_explicit_rows():
 
 def test_department_payroll_rows_fit_without_horizontal_page_scroll():
     styles = (ROOT / "web-v2/src/styles.css").read_text(encoding="utf-8")
-    assert ".department-payroll-table { width: 100%; max-width: 100%; overflow-x: clip; }" in styles
-    assert ".department-payroll-table table { width: 100%; min-width: 0; table-layout: fixed" in styles
+    assert ".department-payroll-table { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }" in styles
+    assert ".department-payroll-table table { width: max-content; min-width: 100%; table-layout: auto" in styles
 
 
 def test_salary_advance_form_has_searchable_employee_date_and_valid_amount_input():
