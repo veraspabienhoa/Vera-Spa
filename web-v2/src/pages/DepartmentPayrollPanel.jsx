@@ -1,3 +1,4 @@
+import PayrollHistorySearch from '../components/PayrollHistorySearch'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -86,6 +87,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [payrollSearch, setPayrollSearch] = useState('')
   const [departmentFilter, setDepartmentFilter] = useState('')
   const [history, setHistory] = useState([])
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [editingHistoryId, setEditingHistoryId] = useState('')
   const [calculationPeriod, setCalculationPeriod] = useState(null)
   const [selected, setSelected] = useState([])
@@ -260,6 +262,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   </div>
 
   return <div ref={pageRef} className="feature-page department-payroll-page">
+    <PayrollHistorySearch items={history.map(item => ({ id: item.id, label: `Tháng ${item.month_label}`, searchText: `${item.month || ''} ${item.saved_by || ''} ${item.saved_at ? formatVeraDateTime(item.saved_at) : ''}`, description: `${item.employee_count} nhân viên · Thực nhận ${money(item.total_net)}` }))} onEdit={canSave ? openHistory : undefined} disabled={Boolean(busy)} />
     <section data-ui-key="u-fe386b14128e" className="panel department-payroll-panel">
       <div data-ui-key="u-0d51bd20233a" className="panel-title-row"><div><h2>LƯƠNG HÀNH CHÁNH</h2><p>Gồm các bộ phận được cấu hình Lương giờ và Lương tháng trong Nhân sự. Lương tháng tính theo 26 ngày công. Các bộ phận Tip tính tại Lương KTV.</p></div></div>
       <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
@@ -292,8 +295,11 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     </section>
     <section data-ui-key="u-aacee11d5e23" className="panel department-payroll-history">
       <div data-ui-key="u-af5bcde4d1db" className="panel-title-row"><div><h2><History size={18} /> LỊCH SỬ BẢNG LƯƠNG</h2><p>Bảng đã hoàn thành có thể mở lại, chỉnh sửa và hoàn thành lại để cập nhật đúng bản cũ.</p></div><button data-ui-key="u-36ab47558e09" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} /><UiCustomText uiKey="u-36ab47558e09"> Làm mới</UiCustomText></button></div>
+      <button type="button" className="secondary-button" aria-expanded={historyOpen} aria-controls="hc-payroll-history-content" onClick={() => setHistoryOpen(value => !value)}>{historyOpen ? 'Ẩn lịch sử' : 'Hiện lịch sử'}</button>
+      <div id="hc-payroll-history-content" hidden={!historyOpen}>
       <div className="department-history-list">{history.map((item) => <article key={item.id}><div><strong>Tháng {item.month_label}</strong><span>{item.employee_count} nhân viên · {item.source_label || 'Chấm công'} · Thực nhận {money(item.total_net)}</span><small>Lưu bởi {item.saved_by || '—'} · {item.saved_at ? formatVeraDateTime(item.saved_at) : '—'}</small></div>{canSave && <button data-ui-key="u-446648a6be25" data-ui-label-default="Mở để sửa" className="secondary-button" type="button" disabled={Boolean(busy)} onClick={() => openHistory(item.id)}><History size={15} /><UiCustomText uiKey="u-446648a6be25"> Mở để sửa</UiCustomText></button>}</article>)}</div>
       {!history.length && <div className="setup-note">Chưa có lịch sử bảng Lương hành chánh.</div>}
+      </div>
     </section>
   </div>
 }
