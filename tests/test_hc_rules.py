@@ -217,3 +217,40 @@ def test_activation_after_earlier_overtime_started_does_not_backfill_it():
     row.update(main_start='13:00', main_end='23:00', shift_code='Ca 2', overtime_shift='TC Ca 1', ot_start='09:00', ot_end='13:00')
     current['departments']['locker']['enabled_since'] = at('10:00').isoformat()
     assert hc.candidate(row, DAY, data, current, at('18:00'), []) is None
+
+
+def test_configurable_multiplier_and_fixed_money_preserve_wage_segments():
+    row, data, current = fixture()
+    decision = hc.candidate(row, DAY, data, current, at('18:00'), [])
+    assert hc.decision_penalty(CONFIG, row, DAY, decision, {'mode': 'multiplier', 'value': 3}) == 22500
+    assert hc.decision_penalty(CONFIG, row, DAY, decision, {'mode': 'fixed', 'value': 12345}) == 12345
+    assert decision['wage_segments']
+
+
+def test_catalog_rejects_nonfinite_and_nonpositive_amounts():
+    from pydantic import ValidationError
+    for value in [0, -1, 'NaN', 'Infinity', 1000000001]:
+        with pytest.raises(ValidationError):
+            hc.Rule(id='late', name='Đi trễ', kind='late', mode='multiplier', value=value)
+
+
+def test_catalog_crud_revision_and_admin_permissions(database, monkeypatch):
+    with database.begin() as conn:
+        setup_tables(conn)
+    monkeypatch.setattr(hc, 'definitions', lambda conn: {})
+    ident = SimpleNamespace(role='admin', employee_username='admin')
+    app = FastAPI()
+    hc.install_routes(app, engine_instance=lambda: database, current_identity=lambda: ident,
+                      require_feature=lambda *args: None, identity_type=SimpleNamespace)
+    client = TestClient(app)
+    rules = hc.default_rules() + [dict(id='custom', name='Đồng phục', kind='manual', mode='fixed', value=50000, enabled=False)]
+    rules[0]['value'] = 3
+    result = client.put('/v2/rules/hc/catalog', json={'rules': rules, 'expected_revision': 0})
+    assert result.status_code == 200
+    assert result.json()['rules'][0]['value'] == 3
+    assert result.json()['rules'][0]['effective_since']
+    assert client.put('/v2/rules/hc/catalog', json={'rules': [], 'expected_revision': 0}).status_code == 409
+    ident.role = 'letan'
+    assert client.put('/v2/rules/hc/catalog', json={'rules': [], 'expected_revision': 1}).status_code == 403
+    ident.role = 'admin'
+    assert client.put('/v2/rules/hc/catalog', json={'rules': [], 'expected_revision': 1}).json()['rules'] == []
