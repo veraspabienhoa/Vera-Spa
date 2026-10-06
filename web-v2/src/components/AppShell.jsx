@@ -1,3 +1,4 @@
+import useMenuWipe from '../lib/useMenuWipe'
 import PageContent from './PageContent'
 import StableFeedback from './StableFeedback'
 import { PAGE_REFRESH_ERROR } from '../lib/usePageRefresh'
@@ -128,7 +129,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   const [deletingBreakAlertTag, setDeletingBreakAlertTag] = useState('')
   const breakAlertStackRef = useRef(null)
   const dragRef = useRef(null)
-  const menuSwipeRef = useRef(null)
+  const shellRef = useRef(null)
   const role = String(user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
 
@@ -339,41 +340,6 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
     choose(id, ready)
   }
 
-  const beginMenuSwipe = (event) => {
-    if (event.pointerType !== 'touch') return
-    const target = event.target
-    if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) return
-    menuSwipeRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      sidebarWasOpen: sidebarOpen,
-    }
-  }
-
-  const endMenuSwipe = (event) => {
-    const gesture = menuSwipeRef.current
-    if (!gesture || gesture.pointerId !== event.pointerId) return
-    menuSwipeRef.current = null
-    const dx = event.clientX - gesture.startX
-    const dy = event.clientY - gesture.startY
-    const horizontal = Math.abs(dx) >= 70 && Math.abs(dx) > Math.abs(dy) * 1.25
-    if (!horizontal) return
-    if (!gesture.sidebarWasOpen && dx > 0 && gesture.startX <= 48) {
-      if (standalone) setStandaloneMenuOpen(true)
-      else setMobileOpen(true)
-      return
-    }
-    if (gesture.sidebarWasOpen && dx < 0) {
-      setMobileOpen(false)
-      setStandaloneMenuOpen(false)
-    }
-  }
-
-  const cancelMenuSwipe = (event) => {
-    if (menuSwipeRef.current?.pointerId === event.pointerId) menuSwipeRef.current = null
-  }
-
   const openCurrentPageInNewTab = () => {
     const url = new URL(window.location.href)
     url.searchParams.set('page', currentPage)
@@ -382,12 +348,16 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   }
 
   const sidebarOpen = mobileOpen || (standalone && standaloneMenuOpen)
+  useMenuWipe(shellRef, sidebarOpen, value => {
+    if (standalone) setStandaloneMenuOpen(value)
+    else setMobileOpen(value)
+  })
   const navigationToggle = useMemo(() => standalone
     ? <button data-ui-key="u-c7ea03a89a43" type="button" className="standalone-menu-toggle icon-button" onClick={() => setStandaloneMenuOpen((value) => !value)} aria-label={standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'} aria-expanded={standaloneMenuOpen}>{standaloneMenuOpen ? <X size={20} /> : <Menu size={20} />} {standaloneMenuOpen ? 'Ẩn Menu' : 'Hiện Menu'}</button>
     : <button data-ui-key="u-b36248799e5c" type="button" className="mobile-menu icon-button" onClick={() => setMobileOpen(true)} aria-label="Mở menu" aria-expanded={mobileOpen}><Menu size={22} /></button>, [standalone, standaloneMenuOpen, mobileOpen])
 
   return (
-    <div className={`app-shell ${standalone ? `standalone-mode ${standaloneMenuOpen ? 'menu-open' : 'menu-hidden'}` : ''}`} onPointerDown={beginMenuSwipe} onPointerUp={endMenuSwipe} onPointerCancel={cancelMenuSwipe}>
+    <div ref={shellRef} className={`app-shell ${sidebarOpen ? 'mobile-menu-open' : ''} ${standalone ? `standalone-mode ${standaloneMenuOpen ? 'menu-open' : 'menu-hidden'}` : ''}`}>
       {/* Canonical phrase retained for CI/history: Suối nguồn thư giãn, trọn vẹn an yên. */}
       {/* Refresh updates data in place; keep the mounted page, filters and scroll containers. */}
       <style>{`
@@ -449,7 +419,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
         </div>
       </aside>
 
-      {sidebarOpen && <button data-ui-key="u-3833c8d2c1ff" className="sidebar-backdrop" onClick={() => { setMobileOpen(false); setStandaloneMenuOpen(false) }} aria-label="Đóng menu" />}
+      <button data-ui-key="u-3833c8d2c1ff" className={`sidebar-backdrop ${sidebarOpen ? 'open' : ''}`} tabIndex={sidebarOpen ? 0 : -1} aria-hidden={!sidebarOpen} onClick={() => { setMobileOpen(false); setStandaloneMenuOpen(false) }} aria-label="Đóng menu" />
 
       <main className="main-area">
         {(currentPage !== 'live-tour' || (isAdmin && !user?.must_change_password)) && <header className="topbar">
