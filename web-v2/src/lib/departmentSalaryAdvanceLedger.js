@@ -77,10 +77,11 @@ function ensureStyles() {
   style.textContent = `
     #${PANEL_ID}{display:grid;gap:12px;margin:14px 0;padding:16px;border:1px solid #e4d6b7;border-radius:14px;background:#fffaf0}
     #${PANEL_ID} .advance-ledger-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    #${PANEL_ID} .advance-ledger-controls{display:flex;gap:8px;align-items:center}#${PANEL_ID} .advance-ledger-controls button{width:auto;min-height:36px;padding:7px 12px;font-size:12px}
     #${PANEL_ID} h3{margin:0;color:#72551c;font-size:18px}#${PANEL_ID} p{margin:4px 0 0;color:#746b5b;font-size:12px}
     #${PANEL_ID} [data-advance-content]{display:grid;gap:12px}#${PANEL_ID} [data-advance-content][hidden]{display:none}
     #${PANEL_ID} .advance-ledger-summary{display:flex;gap:8px;flex-wrap:wrap}#${PANEL_ID} .advance-ledger-summary span{display:grid;gap:2px;min-width:145px;padding:9px 12px;border:1px solid #eadfc8;border-radius:10px;background:#fff;color:#746b5b;font-size:11px;font-weight:700}#${PANEL_ID} .advance-ledger-summary strong{font-size:16px;color:#193d31}
-    #${PANEL_ID} .advance-ledger-form{display:grid;grid-template-columns:minmax(220px,1.4fr) 160px 180px minmax(220px,1.5fr) auto;gap:8px;align-items:end}
+    #${PANEL_ID} .advance-ledger-form{display:grid;grid-template-columns:minmax(220px,1.4fr) 160px 150px 180px minmax(180px,1fr) auto;gap:8px;align-items:end}
     #${PANEL_ID} .advance-ledger-form label{display:grid;gap:5px;font-size:11px;font-weight:800;color:#4d5f56}#${PANEL_ID} .advance-ledger-form input{width:100%;min-height:38px;padding:8px 10px;border:1px solid #cfdad4;border-radius:9px;background:#fff;color:#1f342b;font:inherit}
     #${PANEL_ID} .advance-employee-field{position:relative}#${PANEL_ID} .advance-employee-options{position:absolute;z-index:30;top:100%;left:0;right:0;display:grid;max-height:260px;overflow:auto;margin-top:4px;padding:4px;border:1px solid #cfdad4;border-radius:10px;background:#fff;box-shadow:0 10px 26px rgba(25,61,49,.16)}#${PANEL_ID} .advance-employee-options[hidden]{display:none}#${PANEL_ID} .advance-employee-options button{display:grid;gap:2px;width:100%;min-height:0;padding:9px 10px;border:0;border-radius:7px;background:#fff;color:#273f35;text-align:left;cursor:pointer}#${PANEL_ID} .advance-employee-options button:hover,#${PANEL_ID} .advance-employee-options button:focus{background:#edf7f2;outline:none}#${PANEL_ID} .advance-employee-options strong{font-size:12px}#${PANEL_ID} .advance-employee-options small{font-size:10px;color:#6c7a73}#${PANEL_ID} .advance-employee-empty{padding:10px;color:#7b857f;font-size:11px;font-weight:600}
     #${PANEL_ID} .advance-ledger-form button{min-height:38px}
@@ -90,7 +91,7 @@ function ensureStyles() {
     #${PANEL_ID} .advance-ledger-message{display:none;padding:8px 10px;border-radius:9px;font-size:12px;font-weight:700}#${PANEL_ID} .advance-ledger-message.show{display:block}#${PANEL_ID} .advance-ledger-message.error{background:#fff0ef;color:#a13831}#${PANEL_ID} .advance-ledger-message.success{background:#eaf6ef;color:#246246}
     #${PANEL_ID} .advance-empty{padding:18px;text-align:center;color:#7b857f;font-size:12px}
     .department-payroll-panel .salary-advance-panel{display:none!important}
-    @media(max-width:950px){#${PANEL_ID} .advance-ledger-form{grid-template-columns:1fr 1fr}#${PANEL_ID} .advance-ledger-form label:first-child,#${PANEL_ID} .advance-ledger-form label:nth-child(4){grid-column:1/-1}#${PANEL_ID} .advance-ledger-form button{grid-column:1/-1}}
+    @media(max-width:950px){#${PANEL_ID} .advance-ledger-form{grid-template-columns:1fr 1fr}#${PANEL_ID} .advance-ledger-form label:first-child,#${PANEL_ID} .advance-ledger-form label:nth-child(5){grid-column:1/-1}#${PANEL_ID} .advance-ledger-form button{grid-column:1/-1}}
     @media(max-width:620px){#${PANEL_ID} .advance-ledger-form{grid-template-columns:1fr}#${PANEL_ID} .advance-ledger-form>*{grid-column:1!important}#${PANEL_ID} .advance-ledger-summary span{flex:1;min-width:120px}}
   `
   document.head.appendChild(style)
@@ -146,10 +147,9 @@ function panelHtml(month) {
   return `
     <div class="advance-ledger-title">
       <div><h3>💵 NHÂN VIÊN ỨNG LƯƠNG</h3></div>
-      <button type="button" class="secondary-button" data-advance-toggle aria-expanded="false" aria-controls="vera-salary-advance-content">Hiện</button>
+      <div class="advance-ledger-controls"><button type="button" class="secondary-button" data-advance-toggle aria-expanded="false" aria-controls="vera-salary-advance-content">Hiện</button><button type="button" class="secondary-button" data-advance-refresh>↻ Làm mới</button></div>
     </div>
     <div id="vera-salary-advance-content" data-advance-content hidden>
-    <button type="button" class="secondary-button" data-advance-refresh>↻ Làm mới</button>
     <div class="advance-ledger-summary">
       <span>Tổng ứng tháng<strong data-advance-total>0đ</strong></span>
       <span>Chờ trừ vào lương<strong data-advance-pending>0đ</strong></span>
@@ -158,12 +158,13 @@ function panelHtml(month) {
     <form class="advance-ledger-form" data-advance-form>
       <label class="advance-employee-field">Tên nhân viên<input type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="vera-salary-advance-employees" aria-expanded="false" aria-label="Tìm kiếm tên nhân viên" placeholder="Tìm và chọn nhân viên trong danh sách…" data-advance-employee required><div class="advance-employee-options" id="vera-salary-advance-employees" data-advance-employee-options hidden></div></label>
       <label>Ngày<input type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{2}-[0-9]{2}-[0-9]{4}" placeholder="dd-mm-yyyy" value="${formatDate(defaultAdvanceDate(month))}" aria-label="Ngày ứng lương, định dạng dd-mm-yyyy" data-advance-date required></label>
+      <label>Tháng trừ lương<input type="month" value="${month}" aria-label="Tháng trừ lương" data-advance-deduction-month required></label>
       <label>Số tiền<input type="text" inputmode="numeric" placeholder="0" data-advance-amount required></label>
       <label>Ghi chú<input type="text" maxlength="1000" placeholder="Nội dung ứng lương…" data-advance-note></label>
       <button type="submit" class="primary-button" data-advance-add>+ Thêm khoản ứng</button>
     </form>
     <div class="advance-ledger-message" data-advance-message></div>
-    <div class="advance-ledger-table-wrap"><table><thead><tr><th>TT</th><th>Tên nhân viên</th><th>Ngày</th><th>Số tiền</th><th>Ghi chú</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody data-advance-tbody></tbody></table></div>
+    <div class="advance-ledger-table-wrap"><table><thead><tr><th>TT</th><th>Tên nhân viên</th><th>Ngày</th><th>Tháng trừ lương</th><th>Số tiền</th><th>Ghi chú</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody data-advance-tbody></tbody></table></div>
     </div>
   `
 }
@@ -224,6 +225,8 @@ function ensurePanel() {
     const employee = resolveEmployee(employeeInput?.value, employeeInput?.dataset.selectedUsername)
     if (!employee) return showMessage('Vui lòng gõ và chọn đúng nhân viên trong danh sách.', 'error')
     const advanceDate = parseDisplayDate(panel.querySelector('[data-advance-date]')?.value)
+    const deductionMonth = panel.querySelector('[data-advance-deduction-month]')?.value
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(deductionMonth || '')) return showMessage('Vui lòng chọn tháng trừ lương hợp lệ.', 'error')
     const amount = Number(String(panel.querySelector('[data-advance-amount]')?.value || '').replace(/\D/g, ''))
     const note = panel.querySelector('[data-advance-note]')?.value || ''
     if (!advanceDate) return showMessage('Ngày ứng lương phải đúng định dạng dd-mm-yyyy.', 'error')
@@ -233,7 +236,7 @@ function ensurePanel() {
     try {
       await apiRequest('/v2/department-payroll/advances', {
         method: 'POST',
-        body: JSON.stringify({ employee_username: employee.employee_username, advance_date: advanceDate, amount, note }),
+        body: JSON.stringify({ employee_username: employee.employee_username, advance_date: advanceDate, deduction_month: deductionMonth, amount, note }),
       })
       if (employeeInput) {
         employeeInput.value = ''
@@ -307,7 +310,7 @@ function renderLedger() {
   if (!body) return
   const items = currentPayload.items || []
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="7" class="advance-empty">Tháng này chưa có khoản ứng lương.</td></tr>'
+    body.innerHTML = '<tr><td colspan="8" class="advance-empty">Tháng này chưa có khoản ứng lương.</td></tr>'
     return
   }
   body.innerHTML = items.map((item, index) => {
@@ -316,7 +319,9 @@ function renderLedger() {
     const name = clean(item.employee_name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const username = clean(item.employee_username).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const department = clean(item.department_label).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    return `<tr><td>${index + 1}</td><td><strong>${name}</strong><small>${username} · ${department}</small></td><td>${formatDate(item.advance_date)}</td><td class="money">${money(item.amount)}</td><td>${note}</td><td><span class="advance-status ${settled ? 'settled' : 'pending'}">${settled ? 'Đã trừ lương' : 'Chờ trừ'}</span>${settled && item.payroll_month ? `<small>Tháng ${item.payroll_month.split('-').reverse().join('/')}</small>` : ''}</td><td>${settled ? '<small>Đã khóa</small>' : `<button type="button" class="danger-button compact" data-advance-delete="${item.id}">Xóa</button>`}</td></tr>`
+    const deductionMonth = clean(item.deduction_month || item.payroll_month || String(item.advance_date || '').slice(0, 7))
+    const deductionLabel = /^\d{4}-(0[1-9]|1[0-2])$/.test(deductionMonth) ? deductionMonth.split('-').reverse().join('-') : '—'
+    return `<tr><td>${index + 1}</td><td><strong>${name}</strong><small>${username} · ${department}</small></td><td>${formatDate(item.advance_date)}</td><td>${deductionLabel}</td><td class="money">${money(item.amount)}</td><td>${note}</td><td><span class="advance-status ${settled ? 'settled' : 'pending'}">${settled ? 'Đã trừ lương' : 'Chờ trừ'}</span>${settled && item.payroll_month ? `<small>Tháng ${item.payroll_month.split('-').reverse().join('/')}</small>` : ''}</td><td>${settled ? '<small>Đã khóa</small>' : `<button type="button" class="danger-button compact" data-advance-delete="${item.id}">Xóa</button>`}</td></tr>`
   }).join('')
 }
 
@@ -327,8 +332,11 @@ async function refreshLedger(force = false) {
     queueApply()
     return
   }
+  const monthChanged = currentMonth !== month
   currentMonth = month
   const panel = ensurePanel()
+  const deductionInput = panel?.querySelector('[data-advance-deduction-month]')
+  if (monthChanged && deductionInput) deductionInput.value = month
   const dateInput = panel?.querySelector('[data-advance-date]')
   if (dateInput && !parseDisplayDate(dateInput.value).startsWith(`${month}-`)) dateInput.value = formatDate(defaultAdvanceDate(month))
   try {
@@ -340,38 +348,11 @@ async function refreshLedger(force = false) {
   }
 }
 
-function payrollRowsAndInputs() {
-  const panel = document.querySelector('.department-payroll-panel')
-  const grid = panel?.querySelector('.salary-advance-grid')
-  const rows = Array.from(panel?.querySelectorAll('.department-payroll-table tbody tr') || [])
-  const inputs = Array.from(grid?.querySelectorAll('label input[type="number"]') || [])
-  return { rows, inputs }
-}
-
-function usernameFromPayrollRow(row) {
-  const text = clean(row?.querySelector('td:nth-child(3) small')?.textContent)
-  return clean(text.split('·')[0])
-}
-
-function setReactInputValue(input, value) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-  if (setter) setter.call(input, String(value))
-  else input.value = String(value)
-  input.dispatchEvent(new Event('input', { bubbles: true }))
-  input.dispatchEvent(new Event('change', { bubbles: true }))
-}
-
 function applyAdvancesToPayrollRows() {
-  const { rows, inputs } = payrollRowsAndInputs()
-  if (!rows.length || !inputs.length) return
-  const byEmployee = currentPayload.summary?.by_employee || {}
-  rows.forEach((row, index) => {
-    const input = inputs[index]
-    if (!input) return
-    const username = usernameFromPayrollRow(row)
-    const amount = Number(byEmployee?.[username]?.payroll_total || 0)
-    if (Number(input.value || 0) !== amount) setReactInputValue(input, amount)
-  })
+  if (currentPayload.summary?.month !== selectedMonth()) return
+  window.dispatchEvent(new CustomEvent('vera-salary-advance-summary', {
+    detail: { month: currentPayload.summary.month, byEmployee: currentPayload.summary.by_employee || {} },
+  }))
 }
 
 function queueApply() {
@@ -423,7 +404,6 @@ export function startDepartmentSalaryAdvanceLedger() {
   document.addEventListener('change', (event) => {
     if (event.target.matches('.department-payroll-toolbar input[type="month"]')) {
       currentPayload = { items: [], summary: {}, employee_catalog: currentPayload.employee_catalog || [] }
-      currentMonth = event.target.value
       scheduleRefresh(true)
     }
   }, true)
