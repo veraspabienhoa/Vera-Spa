@@ -29,7 +29,7 @@ class Session:
         self.calls.append((method, url, kwargs))
         response = self.replies.pop(0)
         if isinstance(response, Exception): raise response
-        return Response(response)
+        return response if isinstance(response, Response) else Response(response)
     def close(self): pass
 
 
@@ -207,11 +207,107 @@ def test_upload_distinguishes_idle_from_incomplete_processing_without_replay(mon
     assert len([call for call in s.calls if call[0] == 'POST']) == 1
 
 
-@pytest.mark.parametrize('changes', [{'UPLOAD.sessionid':'99999999'}, {'UPLOAD.dwfiletype':3}, {'UPLOAD.dwfilepos':0}])
+@pytest.mark.parametrize('changes', [{'UPLOAD.sessionid':'99999999'}, {'UPLOAD.dwfiletype':2}, {'UPLOAD.dwfilepos':0}])
 def test_wrong_session_or_reference_fails_closed(monkeypatch, changes):
     c, _ = client(monkeypatch, ['', body(**{'UPLOAD.state':100, 'UPLOAD.sessionid':'12345678',
         'UPLOAD.dwfiletype':0, 'UPLOAD.dwfileindex':0, 'UPLOAD.dwfilepos':14680064, **changes})])
     with pytest.raises(fg.EnrollmentError): c.upload(b'jpeg','12345678')
+
+
+class ImageResponse(Response):
+    def __init__(self, color='blue', *, png_text=None):
+        from PIL.PngImagePlugin import PngInfo
+        info = PngInfo()
+        if png_text: info.add_text('Description', png_text)
+        out = BytesIO()
+        Image.new('RGB', (120, 80), color).save(out, 'PNG', pnginfo=info)
+        self.value, self.closed = out.getvalue(), False
+        self.headers = {'Content-Type': 'image/png'}
+
+
+def type3_upload_result():
+    return body(**{'UPLOAD.state': 100, 'UPLOAD.sessionid': '12345678',
+                   'UPLOAD.dwfiletype': 3, 'UPLOAD.dwfileindex': 0, 'UPLOAD.dwfilepos': 0})
+
+
+@pytest.mark.parametrize('replacement', [False, True])
+def test_type3_upload_is_committed_unchanged_and_verified_by_persistent_image(monkeypatch, replacement):
+    p = profile()
+    uploaded = ImageResponse()
+    stored = ImageResponse(png_text='container metadata may change')
+    c, s = client(monkeypatch, ['', type3_upload_result(), uploaded, body(),
+                               roster([p]), body(**{'LIST.'+k:v for k,v in p.items()}), stored])
+    ref = c.upload(b'jpeg', '12345678', profile_id=123 if replacement else None)
+    assert ref['file_type'] == 3 and len(ref['image_sha256']) == 64
+    # A type-3 handle must never be treated as a stored registration reference.
+    assert fg.device.registration_ref({'dwfiletype': 3, 'dwfileindex': 0, 'dwfilepos': 1}) is None
+    if replacement:
+        c.update_photo(p, ref)
+        verified = c.verify_replacement(123, 'Test Staff', 'vera:token', ref)
+    else:
+        c.add('Test Staff', 'vera:token', ref, (1, 0))
+        verified = c.verify('Test Staff', 'vera:token', ref)
+    assert verified['registration_ref'] == REF
+    posts = [call for call in s.calls if call[0] == 'POST']
+    assert len(posts) == 2
+    assert posts[1][2]['params']['LIST.dwfiletype'] == '3'
+    assert posts[1][2]['params']['LIST.dwfilepos'] == '0'
+    assert not any('sha256' in key for key in posts[1][2]['params'])
+    images = [call for call in s.calls if call[1].endswith('/webs/getImage')]
+    assert [call[2]['params']['dwfiletype'] for call in images] == ['3', '0']
+    assert all(not call[2]['allow_redirects'] and call[2]['timeout'] == (3, 8) for call in images)
+    assert uploaded.closed and stored.closed
+
+
+@pytest.mark.parametrize('replacement', [False, True])
+def test_type3_upload_cannot_confirm_old_or_different_profile_image(monkeypatch, replacement):
+    p = profile()
+    c, s = client(monkeypatch, ['', type3_upload_result(), ImageResponse(),
+                               roster([p]), body(**{'LIST.'+k:v for k,v in p.items()}), ImageResponse('red')])
+    ref = c.upload(b'jpeg', '12345678', profile_id=123 if replacement else None)
+    with pytest.raises(fg.EnrollmentError) as exc:
+        if replacement: c.verify_replacement(123, 'Test Staff', 'vera:token', ref)
+        else: c.verify('Test Staff', 'vera:token', ref)
+    assert exc.value.code == 'unverified'
+    assert sum(call[0] == 'POST' for call in s.calls) == 1
+
+
+@pytest.mark.parametrize('fault', ['mime', 'empty', 'oversized', 'pixels', 'timeout'])
+def test_type3_image_must_be_read_safely_before_profile_commit(monkeypatch, fault):
+    image = ImageResponse()
+    if fault == 'mime': image.headers['Content-Type'] = 'text/html'
+    if fault == 'empty': image.value = b''
+    if fault == 'oversized': image.value = b'x' * (fg.device.MAX_IMAGE_BYTES + 1)
+    if fault == 'pixels':
+        out = BytesIO()
+        Image.new('RGB', (4001, 4000)).save(out, 'PNG')
+        image.value = out.getvalue()
+    if fault == 'timeout':
+        def fail(_): raise requests.ReadTimeout('private image URL')
+        image.iter_content = fail
+    c, s = client(monkeypatch, ['', type3_upload_result(), image])
+    with pytest.raises(fg.EnrollmentError) as exc: c.upload(b'jpeg', '12345678', profile_id=123)
+    assert exc.value.code == ('device_timeout' if fault == 'timeout' else 'invalid_device_image')
+    assert 'private' not in str(exc.value)
+    assert image.closed
+    assert sum(call[0] == 'POST' for call in s.calls) == 1
+
+
+def test_type3_digest_cannot_bypass_identity_or_profile_reference_checks(monkeypatch):
+    p = profile()
+    ref = {'file_type': 3, 'file_index': 0, 'file_position': 0, 'image_sha256': 'a' * 64}
+    for changed in [{'uname': 'Other'}, {'utext': 'Other'}, {'uid': '456'}, {'dwfilepos': 42}]:
+        c, s = client(monkeypatch, [roster([p]), body(**{'LIST.'+k:v for k,v in {**p, **changed}.items()})])
+        with pytest.raises(fg.EnrollmentError): c.verify_replacement(123, 'Test Staff', 'vera:token', ref)
+        assert not any(call[1].endswith('/webs/getImage') for call in s.calls)
+
+
+@pytest.mark.parametrize('changes', [{'UPLOAD.dwfiletype': -1}, {'UPLOAD.dwfiletype': 2},
+    {'UPLOAD.dwfiletype': 4}, {'UPLOAD.dwfileindex': -1}, {'UPLOAD.dwfileindex': 65536},
+    {'UPLOAD.dwfilepos': -1}, {'UPLOAD.dwfilepos': 2**63}])
+def test_upload_handle_bounds_still_reject_unobserved_types_and_invalid_offsets(changes):
+    assert fg.upload_reference({'UPLOAD.dwfiletype': 3, 'UPLOAD.dwfileindex': 0,
+                                'UPLOAD.dwfilepos': 0, **changes}) is None
 
 
 def test_add_and_exact_readback(monkeypatch):

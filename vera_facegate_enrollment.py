@@ -6,6 +6,7 @@ LISTMODIFT/update, with a strict device read-back before the mapping changes.
 """
 from datetime import datetime
 from io import BytesIO
+import hashlib
 import html
 import re
 import secrets
@@ -56,6 +57,24 @@ def jpeg_photo(content):
     if not value or len(value) > device.MAX_IMAGE_BYTES:
         raise EnrollmentError('photo_size', 'Ảnh JPEG gửi máy vượt 4 MB; hãy chọn ảnh nhỏ hơn.')
     return value
+
+
+def upload_reference(value):
+    """Upload handles are not necessarily persistent registration references.
+
+    The observed firmware returns type 3 on a completed photo upload. Its
+    bwlist.js passes that handle unchanged to setWhitelist. Keep type 0 strict
+    for stored profiles; never reinterpret a type 3 handle as a stored photo.
+    """
+    try:
+        kind, index, position = (int(value['UPLOAD.' + key])
+                                 for key in ('dwfiletype', 'dwfileindex', 'dwfilepos'))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if (kind not in (0, 3) or not 0 <= index <= 65535
+            or not 0 <= position <= 2**63 - 1 or (kind == 0 and position == 0)):
+        return None
+    return {'file_type': kind, 'file_index': index, 'file_position': position}
 
 
 class FaceGateEnrollmentClient:
@@ -147,6 +166,60 @@ class FaceGateEnrollmentClient:
             raise EnrollmentError('incomplete_list', 'Danh sách máy chưa đầy đủ; chưa thể đăng ký an toàn.')
         return list(items.values())
 
+    def image_fingerprint(self, ref):
+        """Bind an upload handle to exact decoded pixels before committing.
+
+        The firmware preview reads this same getImage handle. After committing,
+        read the persistent reference from the profile and compare its pixels,
+        allowing image container metadata to differ without weakening identity.
+        """
+        response = None
+        try:
+            response = self.session.get(self.base + '/webs/getImage', params={
+                'action': 'list', 'group': 'IMAGE',
+                'dwfiletype': str(ref['file_type']), 'dwfileindex': str(ref['file_index']),
+                'dwfilepos': str(ref['file_position']),
+                'RanId': str(secrets.randbelow(90000000) + 10000000),
+            }, auth=self.auth, timeout=(3, 8), allow_redirects=False, stream=True)
+            media = response.headers.get('Content-Type', '').split(';', 1)[0].strip().lower()
+            if response.status_code != 200 or media not in device.ALLOWED_IMAGE_TYPES:
+                raise EnrollmentError('invalid_device_image', 'Máy chưa trả ảnh hợp lệ để đối chiếu.')
+            chunks, size = [], 0
+            for chunk in response.iter_content(8192):
+                size += len(chunk)
+                if size > device.MAX_IMAGE_BYTES:
+                    raise EnrollmentError('invalid_device_image', 'Ảnh đối chiếu trên máy vượt giới hạn.')
+                chunks.append(chunk)
+            with Image.open(BytesIO(b''.join(chunks))) as source:
+                if source.width * source.height > 16_000_000:
+                    raise EnrollmentError('invalid_device_image', 'Ảnh đối chiếu trên máy vượt giới hạn.')
+                pixels = ImageOps.exif_transpose(source).convert('RGB')
+                digest = hashlib.sha256(f'RGB:{pixels.width}:{pixels.height}:'.encode())
+                digest.update(pixels.tobytes())
+                return digest.hexdigest()
+        except requests.Timeout:
+            raise EnrollmentError('device_timeout', 'Hết thời gian chờ ảnh đối chiếu từ máy.') from None
+        except requests.ConnectionError:
+            raise EnrollmentError('device_connection_error', 'Kết nối bị gián đoạn khi đọc ảnh đối chiếu.') from None
+        except (OSError, ValueError, Image.DecompressionBombError):
+            raise EnrollmentError('invalid_device_image', 'Không đọc được ảnh trên máy để đối chiếu.') from None
+        finally:
+            if response is not None:
+                response.close()
+
+    def verify_photo_reference(self, listed, detail, expected):
+        # Both profile reads must agree on a persistent type-0 reference.
+        actual = device.registration_ref(listed)
+        if not actual or device.registration_ref(detail) != actual:
+            raise EnrollmentError('unverified', 'Tham chiếu ảnh hồ sơ đọc lại không khớp.')
+        if expected.get('file_type') == 3:
+            digest = expected.get('image_sha256', '')
+            if not re.fullmatch(r'[a-f0-9]{64}', str(digest)) or self.image_fingerprint(actual) != digest:
+                raise EnrollmentError('unverified', 'Ảnh đọc lại trên máy không khớp ảnh đã gửi. Cần kiểm tra trên máy.')
+        elif actual != expected:
+            raise EnrollmentError('unverified', 'Ảnh mới chưa được xác minh trên hồ sơ.')
+        return actual
+
     def upload(self, photo, session_id, *, profile_id=None):
         # POST body may be an HTML completion page; the authoritative result is
         # getUploadPercent. Do not assume HTTP 200 means a face was accepted.
@@ -175,9 +248,11 @@ class FaceGateEnrollmentClient:
                 raise EnrollmentError('wrong_session', 'Máy trả kết quả của phiên gửi ảnh khác.')
             state = value.get('UPLOAD.state')
             if state == '100':
-                ref = device.registration_ref({key.removeprefix('UPLOAD.'): val for key, val in value.items()})
+                ref = upload_reference(value)
                 if not ref:
                     raise EnrollmentError('invalid_reference', 'Máy chưa trả tham chiếu đăng ký mới hợp lệ.')
+                if ref['file_type'] == 3:
+                    ref['image_sha256'] = self.image_fingerprint(ref)
                 return ref
             if state in {'101', '102', '103', '104', '105', '106'}:
                 message = {'104': 'Máy đã đầy hồ sơ.', '105': 'Máy không tìm thấy khuôn mặt rõ trong ảnh.',
@@ -225,12 +300,13 @@ class FaceGateEnrollmentClient:
 
     def verify_replacement(self, profile_id, name, token, ref):
         matches = [p for p in self.profiles() if p.get('uid') == str(profile_id)]
-        if len(matches) != 1 or matches[0].get('uname') != name or matches[0].get('utext') != token or device.registration_ref(matches[0]) != ref:
+        if len(matches) != 1 or matches[0].get('uname') != name or matches[0].get('utext') != token:
             raise EnrollmentError('unverified', 'Ảnh mới chưa được xác minh trên đúng hồ sơ. Không gửi lại để tránh cập nhật trùng.')
         detail = self.profile_details(profile_id)
-        if detail.get('uname') != name or detail.get('utext') != token or device.registration_ref(detail) != ref:
+        if detail.get('uname') != name or detail.get('utext') != token:
             raise EnrollmentError('unverified', 'Hồ sơ đọc lại không khớp ảnh mới. Cần kiểm tra trên máy.')
-        return {'profile_id': profile_id, 'device_name': name, 'registration_ref': ref}
+        actual = self.verify_photo_reference(matches[0], detail, ref)
+        return {'profile_id': profile_id, 'device_name': name, 'registration_ref': actual}
 
     def door_defaults(self):
         value = fields(self.request('/webs/getCfgSysDoor', {'action': 'list', 'group': 'CFGDOOR'}))
@@ -263,11 +339,12 @@ class FaceGateEnrollmentClient:
 
     def verify(self, name, token, ref):
         matches = [p for p in self.profiles() if p.get('utext') == token]
-        if len(matches) != 1 or matches[0].get('uname') != name or device.registration_ref(matches[0]) != ref:
+        if len(matches) != 1 or matches[0].get('uname') != name:
             raise EnrollmentError('unverified', 'Chưa xác minh được hồ sơ vừa đăng ký. Không gửi lại để tránh tạo trùng.')
         uid = int(matches[0]['uid'])
         value = fields(self.request('/webs/getWhitelist', {'action': 'list', 'group': 'LIST', 'LIST.uid': str(uid)}))
         detail = {key.removeprefix('LIST.'): val for key, val in value.items() if key.startswith('LIST.')}
-        if detail.get('uid') != str(uid) or detail.get('uname') != name or detail.get('utext') != token or device.registration_ref(detail) != ref:
+        if detail.get('uid') != str(uid) or detail.get('uname') != name or detail.get('utext') != token:
             raise EnrollmentError('unverified', 'Hồ sơ đọc lại không khớp lần gửi ảnh. Cần kiểm tra trên máy.')
-        return {'profile_id': uid, 'device_name': name, 'registration_ref': ref}
+        actual = self.verify_photo_reference(matches[0], detail, ref)
+        return {'profile_id': uid, 'device_name': name, 'registration_ref': actual}

@@ -592,6 +592,7 @@ const ENROLLMENT_FAILURE_MESSAGES = {
   commit_connection_error: 'Kết nối bị gián đoạn khi lưu hồ sơ trên máy.',
   invalid_response_encoding: 'Phản hồi từ máy không đúng định dạng văn bản hỗ trợ.',
   invalid_reference: 'Máy chưa trả tham chiếu ảnh mới hợp lệ.',
+  invalid_device_image: 'Không đọc được ảnh trên máy để đối chiếu kết quả.',
   invalid_response: 'Phản hồi từ máy không hợp lệ.',
   invalid_state: 'Trạng thái xử lý ảnh do máy trả về không hợp lệ.',
   wrong_session: 'Máy trả kết quả của phiên gửi ảnh khác.',

@@ -170,9 +170,11 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
                 WHERE category='facegate' AND setting_key=:key'''),
                 {'key': key, 'value': json.dumps(value, ensure_ascii=False), 'actor': row['actor']})
             result = conn.execute(text('''UPDATE vera_facegate_enrollment SET status='verified',
-                stage='verified', profile_id=:uid, error_code=NULL, updated_at=NOW()
+                stage='verified', profile_id=:uid, registration_ref=CAST(:ref AS jsonb),
+                error_code=NULL, updated_at=NOW()
                 WHERE operation_id=:op RETURNING *'''),
-                {'op': row['operation_id'], 'uid': profile['profile_id']}).mappings().first()
+                {'op': row['operation_id'], 'uid': profile['profile_id'],
+                 'ref': json.dumps(profile['registration_ref'])}).mappings().first()
             return public(result)
 
     @app.get('/v2/staff/{username}/face-id/enrollment')
