@@ -136,3 +136,16 @@ test('draft delete is hidden without save permission',async t=>{
  const f=await fixture(t);await f.render(h(Panel,{user:{role:'letan',permissions:{payroll_calculate:true}}}))
  assert.ok(![...document.querySelectorAll('button')].some(b=>b.textContent.includes('Xóa bảng lương nháp')))
 })
+
+test('employee search suggests matching names and Clear restores rows without requests',async t=>{
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ const before=f.requests.length
+ await f.change(document.querySelector('.department-payroll-table-search input'),'quan ly')
+ const option=[...document.querySelectorAll('[role=option]')].find(el=>el.textContent.includes('Quản Lý B'))
+ assert.ok(option);await act(()=>option.click())
+ assert.equal(document.querySelectorAll('.department-payroll-table tbody tr').length,1)
+ await act(()=>document.querySelector('[aria-label="Clear Tìm nhân viên"]').click())
+ assert.equal(document.querySelectorAll('.department-payroll-table tbody tr').length,3)
+ assert.equal(document.querySelector('[role=listbox]'),null);assert.equal(f.requests.length,before)
+ assert.equal(document.querySelectorAll('td.department-payroll-net-column').length,3)
+})
