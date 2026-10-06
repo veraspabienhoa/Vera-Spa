@@ -46,16 +46,15 @@ jobs:
               with engine.connect() as conn:
                   rows=[dict(r) for r in conn.execute(text("SELECT status,stage,error_code,upload_session,operation_type,profile_id FROM vera_facegate_enrollment ORDER BY created_at DESC LIMIT 5")).mappings()]
               print('JOURNAL',json.dumps([{k:r[k] for k in ('status','stage','error_code','operation_type')} for r in rows]))
-              import time
-              seen=set()
-              for attempt in range(50):
-                  with engine.connect() as conn:
-                      latest=conn.execute(text("SELECT operation_id,status,stage,error_code,upload_session FROM vera_facegate_enrollment ORDER BY created_at DESC LIMIT 1")).mappings().first()
-                  state=tuple(latest[k] for k in ('operation_id','status','stage','error_code'))
-                  if state not in seen:
-                      seen.add(state)
-                      print('JOURNAL_STATE',json.dumps({k:latest[k] for k in ('status','stage','error_code')}),flush=True)
-                  time.sleep(1)
+              if rows and rows[0]['status']=='unverified' and rows[0]['stage']=='uploading':
+                  with use_registered_facegate(engine):
+                      client=FaceGateEnrollmentClient()
+                      value=fields(client.request('/webs/getUploadPercent',{'action':'list','group':'UPLOAD','sessionid':rows[0]['upload_session']}))
+                      state=value.get('UPLOAD.state','')
+                      print('PENDING_UPLOAD_STATE',state if re.fullmatch(r'[0-9]{1,3}',state) else 'invalid')
+                      print('PENDING_UPLOAD_SESSION_MATCH',value.get('UPLOAD.sessionid')==rows[0]['upload_session'])
+                      print('PENDING_UPLOAD_SESSION_ZERO',value.get('UPLOAD.sessionid')=='0')
+
           except Exception as exc:
               print('DIAGNOSTIC_ERROR',json.dumps(safe_error(exc)))
           finally:
