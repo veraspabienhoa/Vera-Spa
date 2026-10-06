@@ -11,12 +11,13 @@ const {Panel,Settings,Tabs,recoverablePage,fitPayrollTable}=mod.exports,h=React.
 const config={calculation_mode:'hourly',rate_ca1:27000,rate_ca2_before_22:30000,rate_ca2_after_22:33000}
 const rows=[['a','Nhân Viên A','letan','Lễ tân',500000],['b','Quản Lý B','quanly','Quản lý',300000],['c','Nhân Viên C','letan','Lễ tân',0]].map(([id,name,dep,label,combo],i)=>({employee_username:id,employee_name:name,email:`${id}@example.test`,department:dep,department_label:label,tt:i+1,work_days:1,hours_ca1:8,combo_sales:combo,salary:216000,total_salary:216000+combo,net_salary:216000+combo,calculation_config:config,calculation_source:'schedule'}))
 async function fixture(t, expireSave=false){
- const dom=new JSDOM('<body><div id="root"/></body>',{url:'https://example.test',pretendToBeVisual:true}),requests=[]
+ const dom=new JSDOM('<body><div id="root"/></body>',{url:'https://example.test',pretendToBeVisual:true}),requests=[];let draftRows=[]
  const data={departments:{letan:{department_label:'Lễ tân',config},quanly:{department_label:'Quản lý',config},tapvu:{department_label:'Tạp vụ',config:{calculation_mode:'monthly'}}},salary_config_tables:{operations:[{employee_username:'a',employee_name:'Nhân Viên A',department:'letan',department_label:'Lễ tân',...config}],tapvu:[]},salary_employee_catalog:[]}
  const globals={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(url,options={})=>{
   const path=new URL(url).pathname;requests.push({path,options})
   if(expireSave && path.endsWith('/settings/employees') && requests.filter(r=>r.path===path).length===1) return new Response(JSON.stringify({detail:"expired"}),{status:401})
-  const body=path.endsWith('/settings/employees')?{salary_config_tables:{operations:JSON.parse(options.body).rows,tapvu:[]},message:'Đã lưu cấu hình'}:path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows,start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:JSON.parse(options.body).rows,message:'Đã lưu'}:{}
+  if(path.endsWith('/draft') && options.method==='PUT') draftRows=JSON.parse(options.body).rows
+  const body=path.endsWith('/settings/employees')?{salary_config_tables:{operations:JSON.parse(options.body).rows,tapvu:[]},message:'Đã lưu cấu hình'}:path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows,start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:draftRows,message:'Đã lưu'}:{}
   return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}})
  }}
  const saved=Object.fromEntries(Object.keys(globals).map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));for(const[k,v]of Object.entries(globals))Object.defineProperty(globalThis,k,{value:v,configurable:true})
@@ -90,4 +91,18 @@ test('wide payroll tables fit the available width and restore full size after re
  fitPayrollTable(table);assert.equal(table.style.zoom,'0.4')
  table.parentElement.clientWidth=2200;fitPayrollTable(table);assert.equal(table.style.zoom,'1')
  table.parentElement.clientWidth=0;fitPayrollTable(table);assert.equal(table.style.zoom,'1')
+})
+
+test('save then reopen draft preserves edits and clears stale filters',async t=>{
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ await f.change(document.querySelector('[aria-label="Trách nhiệm Nhân Viên A"]'),'123.000');await f.click('Lưu bảng nháp')
+ await f.change(document.querySelector('.department-payroll-table-search input'),'missing');await f.click('Mở bảng nháp')
+ assert.equal(document.querySelectorAll('.department-payroll-table tbody tr').length,3);assert.equal(document.querySelector('[aria-label="Trách nhiệm Nhân Viên A"]').value,'123.000')
+})
+test('deduction summary updates all rows despite visible filters',async t=>{
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ const month=document.querySelector('.department-payroll-toolbar input[type="month"]').value
+ await f.change(document.querySelector('.department-payroll-table-search input'),'Quản Lý')
+ await act(()=>window.dispatchEvent(new window.CustomEvent('vera-salary-advance-summary',{detail:{month,byEmployee:{a:{payroll_total:100000}}}})))
+ await f.click('Lưu bảng nháp');const saved=JSON.parse(f.requests.find(r=>r.path.endsWith('/draft')&&r.options.method==='PUT').options.body);assert.equal(saved.rows.find(r=>r.employee_username==='a').advance,100000)
 })
