@@ -63,6 +63,48 @@ def test_upload_uses_observed_form_and_similarity_check(monkeypatch):
     assert all(not call[2]['allow_redirects'] for call in s.calls)
 
 
+@pytest.mark.parametrize('profile_id', [None, 123])
+def test_upload_wire_matches_device_form_filename_before_image(monkeypatch, profile_id):
+    from email import policy
+    from email.parser import BytesParser
+
+    c, _ = client(monkeypatch, [])
+    photo = BytesIO()
+    Image.new('RGB', (120, 160), 'blue').save(photo, 'JPEG')
+    jpeg = photo.getvalue()
+    requests_seen = []
+
+    class WireSession(requests.Session):
+        def send(self, request, **kwargs):
+            requests_seen.append(request)
+            if request.method == 'POST':
+                mime = BytesParser(policy=policy.default).parsebytes(
+                    ('Content-Type: ' + request.headers['Content-Type'] + '\r\n\r\n').encode() + request.body)
+                parts = list(mime.iter_parts())
+                assert [part.get_param('name', header='Content-Disposition') for part in parts] == ['txt', 'vfileselector']
+                assert parts[0].get_payload(decode=True) == b'FaceID.jpg'
+                assert parts[0].get_filename() is None
+                assert parts[1].get_filename() == 'FaceID.jpg'
+                assert parts[1].get_content_type() == 'image/jpeg'
+                assert parts[1].get_payload(decode=True) == jpeg
+                payload = '<html>uploaded</html>'
+            else:
+                payload = body(**{'UPLOAD.state': 100, 'UPLOAD.sessionid': '12345678',
+                    'UPLOAD.dwfiletype': 0, 'UPLOAD.dwfileindex': 0, 'UPLOAD.dwfilepos': 14680064})
+            response = requests.Response()
+            response.status_code = 200
+            response._content = payload.encode()
+            response._content_consumed = True
+            return response
+
+    c.session = WireSession()
+    try:
+        assert c.upload(jpeg, '12345678', profile_id=profile_id) == REF
+        assert [request.method for request in requests_seen] == ['POST', 'GET']
+    finally:
+        c.close()
+
+
 def test_photo_replacement_uses_observed_modify_upload_and_update_protocol(monkeypatch):
     p = {**profile(), 'uphone': '0123456789', 'uaddr': 'Keep this field'}
     updated = {**p, 'dwfilepos': REF['file_position']}
@@ -98,6 +140,25 @@ def test_timeout_does_not_replay_post(monkeypatch):
     c, s = client(monkeypatch, [requests.Timeout('secret URL must not reach UI')])
     with pytest.raises(requests.Timeout): c.upload(b'jpeg', '12345678')
     assert len(s.calls) == 1
+
+
+def test_upload_http_200_device_rejection_is_not_discarded_or_polled(monkeypatch):
+    c, s = client(monkeypatch, [body(**{'ERR.no': 1, 'ERR.des': 'private firmware detail'})])
+    with pytest.raises(fg.UploadRejected) as exc:
+        c.upload(b'jpeg', '12345678')
+    assert exc.value.code == 'upload_request_rejected'
+    assert 'private' not in str(exc.value)
+    assert len(s.calls) == 1
+
+
+@pytest.mark.parametrize('progress,code', [(0, 'upload_not_started'), (25, 'upload_pending')])
+def test_upload_distinguishes_idle_from_incomplete_processing_without_replay(monkeypatch, progress, code):
+    reply = body(**{'UPLOAD.state': progress, 'UPLOAD.sessionid': '12345678'})
+    c, s = client(monkeypatch, ['<html>uploaded</html>'] + [reply] * 12)
+    with pytest.raises(fg.EnrollmentError) as exc:
+        c.upload(b'jpeg', '12345678')
+    assert exc.value.code == code
+    assert len([call for call in s.calls if call[0] == 'POST']) == 1
 
 
 @pytest.mark.parametrize('changes', [{'UPLOAD.sessionid':'99999999'}, {'UPLOAD.dwfiletype':3}, {'UPLOAD.dwfilepos':0}])

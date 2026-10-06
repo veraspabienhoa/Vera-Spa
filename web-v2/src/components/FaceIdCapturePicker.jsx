@@ -21,7 +21,7 @@ function CaptureImage({ username, day, record, busy, onSelect }) {
   </figure>
 }
 
-export default function FaceIdCapturePicker({ username, day, busy, onSelect }) {
+export default function FaceIdCapturePicker({ username, day, busy, onSelect, compact = false, dateControl }) {
   const [revision, setRevision] = useState(0)
   const [page, setPage] = useState(0)
   const pageSize = 4
@@ -43,7 +43,7 @@ export default function FaceIdCapturePicker({ username, day, busy, onSelect }) {
     return () => { active = false }
   }, [username, day, revision])
   return <div className="face-id-capture-picker">
-    <button type="button" className="secondary-button compact" disabled={Boolean(busy) || loading || !day} onClick={() => setRevision(value => value + 1)}>Từ ảnh chụp trên FaceID · Làm mới</button>
+    <div className="face-id-capture-toolbar">{dateControl}<button type="button" className="secondary-button compact" disabled={Boolean(busy) || loading || !day} onClick={() => setRevision(value => value + 1)}>{compact ? 'Làm mới' : 'Từ ảnh chụp trên FaceID · Làm mới'}</button></div>
     {loading && <p role="status">Đang tải danh sách ảnh chụp…</p>}
     {error && <p role="status">Không tải được ảnh FaceID: {error}. Bấm Làm mới để thử lại.</p>}
     {data && <>

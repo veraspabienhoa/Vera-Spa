@@ -75,6 +75,10 @@ class FaceGateEnrollmentClient:
         options = {'params': params, 'auth': self.auth, 'timeout': (3, 8),
                    'allow_redirects': False, 'stream': True}
         if photo is not None:
+            # The device's upgrade_frm submits txt before vfileselector.
+            # getPath() supplies the basename on Chrome/Safari; this text part
+            # is part of the upload protocol, not just a display-only input.
+            options['data'] = {'txt': 'FaceID.jpg'}
             options['files'] = {'vfileselector': ('FaceID.jpg', photo, 'image/jpeg')}
         else:
             # js/send.js: non-list actions POST the same 8-character nonce
@@ -140,7 +144,18 @@ class FaceGateEnrollmentClient:
             if not isinstance(profile_id, int) or profile_id <= 0:
                 raise EnrollmentError('invalid_profile', 'ID hồ sơ FaceGate không hợp lệ.')
             params['LISTuid'] = str(profile_id)
-        self.request('/webs/uploadfile', params, photo=photo)
+        response = self.request('/webs/uploadfile', params, photo=photo)
+        # Some firmware replies with an API error and HTTP 200 instead of the
+        # completion page. Do not discard that rejection and poll an idle upload.
+        if re.search(r'root\.ERR\.no=', response):
+            try:
+                fields(response, only={'ERR.no', 'ERR.des'})
+            except EnrollmentError as exc:
+                if exc.code == 'device_error':
+                    raise UploadRejected('upload_request_rejected',
+                        'Máy từ chối nhận file ảnh; hồ sơ trên máy chưa được cập nhật.') from None
+                raise
+        started = False
         for _ in range(12):
             value = fields(self.request('/webs/getUploadPercent', {
                 'action': 'list', 'group': 'UPLOAD', 'sessionid': session_id}))
@@ -158,7 +173,11 @@ class FaceGateEnrollmentClient:
                 raise UploadRejected('upload_' + state, message)
             if state is None or not state.isdigit() or not 0 <= int(state) < 100:
                 raise EnrollmentError('invalid_state', 'Trạng thái xử lý ảnh của máy không hợp lệ.')
+            started = started or int(state) > 0
             self.sleep(.5)
+        if not started:
+            raise EnrollmentError('upload_not_started',
+                'Máy chưa bắt đầu xử lý file ảnh. Ảnh chỉ đang lưu trên VERA, chưa cập nhật lên máy. Hãy kiểm tra lại kết quả.')
         raise EnrollmentError('upload_pending', 'Máy chưa hoàn tất xử lý ảnh; cần kiểm tra lại kết quả.')
 
     def profile_details(self, profile_id):
