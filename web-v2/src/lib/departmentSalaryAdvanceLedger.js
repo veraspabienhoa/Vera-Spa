@@ -22,6 +22,16 @@ function renderAdvanceDate(month) {
 }
 
 let currentMonth = ''
+let ledgerFilterMonth = ''
+let payrollSummary = {}
+let refreshVersion = 0
+
+function ledgerMonth() { return ledgerFilterMonth || selectedMonth() }
+function previousMonth() {
+  const [year, month] = monthNow().split('-').map(Number)
+  const date = new Date(year, month - 2, 1)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
 let refreshTimer = 0
 let applyTimer = 0
 
@@ -85,9 +95,9 @@ function ensureStyles() {
   const style = document.createElement('style')
   style.id = STYLE_ID
   style.textContent = `
-    #${PANEL_ID}{display:grid;gap:12px;margin:14px 0;padding:16px;border:1px solid #e4d6b7;border-radius:14px;background:#fffaf0}
-    #${PANEL_ID} .advance-ledger-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
-    #${PANEL_ID} .advance-ledger-controls{display:flex;gap:8px;align-items:center}#${PANEL_ID} .advance-ledger-controls button{width:auto;min-height:36px;padding:7px 12px;font-size:12px}
+    #${PANEL_ID}{display:grid;min-width:0;max-width:100%;gap:12px;margin:14px 0;padding:16px;border:1px solid #e4d6b7;border-radius:14px;background:#fffaf0}
+    #${PANEL_ID} .advance-ledger-title{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;min-width:0;max-width:100%;overflow-x:auto}
+    #${PANEL_ID} .advance-month-filters{display:flex;gap:6px;align-items:center;white-space:nowrap}#${PANEL_ID} .advance-month-filters button{padding:7px 9px;min-height:36px;font-size:12px}#${PANEL_ID} .advance-month-filters button.active{background:#193d31;color:white}#${PANEL_ID} .advance-month-filters input{width:140px}#${PANEL_ID} h3{white-space:nowrap}#${PANEL_ID} .advance-ledger-controls{margin-left:auto;white-space:nowrap;display:flex;gap:8px;align-items:center}#${PANEL_ID} .advance-ledger-controls button{width:auto;min-height:36px;padding:7px 12px;font-size:12px}
     #${PANEL_ID} h3{margin:0;color:#72551c;font-size:18px}#${PANEL_ID} p{margin:4px 0 0;color:#746b5b;font-size:12px}
     #${PANEL_ID} [data-advance-content]{display:grid;gap:12px}#${PANEL_ID} [data-advance-content][hidden]{display:none}
     #${PANEL_ID} .advance-ledger-summary{display:flex;gap:8px;flex-wrap:wrap}#${PANEL_ID} .advance-ledger-summary span{display:grid;gap:2px;min-width:145px;padding:9px 12px;border:1px solid #eadfc8;border-radius:10px;background:#fff;color:#746b5b;font-size:11px;font-weight:700}#${PANEL_ID} .advance-ledger-summary strong{font-size:16px;color:#193d31}
@@ -160,6 +170,7 @@ function panelHtml(month) {
   return `
     <div class="advance-ledger-title">
       <div><h3>💵 NHÂN VIÊN ỨNG LƯƠNG</h3></div>
+      <div class="advance-month-filters" role="group" aria-label="Lọc tháng ứng lương"><button type="button" class="secondary-button" data-advance-period="previous">Tháng trước</button><button type="button" class="secondary-button" data-advance-period="current">Tháng này</button><button type="button" class="secondary-button" data-advance-period="custom">Tuỳ chỉnh</button><input type="month" data-advance-filter-month aria-label="Tháng ứng lương tuỳ chỉnh" value="${month}" hidden></div>
       <div class="advance-ledger-controls"><button type="button" class="secondary-button" data-advance-toggle aria-expanded="false" aria-controls="vera-salary-advance-content">Hiện</button><button type="button" class="secondary-button" data-advance-refresh>↻ Làm mới</button></div>
     </div>
     <div id="vera-salary-advance-content" data-advance-content hidden>
@@ -214,6 +225,20 @@ function ensurePanel() {
     if (event.target.closest('[data-advance-employee-option]')) event.preventDefault()
   })
   panel.querySelector('[data-advance-refresh]')?.addEventListener('click', () => scheduleRefresh(true))
+  panel.querySelectorAll('[data-advance-period]').forEach(button => button.addEventListener('click', () => {
+    const mode = button.dataset.advancePeriod
+    const custom = panel.querySelector('[data-advance-filter-month]')
+    custom.hidden = mode !== 'custom'
+    ledgerFilterMonth = mode === 'previous' ? previousMonth() : mode === 'current' ? monthNow() : custom.value
+    custom.value = ledgerFilterMonth
+    panel.querySelectorAll('[data-advance-period]').forEach(item => item.classList.toggle('active', item === button))
+    scheduleRefresh(true)
+  }))
+  panel.querySelector('[data-advance-filter-month]').addEventListener('change', event => {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) return
+    ledgerFilterMonth = event.target.value
+    scheduleRefresh(true)
+  })
   const employeeSearch = panel.querySelector('[data-advance-employee]')
   employeeSearch?.addEventListener('focus', () => {
     renderEmployeeSuggestions(panel, employeeSearch.value, true)
@@ -344,7 +369,9 @@ function renderLedger() {
 }
 
 async function refreshLedger(force = false) {
-  const month = selectedMonth()
+  const month = ledgerMonth()
+  const version = ++refreshVersion
+  const payrollMonth = selectedMonth()
   if (!force && month === currentMonth && currentPayload.items?.length) {
     renderLedger()
     queueApply()
@@ -357,7 +384,13 @@ async function refreshLedger(force = false) {
   if (monthChanged && deductionInput) deductionInput.value = month
   if (monthChanged) renderAdvanceDate(month)
   try {
-    currentPayload = await apiRequest(`/v2/department-payroll/advances?month=${encodeURIComponent(month)}`)
+    const [ledger, payroll] = await Promise.all([
+      apiRequest(`/v2/department-payroll/advances?month=${encodeURIComponent(month)}`),
+      month === payrollMonth ? Promise.resolve(null) : apiRequest(`/v2/department-payroll/advances?month=${encodeURIComponent(payrollMonth)}`),
+    ])
+    if (version !== refreshVersion) return
+    currentPayload = ledger
+    payrollSummary = (payroll || ledger).summary || {}
     renderLedger()
     queueApply()
   } catch (error) {
@@ -366,9 +399,9 @@ async function refreshLedger(force = false) {
 }
 
 function applyAdvancesToPayrollRows() {
-  if (currentPayload.summary?.month !== selectedMonth()) return
+  if (payrollSummary.month !== selectedMonth()) return
   window.dispatchEvent(new CustomEvent('vera-salary-advance-summary', {
-    detail: { month: currentPayload.summary.month, byEmployee: currentPayload.summary.by_employee || {} },
+    detail: { month: payrollSummary.month, byEmployee: payrollSummary.by_employee || {} },
   }))
 }
 
@@ -433,7 +466,7 @@ export function startDepartmentSalaryAdvanceLedger() {
     if (existingPanel && records.every((record) => existingPanel.contains(record.target))) return
     const panel = ensurePanel()
     if (!panel) return
-    const month = selectedMonth()
+    const month = ledgerMonth()
     if (month !== currentMonth || !currentPayload.summary?.month) scheduleRefresh(month !== currentMonth)
     queueApply()
   })
