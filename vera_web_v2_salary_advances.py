@@ -24,6 +24,7 @@ SETTING_KEY = "department_salary_advance_ledger"
 class SalaryAdvanceCreate(BaseModel):
     employee_username: str = Field(min_length=1, max_length=200)
     advance_date: date
+    deduction_month: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     amount: float = Field(gt=0, le=1_000_000_000)
     note: str = Field(default="", max_length=1000)
 
@@ -57,6 +58,7 @@ def _clean_entry(item: Any) -> dict[str, Any] | None:
         "department": str(item.get("department") or "").strip().lower(),
         "department_label": str(item.get("department_label") or "").strip(),
         "advance_date": advance_date,
+        "deduction_month": _deduction_month(item),
         "amount": _money(item.get("amount")),
         "note": str(item.get("note") or "").strip()[:1000],
         "created_at": str(item.get("created_at") or ""),
@@ -99,10 +101,13 @@ def _employee(conn, username: str) -> dict[str, Any]:
     return employee
 
 
+def _deduction_month(item: dict[str, Any]) -> str:
+    return str(item.get("deduction_month") or item.get("payroll_month") or str(item.get("advance_date") or "")[:7])
+
+
 def _month_rows(rows: list[dict[str, Any]], month: str) -> list[dict[str, Any]]:
     department_payroll._month_range(month)
-    prefix = f"{month}-"
-    return [item for item in rows if str(item.get("advance_date") or "").startswith(prefix)]
+    return [item for item in rows if _deduction_month(item) == month]
 
 
 def _summary(rows: list[dict[str, Any]], month: str) -> dict[str, Any]:
@@ -185,6 +190,7 @@ def install_salary_advance_routes(app, *, engine_instance, current_identity, req
                 "department": employee["department"],
                 "department_label": employee["department_label"],
                 "advance_date": body.advance_date.isoformat(),
+                "deduction_month": body.deduction_month or body.advance_date.strftime("%Y-%m"),
                 "amount": amount,
                 "note": str(body.note or "").strip()[:1000],
                 "created_at": now,
@@ -197,7 +203,7 @@ def install_salary_advance_routes(app, *, engine_instance, current_identity, req
                 "payroll_month": "",
             })
             _save(conn, rows, ident.employee_username)
-            month = body.advance_date.strftime("%Y-%m")
+            month = body.deduction_month or body.advance_date.strftime("%Y-%m")
         return {
             "ok": True,
             "items": _public_items(rows, month),
@@ -226,13 +232,14 @@ def install_salary_advance_routes(app, *, engine_instance, current_identity, req
                 "department": employee["department"],
                 "department_label": employee["department_label"],
                 "advance_date": body.advance_date.isoformat(),
+                "deduction_month": body.deduction_month or body.advance_date.strftime("%Y-%m"),
                 "amount": amount,
                 "note": str(body.note or "").strip()[:1000],
                 "updated_at": now,
                 "updated_by": ident.employee_username,
             })
             _save(conn, rows, ident.employee_username)
-            month = body.advance_date.strftime("%Y-%m")
+            month = body.deduction_month or body.advance_date.strftime("%Y-%m")
         return {"ok": True, "items": _public_items(rows, month), "summary": _summary(rows, month), "message": "Đã cập nhật khoản ứng lương."}
 
     @app.delete("/v2/department-payroll/advances/{advance_id}")
@@ -245,7 +252,7 @@ def install_salary_advance_routes(app, *, engine_instance, current_identity, req
                 raise HTTPException(404, "Không tìm thấy khoản ứng lương.")
             if target.get("settled_at"):
                 raise HTTPException(409, "Khoản ứng đã đưa vào bảng lương nên không thể xóa.")
-            month = str(target.get("advance_date") or "")[:7]
+            month = _deduction_month(target)
             rows = [item for item in rows if str(item.get("id")) != str(advance_id)]
             _save(conn, rows, ident.employee_username)
         return {"ok": True, "items": _public_items(rows, month), "summary": _summary(rows, month), "message": "Đã xóa khoản ứng lương."}
@@ -261,7 +268,7 @@ def install_salary_advance_routes(app, *, engine_instance, current_identity, req
             require_feature(conn, ident, "payroll_save")
             rows = _entries(conn)
             for item in rows:
-                if not str(item.get("advance_date") or "").startswith(f"{body.month}-"):
+                if _deduction_month(item) != body.month:
                     continue
                 if item.get("settled_at"):
                     continue
