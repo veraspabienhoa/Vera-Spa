@@ -1,3 +1,5 @@
+import WorkScheduleViolations from './WorkScheduleViolations'
+import { useViolationRecords, violationMonthRange } from '../lib/workScheduleViolations'
 import ComboCustomerFields from '../components/ComboCustomerFields'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -341,6 +343,11 @@ export default function WorkSchedulePage({ user }) {
   const [saved, setSaved] = useState({})
   const [drafts, setDrafts] = useState({})
   const [monthlyRows, setMonthlyRows] = useState([])
+  const [violationRevision, setViolationRevision] = useState(0)
+  const violationRange = violationMonthRange(month)
+  const monthlyViolations = useViolationRecords(violationRange.start, violationRange.end, violationRevision)
+  const violationCount = username => monthlyViolations.records.filter(item => String(item.employee_name || '').trim().toLowerCase() === String(username || '').trim().toLowerCase() && item.leave_date <= todayIso).length
+  const departmentViolationCount = monthlyViolations.records.filter(item => employees.some(employee => String(employee.username).trim().toLowerCase() === String(item.employee_name || '').trim().toLowerCase()) && item.leave_date <= todayIso).length
   const [comboSales, setComboSales] = useState([])
   const [comboCustomers, setComboCustomers] = useState([])
   const customerRead = useRef({ at: 0, department: '', pending: null })
@@ -432,6 +439,7 @@ export default function WorkSchedulePage({ user }) {
         })
       setEmployees(wanted)
       setMonthlyRows(monthlyResult.rows || [])
+      setViolationRevision(value => value + 1)
       if (['quanly', 'letan'].includes(department)) {
         const comboResult = await scheduleRequest(`/v2/work-schedule/combo-sales?start=${statisticsRange.start}&end=${statisticsRange.end}&department=${department}`)
         setComboSales(comboResult.rows || [])
@@ -1144,11 +1152,12 @@ export default function WorkSchedulePage({ user }) {
         })}
       </div>
       <table data-ui-key="u-8fdcd960382d">
-        <thead><tr><th data-ui-key="u-aa04bfca6a93" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-aa04bfca6a93">Nhân viên</UiCustomText></th><th data-ui-key="u-60cb3725cefa" data-ui-label-default="Ngày làm việc"><UiCustomText uiKey="u-60cb3725cefa">Ngày làm việc</UiCustomText></th><th data-ui-key="u-633c4405c5b1" data-ui-label-default="Ngày nghỉ"><UiCustomText uiKey="u-633c4405c5b1">Ngày nghỉ</UiCustomText></th><th data-ui-key="u-1d9cca3c2396" data-ui-label-default="Ngày Ca 1"><UiCustomText uiKey="u-1d9cca3c2396">Ngày Ca 1</UiCustomText></th><th data-ui-key="u-6b76f996ba14" data-ui-label-default="Ngày Ca 2"><UiCustomText uiKey="u-6b76f996ba14">Ngày Ca 2</UiCustomText></th><th data-ui-key="u-3692d119b2c2" data-ui-label-default="Giờ tăng ca"><UiCustomText uiKey="u-3692d119b2c2">Giờ tăng ca</UiCustomText></th></tr></thead>
-        <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.offDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr>)}</tbody>
-        <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr></tfoot>
+        <thead><tr><th data-ui-key="u-aa04bfca6a93" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-aa04bfca6a93">Nhân viên</UiCustomText></th><th data-ui-key="u-60cb3725cefa" data-ui-label-default="Ngày làm việc"><UiCustomText uiKey="u-60cb3725cefa">Ngày làm việc</UiCustomText></th><th data-ui-key="u-633c4405c5b1" data-ui-label-default="Ngày nghỉ"><UiCustomText uiKey="u-633c4405c5b1">Ngày nghỉ</UiCustomText></th><th data-ui-key="u-1d9cca3c2396" data-ui-label-default="Ngày Ca 1"><UiCustomText uiKey="u-1d9cca3c2396">Ngày Ca 1</UiCustomText></th><th data-ui-key="u-6b76f996ba14" data-ui-label-default="Ngày Ca 2"><UiCustomText uiKey="u-6b76f996ba14">Ngày Ca 2</UiCustomText></th><th data-ui-key="u-3692d119b2c2" data-ui-label-default="Giờ tăng ca"><UiCustomText uiKey="u-3692d119b2c2">Giờ tăng ca</UiCustomText></th><th>Vi phạm</th></tr></thead>
+        <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.offDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{monthlyViolations.loading ? '…' : monthlyViolations.error ? '—' : violationCount(item.username)}</td></tr>)}</tbody>
+        <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{monthlyViolations.loading ? '…' : monthlyViolations.error ? '—' : departmentViolationCount}</td></tr></tfoot>
       </table>
     </div>}
+    {!loading && <WorkScheduleViolations user={user} employees={employees} request={scheduleRequest} revision={violationRevision} onSaved={() => setViolationRevision(value => value + 1)} />}
     {!loading && comboEditor}
   </section>
 }
