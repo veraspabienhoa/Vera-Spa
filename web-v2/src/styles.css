@@ -1313,12 +1313,12 @@ body .department-payroll-page .department-payroll-table :is(th, td).payroll-hour
     box-shadow: -8px 0 28px rgba(16,37,30,.16);
   }
   .app-shell > .sidebar-backdrop {
-    display: block; left: var(--menu-offset); z-index: 31; background: rgba(10,20,15,.08);
+    display: block; left: 0; transform: translate3d(var(--menu-offset),0,0); z-index: 31; background: rgba(10,20,15,.08);
     opacity: 0; visibility: hidden; pointer-events: none;
-    transition: left .3s cubic-bezier(.22,.8,.25,1), opacity .3s, visibility .3s;
+    transition: transform .3s cubic-bezier(.22,.8,.25,1), opacity .3s, visibility .3s;
   }
   .app-shell:is(.mobile-menu-open, .menu-dragging) > .sidebar-backdrop { opacity: 1; visibility: visible; pointer-events: auto; }
-  .app-shell.menu-dragging > :is(.sidebar, .main-area, .sidebar-backdrop) { transition: none; }
+  .app-shell.menu-dragging > :is(.sidebar, .main-area, .sidebar-backdrop) { transition: none; will-change: transform; }
 }
 @media (max-width: 820px) and (prefers-reduced-motion: reduce) {
   .app-shell > :is(.sidebar, .main-area, .sidebar-backdrop) { transition: none; }

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { flushSync } from 'react-dom'
 
 // Listen directly so an accepted horizontal drag can prevent native scrolling
 // on iOS. Vertical gestures and horizontal tables outside the edge stay native.
@@ -46,7 +47,9 @@ export default function useMenuWipe(shellRef, open, onOpenChange) {
       if (gesture.dragging) {
         suppressClickUntil = Date.now() + 350
         const threshold = gesture.initiallyOpen ? .7 : .3
-        latest.current.onOpenChange(gesture.offset >= gesture.width * threshold)
+        // Commit the settled class before removing the finger offset. Otherwise
+        // iOS can paint the old open state for one frame and snap backwards.
+        flushSync(() => latest.current.onOpenChange(gesture.offset >= gesture.width * threshold))
       }
       clear()
     }
