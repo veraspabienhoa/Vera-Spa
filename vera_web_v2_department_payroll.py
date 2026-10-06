@@ -240,7 +240,7 @@ def _clean_config(department: str, raw: Any, mode: str | None = None) -> dict[st
 def _settings(conn, department: str) -> dict[str, Any]:
     definition = hr.admin_departments(conn).get(department)
     if not definition:
-        raise HTTPException(400, "Bộ phận không thuộc Lương hành chánh: loại trừ Leader, nhanvien, giamdoc, admin; hình thức Tip dùng Lương KTV.")
+        raise HTTPException(400, "Bộ phận không thuộc Lương hành chánh: loại trừ Leader, nhanvien, admin; hình thức Tip dùng Lương KTV.")
     config = _clean_config(
         department,
         payroll._setting(conn, _setting_key(department, "config"), DEFAULT_CONFIG.get(department, DEFAULT_CONFIG["support"])),
