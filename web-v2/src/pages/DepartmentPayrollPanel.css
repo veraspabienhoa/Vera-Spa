@@ -12,3 +12,10 @@
 
 .department-payroll-table .department-payroll-net-column{background:#d9f0df!important;color:#14532d!important;font-weight:800}
 .department-payroll-top-actions .department-payroll-table-search .live-tour-search-select{font-size:12px;width:100%;min-width:0}
+
+/* Keep the period/actions in one bounded row; narrow screens scroll this row only. */
+.department-payroll-panel .department-payroll-toolbar{display:flex;flex-wrap:nowrap;align-items:flex-end;gap:6px;width:100%;max-width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:6px}
+.department-payroll-panel .department-payroll-toolbar>*{flex:0 0 auto!important;width:auto!important;min-width:0!important;white-space:nowrap}
+.department-payroll-panel .department-payroll-toolbar>label{width:140px!important}
+.department-payroll-panel .department-payroll-toolbar input{width:100%;min-width:0;min-height:36px}
+.department-payroll-panel .department-payroll-toolbar>button{font-size:12px;padding:8px 10px;min-height:36px}

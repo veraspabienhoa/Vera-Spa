@@ -17,7 +17,7 @@ def test_department_payroll_is_in_shared_payroll_menu():
     assert "administrative={<DepartmentPayrollPanel" in app
     assert "import DepartmentPayrollPanel" not in payroll
     assert "Chọn tất cả có email" in panel
-    assert "Tính lương nháp từ Thống kê tháng" in panel
+    assert "Tính lương từ Thống kê" in panel
     assert "Tháng hiện tại chỉ tính đến hôm nay" in panel
     assert "NHÂN VIÊN ỨNG LƯƠNG" in panel
     assert "Hoàn thành bảng lương" in panel

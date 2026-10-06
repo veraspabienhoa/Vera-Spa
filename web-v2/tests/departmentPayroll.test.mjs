@@ -28,7 +28,7 @@ async function fixture(t, expireSave=false){
  return{requests,render:element=>act(async()=>root.render(element)),click:async label=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===label);assert.ok(b,label);await act(async()=>b.click())},change:async(node,value)=>act(async()=>{Object.getOwnPropertyDescriptor(node.tagName==='SELECT'?window.HTMLSelectElement.prototype:window.HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new window.Event(node.tagName==='SELECT'?'change':'input',{bubbles:true}))})}
 }
 test('filters combine without requests or lost edits; save keeps the full payroll',async t=>{
- const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương từ Thống kê')
  const count=()=>document.querySelectorAll('.department-payroll-table tbody tr').length
  assert.equal(count(),3)
  const search=document.querySelector('.department-payroll-table-search input'),department=document.querySelector('.department-payroll-department-filter select'),calls=f.requests.length
@@ -96,13 +96,13 @@ test('wide payroll tables fit the available width and restore full size after re
 })
 
 test('save then reopen draft preserves edits and clears stale filters',async t=>{
- const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương từ Thống kê')
  await f.change(document.querySelector('[aria-label="Trách nhiệm Nhân Viên A"]'),'123.000');await f.click('Lưu bảng nháp')
  await f.change(document.querySelector('.department-payroll-table-search input'),'missing');await f.click('Mở bảng nháp')
  assert.equal(document.querySelectorAll('.department-payroll-table tbody tr').length,3);assert.equal(document.querySelector('[aria-label="Trách nhiệm Nhân Viên A"]').value,'123.000')
 })
 test('deduction summary updates all rows despite visible filters',async t=>{
- const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương từ Thống kê')
  const headers=[...document.querySelectorAll('.department-payroll-table th')].map(el=>el.textContent)
  assert.equal(headers[headers.indexOf('Ứng lương')+1],'Phạt vi phạm')
  const month=document.querySelector('.department-payroll-toolbar input[type="month"]').value
@@ -112,7 +112,7 @@ test('deduction summary updates all rows despite visible filters',async t=>{
 })
 
 test('payroll actions precede table and share offers prepared PNG or PDF',async t=>{
- const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương từ Thống kê')
  const toolbar=document.querySelector('.department-payroll-top-actions'),table=document.querySelector('.department-payroll-table')
  assert.ok(toolbar.compareDocumentPosition(table)&window.Node.DOCUMENT_POSITION_FOLLOWING)
  const buttons=[...toolbar.querySelectorAll('button')];const exportIndex=buttons.findIndex(b=>b.textContent.trim()==='Xuất excel');assert.equal(buttons[exportIndex+1].textContent.trim(),'Chia sẻ')
@@ -121,7 +121,7 @@ test('payroll actions precede table and share offers prepared PNG or PDF',async 
 })
 
 test('delete draft confirms and removes only the draft; recalculate retains attendance source',async t=>{
- const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính từ chấm công (đối chiếu)');await f.click('Lưu bảng nháp')
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính từ chấm công');await f.click('Lưu bảng nháp')
  window.confirm=()=>false;const before=f.requests.length
  await f.click('Xóa bảng lương nháp');await f.click('Tính lại lương');assert.equal(f.requests.length,before)
  window.confirm=()=>true;await f.click('Tính lại lương')
@@ -130,7 +130,7 @@ test('delete draft confirms and removes only the draft; recalculate retains atte
  await f.click('Xóa bảng lương nháp');assert.ok(f.requests.some(r=>r.path.endsWith('/draft')&&r.options.method==='DELETE'))
  assert.equal(document.querySelector('.department-payroll-table'),null)
  await f.click('Mở bảng nháp');assert.match(document.body.textContent,/chưa có bảng lương nháp/)
- await f.click('Tính lương nháp từ Thống kê tháng');assert.equal(document.querySelectorAll('.department-payroll-table tbody tr').length,3)
+ await f.click('Tính lương từ Thống kê');assert.equal(document.querySelectorAll('.department-payroll-table tbody tr').length,3)
 })
 test('draft delete is hidden without save permission',async t=>{
  const f=await fixture(t);await f.render(h(Panel,{user:{role:'letan',permissions:{payroll_calculate:true}}}))
@@ -138,7 +138,7 @@ test('draft delete is hidden without save permission',async t=>{
 })
 
 test('employee search suggests matching names and Clear restores rows without requests',async t=>{
- const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương từ Thống kê')
  const before=f.requests.length
  await f.change(document.querySelector('.department-payroll-table-search input'),'quan ly')
  const option=[...document.querySelectorAll('[role=option]')].find(el=>el.textContent.includes('Quản Lý B'))
