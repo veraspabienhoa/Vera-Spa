@@ -46,37 +46,49 @@ jobs:
               with engine.connect() as conn:
                   rows=[dict(r) for r in conn.execute(text("SELECT status,stage,error_code,upload_session,operation_type,profile_id FROM vera_facegate_enrollment ORDER BY created_at DESC LIMIT 5")).mappings()]
               print('JOURNAL',json.dumps([{k:r[k] for k in ('status','stage','error_code','operation_type')} for r in rows]))
-              from html.parser import HTMLParser
-              class FormCheck(HTMLParser):
-                  def __init__(self): super().__init__();self.frames=[];self.forms=[];self.inputs=[]
-                  def handle_starttag(self,tag,attrs):
-                      item=dict(attrs)
-                      if tag=='iframe' and item.get('id')=='fileframe': self.frames.append(item.get('src',''))
-                      if tag=='form': self.forms.append(item)
-                      if tag=='input' and item.get('type','').lower()=='file': self.inputs.append(item)
-              with use_registered_facegate(engine):
-                  client=FaceGateEnrollmentClient()
-                  script=client.request('/js/bwlist.js',{'action':'list'})
-                  start=script.find('function gotoUpgrade')
-                  end=script.find('function ',start+10) if start>=0 else -1
-                  upload=script[start:end if end>start else start+7000] if start>=0 else ''
-                  for token in ('action=LISTADD','action=LISTMODIFT','group=UPLOAD','sessionid=','LISTuid=','IsCheckSim=','vfileselector'):
-                      print('UPLOAD_PROTOCOL_MATCH_'+token.replace('=',''),token in upload)
-                  page=FormCheck();page.feed(client.request('/bwlist.asp',{'action':'list'}))
-                  print('UPLOAD_FORM_FRAME_FOUND',len(page.frames)==1)
-                  if len(page.frames)==1:
+              if any(r['status']=='running' for r in rows):
+                  print('DEVICE_READ_SKIPPED_ACTIVE_OPERATION')
+              elif rows:
+                  with use_registered_facegate(engine):
+                      client=FaceGateEnrollmentClient()
+                      client.login()
+                      print('DEVICE_LOGIN_OK')
+                      try:
+                          profiles=client.profiles()
+                          print('PROFILE_LIST_OK',len(profiles))
+                          if rows[0]['profile_id']:
+                              detail=client.profile_details(int(rows[0]['profile_id']))
+                              print('PROFILE_DETAIL_OK')
+                      except Exception as exc: print('PROFILE_READ',json.dumps(safe_error(exc)))
+                      from html.parser import HTMLParser
                       from urllib.parse import urlsplit
-                      path=urlsplit(page.frames[0]).path.lstrip('/')
-                      print('UPLOAD_FORM_SRC_EMPTY',not bool(path))
-                      print('UPLOAD_FORM_SRC_QUERY','?' in page.frames[0])
-                      if re.fullmatch(r'[A-Za-z0-9_./-]+\.(asp|html|htm|shtml)',path) and '..' not in path:
-                          form=FormCheck();form.feed(client.request('/'+path,{'action':'list'}))
-                          print('UPLOAD_FORM_POST',any(f.get('method','').lower()=='post' for f in form.forms))
-                          print('UPLOAD_FORM_MULTIPART',any(f.get('enctype','').lower()=='multipart/form-data' for f in form.forms))
-                          print('UPLOAD_FORM_FILE_INPUTS',len(form.inputs))
-                          for candidate in ('vfileselector','file','filename','uploadfile','Filedata','upfile','upload_file','fileupload'):
-                              print('UPLOAD_FORM_NAME_MATCH_'+candidate,any(f.get('name')==candidate for f in form.inputs))
-
+                      class FrameParser(HTMLParser):
+                          def __init__(self): super().__init__(); self.frames=[]
+                          def handle_starttag(self,tag,attrs):
+                              item=dict(attrs)
+                              if tag=='iframe' and item.get('id')=='fileframe': self.frames.append(item.get('src',''))
+                      script=client.request('/js/bwlist.js',{'action':'list'})
+                      for name in ('gotoUpgrade','getUploadPercent'):
+                          match=re.search(r'function\s+'+name+r'\s*\(',script)
+                          if match:
+                              following=re.search(r'function\s+\w+\s*\(',script[match.end():])
+                              end=match.end()+following.start() if following else match.end()+7000
+                              print('UPLOAD_PROTOCOL_'+name,json.dumps(script[match.start():end][:7000]))
+                      for match in list(re.finditer(r'1010',script))[:5]:
+                          print('UPLOAD_PROTOCOL_CALLBACK',json.dumps(script[max(0,match.start()-200):match.start()+6000]))
+                      page=FrameParser();page.feed(client.request('/bwlist.asp',{'action':'list'}))
+                      if len(page.frames)==1:
+                          path=urlsplit(page.frames[0]).path.lstrip('/')
+                          if re.fullmatch(r'[A-Za-z0-9_./-]+\.(asp|html|htm|shtml)',path) and '..' not in path:
+                              source=client.request('/'+path,{'action':'list'})
+                              form=re.search(r'<form\b.*?</form>',source,re.I|re.S)
+                              if form: print('UPLOAD_PROTOCOL_FORM',json.dumps(form[0][:10000]))
+                      raw=client.request('/webs/getUploadPercent',{'action':'list','group':'UPLOAD','sessionid':rows[0]['upload_session']})
+                      matches=re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S)
+                      print('UPLOAD_FIELD_COUNTS',json.dumps(dict(Counter(k for k,v in matches if k.startswith('UPLOAD.') or k.startswith('ERR.')))))
+                      print('UPLOAD_RESULT',json.dumps({k:v.strip() for k,v in matches if k in ('UPLOAD.state','ERR.no') and re.fullmatch(r'[0-9-]{1,12}',v.strip())}))
+                      try: fields(raw);print('UPLOAD_PARSE_OK')
+                      except Exception as exc: print('UPLOAD_PARSE',json.dumps(safe_error(exc)))
           except Exception as exc:
               print('DIAGNOSTIC_ERROR',json.dumps(safe_error(exc)))
           finally:
