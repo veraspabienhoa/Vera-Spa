@@ -46,10 +46,22 @@ test('latest capture is previewed automatically and saving still requires explic
  } finally {await dom.window.unmount();dom.window.close()}
 })
 
-test('gallery limits loading to five latest full images',async()=>{
+test('gallery loads four images per page and navigates through every record',async()=>{
  const requested=[]
  const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null}),captures:async()=>({records:Array.from({length:8},(_,i)=>({event_id:i,occurred_at:'2026-09-27T11:00:00+07:00'}))}),capture:async(u,d,id)=>{requested.push(id);return new Blob(['photo'],{type:'image/jpeg'})}})
- try {await tick();assert.deepEqual(requested,[7,6,5,4,3]);assert.equal(dom.window.document.querySelectorAll('.face-id-capture-preview img').length,5)}
+ try {
+  await tick();assert.deepEqual(requested,[7,6,5,4]);assert.equal(dom.window.document.querySelectorAll('.face-id-capture-preview img').length,4)
+  assert.equal(button(dom,'Trang trước').disabled,true)
+  await dom.window.act(async()=>button(dom,'Trang sau').click());await tick()
+  assert.deepEqual(requested,[7,6,5,4,3,2,1,0]);assert.equal(dom.window.document.querySelectorAll('.face-id-capture-preview img').length,4)
+  assert.equal(button(dom,'Trang sau').disabled,true)
+  await dom.window.act(async()=>button(dom,'Trang trước').click());await tick()
+  assert.ok(dom.window.document.querySelector('img[alt="Ảnh chụp FaceID #7"]'))
+  await dom.window.act(async()=>button(dom,'Trang sau').click());await tick()
+  await dom.window.act(async()=>button(dom,'Từ ảnh chụp trên FaceID').click());await tick()
+  assert.equal(button(dom,'Trang trước').disabled,true)
+  assert.ok(dom.window.document.querySelector('img[alt="Ảnh chụp FaceID #7"]'))
+ }
  finally{await dom.window.unmount();dom.window.close()}
 })
 
