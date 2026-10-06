@@ -1,3 +1,7 @@
+import { createElement, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+import { flushSync } from 'react-dom'
+import VeraDateInput from '../components/VeraDateInput'
 import { searchTextMatches } from './searchText.js'
 import { getCurrentSession } from './supabase'
 
@@ -6,6 +10,17 @@ const PANEL_ID = 'vera-department-salary-advance-ledger'
 const STYLE_ID = 'vera-department-salary-advance-ledger-style'
 
 let currentPayload = { items: [], summary: {}, employee_catalog: [] }
+let dateRoot = null
+
+function AdvanceDate({ initialValue }) {
+  const [value, setValue] = useState(initialValue)
+  return createElement(VeraDateInput, { value, onChange: event => setValue(event.target.value), required: true, clearOnFocus: false, 'aria-label': 'Ngày ứng lương, định dạng dd-mm-yyyy' })
+}
+
+function renderAdvanceDate(month) {
+  if (dateRoot) flushSync(() => dateRoot.render(createElement(AdvanceDate, { key: month, initialValue: defaultAdvanceDate(month) })))
+}
+
 let currentMonth = ''
 let refreshTimer = 0
 let applyTimer = 0
@@ -85,6 +100,9 @@ function ensureStyles() {
     #${PANEL_ID} .advance-ledger-form label{display:grid;gap:5px;font-size:11px;font-weight:800;color:#4d5f56}#${PANEL_ID} .advance-ledger-form input{width:100%;min-height:38px;padding:8px 10px;border:1px solid #cfdad4;border-radius:9px;background:#fff;color:#1f342b;font:inherit}
     #${PANEL_ID} .advance-employee-field{position:relative}#${PANEL_ID} .advance-employee-options{position:absolute;z-index:30;top:100%;left:0;right:0;display:grid;max-height:260px;overflow:auto;margin-top:4px;padding:4px;border:1px solid #cfdad4;border-radius:10px;background:#fff;box-shadow:0 10px 26px rgba(25,61,49,.16)}#${PANEL_ID} .advance-employee-options[hidden]{display:none}#${PANEL_ID} .advance-employee-options button{display:grid;gap:2px;width:100%;min-height:0;padding:9px 10px;border:0;border-radius:7px;background:#fff;color:#273f35;text-align:left;cursor:pointer}#${PANEL_ID} .advance-employee-options button:hover,#${PANEL_ID} .advance-employee-options button:focus{background:#edf7f2;outline:none}#${PANEL_ID} .advance-employee-options strong{font-size:12px}#${PANEL_ID} .advance-employee-options small{font-size:10px;color:#6c7a73}#${PANEL_ID} .advance-employee-empty{padding:10px;color:#7b857f;font-size:11px;font-weight:600}
     #${PANEL_ID} .advance-ledger-form button{min-height:38px}
+    #${PANEL_ID} .vera-date-input > input[type="text"]{padding-right:40px}
+    #${PANEL_ID} .vera-date-picker-button{min-height:0}
+    #${PANEL_ID} .vera-native-date-picker{width:32px;min-height:0;padding:0;border:0}
     #${PANEL_ID} .advance-ledger-table-wrap{max-width:100%;overflow:auto;border:1px solid #eadfc8;border-radius:10px;background:#fff}
     #${PANEL_ID} table{width:100%;min-width:900px;border-collapse:collapse}#${PANEL_ID} th,#${PANEL_ID} td{padding:8px 9px;border-bottom:1px solid #eee7d8;text-align:left;vertical-align:middle;font-size:12px}#${PANEL_ID} th{position:sticky;top:0;background:#f6f1e7;color:#5a5142;font-size:10px;text-transform:uppercase;letter-spacing:.03em}#${PANEL_ID} td.money{text-align:right;font-weight:900;color:#193d31}#${PANEL_ID} td small{display:block;color:#7b857f;margin-top:2px}
     #${PANEL_ID} .advance-status{display:inline-flex;padding:4px 7px;border-radius:999px;font-size:10px;font-weight:900;white-space:nowrap}.advance-status.pending{background:#fff0c2;color:#815b00}.advance-status.settled{background:#dcf2e7;color:#216346}
@@ -157,7 +175,7 @@ function panelHtml(month) {
     </div>
     <form class="advance-ledger-form" data-advance-form>
       <label class="advance-employee-field">Tên nhân viên<input type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="vera-salary-advance-employees" aria-expanded="false" aria-label="Tìm kiếm tên nhân viên" placeholder="Tìm và chọn nhân viên trong danh sách…" data-advance-employee required><div class="advance-employee-options" id="vera-salary-advance-employees" data-advance-employee-options hidden></div></label>
-      <label>Ngày<input type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{2}-[0-9]{2}-[0-9]{4}" placeholder="dd-mm-yyyy" value="${formatDate(defaultAdvanceDate(month))}" aria-label="Ngày ứng lương, định dạng dd-mm-yyyy" data-advance-date required></label>
+      <label>Ngày<span data-advance-date></span></label>
       <label>Tháng trừ lương<input type="month" value="${month}" aria-label="Tháng trừ lương" data-advance-deduction-month required></label>
       <label>Số tiền<input type="text" inputmode="numeric" placeholder="0" data-advance-amount required></label>
       <label>Ghi chú<input type="text" maxlength="1000" placeholder="Nội dung ứng lương…" data-advance-note></label>
@@ -171,9 +189,15 @@ function panelHtml(month) {
 
 function ensurePanel() {
   const payrollPage = document.querySelector('.department-payroll-page:not(.department-payroll-config-page) .department-payroll-panel')
-  if (!payrollPage) return null
+  if (!payrollPage) {
+    dateRoot?.unmount()
+    dateRoot = null
+    return null
+  }
   let panel = document.getElementById(PANEL_ID)
   if (panel && panel.closest('.department-payroll-panel') === payrollPage) return panel
+  dateRoot?.unmount()
+  dateRoot = null
   panel?.remove()
   const toolbar = payrollPage.querySelector('.department-payroll-toolbar')
   if (!toolbar) return null
@@ -182,6 +206,8 @@ function ensurePanel() {
   panel.id = PANEL_ID
   panel.innerHTML = panelHtml(month)
   toolbar.insertAdjacentElement('afterend', panel)
+  dateRoot = createRoot(panel.querySelector('[data-advance-date]'))
+  renderAdvanceDate(month)
 
   panel.querySelector('[data-advance-toggle]').addEventListener('click', (event) => {
     const content = panel.querySelector('[data-advance-content]')
@@ -213,9 +239,6 @@ function ensurePanel() {
     panel.querySelector('[data-advance-employee-options]')?.setAttribute('hidden', '')
     employeeSearch.setAttribute('aria-expanded', 'false')
   })
-  panel.querySelector('[data-advance-date]')?.addEventListener('input', (event) => {
-    event.target.value = maskDisplayDate(event.target.value)
-  })
   panel.querySelector('[data-advance-amount]')?.addEventListener('input', (event) => {
     event.target.value = formatMoneyInput(event.target.value)
   })
@@ -224,7 +247,7 @@ function ensurePanel() {
     const employeeInput = panel.querySelector('[data-advance-employee]')
     const employee = resolveEmployee(employeeInput?.value, employeeInput?.dataset.selectedUsername)
     if (!employee) return showMessage('Vui lòng gõ và chọn đúng nhân viên trong danh sách.', 'error')
-    const advanceDate = parseDisplayDate(panel.querySelector('[data-advance-date]')?.value)
+    const advanceDate = parseDisplayDate(panel.querySelector('[data-advance-date] input[type="text"]')?.value)
     const deductionMonth = panel.querySelector('[data-advance-deduction-month]')?.value
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(deductionMonth || '')) return showMessage('Vui lòng chọn tháng trừ lương hợp lệ.', 'error')
     const amount = Number(String(panel.querySelector('[data-advance-amount]')?.value || '').replace(/\D/g, ''))
@@ -337,8 +360,7 @@ async function refreshLedger(force = false) {
   const panel = ensurePanel()
   const deductionInput = panel?.querySelector('[data-advance-deduction-month]')
   if (monthChanged && deductionInput) deductionInput.value = month
-  const dateInput = panel?.querySelector('[data-advance-date]')
-  if (dateInput && !parseDisplayDate(dateInput.value).startsWith(`${month}-`)) dateInput.value = formatDate(defaultAdvanceDate(month))
+  if (monthChanged) renderAdvanceDate(month)
   try {
     currentPayload = await apiRequest(`/v2/department-payroll/advances?month=${encodeURIComponent(month)}`)
     renderLedger()
