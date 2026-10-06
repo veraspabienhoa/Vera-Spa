@@ -633,3 +633,12 @@ body .leave-registration-tabs > button:hover { transform: none; box-shadow: 0 3p
 body .leave-registration-tabs > button:focus-visible { outline: 3px solid #b78726; outline-offset: 3px; }
 .leave-tab-content { display: block; }
 .leave-tab-content > [hidden] { display: none !important; }
+
+/* Keep each employee action group on one row inside its available width. */
+.staff-page .staff-primary-actions, .staff-page .staff-list-action-rows {  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); gap: 6px; width: 100%; max-width: 100%; min-width: 0; align-items: stretch; }
+.staff-page .staff-primary-actions > .staff-face-toolbar, .staff-page .staff-primary-actions .staff-face-actions, .staff-page .staff-primary-actions > .staff-actionbar, .staff-page .staff-list-action-rows > .staff-list-selection-actions, .staff-page .staff-list-action-rows > .staff-list-visibility-actions {  display: contents; }
+.staff-page .staff-primary-actions button, .staff-page .staff-primary-actions .staff-face-switch, .staff-page .staff-list-action-rows button {  box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; margin: 0; padding: 8px 5px; font-size: clamp(9px, .85vw, 13px); white-space: normal; overflow-wrap: anywhere; justify-content: center; line-height: 1.3; }
+.staff-page .staff-primary-actions svg, .staff-page .staff-list-action-rows svg {  flex-shrink: 0; width: 14px; height: 14px; }
+.staff-page .staff-primary-actions .staff-face-switch input {  flex-shrink: 0; width: 16px; height: 16px; }
+.staff-page .staff-primary-actions {  margin-block: 10px; }
+.staff-page .staff-list-action-rows { box-sizing: border-box; }

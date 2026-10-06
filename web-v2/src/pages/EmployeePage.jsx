@@ -590,7 +590,7 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
           </select>
           {isAdmin && <select value={visibilityFilter} onChange={(event) => setVisibilityFilter(event.target.value)} aria-label="Lọc hiển thị nhân viên"><option value="visible">Đang hiển thị</option><option value="hidden">Đã tạm ẩn</option><option value="all">Tất cả nhân viên</option></select>}
         </UiToolbar>
-        <div className="staff-face-toolbar">
+        <div className="staff-primary-actions"><div className="staff-face-toolbar">
         {isAdmin && permissions.employee_face_id_manage && <div className="staff-face-actions" aria-label="Tác vụ ảnh nhân viên"><button type="button" className="secondary-button" onClick={() => setBulkOpen(true)}>Tải ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllFaceId}><Download size={15}/> Tải tất cả ảnh Face ID</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={downloadAllPortraits}><Download size={15}/> Tải tất cả ảnh nhân viên</button></div>}
           {isAdmin && faceSettings && <label className="staff-face-switch"><input type="checkbox" checked={faceSettings.enabled} onChange={event => updateFaceSetting('', event.target.checked)}/> <span>Cho phép nhân viên tự cập nhật ảnh Face ID</span></label>}
         </div>
@@ -598,6 +598,7 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
           {permissions.staff_export && <button data-ui-key="u-72a7e0c083db" data-ui-label-default="Xuất excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /><UiCustomText uiKey="u-72a7e0c083db"> Xuất excel</UiCustomText></button>}
           {isAdmin && permissions.staff_export && <button type="button" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter, true))}><Download size={17} /> Excel kèm ảnh 3 × 4 cm</button>}
           {isAdmin && permissions.staff_export && <button data-ui-key="u-facc0987c3af" className="secondary-button" disabled={busy === 'profiles-pdf' || !selected.length} onClick={exportSelectedProfiles}>{busy === 'profiles-pdf' ? <LoaderCircle className="spin" size={17}/> : <FileDown size={17}/>} Xuất đồng loạt PDF ({selected.length})</button>}
+        </div>
         </div>
         {canSelectRows && <div className="staff-list-action-rows"><UiToolbar data-ui-key="u-09533736332c" className="staff-list-selection-actions">
           <button data-ui-key="u-a151148c1d25" data-ui-label-default="Chọn tất cả" className="secondary-button" disabled={!visible.length || Boolean(busy)} onClick={selectAllVisible}><UserCheck size={17}/><UiCustomText uiKey="u-a151148c1d25"> Chọn tất cả</UiCustomText></button>
