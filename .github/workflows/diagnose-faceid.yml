@@ -1,0 +1,74 @@
+name: Diagnose FaceGate photo update
+on:
+  push:
+    branches: [codex/faceid-diagnostics]
+    paths: [.github/workflows/diagnose-faceid.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Configure existing SSH access
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Read sanitized enrollment diagnostics without device writes
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'cd /opt/vera-spa/current && timeout 60 /opt/vera-spa/.venv/bin/python -' <<'PYCODE'
+          import json, os, re
+          from collections import Counter
+          from sqlalchemy import create_engine,text
+          from sqlalchemy.pool import NullPool
+          from vera_vps_data_check import _database_url,_running_api_environment
+          from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS,load_managed_runtime_environment
+          from vera_facegate_readiness import runtime_device_environment
+          from vera_facegate_enrollment import FaceGateEnrollmentClient,fields,EnrollmentError
+          from vera_web_v2_devices import use_registered_facegate
+          runtime_device_environment()
+          env={k:os.environ.get(k,'') for k in RUNTIME_ENV_KEYS} if load_managed_runtime_environment() else _running_api_environment()
+          engine=create_engine(_database_url(env),poolclass=NullPool,connect_args={'connect_timeout':5,'sslmode':env.get('DB_SSLMODE','require'),'options':'-c default_transaction_read_only=on -c statement_timeout=3000 -c lock_timeout=1000'})
+          client=None
+          def safe_error(exc):
+              return {'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else 'unknown'}
+          try:
+              with engine.connect() as conn:
+                  rows=[dict(r) for r in conn.execute(text("SELECT status,stage,error_code,upload_session,operation_type,profile_id FROM vera_facegate_enrollment ORDER BY created_at DESC LIMIT 5")).mappings()]
+              print('JOURNAL',json.dumps([{k:r[k] for k in ('status','stage','error_code','operation_type')} for r in rows]))
+              if any(r['status']=='running' for r in rows):
+                  print('DEVICE_READ_SKIPPED_ACTIVE_OPERATION')
+              elif rows:
+                  with use_registered_facegate(engine):
+                      client=FaceGateEnrollmentClient()
+                      client.login()
+                      print('DEVICE_LOGIN_OK')
+                      try:
+                          profiles=client.profiles()
+                          print('PROFILE_LIST_OK',len(profiles))
+                          if rows[0]['profile_id']:
+                              detail=client.profile_details(int(rows[0]['profile_id']))
+                              print('PROFILE_DETAIL_OK')
+                      except Exception as exc: print('PROFILE_READ',json.dumps(safe_error(exc)))
+                      raw=client.request('/webs/getUploadPercent',{'action':'list','group':'UPLOAD','sessionid':rows[0]['upload_session']})
+                      matches=re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S)
+                      print('UPLOAD_FIELD_COUNTS',json.dumps(dict(Counter(k for k,v in matches if k.startswith('UPLOAD.') or k.startswith('ERR.')))))
+                      print('UPLOAD_RESULT',json.dumps({k:v.strip() for k,v in matches if k in ('UPLOAD.state','ERR.no') and re.fullmatch(r'[0-9-]{1,12}',v.strip())}))
+                      try: fields(raw);print('UPLOAD_PARSE_OK')
+                      except Exception as exc: print('UPLOAD_PARSE',json.dumps(safe_error(exc)))
+          except Exception as exc:
+              print('DIAGNOSTIC_ERROR',json.dumps(safe_error(exc)))
+          finally:
+              if client: client.close()
+              engine.dispose()
+          PYCODE
