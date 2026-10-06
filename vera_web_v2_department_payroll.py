@@ -28,7 +28,8 @@ import vera_web_v2_work_schedule as work_schedule
 import vera_attendance_participation as participation
 
 
-RELEASE = "department-payroll-support-september-restored-2026-10-06-v11"
+RELEASE = "department-payroll-hc-email-layout-2026-10-06-v12"
+EMAIL_TEMPLATE_RELEASE = "department-payroll-email-eleven-items-2026-10-06.1"
 COMBO_COMMISSION = 100_000
 PAYROLL_EXCLUDED_SQL = "lower(btrim(COALESCE(payload->>'Không tính lương','false'))) IN ('1','true','yes','y','có','x','ẩn')"
 DEPARTMENTS = {
@@ -154,6 +155,15 @@ EXCEL_COLUMNS = (
     ("combo_sales", "Bán combo"), ("total_salary", "Tổng lương"),
     ("advance", "Ứng lương"), ("violation_penalty", "Tiền phạt vi phạm"), ("late_penalty", "Tiền phạt đi trễ"),
     ("net_salary", "Số tiền thực nhận"),
+)
+
+EMAIL_SUMMARY_COLUMNS = (
+    ("salary", "Tiền Lương"), ("full_allowance", "Phụ cấp Full ca"),
+    ("attendance_bonus", "Chuyên cần"), ("responsibility", "Trách nhiệm"),
+    ("seniority", "Thâm niên"), ("combo_sales", "Bán combo"),
+    ("advance", "Tiền ứng lương"), ("violation_penalty", "Phạt vi phạm"),
+    ("late_penalty", "Phạt đi trễ"), ("total_salary", "Tổng lương"),
+    ("net_salary", "Thực nhận"),
 )
 
 
@@ -885,6 +895,21 @@ def _render_template(template: dict[str, str], row: dict[str, Any], month_label:
     return subject, body, f"<!doctype html><html lang='vi'><body style='font:14px Arial;line-height:1.5;color:#22352d;max-width:720px;padding:24px'>{html}</body></html>"
 
 
+def _email_content(row: dict[str, Any], start: date, end: date, violations: list[dict[str, Any]]) -> tuple[str, str, str]:
+    """Render the validated HC amounts without grouping or recalculating them."""
+    name = str(row.get("employee_name") or row.get("employee_username") or "")
+    summary = [(label, payroll._number(row.get(key))) for key, label in EMAIL_SUMMARY_COLUMNS]
+    email_row = {
+        "Số tiền thực nhận": row.get("net_salary"),
+        "Tiền phạt trong tháng": _number(row.get("violation_penalty")) + _number(row.get("late_penalty")),
+    }
+    options = {"summary_rows": summary, "date_format": "%d-%m-%Y"}
+    subject = payroll._payroll_email_subject(row.get("employee_username"), start, end, date_format="%d-%m-%Y")
+    plain = payroll._payroll_email_text(name, start, end, email_row, violations, **options)
+    html = payroll._payroll_email_html(name, start, end, email_row, violations, **options)
+    return subject, plain, html
+
+
 def install_department_payroll_routes(app, *, engine_instance, current_identity, require_feature, identity_type, norm) -> None:
     if getattr(app.state, "department_payroll_installed", False):
         return
@@ -1172,26 +1197,16 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
                 recipient = str(row.get("email") or "").strip()
                 if "@" not in recipient:
                     failed.append({"employee": row.get("employee_name"), "error": "Chưa có email hợp lệ"}); continue
-                email_row = {
-                    "Tiền Lương": row.get("salary"),
-                    "Tiền Hỗ Trợ Hoàn Lại": sum(_number(row.get(key)) for key in (
-                        "full_allowance", "attendance_bonus", "responsibility", "seniority",
-                        "combo_sales",
-                    )),
-                    "Hoàn trả tiền tích lũy": 0, "Tích lũy": 0, "Chi Phí Sinh Hoạt": 0,
-                    "Tiền phạt trong tháng": _number(row.get("violation_penalty")) + _number(row.get("late_penalty")),
-                    "Vi phạm kỳ trước": 0, "Tiền ứng lương": row.get("advance"),
-                    "Tiền hỗ trợ Locker": 0, "Số tiền thực nhận": row.get("net_salary"),
-                }
                 name = str(row.get("employee_name") or row.get("employee_username") or "")
                 employee_violations = (
                     violations_by_employee.get(norm(row.get("employee_username")))
                     or violations_by_employee.get(norm(name), [])
                 )
-                message = EmailMessage(); message["Subject"] = payroll._payroll_email_subject(row.get("employee_username"), start, end)
+                subject, plain, html = _email_content(row, start, end, employee_violations)
+                message = EmailMessage(); message["Subject"] = subject
                 message["From"] = formataddr(("VERA SPA", sender)); message["To"] = recipient
-                message.set_content(payroll._payroll_email_text(name, start, end, email_row, employee_violations))
-                message.add_alternative(payroll._payroll_email_html(name, start, end, email_row, employee_violations), subtype="html")
+                message.set_content(plain)
+                message.add_alternative(html, subtype="html")
                 message.add_attachment(_workbook([row], department, label), maintype="application", subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=f"Bang_luong_{row['employee_username']}_{body.month}.xlsx")
                 try:
                     smtp.send_message(message); sent.append(row.get("employee_name"))
@@ -1204,6 +1219,6 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
 
     @app.get("/v2/department-payroll/health")
     def health():
-        return {"ok": True, "release": RELEASE, "departments": DEPARTMENTS, "source": "Web V2 attendance + work schedule", "employee_config_tables": True, "email_layout": payroll.PAYROLL_EMAIL_TEMPLATE_RELEASE}
+        return {"ok": True, "release": RELEASE, "departments": DEPARTMENTS, "source": "Web V2 attendance + work schedule", "employee_config_tables": True, "email_layout": EMAIL_TEMPLATE_RELEASE}
 
     app.state.department_payroll_installed = True

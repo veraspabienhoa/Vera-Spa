@@ -58,12 +58,13 @@ def test_salary_configuration_is_split_into_two_employee_tables():
     assert '"department_employee_salary_configs"' in backend
 
 
-def test_department_email_uses_the_standard_employee_layout():
+def test_department_email_uses_shared_renderer_with_its_own_summary():
     backend = (ROOT / "vera_web_v2_department_payroll.py").read_text(encoding="utf-8")
     assert "payroll._payroll_email_subject" in backend
     assert "payroll._payroll_email_text" in backend
     assert "payroll._payroll_email_html" in backend
-    assert '"email_layout": payroll.PAYROLL_EMAIL_TEMPLATE_RELEASE' in backend
+    assert '"email_layout": EMAIL_TEMPLATE_RELEASE' in backend
+    assert '"summary_rows": summary' in backend
 
 
 def test_employee_config_supports_department_search_and_explicit_rows():
