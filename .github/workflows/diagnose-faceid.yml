@@ -1,11 +1,13 @@
 name: Diagnose FaceGate photo update
 on:
-  workflow_dispatch:
+  push:
+    branches: [codex/faceid-diagnostics]
+    paths: [.github/workflows/diagnose-faceid.yml]
 permissions:
   contents: read
 jobs:
   diagnose:
-    if: ${{ false }}
+    if: ${{ github.run_attempt == 1 }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -20,23 +22,22 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Read update journal and device result without uploads or profile writes
+      - name: One authorized saved-photo upload, with no profile commit
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'cd /opt/vera-spa/current && timeout 60 /opt/vera-spa/.venv/bin/python -' <<'PYCODE'
-          import json, os, re, subprocess
-          from collections import Counter
+          import json, os, re, time
           from sqlalchemy import create_engine,text
           from sqlalchemy.pool import NullPool
           from vera_vps_data_check import _database_url,_running_api_environment
           from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS,load_managed_runtime_environment
           from vera_facegate_readiness import runtime_device_environment
-          from vera_facegate_enrollment import FaceGateEnrollmentClient,fields,EnrollmentError
+          from vera_facegate_enrollment import FaceGateEnrollmentClient,EnrollmentError,jpeg_photo
           from vera_facegate_control_log import registration_ref
           from vera_web_v2_devices import use_registered_facegate
-          print('ACTIVE_COMMIT',subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip())
+          from vera_web_v2_facegate_enrollment import mappings,target
           runtime_device_environment()
           env={k:os.environ.get(k,'') for k in RUNTIME_ENV_KEYS} if load_managed_runtime_environment() else _running_api_environment()
           engine=create_engine(_database_url(env),poolclass=NullPool,connect_args={'connect_timeout':5,'sslmode':env.get('DB_SSLMODE','require'),'options':'-c default_transaction_read_only=on -c statement_timeout=3000 -c lock_timeout=1000'})
@@ -45,44 +46,65 @@ jobs:
               return {'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else 'unknown'}
           try:
               with engine.connect() as conn:
-                  rows=[dict(r) for r in conn.execute(text("SELECT status,stage,error_code,upload_session,operation_type,profile_id,previous_ref,registration_ref,created_at,updated_at FROM vera_facegate_enrollment WHERE profile_id=189 ORDER BY created_at DESC LIMIT 1")).mappings()]
-                  busy=conn.execute(text("SELECT COUNT(*) FROM vera_facegate_enrollment WHERE status='running'")).scalar()
-              from datetime import datetime,timezone
-              print('OPERATION_TIMING',json.dumps([{'after_deploy':r['created_at']>=datetime(2026,10,6,16,19,tzinfo=timezone.utc),'duration_seconds':round((r['updated_at']-r['created_at']).total_seconds(),1)} for r in rows]))
-              print('UPDATE_JOURNAL',json.dumps([{**{k:r[k] for k in ('status','stage','error_code','operation_type')},'has_uploaded_ref':bool(r['registration_ref'])} for r in rows]))
-              if busy:
-                  print('DEVICE_READ_SKIPPED_ACTIVE_OPERATION')
-              elif rows:
-                  row=rows[0]
+                  row=conn.execute(text("SELECT employee_username,photo_sha256,device_id,device_address,profile_id,previous_ref FROM vera_facegate_enrollment WHERE profile_id=189 AND operation_type='replace' ORDER BY created_at DESC LIMIT 1")).mappings().first()
+                  if not row: raise RuntimeError('missing_reported_operation')
+                  row=dict(row)
+                  busy=conn.execute(text("SELECT COUNT(*) FROM vera_facegate_enrollment WHERE status IN ('running','unverified')")).scalar()
+                  photo=conn.execute(text("SELECT content,sha256 FROM vera_employee_face_id WHERE employee_username=:username"),{'username':row['employee_username']}).mappings().first()
+                  owned=[m for m in mappings(conn,row['device_id']) if m.get('username')==row['employee_username']]
+                  unchanged=(len(owned)==1 and owned[0].get('profile_id')==row['profile_id'] and owned[0].get('registration_ref')==row['previous_ref'] and owned[0].get('device_address')==row['device_address'] and bool(owned[0].get('confirmed_by')) and target(conn)==row['device_address'])
+                  jpeg=jpeg_photo(bytes(photo['content'])) if photo and photo['sha256']==row['photo_sha256'] else None
+              if busy or not unchanged or jpeg is None:
+                  print('REAL_PHOTO_PROBE_SKIPPED',json.dumps({'busy':bool(busy),'mapping_unchanged':unchanged,'photo_unchanged':jpeg is not None}))
+              else:
+                  import requests,secrets
+                  class OneUploadSession(requests.Session):
+                      upload_count=0
+                      def post(self,url,**kwargs):
+                          if not kwargs.get('files'): raise RuntimeError('profile_write_blocked')
+                          self.upload_count+=1
+                          if self.upload_count>1: raise RuntimeError('second_upload_blocked')
+                          began=time.monotonic()
+                          try:
+                              response=super().post(url,**kwargs)
+                              print('UPLOAD_HTTP_RESULT',json.dumps({'status':response.status_code,'elapsed_seconds':round(time.monotonic()-began,2)}),flush=True)
+                              return response
+                          except Exception as exc:
+                              print('UPLOAD_HTTP_FAILURE',json.dumps({**safe_error(exc),'elapsed_seconds':round(time.monotonic()-began,2)}),flush=True)
+                              raise
+                  class ProbeClient(FaceGateEnrollmentClient):
+                      def request(self,path,params,*,photo=None):
+                          if path not in ('/webs/login','/webs/getWhitelist','/webs/uploadfile','/webs/getUploadPercent'):
+                              raise RuntimeError('outside_probe_scope')
+                          raw=super().request(path,params,photo=photo)
+                          if path in ('/webs/uploadfile','/webs/getUploadPercent'):
+                              fields=dict(re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S))
+                              safe={k:v.strip() for k,v in fields.items() if k in ('UPLOAD.state','ERR.no','UPLOAD.dwfiletype') and re.fullmatch(r'-?[0-9]{1,8}',v.strip())}
+                              safe['login_form']=bool(re.search(r'<input[^>]+type=["\x27]?password',raw,re.I))
+                              safe['reference_valid']=bool(registration_ref({k.removeprefix('UPLOAD.'):v.strip() for k,v in fields.items()}))
+                              print('REAL_PHOTO_PROTOCOL',path,json.dumps(safe),flush=True)
+                          return raw
                   with use_registered_facegate(engine):
-                      client=FaceGateEnrollmentClient()
+                      client=ProbeClient(session=OneUploadSession())
                       client.login()
-                      print('DEVICE_LOGIN_OK')
-                      raw=client.request('/webs/getUploadPercent',{'action':'list','group':'UPLOAD','sessionid':row['upload_session']})
-                      matches=re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S)
-                      print('UPLOAD_FIELD_COUNTS',json.dumps(dict(Counter(k for k,v in matches if k.startswith('UPLOAD.') or k.startswith('ERR.')))))
-                      print('UPLOAD_RESULT',json.dumps({k:v.strip() for k,v in matches if k in ('UPLOAD.state','ERR.no') and re.fullmatch(r'[0-9-]{1,12}',v.strip())}))
-                      print('UPLOAD_SESSION_MATCH',any(k=='UPLOAD.sessionid' and v.strip()==row['upload_session'] for k,v in matches))
-                      result_fields={k:v.strip() for k,v in matches}
-                      def number(key):
-                          value=result_fields.get(key,'')
-                          return int(value) if re.fullmatch(r'-?\d{1,20}',value) else None
-                      file_type=number('UPLOAD.dwfiletype')
-                      file_index=number('UPLOAD.dwfileindex')
-                      file_position=number('UPLOAD.dwfilepos')
-                      print('UPLOAD_REFERENCE_SHAPE',json.dumps({'file_type':file_type if file_type is not None and -1<=file_type<=16 else 'other','index_valid':file_index is not None and 0<=file_index<=65535,'position_positive':file_position is not None and file_position>0,'position_in_range':file_position is not None and 0<file_position<=2**63-1,'error_kind':result_fields.get('ERR.des') if result_fields.get('ERR.des') in ('OK','ImportingList','LoginTimeout','') else 'other'}))
-                      try:
-                          value=fields(raw)
-                          print('UPLOAD_PARSE_OK')
-                          print('UPLOAD_REFERENCE_VALID',bool(registration_ref({k.removeprefix('UPLOAD.'):v for k,v in value.items()})))
-                      except Exception as exc: print('UPLOAD_PARSE',json.dumps(safe_error(exc)))
-                      profile=client.profile_details(int(row['profile_id']))
-                      ref=registration_ref(profile)
-                      print('PROFILE_REFERENCE_CHECK',json.dumps({'previous':ref==row['previous_ref'],'uploaded':bool(row['registration_ref']) and ref==row['registration_ref']}))
-                      print('PROFILE_READ_OK')
+                      profiles=client.profiles()
+                      matches=[p for p in profiles if p.get('uid')==str(row['profile_id'])]
+                      before=client.profile_details(int(row['profile_id']))
+                      if len(matches)!=1 or registration_ref(matches[0])!=row['previous_ref'] or registration_ref(before)!=row['previous_ref']:
+                          print('REAL_PHOTO_PROBE_SKIPPED_PROFILE_CHANGED')
+                      else:
+                          upload_session=str(secrets.randbelow(90000000)+10000000)
+                          try:
+                              client.upload(jpeg,upload_session,profile_id=int(row['profile_id']))
+                              print('REAL_PHOTO_UPLOAD_RESULT','temporary_image_accepted_no_profile_commit')
+                          except Exception as exc:
+                              print('REAL_PHOTO_UPLOAD_RESULT',json.dumps(safe_error(exc)),flush=True)
+                          after=client.profile_details(int(row['profile_id']))
+                          print('REAL_PHOTO_PROFILE_UNCHANGED',before==after)
           except Exception as exc:
               print('DIAGNOSTIC_ERROR',json.dumps(safe_error(exc)))
           finally:
               if client: client.close()
               engine.dispose()
           PYCODE
+
