@@ -23,3 +23,15 @@ export function checkinRangeError(filters) {
   if (filters.event_date && (filters.event_date < filters.date_from || filters.event_date > filters.date_to)) return 'Ngày cụ thể phải nằm trong khoảng tra cứu.'
   return ''
 }
+
+export function checkinLookupOptions(rows) {
+  const employees = new Map(), events = new Map()
+  for (const row of rows) {
+    const name = String(row.employee_name || row.device_name || row.employee_code || '').trim()
+    const detail = [...new Set([row.device_name, row.employee_code].filter(Boolean))].join(' · ')
+    if (name) employees.set(name, { value: name, label: name, detail })
+    const id = String(row.event_id ?? '').trim()
+    if (id) events.set(id, { value: id, label: id, detail: name })
+  }
+  return { employees: [...employees.values()], events: [...events.values()] }
+}

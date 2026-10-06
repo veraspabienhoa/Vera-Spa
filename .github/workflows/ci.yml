@@ -1287,7 +1287,7 @@ jobs:
         run: node --test tests/revenueSharedAuto.test.mjs tests/revenueTipPeriod.source.test.mjs tests/revenueTipPeriod.test.mjs tests/revenueRealtime.test.mjs
 
       - name: Administrative payroll filters and configuration recovery
-        run: node --test tests/payrollUnifiedSettings.test.mjs tests/departmentPayroll.test.mjs tests/scheduleViolations.test.mjs tests/salaryAdvanceSelection.test.mjs tests/payrollObligationTable.test.mjs tests/payrollPeriod.test.mjs tests/payrollAccumulation.test.mjs tests/payrollHistory.test.mjs tests/payrollHistorySearch.test.mjs
+        run: node --test tests/comboMonthFilters.test.mjs tests/payrollUnifiedSettings.test.mjs tests/departmentPayroll.test.mjs tests/scheduleViolations.test.mjs tests/salaryAdvanceSelection.test.mjs tests/payrollObligationTable.test.mjs tests/payrollPeriod.test.mjs tests/payrollAccumulation.test.mjs tests/payrollHistory.test.mjs tests/payrollHistorySearch.test.mjs
 
       - name: Mobile menu drag and native gesture isolation
         run: node --test tests/menuWipe.test.mjs

@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { getCurrentSession } from '../lib/supabase'
 import VeraDateInput from '../components/VeraDateInput'
+import { formatVeraDate } from '../lib/veraDate'
 
 const API_BASE = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const WEEKDAYS = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
@@ -234,10 +235,10 @@ async function scheduleFileRequest(path, options = {}) {
 
 function saleDateLabel(value) {
   const parsed = parseIsoDate(value)
-  return parsed ? displayFullDate(parsed) : (value || '—')
+  return parsed ? formatVeraDate(value) : (value || '—')
 }
 
-function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave, onDelete, customers, loadCustomers }) {
+function ComboEmployeeTable({ employee, rows, month, onMonthChange, defaultDate, canEdit, busy, onSave, onDelete, customers, loadCustomers }) {
   const emptyDraft = () => ({ sale_date: defaultDate, customer_name: '', customer_phone: '', combo_ticket: '', note: '' })
   const [draft, setDraft] = useState(emptyDraft)
   const [editingId, setEditingId] = useState('')
@@ -269,7 +270,7 @@ function ComboEmployeeTable({ employee, rows, defaultDate, canEdit, busy, onSave
   return <section data-ui-key="u-cf2cd9c589b7" className="combo-employee-card">
     <div className="combo-employee-title">
       <strong>BẢNG CỦA {systemName(employee).toUpperCase()}</strong>
-      <span>{rows.length.toLocaleString('vi-VN')} lượt trong tháng</span>
+      <div className="combo-month-filters"><button type="button" className="schedule-copy-button" aria-pressed={month === currentMonthValue()} disabled={busy} onClick={() => onMonthChange(currentMonthValue())}>Tháng này</button><button type="button" className="schedule-copy-button" aria-pressed={month === moveMonth(currentMonthValue(), -1)} disabled={busy} onClick={() => onMonthChange(moveMonth(currentMonthValue(), -1))}>Tháng trước</button><span>{rows.length.toLocaleString('vi-VN')} lượt · {month.slice(5)}/{month.slice(0, 4)}</span></div>
     </div>
     {canEdit && <div className="combo-sale-fields" onFocusCapture={loadCustomers}>
       <label>Ngày bán<VeraDateInput aria-label="Ngày bán" value={draft.sale_date} onChange={(event) => setDraft({ ...draft, sale_date: event.target.value })} /></label>
@@ -343,6 +344,23 @@ export default function WorkSchedulePage({ user }) {
   const [violationOpenSequence, setViolationOpenSequence] = useState(0)
   const [violationStatsError, setViolationStatsError] = useState('')
   const [comboSales, setComboSales] = useState([])
+  const [comboFilterMonth, setComboFilterMonth] = useState('')
+  const [comboFilteredSales, setComboFilteredSales] = useState([])
+  const [comboLoading, setComboLoading] = useState(false)
+  const comboMonth = comboFilterMonth || month
+  const comboDisplaySales = comboMonth === month ? comboSales : comboFilteredSales
+  useEffect(() => {
+    setComboFilteredSales([])
+    if (comboMonth === month || !['quanly', 'letan'].includes(department)) { setComboLoading(false); return undefined }
+    let active = true
+    const range = monthRange(comboMonth)
+    setComboLoading(true)
+    scheduleRequest(`/v2/work-schedule/combo-sales?start=${range.start}&end=${range.end}&department=${department}`)
+      .then(result => { if (active) setComboFilteredSales(result.rows || []) })
+      .catch(error => { if (active) setNotice(error.message || 'Không tải được bán combo.') })
+      .finally(() => { if (active) setComboLoading(false) })
+    return () => { active = false }
+  }, [comboMonth, month, department, comboSales])
   const [comboCustomers, setComboCustomers] = useState([])
   const customerRead = useRef({ at: 0, department: '', pending: null })
   const loadComboCustomers = () => {
@@ -376,7 +394,7 @@ export default function WorkSchedulePage({ user }) {
   const canEdit = roleCanEdit && availableDepartments.includes(department)
   const canEditCombo = ['admin', 'quanly', 'letan'].includes(role) && availableDepartments.includes(department)
   const ownUsername = String(user?.employee_username || '').trim().toLowerCase()
-  const comboDefaultDate = month === currentMonthValue() ? todayIso : `${month}-01`
+  const comboDefaultDate = comboMonth === currentMonthValue() ? todayIso : `${comboMonth}-01`
   const rangeLabel = `${displayFullDate(days[0])} – ${displayFullDate(days[days.length - 1])} · ${days.length} ngày`
   const rangeTitle = days.length > 1 && days[0].getMonth() === days[days.length - 1].getMonth() && days[0].getFullYear() === days[days.length - 1].getFullYear()
     ? `THÁNG ${String(days[0].getMonth() + 1).padStart(2, '0')}/${days[0].getFullYear()}`
@@ -982,12 +1000,12 @@ export default function WorkSchedulePage({ user }) {
 
   const comboEmployees = useMemo(() => {
     const mapped = new Map(employees.map((employee) => [String(employee.username || '').toLowerCase(), employee]))
-    comboSales.forEach((sale) => {
+    comboDisplaySales.forEach((sale) => {
       const key = String(sale.employee_username || '').toLowerCase()
       if (key && !mapped.has(key)) mapped.set(key, { username: sale.employee_username, full_name: sale.employee_name })
     })
     return [...mapped.values()]
-  }, [comboSales, employees])
+  }, [comboDisplaySales, employees])
 
   const saveComboSale = async (employee, draft, saleId = '') => {
     if (!employee || !draft.sale_date || !draft.customer_name.trim() || !draft.combo_ticket.trim()) {
@@ -1023,7 +1041,7 @@ export default function WorkSchedulePage({ user }) {
   }
 
   const exportComboSales = async () => {
-    const statisticsRange = monthRange(month)
+    const statisticsRange = monthRange(comboMonth)
     setBusy(true)
     try {
       await veraApi.exportComboSalesExcel(statisticsRange.start, statisticsRange.end, department)
@@ -1047,9 +1065,9 @@ export default function WorkSchedulePage({ user }) {
   const comboEditor = ['quanly', 'letan'].includes(department)
     ? <div className="combo-sale-editor">
       <div className="combo-sale-head"><strong>BẢNG BÁN COMBO · {DEPARTMENT_INFO[department].label}</strong>{canEditCombo && <UiToolbar data-ui-key="u-f600ca113e5d" className="combo-excel-actions"><input ref={comboFileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => void importComboSales(event)} /><button data-ui-key="u-4fe327c22b3c" data-ui-label-default="Import Excel" type="button" className="schedule-copy-button" disabled={busy} onClick={() => comboFileInputRef.current?.click()}><Upload size={15}/><UiCustomText uiKey="u-4fe327c22b3c"> Import Excel</UiCustomText></button><button data-ui-key="u-be3d05eab551" data-ui-label-default="Xuất excel" type="button" className="schedule-copy-button" disabled={busy} onClick={() => void exportComboSales()}><Download size={15}/><UiCustomText uiKey="u-be3d05eab551"> Xuất excel</UiCustomText></button></UiToolbar>}</div>
-      <div className="combo-employee-sections">{comboEmployees.map((employee) => {
-        const employeeRows = comboSales.filter((sale) => String(sale.employee_username || '').toLowerCase() === String(employee.username || '').toLowerCase())
-        return <ComboEmployeeTable key={`${department}-${month}-${employee.username}`} employee={employee} rows={employeeRows} defaultDate={comboDefaultDate} canEdit={canEditCombo} busy={busy} onSave={saveComboSale} onDelete={deleteComboSale} customers={comboCustomers} loadCustomers={loadComboCustomers} />
+      {comboLoading && <p role="status">Đang tải bán combo…</p>}<div className="combo-employee-sections">{comboEmployees.map((employee) => {
+        const employeeRows = comboDisplaySales.filter((sale) => String(sale.employee_username || '').toLowerCase() === String(employee.username || '').toLowerCase())
+        return <ComboEmployeeTable key={`${department}-${comboMonth}-${employee.username}`} employee={employee} rows={employeeRows} month={comboMonth} onMonthChange={setComboFilterMonth} defaultDate={comboDefaultDate} canEdit={canEditCombo} busy={busy || comboLoading} onSave={saveComboSale} onDelete={deleteComboSale} customers={comboCustomers} loadCustomers={loadComboCustomers} />
       })}</div>
       {!comboEmployees.length && <div className="revenue-meta">Chưa có nhân viên {DEPARTMENT_INFO[department].label} để tạo bảng bán combo.</div>}
     </div> : null
@@ -1066,7 +1084,7 @@ export default function WorkSchedulePage({ user }) {
       .combo-sale-editor{display:grid;gap:10px;padding:12px;border:1px solid #d8e5df;border-radius:12px;background:#f8fbfa}
       .combo-sale-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
       .combo-sale-head label{display:flex;align-items:center;gap:7px;font-weight:800;color:#1f6047}
-      .combo-excel-actions,.combo-form-actions,.combo-row-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+      .combo-month-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.combo-month-filters button[aria-pressed=true]{background:#173329;color:#fff}.combo-excel-actions,.combo-form-actions,.combo-row-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
       .combo-employee-sections{display:grid;gap:14px}
       .combo-employee-card{display:grid;gap:10px;padding:12px;border:1px solid #ccddd5;border-radius:12px;background:#fff}
       .combo-employee-title{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;color:#173329}

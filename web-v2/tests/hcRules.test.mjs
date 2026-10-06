@@ -12,7 +12,7 @@ const mod={exports:{}};new Function('require','module','exports',bundle.outputFi
 async function fixture(t, role='admin') {
  const dom=new JSDOM('<body><div id="root"/></body>',{url:'https://example.test'}), saved={}
  let data={revision:0,rules:[{id:'late',name:'Đi trễ',kind:'late',mode:'multiplier',value:2,enabled:true},{id:'absence',name:'Nghỉ không phép',kind:'absence',mode:'multiplier',value:2,enabled:true}],departments:[{code:'locker',name:'Locker',salary_mode:'hourly',enabled:false,rules:{late:{enabled:false},absence:{enabled:false}}},{code:'letan',name:'Lễ tân',salary_mode:'hourly',enabled:false,rules:{late:{enabled:false},absence:{enabled:false}}}]},calls=[]
- const api={load:async()=>data,catalog:async body=>{calls.push(body);data={...data,rules:body.rules,revision:data.revision+1};return data},save:async(code,ruleId,body)=>{calls.push({code,ruleId,body});data={...data,revision:data.revision+1,departments:data.departments.map(d=>d.code===code?{...d,rules:{...d.rules,[ruleId]:{enabled:body.enabled}}}:d)};return data}}
+ const api={load:async()=>data,catalog:async body=>{calls.push(body);data={...data,rules:body.rules,revision:data.revision+1};return data},save:async(code,ruleId,body)=>{calls.push({code,ruleId,body});data={...data,revision:data.revision+1,departments:data.departments.map(d=>d.code===code?{...d,rules:{...d.rules,[ruleId]:{enabled:body.enabled,enabled_since:'2026-10-06T11:00:00+07:00'}}}:d)};return data}}
  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true,hcApi:api})) {saved[key]=Object.getOwnPropertyDescriptor(globalThis,key);Object.defineProperty(globalThis,key,{value,configurable:true})}
  const {createRoot}=await import('react-dom/client'),root=createRoot(document.querySelector('#root'))
  t.after(async()=>{await act(()=>root.unmount());dom.window.close();for(const [key,value] of Object.entries(saved)) {if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key]}})
@@ -25,6 +25,7 @@ test('Admin has independent department activation switches with current revision
  await f.click(0)
  assert.deepEqual(f.calls[0],{code:'locker',ruleId:'late',body:{enabled:true,expected_revision:0}})
  assert.deepEqual([...document.querySelectorAll('.hc-department button')].map(b=>b.getAttribute('aria-pressed')),['true','false','false','false'])
+ assert.match(document.querySelector('.hc-department').textContent,/06-10-2026/);assert.match(document.querySelector('[role=status]').textContent,/ca đã bắt đầu/i)
  await f.click(1);assert.equal(f.calls[1].body.expected_revision,1)
  await f.click(0);assert.equal(f.calls[2].body.enabled,false)
  assert.match(document.querySelector('[role=status]').textContent,/Đi trễ · Locker: đã tắt/)
