@@ -22,7 +22,7 @@
 .face-id-view-tabs{display:flex;gap:8px;margin-bottom:8px}
 .face-id-view-tabs button[aria-pressed="true"]{background:#173d31;color:white}
 .face-id-compact.face-id-view-photo .face-id-sources>:not(button){display:none}
-.face-id-compact.face-id-view-captures .employee-portrait-side>:not(.face-id-sources):not(.identity-editor-backdrop),
+.face-id-compact.face-id-view-captures .employee-portrait-side>:not(.face-id-sources):not(.face-id-source-toolbar):not(.identity-editor-backdrop),
 .face-id-compact.face-id-view-captures .face-id-sources>button,
 .face-id-compact.face-id-view-captures>.face-id-enrollment,
 .face-id-compact.face-id-view-captures>p:not(.employee-identity-notice){display:none}
@@ -57,3 +57,14 @@
  .face-id-profile-modal .face-id-card button{font-size:12px;padding:6px 8px;min-height:32px}
  .face-id-profile-modal .face-id-capture-preview figcaption{font-size:10px}
 }
+
+.face-id-source-toolbar{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;flex-shrink:0;margin-bottom:6px}
+.face-id-source-toolbar>button{min-width:0;white-space:normal}
+.face-id-source-toolbar button[aria-pressed="true"]{background:#173d31;color:white}
+.face-id-profile-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;flex-shrink:0}
+.face-id-profile-header h2{margin:0;min-width:0;overflow-wrap:anywhere;font-size:20px}
+.face-id-profile-header .face-id-close-button{width:120px;flex:0 0 120px;min-height:44px}
+.face-id-enrollment-inline{display:contents}
+.face-id-enrollment-inline>button{order:0}
+.face-id-enrollment-inline>p{order:2;flex:0 0 100%;min-width:0}
+@media(max-width:640px){.face-id-profile-header{padding:10px 12px}.face-id-profile-header h2{font-size:17px}.face-id-source-toolbar{gap:4px}.face-id-source-toolbar>button{flex:1;font-size:11px}}

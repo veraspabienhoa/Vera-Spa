@@ -5,7 +5,7 @@ import { searchTextMatches, scrollSearchOption } from '../lib/searchText'
 import './LiveTourSearchSelect.css'
 import ClearableSearchInput from './ClearableSearchInput'
 
-export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, advanceOnSelect = false, invalid = false, filterActive }) {
+export default function LiveTourSearchSelect({ label, value, options, onChange, placeholder = 'Tìm và chọn…', required = false, disabled = false, clearOnSelect = false, filterOption, searchValue, onSearch, hideLabel = false, className = '', emptyLabel = 'Để trống', inputMode, advanceOnSelect = false, invalid = false, filterActive, inlineOptions = false }) {
   const id = useId(), root = useRef(null), input = useRef(null), menu = useRef(null), side = useRef(null)
   const typing = useRef(false)
   const selected = options.find((item) => item.value === value)
@@ -25,7 +25,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
   }
 
   useLayoutEffect(() => {
-    if (!open || disabled) return
+    if (!open || disabled || inlineOptions) return
     let frame
     const place = () => {
       const rect = input.current?.getBoundingClientRect()
@@ -62,11 +62,13 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
       window.visualViewport?.removeEventListener('resize', schedule)
       window.visualViewport?.removeEventListener('scroll', schedule)
     }
-  }, [open, disabled])
+  }, [open, disabled, inlineOptions])
 
   useEffect(() => {
-    if (open) scrollSearchOption(menu.current, menu.current?.querySelector(`[id="${id}-${activeIndex}"]`))
-  }, [activeIndex, id, open])
+    if (open && !inlineOptions) scrollSearchOption(menu.current, menu.current?.querySelector(`[id="${id}-${activeIndex}"]`))
+  }, [activeIndex, id, open, inlineOptions])
+
+  const renderMenu = node => inlineOptions ? node : createPortal(node, document.body)
 
   return <div className={`live-tour-search-select ${className}`} data-filter-active={filterActive} ref={root} onBlur={(event) => {
     if (!root.current?.contains(event.relatedTarget) && !menu.current?.contains(event.relatedTarget)) { close(); if (!freeSearch) setQuery(selected?.label || '') }
@@ -81,7 +83,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); if (!freeSearch) setQuery(selected?.label || '') }
         if (event.key === 'Enter' && open) { event.preventDefault(); if (matches[activeIndex]) choose(matches[activeIndex]) }
       }}/>
-    {open && !disabled && createPortal(<div ref={menu} className="tour-search-popup tour-search-scroll" style={{ left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight, zIndex: position.zIndex }} onMouseDown={(event) => event.preventDefault()}>
+    {open && !disabled && renderMenu(<div ref={menu} className={`tour-search-popup ${inlineOptions ? 'tour-search-inline' : 'tour-search-scroll'}`} style={inlineOptions ? undefined : { left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight, zIndex: position.zIndex }} onMouseDown={(event) => event.preventDefault()}>
       <div role="listbox" id={`${id}-options`} aria-label={label}>
         {!required && <button data-ui-key="u-54261a9bf95d" type="button" tabIndex={-1} role="option" aria-selected={!value} onClick={() => { if (freeSearch) onSearch?.(''); choose({ value: '', label: '' }) }}>{emptyLabel}</button>}
         {matches.map((item, i) => {
@@ -89,6 +91,6 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
         })}
         {!matches.length && <p>Không có kết quả phù hợp.</p>}
       </div>
-    </div>, document.body)}
+    </div>)}
   </div>
 }

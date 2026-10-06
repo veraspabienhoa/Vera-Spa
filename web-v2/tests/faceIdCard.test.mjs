@@ -200,14 +200,15 @@ test('automatic recovery is bounded and manual recovery remains available after 
 test('compact dialog switches photo sources and keeps four captures per page',async()=>{
  const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null}),captures:async()=>({records:Array.from({length:5},(_,i)=>({event_id:i,occurred_at:'2026-10-06T10:00:00+07:00'}))})},true)
  try {
-  assert.equal(button(dom,'Ảnh đã lưu').getAttribute('aria-pressed'),'true')
+  assert.equal(button(dom,'Ảnh đã lưu'),undefined)
+  assert.deepEqual([...dom.window.document.querySelector('.face-id-source-toolbar').querySelectorAll('button')].map(b=>b.textContent.trim()),['Chụp ảnh','Từ ảnh đại diện','Ảnh từ máy'])
   await dom.window.act(async()=>button(dom,'Ảnh từ máy').click())
   assert.equal(button(dom,'Ảnh từ máy').getAttribute('aria-pressed'),'true')
   assert.ok(dom.window.document.querySelector('.face-id-view-captures'))
   assert.equal(dom.window.document.querySelectorAll('.face-id-capture-preview').length,4)
   await dom.window.act(async()=>button(dom,'Trang sau').click())
   assert.equal(dom.window.document.querySelectorAll('.face-id-capture-preview').length,1)
-  await dom.window.act(async()=>button(dom,'Ảnh đã lưu').click())
+  await dom.window.act(async()=>button(dom,'Ảnh từ máy').click())
   assert.ok(dom.window.document.querySelector('.face-id-view-photo'))
  }finally{await dom.window.unmount();dom.window.close()}
 })

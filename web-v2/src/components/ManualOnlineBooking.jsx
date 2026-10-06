@@ -53,17 +53,17 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
     } catch (err) { setError(err.message) }
     finally { submitting.current = false; setBusy(false) }
   }
-  const catalog = services.filter(row => catalogIsAvailable(row))
+  const catalog = services.filter(row => catalogIsAvailable(row)).sort((a, b) => Number(b.price || 0) - Number(a.price || 0))
+  const serviceOptions = catalog.map(row => {
+    const label = `${row.name}${row.duration ? ` · ${row.duration} phút` : ''}${row.price != null ? ` · ${Number(row.price).toLocaleString('vi-VN')}đ` : ''}`
+    return { value: label, label }
+  })
+  if (draft.service && !serviceOptions.some(row => row.value === draft.service)) serviceOptions.unshift({ value: draft.service, label: draft.service })
   return <EmployeeProfileModal labelledBy="manual-booking-title" className="upcoming-booking-modal" busy={busy} onClose={onClose}>
     <header><h2 id="manual-booking-title">ĐẶT LỊCH - BOOKING</h2><button disabled={busy} onClick={onClose}>Đóng</button></header>
     <p>Nhập thông tin khách mới hoặc tìm khách đã có bằng tên hay số điện thoại.</p>
     <form className="manual-booking-form" onSubmit={save}>
-      <label className="wide">Dịch vụ<select aria-label="Dịch vụ" disabled={busy} value={draft.service} onChange={event => set('service', event.target.value)}>
-        <option value="">Chưa chọn dịch vụ</option>{draft.service && !catalog.some(row => `${row.name}${row.duration ? ` · ${row.duration} phút` : ''}${row.price != null ? ` · ${Number(row.price).toLocaleString('vi-VN')}đ` : ''}` === draft.service) && <option value={draft.service}>{draft.service}</option>}{catalog.map(row => {
-          const label = `${row.name}${row.duration ? ` · ${row.duration} phút` : ''}${row.price != null ? ` · ${Number(row.price).toLocaleString('vi-VN')}đ` : ''}`
-          return <option key={row.id} value={label}>{label}</option>
-        })}
-      </select></label>
+      <LiveTourSearchSelect className="wide manual-booking-services" label="Dịch vụ" placeholder="Chưa chọn dịch vụ" emptyLabel="Chưa chọn dịch vụ" inlineOptions disabled={busy} value={draft.service} options={serviceOptions} onChange={value => set('service', value)}/>
       <label className="wide">Số khách *<input aria-label="Số khách" type="number" required min="1" max="50" step="1" disabled={busy} value={draft.guests} onChange={event => set('guests', event.target.value === '' ? '' : Number(event.target.value))}/></label>
       <label>Ngày đến *<VeraDateInput aria-label="Ngày đến" required disabled={busy} min={booking ? undefined : bookingDateRange('today').date_from} value={draft.appointment_date} onChange={event => set('appointment_date', event.target.value)}/></label>
       <label>Giờ đến mong muốn *<input aria-label="Giờ đến mong muốn" type="time" step="900" required disabled={busy} value={draft.appointment_time} onChange={event => set('appointment_time', event.target.value)}/></label>
@@ -73,7 +73,7 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
         return <LiveTourSearchSelect key={field} label={required ? `${label} *` : label} placeholder={`Nhập ${label.toLowerCase()}`} required={required} disabled={busy} value="" searchValue={draft[field]} onSearch={value => { set(field, value); setQuery(value) }} onChange={choose} filterOption={() => true} options={customers.map(row => ({ value: row.id, label: field === 'phone' ? row.phone : row.name, detail: field === 'phone' ? row.name : row.phone }))}/>
       })}
       {lookupError && <p className="wide" role="status">Chưa tra cứu được khách hàng: {lookupError}. Bạn vẫn có thể nhập thông tin khách.</p>}
-      <LiveTourSearchSelect className="wide" label="Yêu cầu" placeholder={staffLoading ? 'Đang tải nhân viên…' : 'Tìm và chọn nhân viên đi làm hôm nay'} disabled={busy || staffLoading || Boolean(staffError)} value={draft.requested_staff} onChange={value => set('requested_staff', value)} options={staff}/>
+      <LiveTourSearchSelect className="wide" label="YC nhân viên" placeholder={staffLoading ? 'Đang tải nhân viên…' : 'Tìm và chọn nhân viên đi làm hôm nay'} disabled={busy || staffLoading || Boolean(staffError)} value={draft.requested_staff} onChange={value => set('requested_staff', value)} options={staff}/>
       {staffError && <p className="wide" role="status">Chưa tải được nhân viên: {staffError}</p>}
       <label className="wide">Lời nhắn<textarea aria-label="Lời nhắn" maxLength={4000} disabled={busy} value={draft.message} onChange={event => set('message', event.target.value)}/></label>
       {error && <p className="wide" role="alert">{error}</p>}
