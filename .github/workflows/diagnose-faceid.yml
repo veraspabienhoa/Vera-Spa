@@ -46,26 +46,16 @@ jobs:
               with engine.connect() as conn:
                   rows=[dict(r) for r in conn.execute(text("SELECT status,stage,error_code,upload_session,operation_type,profile_id FROM vera_facegate_enrollment ORDER BY created_at DESC LIMIT 5")).mappings()]
               print('JOURNAL',json.dumps([{k:r[k] for k in ('status','stage','error_code','operation_type')} for r in rows]))
-              if any(r['status']=='running' for r in rows):
-                  print('DEVICE_READ_SKIPPED_ACTIVE_OPERATION')
-              elif rows:
-                  with use_registered_facegate(engine):
-                      client=FaceGateEnrollmentClient()
-                      client.login()
-                      print('DEVICE_LOGIN_OK')
-                      try:
-                          profiles=client.profiles()
-                          print('PROFILE_LIST_OK',len(profiles))
-                          if rows[0]['profile_id']:
-                              detail=client.profile_details(int(rows[0]['profile_id']))
-                              print('PROFILE_DETAIL_OK')
-                      except Exception as exc: print('PROFILE_READ',json.dumps(safe_error(exc)))
-                      raw=client.request('/webs/getUploadPercent',{'action':'list','group':'UPLOAD','sessionid':rows[0]['upload_session']})
-                      matches=re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S)
-                      print('UPLOAD_FIELD_COUNTS',json.dumps(dict(Counter(k for k,v in matches if k.startswith('UPLOAD.') or k.startswith('ERR.')))))
-                      print('UPLOAD_RESULT',json.dumps({k:v.strip() for k,v in matches if k in ('UPLOAD.state','ERR.no') and re.fullmatch(r'[0-9-]{1,12}',v.strip())}))
-                      try: fields(raw);print('UPLOAD_PARSE_OK')
-                      except Exception as exc: print('UPLOAD_PARSE',json.dumps(safe_error(exc)))
+              import time
+              seen=set()
+              for attempt in range(50):
+                  with engine.connect() as conn:
+                      latest=conn.execute(text("SELECT operation_id,status,stage,error_code,upload_session FROM vera_facegate_enrollment ORDER BY created_at DESC LIMIT 1")).mappings().first()
+                  state=tuple(latest[k] for k in ('operation_id','status','stage','error_code'))
+                  if state not in seen:
+                      seen.add(state)
+                      print('JOURNAL_STATE',json.dumps({k:latest[k] for k in ('status','stage','error_code')}),flush=True)
+                  time.sleep(1)
           except Exception as exc:
               print('DIAGNOSTIC_ERROR',json.dumps(safe_error(exc)))
           finally:
