@@ -105,3 +105,23 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Report search stays in the requested five-field row at every viewport size. */
+.live-tour-filters-search.live-tour-filters-date-search{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;width:100%;max-width:100%}
+.live-tour-filters-date-search>*{min-width:0;max-width:100%}
+.vera-date-clearable>input[type="text"]{padding-right:86px!important}
+.vera-date-input>.vera-date-clear-button{position:absolute;right:32px;top:4px;bottom:4px;width:48px;min-height:0;padding:2px;font-size:11px;z-index:2}
+.live-tour-filters-date-search .vera-date-input{display:block;min-width:0}
+@media(max-width:680px){
+ .live-tour-filters-search.live-tour-filters-date-search{gap:4px}
+ .live-tour-filters-date-search label{font-size:10px;white-space:nowrap}
+ .live-tour-filters-date-search input{font-size:11px;padding-inline:4px}
+ .live-tour-filters-date-search .search-clear-button{font-size:0;width:18px;min-width:18px;padding:0}
+ .live-tour-filters-date-search .search-clear-button:after{content:'×';font-size:14px}
+ .live-tour-filters-date-search .clearable-search-input>input{padding-right:20px!important}
+ .live-tour-filters-date-search .vera-date-clearable>input[type="text"]{padding-right:36px!important}
+ .live-tour-filters-date-search .vera-date-picker-button,.live-tour-filters-date-search .vera-native-date-picker{width:18px}
+ .live-tour-filters-date-search .vera-date-picker-button svg{width:14px}
+ .live-tour-filters-date-search .vera-date-clear-button{right:18px;width:18px;font-size:0}
+ .live-tour-filters-date-search .vera-date-clear-button:after{content:'×';font-size:14px}
+}

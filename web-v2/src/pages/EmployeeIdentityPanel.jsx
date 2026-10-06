@@ -485,7 +485,7 @@ function IdentitySide({ username, side, title, metadata, busy, onChanged, setNot
   </div>
 }
 
-function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdminEdit, allowDownload = false, mediaApi = staffSecurityApi, side = 'portrait', title = 'Ảnh nhân viên', canEdit = true, sources, showControls = true }) {
+function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdminEdit, allowDownload = false, mediaApi = staffSecurityApi, side = 'portrait', title = 'Ảnh nhân viên', canEdit = true, sources, topSources, beforeUpload, showControls = true }) {
   const inputRef = useRef(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [pendingFile, setPendingFile] = useState(null)
@@ -563,12 +563,14 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
   })
 
   return <div className="employee-portrait-side">
+    {topSources?.({ openCamera: () => setCameraOpen(true), acceptFile })}
     <div className="employee-id-side-head"><div><strong>{title}</strong><span>{metadata ? `Đã lưu · ${formatBytes(metadata.size_bytes)}` : 'Chưa có ảnh'}</span></div>{busy && <LoaderCircle className="spin" size={16}/>}</div>
     <div className="employee-portrait-preview">{previewUrl ? <img src={previewUrl} alt={title}/> : <div className="employee-id-placeholder"><ImageIcon size={28}/><span>ẢNH NHÂN VIÊN</span></div>}</div>
     {canEdit && sources?.(acceptFile)}
     {showControls && <UiToolbar data-ui-key="u-e846d87f96c5" className="employee-id-actions">
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/*" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; acceptFile(file) }} hidden/>
-      <button data-ui-key="u-a4ae33de7ed9" data-ui-label-default="Chụp ảnh" type="button" className="secondary-button compact" onClick={() => setCameraOpen(true)} disabled={Boolean(busy) || !canEdit}><Camera size={14}/><UiCustomText uiKey="u-a4ae33de7ed9"> Chụp ảnh</UiCustomText></button>
+      {!topSources && <button data-ui-key="u-a4ae33de7ed9" data-ui-label-default="Chụp ảnh" type="button" className="secondary-button compact" onClick={() => setCameraOpen(true)} disabled={Boolean(busy) || !canEdit}><Camera size={14}/><UiCustomText uiKey="u-a4ae33de7ed9"> Chụp ảnh</UiCustomText></button>}
+      {beforeUpload}
       <button data-ui-key="u-5825e51c59e7" type="button" className="secondary-button compact" onClick={() => inputRef.current?.click()} disabled={Boolean(busy) || !canEdit}><Upload size={14}/> {metadata ? 'Thay ảnh' : 'Tải ảnh'}</button>
       {metadata && <button data-ui-key="u-1e33c261ec19" data-ui-label-default="Xem" type="button" className="secondary-button compact" onClick={view} disabled={Boolean(busy)}><Eye size={14}/><UiCustomText uiKey="u-1e33c261ec19"> Xem</UiCustomText></button>}
       {metadata && allowDownload && <button type="button" className="secondary-button compact" onClick={download} disabled={Boolean(busy)}><Download size={14}/> Tải ảnh Face ID</button>}
@@ -624,7 +626,7 @@ function enrollmentResultMessage(value, owner, username, replace = false) {
     : 'Đã lưu hồ sơ trên máy và xác minh ánh xạ với nhân viên.'
 }
 
-function FaceIdEnrollment({ username, photo, photoBusy }) {
+function FaceIdEnrollment({ username, photo, photoBusy, inline = false }) {
   const [enrollment, setEnrollment] = useState(null)
   const recoveryAttempts = useRef(new Map())
   const [busy, setBusy] = useState(false)
@@ -700,7 +702,7 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
   const changed = verified && enrollment.photo_sha256 !== photo?.sha256
   const replaceAvailable = Boolean(enrollment.can_replace && enrollment.mapped_profile && photo && !pending && !blocked &&
     (changed || !verified))
-  return <div className="face-id-enrollment">
+  return <div className={`face-id-enrollment${inline ? ' face-id-enrollment-inline' : ''}`}>
     <p>{verified ? (changed ? 'Ảnh trên VERA đã đổi hoặc bị xóa. Hồ sơ trên máy vẫn dùng ảnh đăng ký trước đó.' : `Đã xác minh đăng ký trên máy · Hồ sơ ${enrollment.profile_id}`) : pending ? 'Đăng ký chưa được xác minh. Kiểm tra lại trước khi gửi thêm.' : enrollment.mapped_profile ? `Nhân viên đã có hồ sơ trên máy · Hồ sơ ${enrollment.mapped_profile.profile_id}.` : 'Chưa đăng ký ảnh này từ VERA lên máy.'}</p>
     {replaceAvailable && <button type="button" className="primary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(false, username, true)}>{busy || automaticBusy ? 'Đang cập nhật ảnh…' : 'Cập nhật ảnh trên máy'}</button>}
     {!verified && !pending && !blocked && !replaceAvailable && <button type="button" className="primary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy) || !photo} onClick={() => act(false)}>{busy || automaticBusy ? 'Đang đăng ký…' : 'Đăng ký lên máy'}</button>}
@@ -736,21 +738,23 @@ export function FaceIdCard({ username, compact = false }) {
   if (!data) return notice ? <p role="alert">{notice.message}</p> : null
   const asFile = (blob) => new File([blob], 'FaceID.jpg', {type: blob.type})
   return <div className={`face-id-card ${compact ? `face-id-compact face-id-view-${view}` : ''}`}>
-    {compact && data.can_view_device_tools && <nav className="face-id-view-tabs" aria-label="Chọn nguồn ảnh Face ID">
-      <button type="button" className="secondary-button compact" aria-pressed={view === 'photo'} onClick={() => setView('photo')}>Ảnh đã lưu</button>
-      <button type="button" className="secondary-button compact" aria-pressed={view === 'captures'} onClick={() => setView('captures')}>Ảnh từ máy</button>
-    </nav>}
     <PortraitSide key={username} username={username} metadata={data.photo} busy={busy}
       onChanged={run} setNotice={setNotice} showControls={Boolean(data.can_view_device_tools)} allowAdminEdit allowDownload={data.can_view_device_tools} canEdit={data.can_manage && data.can_view_device_tools}
       mediaApi={faceIdApi} side="face_id" title="ẢNH FACE ID"
+      topSources={compact && data.can_view_device_tools ? ({ openCamera, acceptFile }) => <nav className="face-id-source-toolbar" aria-label="Chọn nguồn ảnh Face ID">
+        <button type="button" className="secondary-button compact" disabled={Boolean(busy) || !data.can_manage} onClick={() => { setView('photo'); openCamera() }}><Camera size={14}/> Chụp ảnh</button>
+        <button type="button" className="secondary-button compact" disabled={Boolean(busy) || !data.can_manage} onClick={() => { setView('photo'); run('portrait', async () => { acceptFile(asFile(await faceIdApi.portrait(username))); return false }) }}>Từ ảnh đại diện</button>
+        <button type="button" className="secondary-button compact" aria-pressed={view === 'captures'} onClick={() => setView(current => current === 'captures' ? 'photo' : 'captures')}>Ảnh từ máy</button>
+      </nav> : undefined}
+      beforeUpload={compact && data.can_view_device_tools ? <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy} inline/> : undefined}
       sources={data.can_view_device_tools ? (acceptFile) => <div className="employee-id-actions face-id-sources">
-        <button type="button" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => run('portrait', async () => { acceptFile(asFile(await faceIdApi.portrait(username))); return false })}>Từ ảnh đại diện</button>
+        {!compact && <button type="button" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => run('portrait', async () => { acceptFile(asFile(await faceIdApi.portrait(username))); return false })}>Từ ảnh đại diện</button>}
         {!compact && <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/>}
         <FaceIdCapturePicker key={`${username}:${day}`} username={username} day={day} busy={busy} onSelect={acceptFile} compact={compact}
           dateControl={compact ? <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/> : undefined}/>
       </div> : undefined}/>
     <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ.</p>
-    {data.can_view_device_tools && <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy}/>}
+    {!compact && data.can_view_device_tools && <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy}/>}
     {notice && <p role="status" className={`employee-identity-notice ${notice.type}`}>{notice.message}</p>}
   </div>
 }

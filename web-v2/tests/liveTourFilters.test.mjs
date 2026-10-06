@@ -211,3 +211,37 @@ test('exact date uses Vietnam invoice business date and combines with other filt
   assert.deepEqual(filterTourRows(source,{date:'2026-10-01'},true).map(r=>r.id),['midnight','business'])
   assert.deepEqual(filterTourRows(source,{date:'2026-10-01',bill_no:'11'},true).map(r=>r.id),['business'])
 })
+
+
+test('report exact date accepts typing and picker, Clear removes date bounds without losing text filters', async () => {
+  const root = createRoot(document.querySelector('#root'))
+  let current = { ...EMPTY_TOUR_FILTERS, employee: 'An An' }
+  const render = () => root.render(React.createElement(module.exports.default, { showDate: true, rows, value: current, onChange(value) { current = value; render() } }))
+  const type = async (field, value, event = 'input') => act(() => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(field, value)
+    field.dispatchEvent(new dom.window.Event(event, { bubbles: true }))
+  })
+  try {
+    await act(render)
+    const field = document.querySelector('input[aria-label="Lọc ngày hóa đơn"]')
+    await type(field, '06102026')
+    assert.equal(field.value, '06-10-2026')
+    assert.equal(current.date_from, '2026-10-06')
+    assert.equal(current.date_to, current.date)
+    await act(() => document.querySelector('[aria-label="Clear Lọc ngày hóa đơn"]').click())
+    assert.equal(current.date, '')
+    assert.equal(current.date_from, '')
+    assert.equal(current.date_to, '')
+    assert.equal(current.employee, 'An An')
+    assert.equal(current.preset, 'all')
+    await type(field.closest('.vera-date-input').querySelector('input[type=date]'), '2026-10-07', 'change')
+    assert.equal(current.date, '2026-10-07')
+    await type(field, '31-02-2026')
+    assert.equal(current.date, '2026-10-07')
+    assert.equal(field.getAttribute('aria-invalid'), 'true')
+    await type(document.querySelector('.live-tour-filters-dates .vera-date-input>input[type=text]'), '01-10-2026')
+    assert.equal(current.date, '')
+    assert.equal(current.date_from, '2026-10-01')
+    assert.equal(current.date_to, '2026-10-07')
+  } finally { await act(() => root.unmount()) }
+})

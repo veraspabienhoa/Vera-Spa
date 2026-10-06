@@ -5,7 +5,7 @@ import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
 
 const built = await build({
-  stdin: { contents: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Popup from './src/components/OnlineBookingPopup';import Manual from './src/components/ManualOnlineBooking';import Upcoming from './src/components/UpcomingOnlineBookings';import Page from './src/pages/OnlineBookingPage';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=user=>act(async()=>root.render(<Popup user={user} onOpen={()=>window.opens++}/>));window.mountUpcoming=user=>act(async()=>root.render(<Upcoming user={user} onClose={()=>window.opens++}/>));window.mountManual=()=>act(async()=>root.render(<Manual services={[{id:'svc',name:'VIP',duration:90,price:350000,starts_on:'2020-01-01'}]} onClose={()=>window.opens++} onSaved={()=>window.saved++}/>));window.mountPage=user=>act(async()=>root.render(<Page user={user}/>));window.unmount=()=>act(async()=>root.unmount());`, resolveDir: process.cwd(), loader:'jsx' },
+  stdin: { contents: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Popup from './src/components/OnlineBookingPopup';import Manual from './src/components/ManualOnlineBooking';import Upcoming from './src/components/UpcomingOnlineBookings';import Page from './src/pages/OnlineBookingPage';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=user=>act(async()=>root.render(<Popup user={user} onOpen={()=>window.opens++}/>));window.mountUpcoming=user=>act(async()=>root.render(<Upcoming user={user} onClose={()=>window.opens++}/>));window.mountManual=()=>act(async()=>root.render(<Manual services={[{id:'low',name:'Basic',duration:60,price:200000,starts_on:'2020-01-01'},{id:'svc',name:'VIP',duration:90,price:350000,starts_on:'2020-01-01'},{id:'high',name:'Premium',duration:90,price:500000,starts_on:'2020-01-01'}]} onClose={()=>window.opens++} onSaved={()=>window.saved++}/>));window.mountPage=user=>act(async()=>root.render(<Page user={user}/>));window.unmount=()=>act(async()=>root.unmount());`, resolveDir: process.cwd(), loader:'jsx' },
   bundle:true, write:false, format:'iife', jsx:'automatic', loader:{'.css':'empty'},
   plugins:[{name:'mock-api',setup(b){
     b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}))
@@ -42,7 +42,7 @@ test('unauthorized roles do not fetch; contact does not invent an appointment',a
     await w.mount({id:'a',role:'admin'})
     assert.ok(w.document.body.textContent.includes('Xin tư vấn'))
     const details=Object.fromEntries([...w.document.querySelectorAll('dl dt')].map(term=>[term.textContent,term.nextElementSibling.textContent]))
-    for (const label of ['Ngày hẹn','Giờ hẹn','Dịch vụ','Số khách','Yêu cầu nhân viên']) {
+    for (const label of ['Ngày hẹn','Giờ hẹn','Dịch vụ','Số khách','YC nhân viên']) {
       assert.equal(details[label],'Chưa cung cấp',label)
     }
     await w.mount({id:'a',role:'admin',must_change_password:true})
@@ -155,10 +155,13 @@ test('manual booking searches customer phone, fills both fields, retries with sa
   await w.act(async()=>option.click())
   assert.equal(phone.value,'0900000001')
   assert.equal(w.document.querySelector('input[placeholder="Nhập tên khách hàng"]').value,'Khách Mẫu')
-  const service=w.document.querySelector('select')
-  await change(service,service.options[1].value)
+  const service=w.document.querySelector('input[placeholder="Chưa chọn dịch vụ"]')
+  await w.act(async()=>service.click())
+  assert.ok(w.document.querySelector('.manual-booking-services .tour-search-inline'))
+  assert.deepEqual([...w.document.querySelector('.manual-booking-services [role="listbox"]').querySelectorAll('[role="option"]')].map(o=>o.textContent.split(' · ')[0]),['Chưa chọn dịch vụ','Premium','VIP','Basic'])
+  await w.act(async()=>[...w.document.querySelectorAll('[role="option"]')].find(option=>option.textContent.includes('VIP')).click())
   await change(w.document.querySelector('input[type="time"]'),'14:00')
-  const staffLabel=[...w.document.querySelectorAll('label')].find(label=>label.textContent==='Yêu cầu')
+  const staffLabel=[...w.document.querySelectorAll('label')].find(label=>label.textContent==='YC nhân viên')
   const staff=w.document.getElementById(staffLabel.htmlFor)
   assert.ok(staff.compareDocumentPosition(w.document.querySelector('textarea'))&w.Node.DOCUMENT_POSITION_FOLLOWING)
   await w.act(async()=>staff.click())

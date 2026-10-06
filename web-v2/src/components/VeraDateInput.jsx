@@ -11,7 +11,7 @@ function typedDate(value) {
 
 export default function VeraDateInput({
   value = '', onChange, min = '', max = '', disabled = false, readOnly = false,
-  clearOnFocus, required = false, className = '', name, id, onDraftValidity, 'aria-label': ariaLabel,
+  clearOnFocus, clearable = false, required = false, className = '', name, id, onDraftValidity, 'aria-label': ariaLabel,
 }) {
   const [display, setDisplay] = useState(() => formatVeraDate(value))
   const [invalid, setInvalid] = useState(false)
@@ -89,7 +89,7 @@ export default function VeraDateInput({
   }
 
 
-  return <span className={`vera-date-input ${invalid ? 'invalid' : ''} ${className}`.trim()}>
+  return <span className={`vera-date-input ${invalid ? 'invalid' : ''} ${clearable ? 'vera-date-clearable' : ''} ${className}`.trim()}>
     <input
       ref={textRef}
       id={id}
@@ -111,6 +111,7 @@ export default function VeraDateInput({
       onChange={changeText}
       onBlur={() => validateAndEmit(display, false)}
     />
+    {clearable && !readOnly && <button type="button" className="vera-date-clear-button" aria-label={`Clear ${ariaLabel || 'ngày'}`} disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={() => { setDisplay(''); validateAndEmit('') }}>Clear</button>}
     {!readOnly && <button data-ui-key="u-c2de40025e31" type="button" className="vera-date-picker-button" disabled={disabled} onClick={openPicker} tabIndex={-1} aria-hidden="true"><CalendarDays size={16} /></button>}
     {!readOnly && <input ref={pickerRef} className="vera-native-date-picker" type="date" tabIndex={-1} value={ISO_DATE.test(String(value || '')) ? value : ''} min={min} max={max} disabled={disabled} onChange={pickDate} aria-label={`Lịch ${ariaLabel || 'ngày'}`} />}
   </span>
