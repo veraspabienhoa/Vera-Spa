@@ -114,7 +114,7 @@ export default function PurchasePage({ user, embedded = false, initialPreset = '
     <section className="purchase-controls" data-ui-key="purchases:controls" aria-label="Bộ lọc và thao tác mua hàng">
       <UiToolbar data-ui-key="purchases:periods" className="purchase-periods">{presets.slice(0,-1).map(([key,label])=><button data-ui-key={`purchases:period:${key}`} key={key} className={`secondary-button ${preset===key?'active':''}`} onClick={()=>setPreset(key)}>{label}</button>)}<button data-ui-key="purchases:clear-filters" className="secondary-button" onClick={()=>setFilters(filtersEmpty)}>Xóa lọc chi tiết</button></UiToolbar>
     <div className="purchase-summary-head">
-      <article className="purchase-filter-total"><TrendingDown size={18}/><div><span>Tổng mua theo bộ lọc</span><strong>{money(rows.reduce((sum,row)=>sum+Number(row.amount),0))}</strong><small>{rows.length} dòng</small></div></article>
+      <article className="purchase-filter-total"><TrendingDown size={18}/><div><span>Tổng mua</span><strong>{money(rows.reduce((sum,row)=>sum+Number(row.amount),0))}</strong><small>{rows.length} dòng</small></div></article>
       <UiToolbar data-ui-key="purchases:actions" className="purchase-actions">
       {allowed('create') && <button data-ui-key="purchases:create" className="primary-button" disabled={busy || loading} onClick={()=>open()}><Plus size={16} /> Nhập mua hàng</button>}
       <button data-ui-key="purchases:refresh" className="secondary-button" type="button" disabled={busy || loading} onClick={()=>setReload(n=>n+1)}><RefreshCw size={16} className={loading?'spin':''} /> Làm mới</button>
