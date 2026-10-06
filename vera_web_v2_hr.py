@@ -27,7 +27,7 @@ DEFINITION_SQL = f"COALESCE({REGISTRY_SQL}->'departments'->({DEPARTMENT_SQL}), C
 MODE_SQL = f"(CASE WHEN COALESCE(({DEFINITION_SQL})->>'active','true') = 'true' THEN ({DEFINITION_SQL})->>'salary_mode' ELSE NULL END)"
 PAYROLL_ACCOUNT_SQL = "lower(btrim(COALESCE(username,''))) NOT IN ('admin','akamen')"
 TIP_SQL = f"{MODE_SQL} = 'tip' AND {PAYROLL_ACCOUNT_SQL}"
-ADMIN_PAY_EXCLUDED_DEPARTMENTS = frozenset({'leader', 'nhanvien', 'giamdoc', 'admin'})
+ADMIN_PAY_EXCLUDED_DEPARTMENTS = frozenset({'leader', 'nhanvien', 'admin'})
 _ADMIN_PAY_EXCLUDED_SQL = ','.join(f"'{code}'" for code in sorted(ADMIN_PAY_EXCLUDED_DEPARTMENTS))
 ADMIN_PAY_SQL = f"{MODE_SQL} IN ('hourly','monthly') AND lower(btrim({DEPARTMENT_SQL})) NOT IN ({_ADMIN_PAY_EXCLUDED_SQL}) AND {PAYROLL_ACCOUNT_SQL}"
 
