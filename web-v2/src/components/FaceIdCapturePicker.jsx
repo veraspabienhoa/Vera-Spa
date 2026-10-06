@@ -23,18 +23,20 @@ function CaptureImage({ username, day, record, busy, onSelect }) {
 
 export default function FaceIdCapturePicker({ username, day, busy, onSelect }) {
   const [revision, setRevision] = useState(0)
+  const [page, setPage] = useState(0)
+  const pageSize = 4
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   useEffect(() => {
     let active = true
-    setData(null); setError(''); setLoading(false)
+    setData(null); setPage(0); setError(''); setLoading(false)
     if (!day) return undefined
     setLoading(true)
     faceIdApi.captures(username, day).then(result => {
       if (!active) return
       const records = [...(result.records || [])].sort((a, b) =>
-        String(b.occurred_at || '').localeCompare(String(a.occurred_at || '')) || Number(b.event_id) - Number(a.event_id)).slice(0, 5)
+        String(b.occurred_at || '').localeCompare(String(a.occurred_at || '')) || Number(b.event_id) - Number(a.event_id))
       setData({ ...result, records })
     }).catch(e => { if (active) setError(e.message) })
       .finally(() => { if (active) setLoading(false) })
@@ -42,15 +44,20 @@ export default function FaceIdCapturePicker({ username, day, busy, onSelect }) {
   }, [username, day, revision])
   return <div className="face-id-capture-picker">
     <button type="button" className="secondary-button compact" disabled={Boolean(busy) || loading || !day} onClick={() => setRevision(value => value + 1)}>Từ ảnh chụp trên FaceID · Làm mới</button>
-    {loading && <p role="status">Đang tải 5 ảnh chụp gần nhất…</p>}
+    {loading && <p role="status">Đang tải danh sách ảnh chụp…</p>}
     {error && <p role="status">Không tải được ảnh FaceID: {error}. Bấm Làm mới để thử lại.</p>}
     {data && <>
       <p>Kiểm tra đúng nhân viên trước khi chọn ảnh; ảnh thiết bị chưa được xác minh danh tính.</p>
-      {data.truncated && <p>Hiển thị 5 ảnh mới nhất trong phần dữ liệu thiết bị đã tải.</p>}
+      {data.truncated && <p>Danh sách thiết bị trả về chưa đầy đủ; các trang chỉ gồm ảnh đã tải.</p>}
       {!data.records.length && <p>Không có ảnh chụp trong ngày đã chọn.</p>}
-      <div className="face-id-capture-gallery" aria-label="5 ảnh chụp FaceID gần nhất">
-        {data.records.map(record => <CaptureImage key={`${revision}:${record.event_id}`} username={username} day={day} record={record} busy={busy} onSelect={onSelect}/>)}
+      <div className="face-id-capture-gallery" aria-label="Ảnh chụp FaceID · 4 ảnh mỗi trang">
+        {data.records.slice(page * pageSize, (page + 1) * pageSize).map(record => <CaptureImage key={`${revision}:${record.event_id}`} username={username} day={day} record={record} busy={busy} onSelect={onSelect}/>)}
       </div>
+      {!!data.records.length && <nav aria-label="Phân trang ảnh FaceID" className="face-id-capture-pagination">
+        <button type="button" className="secondary-button compact" disabled={Boolean(busy) || loading || page === 0} onClick={() => setPage(value => value - 1)}>Trang trước</button>
+        <span role="status">Trang {page + 1}/{Math.ceil(data.records.length / pageSize)} · {data.records.length} ảnh</span>
+        <button type="button" className="secondary-button compact" disabled={Boolean(busy) || loading || (page + 1) * pageSize >= data.records.length} onClick={() => setPage(value => value + 1)}>Trang sau</button>
+      </nav>}
     </>}
   </div>
 }
