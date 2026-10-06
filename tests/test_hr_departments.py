@@ -121,7 +121,7 @@ def test_mode_change_keeps_existing_payroll_history_intact(setup):
     assert saved['department_payroll_combined_history'] == history
 
 
-@pytest.mark.parametrize('code', ['leader', 'nhanvien', 'giamdoc', 'admin'])
+@pytest.mark.parametrize('code', ['leader', 'nhanvien', 'admin'])
 @pytest.mark.parametrize('mode', ['hourly', 'monthly'])
 def test_administrative_payroll_excludes_named_departments_even_if_mode_changes(setup, code, mode):
     _, saved, _, _, conn = setup
@@ -135,7 +135,7 @@ def test_administrative_payroll_excludes_named_departments_even_if_mode_changes(
 def test_administrative_payroll_includes_all_other_wage_departments(setup):
     _, saved, _, _, conn = setup
     saved[hr.KEY] = {'departments': {'warehouse': {'name': 'Kho', 'salary_mode': 'monthly', 'active': True}}}
-    assert set(hr.admin_departments(conn)) == {'quanly', 'letan', 'thungan', 'locker', 'support', 'tapvu', 'warehouse'}
+    assert set(hr.admin_departments(conn)) == {'giamdoc', 'quanly', 'letan', 'thungan', 'locker', 'support', 'tapvu', 'warehouse'}
 
 
 def test_reject_invalid_mode_duplicate_name_and_code(setup):
@@ -155,3 +155,11 @@ def test_moved_employee_keeps_original_schedule_hours():
         department_payroll.DEFAULT_CONFIG['support'], lambda value: str(value or '').lower())
     assert totals['minutes_ca2_before_22'] == 300
     assert totals['minutes_ca2_after_22'] == 180
+
+
+@pytest.mark.parametrize('mode', ['hourly', 'monthly'])
+def test_director_department_is_included_with_configured_wages(setup, mode):
+    _, saved, _, _, conn = setup
+    saved[hr.KEY] = {'departments': {'giamdoc': {'name': 'Giám đốc', 'salary_mode': mode, 'active': True}}}
+    assert 'giamdoc' in hr.admin_departments(conn)
+    assert department_payroll._settings(conn, 'giamdoc')['config']['calculation_mode'] == mode
