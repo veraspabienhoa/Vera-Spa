@@ -29,7 +29,7 @@ test('filters combine without requests or lost edits; save keeps the full payrol
  const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
  const count=()=>document.querySelectorAll('.department-payroll-table tbody tr').length
  assert.equal(count(),3)
- const search=document.querySelector('.department-payroll-table-search input'),department=document.querySelector('.department-payroll-filters select'),calls=f.requests.length
+ const search=document.querySelector('.department-payroll-table-search input'),department=document.querySelector('.department-payroll-department-filter select'),calls=f.requests.length
  await f.change(search,'nhan vien');assert.equal(count(),2)
  await f.change(department,'quanly');assert.equal(count(),0)
  await f.change(search,'');assert.equal(count(),1)
