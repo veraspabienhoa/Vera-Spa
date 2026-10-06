@@ -91,3 +91,9 @@
   }
   .revenue-page .fit-data-table .ledger-check-column { width: 24px !important; }
 }
+
+.revenue-page .purchase-filter-total { align-self: flex-start; min-width: 0; padding: 8px 10px; }
+@media(max-width:760px) {
+  .revenue-page .fit-data-table input[type=checkbox] { width: 14px; height: 14px; max-width: 100%; min-width: 0; padding: 0; margin: 0; box-sizing: border-box; }
+  .revenue-page .fit-data-table .ledger-check-column { width: 20px !important; text-align: center; }
+}
