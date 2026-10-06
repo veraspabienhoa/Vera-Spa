@@ -68,7 +68,7 @@ def setup(monkeypatch):
                 assert conn.execute(text('SELECT stage FROM vera_facegate_enrollment')).scalar()=='uploading'
             if mode['value']=='upload_timeout': raise TimeoutError('secret must not be disclosed')
             if mode['value']=='no_face': raise UploadRejected('upload_105','Không có khuôn mặt.')
-            return REF
+            return device.get('upload_ref', REF)
         def add(self,name,token,ref,defaults):
             self._call('add')
             with engine.connect() as conn:
@@ -78,7 +78,7 @@ def setup(monkeypatch):
             self._call('update_photo')
             with engine.connect() as conn:
                 assert conn.execute(text('SELECT stage FROM vera_facegate_enrollment')).scalar()=='committing'
-            device['ref']=ref
+            device['ref']=device.get('stored_ref',ref)
             if mode['value']=='replacement_timeout': raise TimeoutError('private device response')
         def verify(self,name,token,ref):
             self._call('verify')
@@ -90,9 +90,9 @@ def setup(monkeypatch):
             return {'profile_id':123,'device_name':name,'registration_ref':ref}
         def verify_replacement(self, profile_id, name, token, ref):
             self._call('verify_replacement')
-            assert (profile_id, name, token, ref) == (123, 'Test Staff', 'vera:legacy', REF)
-            assert device['ref']==ref
-            return {'profile_id':profile_id,'device_name':name,'registration_ref':ref}
+            assert (profile_id, name, token, ref) == (123, 'Test Staff', 'vera:legacy', device.get('upload_ref', REF))
+            assert device['ref']==device.get('stored_ref',ref)
+            return {'profile_id':profile_id,'device_name':name,'registration_ref':device['ref']}
         def close(self): self._call('close')
     monkeypatch.setattr(routes,'FaceGateEnrollmentClient',Client)
     grants={'employee_face_id_manage','device_facegate_mapping_manage'}
@@ -101,7 +101,7 @@ def setup(monkeypatch):
     app=FastAPI()
     class Identity: employee_username='admin'
     routes.install_enrollment_routes(app,engine_instance=lambda:engine,current_identity=lambda:Identity(),require_feature=require,identity_type=Identity)
-    try: yield SimpleNamespace(engine=engine,api=TestClient(app),calls=calls,mode=mode,grants=grants,sha=sha)
+    try: yield SimpleNamespace(engine=engine,api=TestClient(app),calls=calls,mode=mode,grants=grants,sha=sha,device=device)
     finally:
         engine.dispose()
         with admin.begin() as conn: conn.execute(text(f'DROP SCHEMA {schema} CASCADE'))
@@ -169,6 +169,33 @@ def test_ambiguous_replacement_verifies_existing_uid_without_replaying_update(se
     checked=s.api.post(PATH+'/verify')
     assert checked.status_code==200 and checked.json()['status']=='verified'
     assert s.calls.count('update_photo')==1 and s.calls.count('verify_replacement')==1
+
+
+@pytest.mark.parametrize('interrupted', [False, True])
+def test_type3_digest_survives_recovery_and_final_journal_uses_verified_stored_reference(setup, interrupted):
+    s = setup
+    s.mode['value'] = 'replacement_timeout' if interrupted else 'replacement'
+    upload = {'file_type': 3, 'file_index': 0, 'file_position': 0, 'image_sha256': 'a' * 64}
+    s.device.update(upload_ref=upload, stored_ref=REF)
+    old = {'profile_id':123, 'device_name':'Test Staff', 'registration_ref':OLD_REF,
+           'username':'worker', 'device_address':'192.168.1.34', 'confirmed_by':'admin'}
+    with s.engine.begin() as conn:
+        conn.execute(text("INSERT INTO vera_app_setting(category,setting_key,value_json,revision) VALUES ('facegate','mapping_test-device',CAST(:v AS jsonb),1)"), {'v':json.dumps([old])})
+    response = send(s)
+    if interrupted:
+        assert response.status_code == 502
+        with s.engine.connect() as conn:
+            assert conn.execute(text('SELECT registration_ref FROM vera_facegate_enrollment')).scalar() == upload
+            assert routes.mappings(conn,'test-device')[0]['registration_ref'] == OLD_REF
+        s.mode['value'] = 'replacement'
+        response = s.api.post(PATH+'/verify')
+    assert response.status_code == 200 and response.json()['status'] == 'verified'
+    with s.engine.connect() as conn:
+        assert conn.execute(text('SELECT registration_ref FROM vera_facegate_enrollment')).scalar() == REF
+        mapped = routes.mappings(conn,'test-device')[0]
+        assert mapped['registration_ref'] == REF and mapped['replaced_registration_refs'] == [OLD_REF]
+    assert send(s).json()['operation_id'] == response.json()['operation_id']
+    assert s.calls.count('upload') == s.calls.count('update_photo') == 1
 
 
 @pytest.mark.parametrize('feature',['employee_face_id_manage','device_facegate_mapping_manage'])
@@ -256,6 +283,23 @@ def test_failed_read_keeps_precommit_reservation_and_journal(setup,monkeypatch):
     assert state(s)=='unverified'
     assert s.api.get(PATH.replace('worker','other')).json()['device_pending']['employee_username']=='worker'
     assert s.calls.count('upload')==1 and 'add' not in s.calls
+
+
+@pytest.mark.parametrize('code', ['upload_not_started', 'upload_timeout', 'invalid_reference'])
+def test_reconciliation_keeps_original_failure_code_for_status_and_reload(setup, monkeypatch, code):
+    s = setup
+    def fail(self, photo, session, **kwargs):
+        self._call('upload')
+        raise routes.EnrollmentError(code, 'Safe device failure')
+    monkeypatch.setattr(routes.FaceGateEnrollmentClient, 'upload', fail)
+    assert send(s).status_code == 502
+    before = s.api.get(PATH).json()
+    assert before['status'] == 'unverified' and before['error_code'] == code
+    checked = s.api.post(PATH + '/verify').json()
+    assert checked['status'] == 'rejected' and checked['error_code'] == code
+    latest = s.api.get(PATH).json()
+    assert latest['error_code'] == code and latest['can_enroll']
+    assert s.calls.count('upload') == 1 and 'add' not in s.calls
 
 
 def test_precommit_collision_keeps_reservation(setup,monkeypatch):
