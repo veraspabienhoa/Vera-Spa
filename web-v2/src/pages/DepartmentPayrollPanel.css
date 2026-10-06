@@ -9,3 +9,9 @@
 
 .department-payroll-top-actions .department-payroll-department-filter{font-size:0;flex:0 1 170px;min-width:120px!important;max-width:170px}
 .department-payroll-top-actions .department-payroll-department-filter select{font-size:12px;width:100%;min-width:0;min-height:36px}
+
+.department-payroll-filters{display:flex;flex-wrap:nowrap;align-items:end;gap:8px;width:100%;min-width:0;margin-top:12px}
+.department-payroll-filters>label{display:grid;gap:4px;min-width:0;font-size:12px}
+.department-payroll-filters .department-payroll-table-search{flex:1 1 0}
+.department-payroll-filters .department-payroll-department-filter{flex:0 1 200px;max-width:45%}
+.department-payroll-filters input,.department-payroll-filters select{width:100%;min-width:0;min-height:36px}
