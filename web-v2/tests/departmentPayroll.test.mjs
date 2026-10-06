@@ -14,10 +14,11 @@ async function fixture(t, expireSave=false){
  const dom=new JSDOM('<body><div id="root"/></body>',{url:'https://example.test',pretendToBeVisual:true}),requests=[];let draftRows=[]
  const data={departments:{letan:{department_label:'Lễ tân',config},quanly:{department_label:'Quản lý',config},tapvu:{department_label:'Tạp vụ',config:{calculation_mode:'monthly'}}},salary_config_tables:{operations:[{employee_username:'a',employee_name:'Nhân Viên A',department:'letan',department_label:'Lễ tân',...config}],tapvu:[]},salary_employee_catalog:[]}
  const globals={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(url,options={})=>{
-  const path=new URL(url).pathname;requests.push({path,options})
+  const path=new URL(url).pathname;requests.push({path,url,options})
   if(expireSave && path.endsWith('/settings/employees') && requests.filter(r=>r.path===path).length===1) return new Response(JSON.stringify({detail:"expired"}),{status:401})
+  if(path.endsWith('/draft') && options.method==='DELETE') draftRows=[]
   if(path.endsWith('/draft') && options.method==='PUT') draftRows=JSON.parse(options.body).rows
-  const body=path.endsWith('/settings/employees')?{salary_config_tables:{operations:JSON.parse(options.body).rows,tapvu:[]},message:'Đã lưu cấu hình'}:path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows,start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:draftRows,message:'Đã lưu'}:{}
+  const body=path.endsWith('/settings/employees')?{salary_config_tables:{operations:JSON.parse(options.body).rows,tapvu:[]},message:'Đã lưu cấu hình'}:path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows:rows.map(row=>({...row,calculation_source:new URL(url).searchParams.get('source')})),start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:draftRows,message:'Đã lưu'}:{}
   return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}})
  }}
  dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true};dom.window.HTMLDialogElement.prototype.close=function(){this.open=false}
@@ -117,4 +118,21 @@ test('payroll actions precede table and share offers prepared PNG or PDF',async 
  const buttons=[...toolbar.querySelectorAll('button')];const exportIndex=buttons.findIndex(b=>b.textContent.trim()==='Xuất excel');assert.equal(buttons[exportIndex+1].textContent.trim(),'Chia sẻ')
  await f.click('Chia sẻ');assert.equal(document.querySelector('dialog[aria-label="Chia sẻ bảng lương"]').open,true);assert.ok(f.requests.some(r=>r.path.endsWith('/export.png')));assert.ok(f.requests.some(r=>r.path.endsWith('/export.pdf')))
  assert.equal([...document.querySelectorAll('button')].find(b=>b.textContent==='Ảnh PNG').disabled,false)
+})
+
+test('delete draft confirms and removes only the draft; recalculate retains attendance source',async t=>{
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính từ chấm công (đối chiếu)');await f.click('Lưu bảng nháp')
+ window.confirm=()=>false;const before=f.requests.length
+ await f.click('Xóa bảng lương nháp');await f.click('Tính lại lương');assert.equal(f.requests.length,before)
+ window.confirm=()=>true;await f.click('Tính lại lương')
+ assert.equal(f.requests.filter(r=>r.path.endsWith('/calculate')).length,2)
+ assert.ok(f.requests.filter(r=>r.path.endsWith('/calculate')).every(r=>new URL(r.url).searchParams.get('source')==='attendance'))
+ await f.click('Xóa bảng lương nháp');assert.ok(f.requests.some(r=>r.path.endsWith('/draft')&&r.options.method==='DELETE'))
+ assert.equal(document.querySelector('.department-payroll-table'),null)
+ await f.click('Mở bảng nháp');assert.match(document.body.textContent,/chưa có bảng lương nháp/)
+ await f.click('Tính lương nháp từ Thống kê tháng');assert.equal(document.querySelectorAll('.department-payroll-table tbody tr').length,3)
+})
+test('draft delete is hidden without save permission',async t=>{
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'letan',permissions:{payroll_calculate:true}}}))
+ assert.ok(![...document.querySelectorAll('button')].some(b=>b.textContent.includes('Xóa bảng lương nháp')))
 })

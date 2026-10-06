@@ -1008,6 +1008,14 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             payroll._put_setting(conn, f"department_payroll_combined_draft_{body.month}", rows, ident.employee_username)
         return {"ok": True, "rows": rows, "message": "Đã lưu nháp bảng Lương hành chánh."}
 
+    @app.delete("/v2/department-payroll/combined/draft")
+    def delete_combined_draft(month: str = Query(...), ident: identity_type = Depends(current_identity)):
+        _month_range(month)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "payroll_save")
+            payroll._put_setting(conn, f"department_payroll_combined_draft_{month}", [], ident.employee_username)
+        return {"ok": True, "month": month, "message": "Đã xóa bảng lương nháp. Lịch sử bảng lương đã hoàn thành được giữ nguyên."}
+
     @app.get("/v2/department-payroll/combined/history")
     def get_combined_history(ident: identity_type = Depends(current_identity)):
         with engine_instance().connect() as conn:
