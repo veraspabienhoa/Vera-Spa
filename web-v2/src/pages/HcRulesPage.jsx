@@ -26,7 +26,7 @@ export default function HcRulesPage({ user }) {
     setBusy(`${rule.id}:${item.code}`); setError(''); setNotice('')
     try {
       setData(await veraApi.saveHcRuleDepartment(item.code, rule.id, { enabled: !enabled, expected_revision: data.revision }))
-      setNotice(`${rule.name} · ${item.name}: đã ${enabled ? 'tắt' : 'kích hoạt'}.${enabled ? '' : ' Chỉ tự ghi phạt cho ca bắt đầu sau lúc kích hoạt; ca đã bắt đầu cần nhập vi phạm thủ công.'}`)
+      setNotice(`${rule.name} · ${item.name}: đã ${enabled ? 'tắt' : 'kích hoạt'}.${enabled || rule.kind === 'manual' ? '' : ' Chỉ tự ghi phạt cho ca bắt đầu sau lúc kích hoạt; ca đã bắt đầu cần nhập vi phạm thủ công.'}`)
     } catch (cause) { setError(cause.message || 'Không lưu được Nội quy HC.') }
     finally { setBusy('') }
   }
