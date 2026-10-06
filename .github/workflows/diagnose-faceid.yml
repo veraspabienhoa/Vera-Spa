@@ -59,13 +59,16 @@ jobs:
                   page=FormCheck();page.feed(client.request('/bwlist.asp',{'action':'list'}))
                   print('UPLOAD_FORM_FRAME_FOUND',len(page.frames)==1)
                   if len(page.frames)==1:
-                      path=page.frames[0].lstrip('/')
-                      if re.fullmatch(r'[A-Za-z0-9_./-]+\\.(asp|html|htm)',path) and '..' not in path:
+                      from urllib.parse import urlsplit
+                      path=urlsplit(page.frames[0]).path.lstrip('/')
+                      print('UPLOAD_FORM_SRC_EMPTY',not bool(path))
+                      print('UPLOAD_FORM_SRC_QUERY','?' in page.frames[0])
+                      if re.fullmatch(r'[A-Za-z0-9_./-]+\\.(asp|html|htm|shtml)',path) and '..' not in path:
                           form=FormCheck();form.feed(client.request('/'+path,{'action':'list'}))
                           print('UPLOAD_FORM_POST',any(f.get('method','').lower()=='post' for f in form.forms))
                           print('UPLOAD_FORM_MULTIPART',any(f.get('enctype','').lower()=='multipart/form-data' for f in form.forms))
                           print('UPLOAD_FORM_FILE_INPUTS',len(form.inputs))
-                          for candidate in ('vfileselector','file','filename','uploadfile','Filedata'):
+                          for candidate in ('vfileselector','file','filename','uploadfile','Filedata','upfile','upload_file','fileupload'):
                               print('UPLOAD_FORM_NAME_MATCH_'+candidate,any(f.get('name')==candidate for f in form.inputs))
 
           except Exception as exc:
