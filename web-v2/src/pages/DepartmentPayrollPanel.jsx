@@ -5,7 +5,7 @@ import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
-import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Search, Send, Settings2, Trash2 } from 'lucide-react'
+import { Banknote, CalendarDays, CheckCircle2, Download, History, Mail, Plus, RefreshCw, Save, Search, Share2, Send, Settings2, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { apiRequest, apiBinaryResponse } from '../lib/api'
 import useFitPayrollTables from '../lib/useFitPayrollTables'
@@ -45,7 +45,7 @@ function recalculate(source, config) {
       + number('hours_ca2_after_22') * Number(config.rate_ca2_after_22 || 0),
     )
   row.salary = salary
-  row.total_salary = salary + ['full_allowance', 'attendance_bonus', 'responsibility', 'seniority', 'combo_sales', 'other_income_1', 'other_income_2'].reduce((sum, key) => sum + number(key), 0)
+  row.total_salary = salary + ['full_allowance', 'attendance_bonus', 'responsibility', 'seniority', 'combo_sales'].reduce((sum, key) => sum + number(key), 0)
   row.net_salary = row.total_salary - ['violation_penalty', 'late_penalty', 'advance'].reduce((sum, key) => sum + number(key), 0)
   if (row.attendance_pending) Object.assign(row, { salary: null, total_salary: null, net_salary: null })
   return row
@@ -100,6 +100,8 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [calculationPeriod, setCalculationPeriod] = useState(null)
   const [selected, setSelected] = useState([])
   const [busy, setBusy] = useState('')
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shareFiles, setShareFiles] = useState(null)
   const [notice, setNotice] = useState(null)
 
   useEffect(() => {
@@ -188,6 +190,30 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     anchor.href = url; anchor.download = `Luong_hanh_chanh_${month}.xlsx`; anchor.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   })
+  const prepareShare = () => {
+    setShareOpen(true); setShareFiles(null)
+    void run('share-prepare', async () => {
+      const files = await Promise.all(['png', 'pdf'].map(async type => {
+        const blob = await request(`/v2/department-payroll/combined/export.${type}`, { method: 'POST', body: JSON.stringify({ ...payload(), rows: visibleRows }), download: true })
+        return new File([blob], `Luong_hanh_chanh_${month}.${type}`, { type: type === 'pdf' ? 'application/pdf' : 'image/png' })
+      }))
+      setShareFiles({ png: files[0], pdf: files[1] })
+    })
+  }
+  const shareFile = (type) => {
+    const file = shareFiles?.[type]
+    if (!file) return
+    if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+      void navigator.share({ files: [file], title: 'Bảng lương hành chánh' }).catch(error => {
+        if (error.name !== 'AbortError') setNotice({ type: 'error', message: error.message })
+      })
+    } else {
+      const url = URL.createObjectURL(file), anchor = document.createElement('a')
+      anchor.href = url; anchor.download = file.name; anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    }
+    setShareOpen(false)
+  }
   const sendEmail = () => run('email', async () => {
     if (!selected.length) throw new Error('Vui lòng chọn nhân viên cần gửi email.')
     if (!window.confirm(`Gửi ${selected.length} email bảng Lương hành chánh?`)) return
@@ -314,10 +340,11 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
           <div data-ui-key="u-8f74b397bc4e" className="panel-title-row"><div><h3><Banknote size={17} /> NHÂN VIÊN ỨNG LƯƠNG</h3><p>Nhập số tiền đã ứng; hệ thống tự trừ ngay vào Thực nhận của bảng lương hiện tại.</p></div></div>
           <div className="salary-advance-grid">{rows.map((row) => <label key={`advance-${row.employee_username}`}><span>{row.employee_name}<small>{row.department_label}</small></span><VeraMoneyInput className="payroll-money-input" value={row.advance} onChange={(event) => editRow(row.employee_username, 'advance', event.target.value)} /></label>)}</div>
         </section>
-        <UiToolbar data-ui-key="u-aa8a22274bd6" className="list-actions department-payroll-table-toolbar"><label className="department-payroll-table-search">Tìm nhân viên<input type="search" value={payrollSearch} placeholder="Nhập tên hoặc tên đăng nhập…" onChange={event => { setPayrollSearch(event.target.value); setSelected([]) }} /></label>{canEmail && <><button data-ui-key="u-d49687da041e" data-ui-label-default="Chọn tất cả có email" className="secondary-button" type="button" onClick={() => setSelected(visibleRows.filter((row) => String(row.email || '').includes('@')).map((row) => row.employee_username))}><Mail size={15} /><UiCustomText uiKey="u-d49687da041e"> Chọn tất cả có email</UiCustomText></button><button data-ui-key="u-af8e39d106bb" data-ui-label-default="Bỏ chọn" className="secondary-button" type="button" onClick={() => setSelected([])}><UiCustomText uiKey="u-af8e39d106bb">Bỏ chọn</UiCustomText></button></>}</UiToolbar>
+        <UiToolbar data-ui-key="u-9f377bd94706" className="list-actions department-payroll-actions department-payroll-top-actions"><label className="department-payroll-table-search">Tìm nhân viên<input type="search" value={payrollSearch} placeholder="Nhập tên hoặc tên đăng nhập…" onChange={event => { setPayrollSearch(event.target.value); setSelected([]) }} /></label>{canSave && <button data-ui-key="u-d8d128bf8ea0" data-ui-label-default="Lưu bảng nháp" className="secondary-button" disabled={Boolean(busy)} onClick={saveDraft}><Save size={16} />{busy === 'draft-save' ? 'Đang lưu…' : <UiCustomText uiKey="u-d8d128bf8ea0"> Lưu bảng nháp</UiCustomText>}</button>}{canSave && <button data-ui-key="u-da44815b5034" data-ui-label-default="Hoàn thành bảng lương" className="primary-button" disabled={Boolean(busy)} onClick={completePayroll}><CheckCircle2 size={16} /><UiCustomText uiKey="u-da44815b5034"> Hoàn thành bảng lương</UiCustomText></button>}{canEmail && <><button data-ui-key="u-d49687da041e" data-ui-label-default="Chọn tất cả có email" className="secondary-button" type="button" onClick={() => setSelected(visibleRows.filter((row) => String(row.email || '').includes('@')).map((row) => row.employee_username))}><Mail size={15} /><UiCustomText uiKey="u-d49687da041e"> Chọn tất cả có email</UiCustomText></button><button data-ui-key="u-af8e39d106bb" data-ui-label-default="Bỏ chọn" className="secondary-button" type="button" onClick={() => setSelected([])}><UiCustomText uiKey="u-af8e39d106bb">Bỏ chọn</UiCustomText></button></>}{canEmail && <button data-ui-key="u-08d9057d122b" className="secondary-button" disabled={Boolean(busy) || !selected.length} onClick={sendEmail}><Send size={16} /> <Mail size={14} /> Gửi email ({selected.length})</button>}{canExport && <button data-ui-key="u-ad79c9ff49c8" data-ui-label-default="Xuất excel" className="secondary-button" disabled={Boolean(busy) || !visibleRows.length} onClick={exportExcel}><Download size={16} /><UiCustomText uiKey="u-ad79c9ff49c8"> Xuất excel</UiCustomText></button>}{canExport && <button type="button" className="secondary-button" disabled={Boolean(busy) || !visibleRows.length} onClick={prepareShare}><Share2 size={16} />Chia sẻ</button>}</UiToolbar>
+        {shareOpen && <div className="department-payroll-share-options" role="group" aria-label="Chia sẻ bảng lương"><button type="button" className="secondary-button" disabled={!shareFiles} onClick={() => shareFile('png')}>Ảnh PNG</button><button type="button" className="secondary-button" disabled={!shareFiles} onClick={() => shareFile('pdf')}>PDF</button><button type="button" className="secondary-button" onClick={() => setShareOpen(false)}>Đóng</button>{busy === 'share-prepare' && <span role="status">Đang tạo file…</span>}</div>}
         <div className="responsive-data-table department-payroll-table"><table data-ui-key="u-5b7cb5285f2e"><thead><tr><th data-ui-key="u-7686681f16f7" data-ui-label-default="Gửi"><UiCustomText uiKey="u-7686681f16f7">Gửi</UiCustomText></th><th data-ui-key="u-66c870616026" data-ui-label-default="TT"><UiCustomText uiKey="u-66c870616026">TT</UiCustomText></th><th data-ui-key="u-4f0fce3caf56" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-4f0fce3caf56">Nhân viên</UiCustomText></th><th data-ui-key="u-d4304a915425" data-ui-label-default="Bộ phận"><UiCustomText uiKey="u-d4304a915425">Bộ phận</UiCustomText></th><th data-ui-key="u-bcd797055bad" data-ui-label-default="Ngày công"><UiCustomText uiKey="u-bcd797055bad">Ngày công</UiCustomText></th><th data-ui-key="u-b67ed3d40c39" data-ui-label-default="Giờ Ca 1"><UiCustomText uiKey="u-b67ed3d40c39">Giờ Ca 1</UiCustomText></th><th data-ui-key="u-e9f4fe60b599" data-ui-label-default="Ca 2 trước 22h"><UiCustomText uiKey="u-e9f4fe60b599">Ca 2 trước 22h</UiCustomText></th><th data-ui-key="u-d6b67e042cda" data-ui-label-default="Ca 2 sau 22h"><UiCustomText uiKey="u-d6b67e042cda">Ca 2 sau 22h</UiCustomText></th><th data-ui-key="u-a16a026c7a8b" data-ui-label-default="Tiền lương"><UiCustomText uiKey="u-a16a026c7a8b">Tiền lương</UiCustomText></th>{editableFields.map(([, label]) => <th data-ui-key="u-ece4a4df8e43" key={label}>{label}</th>)}<th data-ui-key="u-4adc40dcdb1a" data-ui-label-default="Tổng lương"><UiCustomText uiKey="u-4adc40dcdb1a">Tổng lương</UiCustomText></th><th data-ui-key="u-c286089dd0b6" data-ui-label-default="Thực nhận"><UiCustomText uiKey="u-c286089dd0b6">Thực nhận</UiCustomText></th></tr></thead><tbody>{visibleRows.map((row) => <tr key={row.employee_username}><td data-label="Gửi email"><input type="checkbox" aria-label={`Chọn gửi email ${row.employee_name}`} checked={selected.includes(row.employee_username)} onChange={() => setSelected((items) => items.includes(row.employee_username) ? items.filter((item) => item !== row.employee_username) : [...items, row.employee_username])} /></td><td data-label="TT">{row.tt}</td><td data-label="Nhân viên"><div className="department-payroll-identity"><strong>{row.employee_username}</strong><span>{row.employee_name}</span><span>{row.email || 'Chưa có email'}</span></div>{row.incomplete_days > 0 && <small className="attendance-warning">{row.incomplete_days} ngày thiếu đủ FaceID</small>}</td><td data-label="Bộ phận"><strong>{row.department_label}</strong></td><td data-label="Ngày công">{row.work_days}</td><td data-label="Giờ Ca 1">{row.hours_ca1}</td><td data-label="Ca 2 trước 22h">{row.hours_ca2_before_22}</td><td data-label="Ca 2 sau 22h">{row.hours_ca2_after_22}</td><td data-label="Tiền lương" className="money-cell">{row.attendance_pending ? 'Chờ xác nhận công' : money(row.salary)}</td>{editableFields.map(([key, label]) => <td key={key} data-label={label} className={['violation_penalty', 'late_penalty'].includes(key) && Number(row[key]) > 0 ? 'payroll-penalty-positive' : undefined}><VeraMoneyInput className="payroll-money-input" aria-label={`${label} ${row.employee_name}`} style={{ width: `${Math.max(6, String(row[key] ?? '').replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.').length + 1)}ch` }} value={row[key]} onChange={(event) => editRow(row.employee_username, key, event.target.value)} /></td>)}<td data-label="Tổng lương" className="money-cell"><strong>{row.attendance_pending ? 'Chờ xác nhận công' : money(row.total_salary)}</strong></td><td data-label="Thực nhận" className="money-cell"><strong>{row.attendance_pending ? 'Chờ xác nhận công' : money(row.net_salary)}</strong></td></tr>)}</tbody></table></div>
         {!visibleRows.length && <p role="status">Không có nhân viên phù hợp bộ lọc.</p>}
-        <UiToolbar data-ui-key="u-9f377bd94706" className="list-actions department-payroll-actions">{canSave && <button data-ui-key="u-d8d128bf8ea0" data-ui-label-default="Lưu bảng nháp" className="secondary-button" disabled={Boolean(busy)} onClick={saveDraft}><Save size={16} />{busy === 'draft-save' ? 'Đang lưu…' : <UiCustomText uiKey="u-d8d128bf8ea0"> Lưu bảng nháp</UiCustomText>}</button>}{canSave && <button data-ui-key="u-da44815b5034" data-ui-label-default="Hoàn thành bảng lương" className="primary-button" disabled={Boolean(busy)} onClick={completePayroll}><CheckCircle2 size={16} /><UiCustomText uiKey="u-da44815b5034"> Hoàn thành bảng lương</UiCustomText></button>}{canExport && <button data-ui-key="u-ad79c9ff49c8" data-ui-label-default="Xuất excel" className="secondary-button" disabled={Boolean(busy) || !visibleRows.length} onClick={exportExcel}><Download size={16} /><UiCustomText uiKey="u-ad79c9ff49c8"> Xuất excel</UiCustomText></button>}{canEmail && <button data-ui-key="u-08d9057d122b" className="secondary-button" disabled={Boolean(busy) || !selected.length} onClick={sendEmail}><Send size={16} /> <Mail size={14} /> Gửi email ({selected.length})</button>}</UiToolbar>
+
         <StableFeedback>{busy === 'draft-save' || busy === 'draft-load'
           ? <div role="status">{busy === 'draft-save' ? 'Đang lưu bảng lương nháp…' : 'Đang mở bảng lương nháp…'}</div>
           : notice && <div role="status" className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
