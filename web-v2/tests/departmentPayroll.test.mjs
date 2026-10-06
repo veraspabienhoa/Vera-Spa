@@ -10,7 +10,7 @@ const mod={exports:{}};new Function('require','module','exports',built.outputFil
 const {Panel,Settings,Tabs,recoverablePage,fitPayrollTable}=mod.exports,h=React.createElement
 const config={calculation_mode:'hourly',rate_ca1:27000,rate_ca2_before_22:30000,rate_ca2_after_22:33000}
 const rows=[['a','Nhân Viên A','letan','Lễ tân',500000],['b','Quản Lý B','quanly','Quản lý',300000],['c','Nhân Viên C','letan','Lễ tân',0]].map(([id,name,dep,label,combo],i)=>({employee_username:id,employee_name:name,email:`${id}@example.test`,department:dep,department_label:label,tt:i+1,work_days:1,hours_ca1:8,combo_sales:combo,salary:216000,total_salary:216000+combo,net_salary:216000+combo,calculation_config:config,calculation_source:'schedule'}))
-async function fixture(t, expireSave=false){
+async function fixture(t, expireSave=false, calculatedRows=rows){
  const dom=new JSDOM('<body><div id="root"/></body>',{url:'https://example.test',pretendToBeVisual:true}),requests=[];let draftRows=[]
  const data={departments:{letan:{department_label:'Lễ tân',config},quanly:{department_label:'Quản lý',config},tapvu:{department_label:'Tạp vụ',config:{calculation_mode:'monthly'}}},salary_config_tables:{operations:[{employee_username:'a',employee_name:'Nhân Viên A',department:'letan',department_label:'Lễ tân',...config}],tapvu:[]},salary_employee_catalog:[]}
  const globals={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true,fetch:async(url,options={})=>{
@@ -18,7 +18,7 @@ async function fixture(t, expireSave=false){
   if(expireSave && path.endsWith('/settings/employees') && requests.filter(r=>r.path===path).length===1) return new Response(JSON.stringify({detail:"expired"}),{status:401})
   if(path.endsWith('/draft') && options.method==='DELETE') draftRows=[]
   if(path.endsWith('/draft') && options.method==='PUT') draftRows=JSON.parse(options.body).rows
-  const body=path.endsWith('/settings/employees')?{salary_config_tables:{operations:JSON.parse(options.body).rows,tapvu:[]},message:'Đã lưu cấu hình'}:path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows:rows.map(row=>({...row,calculation_source:new URL(url).searchParams.get('source')})),start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:draftRows,message:'Đã lưu'}:{}
+  const body=path.endsWith('/settings/employees')?{salary_config_tables:{operations:JSON.parse(options.body).rows,tapvu:[]},message:'Đã lưu cấu hình'}:path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows:calculatedRows.map(row=>({...row,calculation_source:new URL(url).searchParams.get('source')})),start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:draftRows,message:'Đã lưu'}:{}
   return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}})
  }}
  dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true};dom.window.HTMLDialogElement.prototype.close=function(){this.open=false}
@@ -148,4 +148,15 @@ test('employee search suggests matching names and Clear restores rows without re
  assert.equal(document.querySelectorAll('.department-payroll-table tbody tr').length,3)
  assert.equal(document.querySelector('[role=listbox]'),null);assert.equal(f.requests.length,before)
  assert.equal(document.querySelectorAll('td.department-payroll-net-column').length,3)
+})
+
+test('probation edits and reopening preserve reduced income and full deductions',async t=>{
+ const trial={...rows[0],probation_rate:0.75,salary:162000,combo_sales:375000,total_salary:537000,net_salary:437000,advance:100000}
+ const f=await fixture(t,false,[trial]);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương từ Thống kê')
+ await f.change(document.querySelector('[aria-label="Trách nhiệm Nhân Viên A"]'),'150.000')
+ await f.click('Lưu bảng nháp');let saved=JSON.parse(f.requests.filter(r=>r.path.endsWith('/draft')&&r.options.method==='PUT').at(-1).options.body).rows[0]
+ assert.equal(saved.salary,162000);assert.equal(saved.responsibility,150000);assert.equal(saved.combo_sales,375000);assert.equal(saved.advance,100000);assert.equal(saved.net_salary,587000)
+ await f.click('Mở bảng nháp');await f.click('Lưu bảng nháp')
+ saved=JSON.parse(f.requests.filter(r=>r.path.endsWith('/draft')&&r.options.method==='PUT').at(-1).options.body).rows[0]
+ assert.equal(saved.salary,162000);assert.equal(saved.net_salary,587000)
 })

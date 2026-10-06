@@ -110,7 +110,7 @@ def _active_roster(conn) -> list[dict[str, Any]]:
                 NULLIF(payload->>'Trạng thái làm việc',''),
                 NULLIF(payload->>'employment_status',''),
                 'Đang làm việc'
-              )) = 'đang làm việc'
+              )) IN ('đang làm việc','thử việc')
         ORDER BY COALESCE(stt,2147483647), username
     """)).mappings().all()
     return [dict(row) for row in rows if str(row.get("username") or "").strip()]

@@ -328,7 +328,7 @@ def _eligible_employee_rows(conn, roles: tuple[str, ...] = ELIGIBLE_ROLES) -> li
         if str(row.get("role") or "").strip().lower() not in allowed_roles:
             continue
         payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
-        if _employee_status(payload) != "Đang làm việc" or _employee_hidden(payload):
+        if _employee_status(payload) not in {"Đang làm việc", "Thử việc"} or _employee_hidden(payload):
             continue
         row["payload"] = payload
         output.append(row)

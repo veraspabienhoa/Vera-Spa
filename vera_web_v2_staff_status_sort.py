@@ -6,8 +6,9 @@ from fastapi import Depends
 
 STATUS_RANK = {
     "Đang làm việc": 0,
-    "Tạm thời nghỉ việc": 1,
-    "Đã nghỉ việc": 2,
+    "Thử việc": 1,
+    "Tạm thời nghỉ việc": 2,
+    "Đã nghỉ việc": 3,
 }
 ROLE_RANK = {
     "leader": 0,
@@ -49,7 +50,7 @@ def install_staff_status_sort(app, *, current_identity, identity_type) -> None:
             str(item.get("username") or "").casefold(),
         ))
         output["employees"] = employees
-        output["sort_order"] = ["Đang làm việc", "Tạm thời nghỉ việc", "Đã nghỉ việc"]
+        output["sort_order"] = ["Đang làm việc", "Thử việc", "Tạm thời nghỉ việc", "Đã nghỉ việc"]
         return output
 
     app.state.staff_status_sort_installed = True

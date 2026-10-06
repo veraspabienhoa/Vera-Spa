@@ -8,7 +8,7 @@ def test_attendance_reader_merges_all_active_employees():
     source = (ROOT / "vera_web_v2_attendance_query_perf.py").read_text(encoding="utf-8")
     assert "def _active_roster" in source
     assert "Trạng thái làm việc" in source
-    assert "= 'đang làm việc'" in source
+    assert "IN ('đang làm việc','thử việc')" in source
     assert "def _append_missing_active_employees" in source
     assert "attendance_roster_only" in source
     assert "Danh sách nhân viên PostgreSQL" in source

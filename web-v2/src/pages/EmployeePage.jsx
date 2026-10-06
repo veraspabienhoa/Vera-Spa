@@ -557,6 +557,7 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
         {[
           ['Tổng nhân viên', data?.summary?.total || 0, UsersRound, ''],
           ['Đang làm việc', data?.summary?.active || 0, UserCheck, 'Đang làm việc'],
+          ['Thử việc', data?.summary?.probation || 0, UserCheck, 'Thử việc'],
           ['Tạm thời nghỉ', data?.summary?.temporary || 0, BriefcaseBusiness, 'Tạm thời nghỉ việc'],
           ['Đã nghỉ việc', data?.summary?.left || 0, LockKeyhole, 'Đã nghỉ việc'],
         ].map(([label, value, Icon, filterValue]) => (

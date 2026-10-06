@@ -767,7 +767,7 @@ def _rotate_local_session(refresh_token: str) -> dict[str, Any]:
             employee = dict(row)
             if _locked(row.get("login_locked")):
                 raise HTTPException(403, "Tài khoản đang bị khóa.")
-            if _employment_status(row.get("payload")) != "dang lam viec":
+            if _employment_status(row.get("payload")) not in {"dang lam viec", "thu viec"}:
                 raise HTTPException(403, "Tài khoản không còn ở trạng thái Đang làm việc.")
             expected_fingerprint = credential_fingerprint(
                 row.get("employee_username"),
@@ -915,7 +915,7 @@ def install_auth_gateway(
                             e.payload->>'Trạng thái làm việc',
                             e.payload->>'employment_status',
                             'Đang làm việc'
-                          ) = 'Đang làm việc'
+                          ) IN ('Đang làm việc','Thử việc')
                 """)).scalar_one())
                 conn.execute(text(f"""
                     SELECT 1 FROM {SESSION_STORE_TABLE}
@@ -971,7 +971,7 @@ def install_auth_gateway(
                 raise HTTPException(401, "Tài khoản đang bị khóa.")
             raise HTTPException(401, "Tên đăng nhập hoặc mật khẩu không đúng.")
 
-        if _employment_status(employee.get("payload")) != "dang lam viec":
+        if _employment_status(employee.get("payload")) not in {"dang lam viec", "thu viec"}:
             raise HTTPException(403, "Tài khoản đang Tạm thời nghỉ việc hoặc Đã nghỉ việc nên không thể đăng nhập.")
 
         canonical_username = str(employee.get("username") or "")

@@ -93,7 +93,9 @@ def _client():
     return TestClient(app)
 
 
-def test_login_is_exchanged_server_side_and_never_returns_bridge_password(monkeypatch, auth_dependencies):
+@pytest.mark.parametrize("employment_status", ["Đang làm việc", "Thử việc"])
+def test_login_is_exchanged_server_side_and_never_returns_bridge_password(monkeypatch, auth_dependencies, employment_status):
+    auth_dependencies[0]["payload"]["Trạng thái làm việc"] = employment_status
     calls = []
 
     def fake_post(url, *, headers, json, timeout):

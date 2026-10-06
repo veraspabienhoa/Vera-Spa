@@ -288,7 +288,7 @@ def scheduled_rows(conn, day):
         LEFT JOIN vera_work_shift_definition ot ON ot.department=ws.department AND ot.shift_code=
           CASE ws.overtime_shift WHEN 'TC Ca 1' THEN 'Ca 1' WHEN 'TC Ca 2' THEN 'Ca 2' END
         WHERE ws.work_date=:day AND COALESCE(e.payload->>'__deleted','false')<>'true'
-          AND lower(COALESCE(e.payload->>'Trạng thái làm việc',e.payload->>'employment_status','đang làm việc'))='đang làm việc'
+          AND lower(COALESCE(e.payload->>'Trạng thái làm việc',e.payload->>'employment_status','đang làm việc'))IN ('đang làm việc','thử việc')
         ORDER BY ws.employee_username'''), {'day': day}).mappings()]
 
 

@@ -355,7 +355,7 @@ def main() -> None:
                     e.payload->>'Trạng thái làm việc',
                     e.payload->>'employment_status',
                     'Đang làm việc'
-                  ) = 'Đang làm việc'
+                  ) IN ('Đang làm việc','Thử việc')
         """)).scalar_one())
         admin_accounts = int(conn.execute(text("""
             SELECT COUNT(*)
@@ -369,7 +369,7 @@ def main() -> None:
                     e.payload->>'Trạng thái làm việc',
                     e.payload->>'employment_status',
                     'Đang làm việc'
-                  ) = 'Đang làm việc'
+                  ) IN ('Đang làm việc','Thử việc')
         """)).scalar_one())
     print("LOCAL AUTH STORE: PostgreSQL vera_app_setting namespaces ready")
     print(
