@@ -83,6 +83,11 @@ jobs:
                               source=client.request('/'+path,{'action':'list'})
                               form=re.search(r'<form\b.*?</form>',source,re.I|re.S)
                               if form: print('UPLOAD_PROTOCOL_FORM',json.dumps(form[0][:10000]))
+                              match=re.search(r'function\s+getPath\s*\(',source)
+                              if match:
+                                  following=re.search(r'function\s+\w+\s*\(',source[match.end():])
+                                  end=match.end()+following.start() if following else match.end()+3000
+                                  print('UPLOAD_PROTOCOL_GET_PATH',json.dumps(source[match.start():end][:3000]))
                       raw=client.request('/webs/getUploadPercent',{'action':'list','group':'UPLOAD','sessionid':rows[0]['upload_session']})
                       matches=re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S)
                       print('UPLOAD_FIELD_COUNTS',json.dumps(dict(Counter(k for k,v in matches if k.startswith('UPLOAD.') or k.startswith('ERR.')))))
