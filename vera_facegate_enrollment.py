@@ -75,6 +75,10 @@ class FaceGateEnrollmentClient:
         options = {'params': params, 'auth': self.auth, 'timeout': (3, 8),
                    'allow_redirects': False, 'stream': True}
         if photo is not None:
+            # The device's upgrade_frm submits txt before vfileselector.
+            # getPath() supplies the basename on Chrome/Safari; this text part
+            # is part of the upload protocol, not just a display-only input.
+            options['data'] = {'txt': 'FaceID.jpg'}
             options['files'] = {'vfileselector': ('FaceID.jpg', photo, 'image/jpeg')}
         else:
             # js/send.js: non-list actions POST the same 8-character nonce
