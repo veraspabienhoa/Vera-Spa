@@ -26,6 +26,7 @@ import vera_web_v2_payroll as payroll
 import vera_web_v2_snapshot as attendance
 import vera_web_v2_work_schedule as work_schedule
 import vera_attendance_participation as participation
+import vera_department_probation as probation
 
 
 RELEASE = "department-payroll-hc-email-layout-2026-10-06-v12"
@@ -282,7 +283,7 @@ def _salary_employee_catalog(conn) -> list[dict[str, Any]]:
         WHERE {hr.ADMIN_PAY_SQL}
           AND NOT ({PAYROLL_EXCLUDED_SQL})
           AND COALESCE(payload->>'__deleted','false') <> 'true'
-          AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc'))='đang làm việc'
+          AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc')) IN ('đang làm việc','thử việc')
         ORDER BY CASE lower(COALESCE(role,''))
           WHEN 'quanly' THEN 0 WHEN 'letan' THEN 1 WHEN 'locker' THEN 2
           WHEN 'support' THEN 3 ELSE 4 END,
@@ -393,6 +394,12 @@ def _attendance_totals(records: list[dict[str, Any]], employee: str, norm: Calla
     return totals
 
 
+def _probation_policies(conn, month, *, usernames=None, department=None):
+    return probation.policies(conn, month, parse_date=payroll._parse_date,
+        records=attendance._records, minutes=_interval_minutes,
+        period_end=datetime.now(VN_TZ).date(), usernames=usernames, department=department)
+
+
 def _recalculate(row: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     result = {key: value for key, value in row.items() if key not in {"other_income_1", "other_income_2"}}
     for field in ROW_MONEY_FIELDS:
@@ -405,11 +412,11 @@ def _recalculate(row: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     if cfg["calculation_mode"] == "monthly":
         result["salary"] = int(round(result["base_salary"] * result["work_days"] / cfg["standard_month_days"]))
     else:
-        result["salary"] = int(round(
+        result["salary"] = int(round((
             result["hours_ca1"] * cfg["rate_ca1"]
             + result["hours_ca2_before_22"] * cfg["rate_ca2_before_22"]
             + result["hours_ca2_after_22"] * cfg["rate_ca2_after_22"]
-        ))
+        ) * (.75 if result.get("probation_rate") == .75 else 1)))
     result["total_salary"] = sum(result[field] for field in (
         "salary", "full_allowance", "attendance_bonus", "responsibility", "seniority",
         "combo_sales",
@@ -430,7 +437,7 @@ def _employees(conn, department: str) -> list[dict[str, Any]]:
           AND {hr.PAYROLL_ACCOUNT_SQL}
           AND NOT ({PAYROLL_EXCLUDED_SQL})
           AND COALESCE(payload->>'__deleted','false') <> 'true'
-          AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc'))='đang làm việc'
+          AND lower(COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','đang làm việc')) IN ('đang làm việc','thử việc')
         ORDER BY COALESCE(stt,2147483647),username
     """), {"department": department}).mappings().all()]
 
@@ -484,8 +491,10 @@ def _visible_payroll_rows(conn, rows, *, month=None):
     return [dict(row, tt=index) for index, row in enumerate(visible, 1)]
 
 
-def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None) -> dict[str, Any]:
+def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None, probation_policies=None) -> dict[str, Any]:
     start, end, label = _draft_month_range(month)
+    if probation_policies is None:
+        probation_policies = _probation_policies(conn, month, department=department)
     if combo_counts is None:
         combo_counts = _combo_sale_counts(conn, start, end)
     settings = _settings(conn, department)
@@ -523,7 +532,7 @@ def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], 
             "attendance_pending": bool(totals['pending_dates']),
             "pending_dates": totals['pending_dates'],
         }
-        rows.append(_recalculate(row, employee_cfg))
+        rows.append(_recalculate(probation.apply(row, probation_policies.get(username.casefold())), employee_cfg))
     return {**settings, "month": month, "month_label": label, "start": start.isoformat(), "end": end.isoformat(), "rows": rows}
 
 
@@ -608,8 +617,10 @@ def _schedule_totals(
     return totals
 
 
-def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None) -> dict[str, Any]:
+def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None, probation_policies=None) -> dict[str, Any]:
     start, end, label = _draft_month_range(month)
+    if probation_policies is None:
+        probation_policies = _probation_policies(conn, month, department=department)
     work_schedule._ensure_schema(conn)
     if combo_counts is None:
         combo_counts = _combo_sale_counts(conn, start, end)
@@ -662,7 +673,7 @@ def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any
             "incomplete_days": 0, "calculation_source": "schedule",
             "calculation_config": employee_cfg,
         }
-        rows.append(_recalculate(row, employee_cfg))
+        rows.append(_recalculate(probation.apply(row, probation_policies.get(username.casefold())), employee_cfg))
     return {**settings, "month": month, "month_label": label, "start": start.isoformat(), "end": end.isoformat(), "rows": rows}
 
 
@@ -670,13 +681,14 @@ def _combined_calculation(conn, month: str, norm: Callable[[Any], str], source: 
     if source not in {"attendance", "schedule"}:
         raise HTTPException(400, "Nguồn tính lương không hợp lệ.")
     calculator = _schedule_calculation if source == "schedule" else _calculation
+    probation_policies = _probation_policies(conn, month)
     start, end, _ = _draft_month_range(month)
     combo_counts = _combo_sale_counts(conn, start, end)
     rows: list[dict[str, Any]] = []
     settings: dict[str, Any] = {}
     employee_configs = _employee_config_map(conn)
     for department in hr.admin_departments(conn):
-        result = calculator(conn, department, month, norm, combo_counts=combo_counts)
+        result = calculator(conn, department, month, norm, combo_counts=combo_counts, probation_policies=probation_policies)
         settings[department] = result
         for row in result["rows"]:
             cfg = employee_configs.get(str(row["employee_username"]).casefold(), result["config"])
@@ -716,6 +728,7 @@ def _combined_employee_catalog(conn) -> dict[str, dict[str, Any]]:
 
 def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any], str], *, month=None) -> list[dict[str, Any]]:
     catalog = _combined_employee_catalog(conn)
+    probation_policies = _probation_policies(conn, month, usernames=[row.get("employee_username") for row in rows]) if month else {}
     employee_configs = _employee_config_map(conn)
     output = []
     seen = set()
@@ -735,7 +748,7 @@ def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any],
             "email": employee.get("email") or "", "department": department,
             "department_label": hr.admin_departments(conn)[department]["name"], "calculation_config": cfg,
         })
-        output.append(_recalculate(row, cfg))
+        output.append(_recalculate(probation.apply(row, probation_policies.get(str(employee["username"]).casefold()), saved=True), cfg))
     if not output:
         raise HTTPException(400, "Bảng Lương hành chánh chưa có nhân viên.")
     if month:
@@ -746,6 +759,7 @@ def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any],
 
 def _clean_rows(conn, department: str, rows: list[dict[str, Any]], cfg: dict[str, Any], norm, *, month=None) -> list[dict[str, Any]]:
     catalog = {norm(item["username"]): item for item in _employees(conn, department)}
+    probation_policies = _probation_policies(conn, month, usernames=[row.get("employee_username") for row in rows]) if month else {}
     employee_configs = _employee_config_map(conn)
     output = []
     seen = set()
@@ -762,7 +776,7 @@ def _clean_rows(conn, department: str, rows: list[dict[str, Any]], cfg: dict[str
             "email": employee.get("email") or "", "department": department,
             "department_label": hr.admin_departments(conn)[department]["name"],
         })
-        output.append(_recalculate(row, employee_configs.get(str(employee["username"]).casefold(), cfg)))
+        output.append(_recalculate(probation.apply(row, probation_policies.get(str(employee["username"]).casefold()), saved=True), employee_configs.get(str(employee["username"]).casefold(), cfg)))
     if not output:
         raise HTTPException(400, "Bảng lương chưa có nhân viên.")
     if month:

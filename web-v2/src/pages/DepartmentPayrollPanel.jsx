@@ -40,13 +40,14 @@ function recalculate(source, config) {
   const number = (key) => Math.max(0, Number(row[key] || 0))
   const salary = config.calculation_mode === 'monthly'
     ? Math.round(number('base_salary') * number('work_days') / Math.max(1, Number(config.standard_month_days || 26)))
-    : Math.round(
+    : Math.round((
       number('hours_ca1') * Number(config.rate_ca1 || 0)
       + number('hours_ca2_before_22') * Number(config.rate_ca2_before_22 || 0)
-      + number('hours_ca2_after_22') * Number(config.rate_ca2_after_22 || 0),
+      + number('hours_ca2_after_22') * Number(config.rate_ca2_after_22 || 0)
+    ) * (row.probation_rate === 0.75 ? 0.75 : 1),
     )
   row.salary = salary
-  row.total_salary = salary + ['full_allowance', 'attendance_bonus', 'responsibility', 'seniority', 'combo_sales'].reduce((sum, key) => sum + number(key), 0)
+  row.total_salary = row.salary + ['full_allowance', 'attendance_bonus', 'responsibility', 'seniority', 'combo_sales'].reduce((sum, key) => sum + number(key), 0)
   row.net_salary = row.total_salary - ['violation_penalty', 'late_penalty', 'advance'].reduce((sum, key) => sum + number(key), 0)
   if (row.attendance_pending) Object.assign(row, { salary: null, total_salary: null, net_salary: null })
   return row

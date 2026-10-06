@@ -33,7 +33,7 @@ def eligible(row):
     payload = row.get('payload') or {}
     return (str(row.get('role') or '').strip().lower() in {'leader', 'nhanvien'}
             and str(payload.get('__deleted', False)).lower() != 'true'
-            and (payload.get('Trạng thái làm việc') or payload.get('employment_status') or 'Đang làm việc') == 'Đang làm việc'
+            and (payload.get('Trạng thái làm việc') or payload.get('employment_status') or 'Đang làm việc') in {'Đang làm việc', 'Thử việc'}
             and bool(str(row.get('username') or '').strip()))
 
 

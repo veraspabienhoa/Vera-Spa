@@ -115,7 +115,7 @@ def _eligible_aliases(conn) -> tuple[dict[str, str], dict[str, str]]:
         FROM employees
         WHERE lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu','support')
           AND COALESCE(payload->>'__deleted','false') <> 'true'
-          AND lower(COALESCE(payload->>'Trạng thái làm việc','đang làm việc')) = 'đang làm việc'
+          AND lower(COALESCE(payload->>'Trạng thái làm việc','đang làm việc')) IN ('đang làm việc','thử việc')
     """)).mappings().all()
     aliases: dict[str, str] = {}
     roles: dict[str, str] = {}

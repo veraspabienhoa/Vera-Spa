@@ -45,9 +45,10 @@ STAFF_EXPORT_COLUMNS = [
 ALL_ROLES = ["nhanvien", "leader", "quanly", "letan", "locker", "tapvu", "support", "admin"]
 ROLE_ORDER = ["leader", "nhanvien", "support", "quanly", "letan", "locker", "tapvu", "admin"]
 FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu", "support"}
-STATUS_OPTIONS = ["Đang làm việc", "Tạm thời nghỉ việc", "Đã nghỉ việc"]
+STATUS_OPTIONS = ["Đang làm việc", "Tạm thời nghỉ việc", "Đã nghỉ việc", "Thử việc"]
 STATUS_ALIASES = {
     "dang lam viec": "Đang làm việc",
+    "thu viec": "Thử việc",
     "nghi viec tam thoi": "Tạm thời nghỉ việc",
     "tam thoi nghi viec": "Tạm thời nghỉ việc",
     "da nghi viec han": "Đã nghỉ việc",
@@ -252,7 +253,7 @@ def _shift_catalog(conn, employee_rows: list[dict[str, Any]]) -> dict[str, list[
 def staff_shift_summary(rows, day, definitions=None):
     summary = {f"ca_{shift}_{kind}": 0 for shift in (1, 2) for kind in ("regular", "fixed", "total")}
     for row in rows:
-        if row.get("role") not in {"leader", "nhanvien"} or row.get("employment_status") != "Đang làm việc":
+        if row.get("role") not in {"leader", "nhanvien"} or row.get("employment_status") not in {"Đang làm việc", "Thử việc"}:
             continue
         shift = scheduled_shift({**row, "shift_definitions": definitions or []}, day)
         if shift not in {"Ca 1", "Ca 2"}:
@@ -590,6 +591,7 @@ def install_staff_routes(
         summary = {
             "total": len(all_public),
             "active": sum(row["employment_status"] == STATUS_OPTIONS[0] for row in all_public),
+            "probation": sum(row["employment_status"] == "Thử việc" for row in all_public),
             "temporary": sum(row["employment_status"] == STATUS_OPTIONS[1] for row in all_public),
             "left": sum(row["employment_status"] == STATUS_OPTIONS[2] for row in all_public),
         }
@@ -712,7 +714,7 @@ def install_staff_routes(
             raise HTTPException(400, "Không áp dụng trạng thái nghỉ việc cho tài khoản admin.")
         if status == STATUS_OPTIONS[2] and not str(merged.get("employment_end_date") or "").strip():
             merged["employment_end_date"] = datetime.now(vn_tz).strftime("%d/%m/%Y")
-        if status != STATUS_OPTIONS[0]:
+        if status not in {STATUS_OPTIONS[0], "Thử việc"}:
             # Employment status is an independent login gate.  Clear legacy
             # remembered-login material immediately when employment pauses or ends.
             merged["remember_token_hash"] = ""
@@ -755,7 +757,7 @@ def install_staff_routes(
         }).mappings().first()
         if not updated:
             raise HTTPException(404, "Nhân viên không còn tồn tại.")
-        if bool(merged.get("login_locked")) or status != STATUS_OPTIONS[0]:
+        if bool(merged.get("login_locked")) or status not in {STATUS_OPTIONS[0], "Thử việc"}:
             revoke_local_sessions(
                 conn,
                 str(row["username"]),
@@ -770,7 +772,7 @@ def install_staff_routes(
                 SET role=:role, is_active=:is_active, updated_at=NOW()
                 WHERE lower(btrim(employee_username))=lower(btrim(:username))
             """), {
-                "role": merged["role"], "is_active": status == STATUS_OPTIONS[0],
+                "role": merged["role"], "is_active": status in {STATUS_OPTIONS[0], "Thử việc"},
                 "username": row["username"],
             })
         return {
