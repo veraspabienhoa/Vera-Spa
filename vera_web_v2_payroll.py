@@ -156,9 +156,9 @@ def _email_money(value: Any) -> str:
     return f"{_number(value):,} VNĐ"
 
 
-def _email_date(value: Any) -> str:
+def _email_date(value: Any, date_format: str = "%d/%m/%Y") -> str:
     parsed = _parse_date(value)
-    return parsed.strftime("%d/%m/%Y") if parsed else str(value or "").strip()
+    return parsed.strftime(date_format) if parsed else str(value or "").strip()
 
 
 def _smtp_failure_label(exc: Exception) -> str:
@@ -205,10 +205,10 @@ def _open_payroll_smtp(sender: str, password: str):
     raise RuntimeError(" | ".join(failures))
 
 
-def _payroll_email_subject(employee_name: str, start: date, end: date) -> str:
+def _payroll_email_subject(employee_name: str, start: date, end: date, *, date_format: str = "%d/%m/%Y") -> str:
     return (
         f"Bảng lương {str(employee_name or '').strip()} - "
-        f"{start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}"
+        f"{start.strftime(date_format)} đến {end.strftime(date_format)}"
     )
 
 
@@ -238,21 +238,25 @@ def _payroll_email_text(
     end: date,
     row: dict[str, Any],
     violations: list[dict[str, Any]],
+    *,
+    summary_rows: list[tuple[str, int]] | None = None,
+    date_format: str = "%d/%m/%Y",
 ) -> str:
     lines = [
         f"Chào {name},",
         "",
-        f"VERA SPA gửi bảng lương kỳ từ {start.strftime('%d/%m/%Y')} đến {end.strftime('%d/%m/%Y')}.",
+        f"VERA SPA gửi bảng lương kỳ từ {start.strftime(date_format)} đến {end.strftime(date_format)}.",
         "",
     ]
-    lines.extend(f"{label}: {_email_money(amount)}" for label, amount in _payroll_email_summary_rows(row))
+    summary = _payroll_email_summary_rows(row) if summary_rows is None else summary_rows
+    lines.extend(f"{label}: {_email_money(amount)}" for label, amount in summary)
     lines.extend(["", f"Số tiền thực nhận: {_email_money(row.get('Số tiền thực nhận'))}"])
     if violations:
         lines.extend(["", "Chi tiết vi phạm trong kỳ:"])
         for item in violations:
             lines.append(
                 " - " + " | ".join([
-                    _email_date(item.get("leave_date")),
+                    _email_date(item.get("leave_date"), date_format),
                     str(item.get("leave_reason") or ""),
                     str(item.get("detail") or ""),
                     _email_money(item.get("penalty")),
@@ -269,19 +273,23 @@ def _payroll_email_html(
     end: date,
     row: dict[str, Any],
     violations: list[dict[str, Any]],
+    *,
+    summary_rows: list[tuple[str, int]] | None = None,
+    date_format: str = "%d/%m/%Y",
 ) -> str:
+    summary = _payroll_email_summary_rows(row) if summary_rows is None else summary_rows
     summary_html = "".join(
         "<tr>"
         f"<td style=\"padding:8px 7px;border:1px solid #dddddd;\">{escape(label)}</td>"
         f"<td style=\"padding:8px 7px;border:1px solid #dddddd;text-align:right;white-space:nowrap;\">{escape(_email_money(amount))}</td>"
         "</tr>"
-        for label, amount in _payroll_email_summary_rows(row)
+        for label, amount in summary
     )
     violation_section = ""
     if violations:
         violation_rows = "".join(
             "<tr>"
-            f"<td style=\"padding:7px 6px;border:1px solid #dddddd;white-space:nowrap;\">{escape(_email_date(item.get('leave_date')))}</td>"
+            f"<td style=\"padding:7px 6px;border:1px solid #dddddd;white-space:nowrap;\">{escape(_email_date(item.get('leave_date'), date_format))}</td>"
             f"<td style=\"padding:7px 6px;border:1px solid #dddddd;\">{escape(str(item.get('leave_reason') or ''))}</td>"
             f"<td style=\"padding:7px 6px;border:1px solid #dddddd;\">{escape(str(item.get('detail') or ''))}</td>"
             f"<td style=\"padding:7px 6px;border:1px solid #dddddd;text-align:right;white-space:nowrap;\">{escape(_email_money(item.get('penalty')))}</td>"
@@ -305,7 +313,7 @@ def _payroll_email_html(
 <html lang="vi"><body style="margin:0;padding:0;background:#ffffff;color:#222222;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.45;">
   <div style="max-width:680px;padding:24px;">
     <p style="margin:0 0 20px;">Chào <strong>{escape(name)}</strong>,</p>
-    <p style="margin:0 0 14px;">VERA SPA gửi bảng lương kỳ từ <strong>{start.strftime('%d/%m/%Y')}</strong> đến <strong>{end.strftime('%d/%m/%Y')}</strong>.</p>
+    <p style="margin:0 0 14px;">VERA SPA gửi bảng lương kỳ từ <strong>{start.strftime(date_format)}</strong> đến <strong>{end.strftime(date_format)}</strong>.</p>
     <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;max-width:520px;font-size:14px;">
       <thead><tr style="background:#a99d97;color:#111111;">
         <th style="padding:8px 7px;border:1px solid #dddddd;width:56%;">Khoản mục</th>

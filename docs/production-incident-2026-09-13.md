@@ -2441,3 +2441,20 @@ No deployed runtime or production data has been read or changed.
 
 The supplied email-reference attachment is a check-in table, not an email sample;
 matching the requested administrative email layout awaits the correct reference.
+
+
+## 06-10-2026 — Administrative payroll email reference received
+
+The operator supplied the correct two-column email summary reference. It lists
+eleven items: salary, full-shift allowance, attendance bonus, responsibility,
+seniority, combo sales, advance, violation penalty, late penalty, gross salary
+and net salary. The HC route previously grouped allowances/bonuses/combo sales
+and displayed irrelevant KTV accumulation/living-fee/Locker-support fields.
+
+HC email now supplies its own eleven summary rows to the shared renderer, using
+the already validated payroll amounts, including a signed negative net salary.
+HTML and text have the same item order and VNĐ currency; HC subject/period and
+violation dates use dd-mm-yyyy. The greeting, violation detail, XLSX attachment,
+recipient selection, SMTP transport and shared renderer defaults are preserved.
+The HC health endpoint reports its dedicated template release. No production
+email has been sent and no production deployment/data has been verified.
