@@ -7,6 +7,7 @@ permissions:
   contents: read
 jobs:
   diagnose:
+    if: ${{ github.run_attempt == 1 }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -21,7 +22,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Read sanitized enrollment diagnostics without device writes
+      - name: Probe multipart upload using a synthetic image without registering any profile
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -44,56 +45,46 @@ jobs:
               return {'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else 'unknown'}
           try:
               with engine.connect() as conn:
-                  rows=[dict(r) for r in conn.execute(text("SELECT status,stage,error_code,upload_session,operation_type,profile_id FROM vera_facegate_enrollment ORDER BY created_at DESC LIMIT 5")).mappings()]
-              print('JOURNAL',json.dumps([{k:r[k] for k in ('status','stage','error_code','operation_type')} for r in rows]))
-              if any(r['status']=='running' for r in rows):
-                  print('DEVICE_READ_SKIPPED_ACTIVE_OPERATION')
-              elif rows:
+                  busy=conn.execute(text("SELECT COUNT(*) FROM vera_facegate_enrollment WHERE status IN ('running','unverified')")).scalar()
+              if busy:
+                  print('SYNTHETIC_PROBE_SKIPPED_BUSY_DEVICE')
+              else:
+                  from io import BytesIO
+                  from PIL import Image
+                  import requests,secrets
+                  class NativeFormSession(requests.Session):
+                      upload_count=0
+                      def post(self,url,**kwargs):
+                          if kwargs.get('files'):
+                              self.upload_count+=1
+                              if self.upload_count>1: raise RuntimeError('second_upload_blocked')
+                              kwargs['data']={'txt':'FaceID.jpg'}
+                          return super().post(url,**kwargs)
+                  class ProbeClient(FaceGateEnrollmentClient):
+                      def request(self,path,params,*,photo=None):
+                          if path not in ('/webs/login','/webs/getWhitelist','/webs/uploadfile','/webs/getUploadPercent'):
+                              raise RuntimeError('outside_probe_scope')
+                          raw=super().request(path,params,photo=photo)
+                          if path in ('/webs/uploadfile','/webs/getUploadPercent'):
+                              values=re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S)
+                              safe={k:v.strip() for k,v in values if k in ('UPLOAD.state','ERR.no') and re.fullmatch(r'[0-9-]{1,12}',v.strip())}
+                              print('SYNTHETIC_PROTOCOL',path,json.dumps(safe),flush=True)
+                          return raw
+                  photo=BytesIO()
+                  Image.new('RGB',(320,320),(0,90,180)).save(photo,'JPEG')
                   with use_registered_facegate(engine):
-                      client=FaceGateEnrollmentClient()
+                      client=ProbeClient(session=NativeFormSession())
                       client.login()
-                      print('DEVICE_LOGIN_OK')
+                      before=client.profiles()
+                      session_id=str(secrets.randbelow(90000000)+10000000)
                       try:
-                          profiles=client.profiles()
-                          print('PROFILE_LIST_OK',len(profiles))
-                          if rows[0]['profile_id']:
-                              detail=client.profile_details(int(rows[0]['profile_id']))
-                              print('PROFILE_DETAIL_OK')
-                      except Exception as exc: print('PROFILE_READ',json.dumps(safe_error(exc)))
-                      from html.parser import HTMLParser
-                      from urllib.parse import urlsplit
-                      class FrameParser(HTMLParser):
-                          def __init__(self): super().__init__(); self.frames=[]
-                          def handle_starttag(self,tag,attrs):
-                              item=dict(attrs)
-                              if tag=='iframe' and item.get('id')=='fileframe': self.frames.append(item.get('src',''))
-                      script=client.request('/js/bwlist.js',{'action':'list'})
-                      for name in ('gotoUpgrade','getUploadPercent'):
-                          match=re.search(r'function\s+'+name+r'\s*\(',script)
-                          if match:
-                              following=re.search(r'function\s+\w+\s*\(',script[match.end():])
-                              end=match.end()+following.start() if following else match.end()+7000
-                              print('UPLOAD_PROTOCOL_'+name,json.dumps(script[match.start():end][:7000]))
-                      for match in list(re.finditer(r'1010',script))[:5]:
-                          print('UPLOAD_PROTOCOL_CALLBACK',json.dumps(script[max(0,match.start()-200):match.start()+6000]))
-                      page=FrameParser();page.feed(client.request('/bwlist.asp',{'action':'list'}))
-                      if len(page.frames)==1:
-                          path=urlsplit(page.frames[0]).path.lstrip('/')
-                          if re.fullmatch(r'[A-Za-z0-9_./-]+\.(asp|html|htm|shtml)',path) and '..' not in path:
-                              source=client.request('/'+path,{'action':'list'})
-                              form=re.search(r'<form\b.*?</form>',source,re.I|re.S)
-                              if form: print('UPLOAD_PROTOCOL_FORM',json.dumps(form[0][:10000]))
-                              match=re.search(r'function\s+getPath\s*\(',source)
-                              if match:
-                                  following=re.search(r'function\s+\w+\s*\(',source[match.end():])
-                                  end=match.end()+following.start() if following else match.end()+3000
-                                  print('UPLOAD_PROTOCOL_GET_PATH',json.dumps(source[match.start():end][:3000]))
-                      raw=client.request('/webs/getUploadPercent',{'action':'list','group':'UPLOAD','sessionid':rows[0]['upload_session']})
-                      matches=re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S)
-                      print('UPLOAD_FIELD_COUNTS',json.dumps(dict(Counter(k for k,v in matches if k.startswith('UPLOAD.') or k.startswith('ERR.')))))
-                      print('UPLOAD_RESULT',json.dumps({k:v.strip() for k,v in matches if k in ('UPLOAD.state','ERR.no') and re.fullmatch(r'[0-9-]{1,12}',v.strip())}))
-                      try: fields(raw);print('UPLOAD_PARSE_OK')
-                      except Exception as exc: print('UPLOAD_PARSE',json.dumps(safe_error(exc)))
+                          client.upload(photo.getvalue(),session_id)
+                          print('SYNTHETIC_UPLOAD_RESULT','temporary_image_accepted')
+                      except EnrollmentError as exc:
+                          print('SYNTHETIC_UPLOAD_RESULT',exc.code)
+                      after=client.profiles()
+                      print('SYNTHETIC_PROBE_PROFILES_UNCHANGED',before==after)
+
           except Exception as exc:
               print('DIAGNOSTIC_ERROR',json.dumps(safe_error(exc)))
           finally:
