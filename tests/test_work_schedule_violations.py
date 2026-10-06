@@ -135,3 +135,83 @@ def test_edit_delete_archive_and_stale_guard(monkeypatch):
     assert saved['amount']==0 and payload['__schedule_violation_deleted'] is True
     assert payload['schedule_violation_changes'][-1]['action']=='delete'
     assert saved['day']==row['leave_date'], 'financial deletion preserves source attendance/leave date'
+
+
+@pytest.mark.parametrize('role', ['letan', 'locker', 'tapvu', 'support', 'nhanvien'])
+def test_department_history_is_scoped_to_authenticated_employee(monkeypatch, role):
+    app = FastAPI(); engine = Engine(); calls = []
+    monkeypatch.setattr(schedule, '_allowed_department', lambda *args: True)
+    monkeypatch.setattr(schedule, '_schedule_violations', lambda conn, department, start, end, **scope: calls.append(scope) or [])
+    schedule.install_work_schedule_routes(app, engine_instance=lambda: engine, current_identity=lambda: None, feature_allowed=lambda *args: True)
+    endpoint = next(r.endpoint for r in app.routes if r.path == '/v2/work-schedule/violations' and 'GET' in r.methods)
+    endpoint(date(2026,10,1), date(2026,10,31), 'letan', actor(role))
+    assert calls == [{'employee_username': 'operator'}]
+    with pytest.raises(HTTPException) as exc:
+        endpoint(date(2026,10,1), date(2026,10,31), 'letan', SimpleNamespace(role=role, employee_username=''))
+    assert exc.value.status_code == 403 and len(calls) == 1
+
+
+@pytest.mark.parametrize('role', ['admin', 'quanly', 'giamdoc'])
+def test_authorized_management_keeps_department_history(monkeypatch, role):
+    app = FastAPI(); engine = Engine(); calls = []
+    monkeypatch.setattr(schedule, '_allowed_department', lambda *args: True)
+    monkeypatch.setattr(schedule, '_schedule_violations', lambda conn, department, start, end, **scope: calls.append(scope) or [])
+    schedule.install_work_schedule_routes(app, engine_instance=lambda: engine, current_identity=lambda: None, feature_allowed=lambda *args: True)
+    endpoint = next(r.endpoint for r in app.routes if r.path == '/v2/work-schedule/violations' and 'GET' in r.methods)
+    endpoint(date(2026,10,1), date(2026,10,31), 'letan', actor(role))
+    assert calls == [{'employee_username': None}]
+
+
+def test_personal_history_uses_profile_permission_and_identity_not_department(monkeypatch):
+    app = FastAPI(); engine = Engine(); permissions = []
+    class PersonalConnection(Connection):
+        def execute(self, sql, params=None):
+            self.executed.append((str(sql), params))
+            if 'FROM employees' in str(sql):
+                assert params == {'username': 'operator'}
+                assert 'lower(btrim(username))=lower(btrim(:username))' in str(sql)
+                return Result(rows=[{'username': 'operator', 'full_name': 'My Name'}])
+            assert params['employees'] == ['operator']
+            assert "__schedule_violation_deleted" in str(sql)
+            # A defensive projection also rejects a foreign row returned by a malformed source.
+            return Result(rows=[{'employee_username': 'operator', 'reason': 'My violation'},
+                                {'employee_username': 'someone_else', 'reason': 'Private'}])
+    engine.conn = PersonalConnection()
+    schedule.install_work_schedule_routes(app, engine_instance=lambda: engine, current_identity=lambda: None,
+        feature_allowed=lambda conn, ident, feature: permissions.append(feature) or feature == 'profile')
+    endpoint = next(r.endpoint for r in app.routes if r.path == '/v2/work-schedule/violations/me')
+    result = endpoint(date(2026,10,1), date(2026,10,31), actor('support'))
+    assert permissions == ['profile']
+    assert result['rows'] == [{'employee_username': 'operator', 'employee_name': 'My Name', 'reason': 'My violation'}]
+    assert len(engine.conn.executed) == 2
+    # There is no caller-supplied employee or department target in the API contract.
+    import inspect
+    assert list(inspect.signature(endpoint).parameters) == ['start', 'end', 'ident']
+    before = len(engine.conn.executed)
+    with pytest.raises(HTTPException): endpoint(date(2026,10,31), date(2026,10,1), actor('support'))
+    with pytest.raises(HTTPException): endpoint(date(2025,1,1), date(2026,10,1), actor('support'))
+    with pytest.raises(HTTPException): endpoint(date(2026,10,1), date(2026,10,31), SimpleNamespace(role='support', employee_username=''))
+    assert len(engine.conn.executed) == before
+
+
+def test_personal_history_permission_denial_never_reads_database(monkeypatch):
+    app = FastAPI(); engine = Engine()
+    schedule.install_work_schedule_routes(app, engine_instance=lambda: engine, current_identity=lambda: None, feature_allowed=lambda *args: False)
+    endpoint = next(r.endpoint for r in app.routes if r.path == '/v2/work-schedule/violations/me')
+    with pytest.raises(HTTPException) as exc: endpoint(date(2026,10,1), date(2026,10,31), actor('locker'))
+    assert exc.value.status_code == 403 and not engine.conn.executed
+
+
+def test_staff_department_query_never_fetches_other_employees_penalties(monkeypatch):
+    employees = [{'username': 'operator', 'full_name': 'Same Name'}, {'username': 'another', 'full_name': 'Same Name'}]
+    monkeypatch.setattr(schedule, '_employee_catalog', lambda *args: employees)
+    class ReadConnection(Connection):
+        def execute(self, sql, params=None):
+            self.executed.append((str(sql), params))
+            return Result(rows=[{'employee_username': username} for username in params['employees']])
+    conn = ReadConnection()
+    rows = schedule._schedule_violations(conn, 'letan', date(2026,10,1), date(2026,10,31), employee_username=' OPERATOR ')
+    assert [r['employee_username'] for r in rows] == ['operator']
+    assert conn.executed[0][1]['employees'] == ['operator']
+    assert schedule._schedule_violations(conn, 'letan', date(2026,10,1), date(2026,10,31), employee_username='missing') == []
+    assert len(conn.executed) == 1

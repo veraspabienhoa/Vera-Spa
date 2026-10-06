@@ -34,3 +34,23 @@ test('violation filters, manager modal and retry-safe request', async t => {
  window.confirm=()=>true;await click('Xóa')
  const removal=calls.find(c=>c.options?.method==='DELETE');assert.ok(removal.path.endsWith('/one'));assert.equal(saved,3)
 })
+
+test('personal ledger uses only server-owned identity and retains month/date filters', async t => {
+ const dom=new JSDOM('<div id="root"/>',{pretendToBeVisual:true});globalThis.window=dom.window;globalThis.document=dom.window.document;globalThis.IS_REACT_ACT_ENVIRONMENT=true
+ const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root'));t.after(async()=>{await act(()=>root.unmount());dom.window.close()})
+ dom.window.HTMLDialogElement.prototype.close=function(){this.open=false}
+ const calls=[];const request=async path=>{calls.push(path);return {rows:[{id:'self',employee_name:'Yên Linh',employee_username:'linh',violation_date:'2026-10-06',reason:'Đồng phục',amount:50000}]}}
+ await act(async()=>root.render(React.createElement(mod.exports.default,{personal:true,request})))
+ assert.match(document.body.textContent,/LỊCH SỬ VI PHẠM CỦA TÔI/)
+ assert.match(document.body.textContent,/Đồng phục/)
+ assert.ok(calls.every(path=>path.startsWith('/v2/work-schedule/violations/me?start=')))
+ assert.ok(calls.every(path=>!path.includes('employee')&&!path.includes('department')))
+ assert.equal(document.querySelector('input[type="search"]'),null)
+ assert.equal(document.querySelector('dialog').textContent,'')
+ assert.ok(![...document.querySelectorAll('button')].some(b=>/Nhập phạt|Sửa|Xóa/.test(b.textContent)))
+ await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Tháng trước').click())
+ assert.equal(calls.length,2)
+ await act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Tùy chỉnh').click())
+ assert.match(document.body.textContent,/Từ ngày/)
+ assert.ok(document.querySelector('input[aria-label="Lọc ngày vi phạm"]'))
+})

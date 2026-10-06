@@ -14,7 +14,7 @@ const built = await build({
   plugins: [{ name: 'fixture', setup(b) {
     b.onResolve({ filter: /\/lib\/(api|profileReferenceRefresh|pushNotifications)$|EmployeeIdentityPanel$/ }, (args) => ({ path: args.path.split('/').at(-1), namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ contents: {
-      api: 'export const veraApi = globalThis.__profileApi;',
+      api: 'export const veraApi = globalThis.__profileApi; export const apiRequest = async()=>({rows:[]});',
       profileReferenceRefresh: 'export const refreshProfileReferenceData = async()=>({});',
       EmployeeIdentityPanel: 'export default function Panel(){return null}',
       pushNotifications: 'export const disablePushNotifications = async()=>({}); export const enablePushNotifications = async()=>({}); export const readPushState = async()=>({}); export const syncExistingPushSubscription = async()=>({});',
@@ -24,6 +24,7 @@ const built = await build({
 
 test('profile autosaves, retains later edits and never sends an incomplete or mismatched password', async () => {
   const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
+  dom.window.HTMLDialogElement.prototype.close = function () { this.open = false }
   const descriptors = Object.fromEntries(['window', 'document', 'navigator', 'CustomEvent', 'IS_REACT_ACT_ENVIRONMENT', '__profileApi'].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   Object.defineProperties(globalThis, {
     window: { value: dom.window, configurable: true }, document: { value: dom.window.document, configurable: true },

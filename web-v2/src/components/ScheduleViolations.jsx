@@ -7,7 +7,7 @@ import { searchTextMatches } from '../lib/searchText'
 
 const money = value => `${Number(value || 0).toLocaleString('vi-VN')}đ`
 
-export default function ScheduleViolations({ department, employees, canEdit, canManage = false, openSequence, request, onSaved }) {
+export default function ScheduleViolations({ department, employees = [], canEdit, canManage = false, personal = false, openSequence, request, onSaved }) {
   const [mode, setMode] = useState('month')
   const [range, setRange] = useState(() => violationMonthRange())
   const [search, setSearch] = useState('')
@@ -28,12 +28,13 @@ export default function ScheduleViolations({ department, employees, canEdit, can
     setRows([])
     if (!range.start || !range.end || range.end < range.start) { setError('Vui lòng nhập khoảng ngày hợp lệ.'); setLoading(false); return }
     setLoading(true); setError('')
-    requestRef.current(`/v2/work-schedule/violations?department=${department}&start=${range.start}&end=${range.end}`)
+    const path = personal ? '/v2/work-schedule/violations/me?' : `/v2/work-schedule/violations?department=${encodeURIComponent(department)}&`
+    requestRef.current(`${path}start=${range.start}&end=${range.end}`)
       .then(result => { if (active) setRows(result.rows || []) })
       .catch(err => { if (active) setError(err.message) })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [department, range.start, range.end, revision])
+  }, [department, personal, range.start, range.end, revision])
   useEffect(() => { dialog.current?.close(); setForm(null); setNotice('') }, [department])
   const selectRange = value => {
     setMode(value); setDate('')
@@ -72,9 +73,9 @@ export default function ScheduleViolations({ department, employees, canEdit, can
   }
   const visible = rows.filter(row => (!date || row.violation_date === date) && searchTextMatches(`${row.employee_name} ${row.employee_username}`, search))
   return <section className="panel schedule-violations">
-    <div className="schedule-violation-title"><h3>VI PHẠM · PHẠT VI PHẠM</h3>{canEdit && openSequence === undefined && <button className="primary-button" type="button" onClick={open}>+ Nhập phạt vi phạm</button>}</div>
+    <div className="schedule-violation-title"><h3>{personal ? 'LỊCH SỬ VI PHẠM CỦA TÔI' : 'VI PHẠM · PHẠT VI PHẠM'}</h3>{canEdit && openSequence === undefined && <button className="primary-button" type="button" onClick={open}>+ Nhập phạt vi phạm</button>}</div>
     <div className="schedule-violation-filters">
-      <label>Tên nhân viên<input type="search" placeholder="Tìm tên nhân viên…" value={search} onChange={e => setSearch(e.target.value)} /></label>
+      {!personal && <label>Tên nhân viên<input type="search" placeholder="Tìm tên nhân viên…" value={search} onChange={e => setSearch(e.target.value)} /></label>}
       <label>Ngày vi phạm<VeraDateInput value={date} aria-label="Lọc ngày vi phạm" onChange={e => setDate(e.target.value)} /></label>
       {[['month', 'Tháng này'], ['last_month', 'Tháng trước'], ['custom', 'Tùy chỉnh']].map(([value, label]) => <button key={value} type="button" className={mode === value ? 'primary-button' : 'secondary-button'} aria-pressed={mode === value} onClick={() => selectRange(value)}>{label}</button>)}
       {mode === 'custom' && <><label>Từ ngày<VeraDateInput value={range.start} onChange={e => setRange({ ...range, start: e.target.value })} /></label><label>Đến ngày<VeraDateInput value={range.end} onChange={e => setRange({ ...range, end: e.target.value })} /></label></>}
