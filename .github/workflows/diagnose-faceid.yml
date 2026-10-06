@@ -56,6 +56,12 @@ jobs:
                       if tag=='input' and item.get('type','').lower()=='file': self.inputs.append(item)
               with use_registered_facegate(engine):
                   client=FaceGateEnrollmentClient()
+                  script=client.request('/js/bwlist.js',{'action':'list'})
+                  start=script.find('function gotoUpgrade')
+                  end=script.find('function ',start+10) if start>=0 else -1
+                  upload=script[start:end if end>start else start+7000] if start>=0 else ''
+                  for token in ('action=LISTADD','action=LISTMODIFT','group=UPLOAD','sessionid=','LISTuid=','IsCheckSim=','vfileselector'):
+                      print('UPLOAD_PROTOCOL_MATCH_'+token.replace('=',''),token in upload)
                   page=FormCheck();page.feed(client.request('/bwlist.asp',{'action':'list'}))
                   print('UPLOAD_FORM_FRAME_FOUND',len(page.frames)==1)
                   if len(page.frames)==1:
