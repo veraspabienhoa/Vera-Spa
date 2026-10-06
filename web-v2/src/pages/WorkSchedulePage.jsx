@@ -138,10 +138,6 @@ function emptyCell() {
   }
 }
 
-function formatShiftTime(spec) {
-  if (!spec?.start || !spec?.end) return 'Chưa cài giờ'
-  return `${spec.start}–${spec.end}${spec.end_next_day ? ' hôm sau' : ''}`
-}
 
 function timeMinutes(value) {
   const match = String(value || '').match(/^(\d{2}):(\d{2})$/)
@@ -344,6 +340,7 @@ export default function WorkSchedulePage({ user }) {
   const [monthlyRows, setMonthlyRows] = useState([])
   const [monthlyViolations, setMonthlyViolations] = useState([])
   const [violationRevision, setViolationRevision] = useState(0)
+  const [violationOpenSequence, setViolationOpenSequence] = useState(0)
   const [violationStatsError, setViolationStatsError] = useState('')
   const [comboSales, setComboSales] = useState([])
   const [comboCustomers, setComboCustomers] = useState([])
@@ -1111,7 +1108,7 @@ export default function WorkSchedulePage({ user }) {
 
     <UiToolbar data-ui-key="u-8e8fa302b3e3" className="schedule-department-tabs">{availableDepartments.map((item) => <button data-ui-key="u-c72ddb608d35" type="button" key={item} className={department === item ? 'active' : ''} onClick={() => { setDepartment(item) }}>{DEPARTMENT_INFO[item].label}</button>)}</UiToolbar>
 
-    {department !== 'quanly' && <div className="schedule-legend"><strong>{DEPARTMENT_INFO[department].label}</strong>{Object.entries(activeShiftDefinitions).map(([name, spec]) => <span key={name}><strong>{name}:</strong> {formatShiftTime(spec)}</span>)}</div>}
+    {['admin', 'quanly'].includes(role) && availableDepartments.includes(department) && <div className="schedule-violation-launch"><button type="button" className="primary-button" onClick={() => setViolationOpenSequence(value => value + 1)}>+ Nhập phạt vi phạm</button></div>}
 
     {pastePanelOpen && selectedCell && <div data-ui-key="u-f7b70375a55b" className="paste-range-panel">
       <label>Nhân viên<input value={systemName(employees.find((item) => item.username === selectedCell.username)) || selectedCell.username} readOnly /></label>
@@ -1170,7 +1167,7 @@ export default function WorkSchedulePage({ user }) {
         <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{violationStatsError ? '—' : monthlyStatistics.departmentTotal.violations}</td><td>{violationStatsError ? '—' : `${monthlyStatistics.departmentTotal.penalty.toLocaleString('vi-VN')}đ`}</td></tr></tfoot>
       </table>
     </div>}
-    <ScheduleViolations department={department} employees={employees} canEdit={['admin', 'quanly'].includes(role) && availableDepartments.includes(department)} request={scheduleRequest} onSaved={() => setViolationRevision(value => value + 1)} />
+    <ScheduleViolations openSequence={violationOpenSequence} canManage={isAdmin} department={department} employees={employees} canEdit={['admin', 'quanly'].includes(role) && availableDepartments.includes(department)} request={scheduleRequest} onSaved={() => setViolationRevision(value => value + 1)} />
     {!loading && comboEditor}
   </section>
 }

@@ -152,8 +152,8 @@ EXCEL_COLUMNS = (
     ("full_allowance", "Phụ cấp Full"), ("attendance_bonus", "Tiền chuyên cần"),
     ("responsibility", "Tiền trách nhiệm"), ("seniority", "Phụ cấp thâm niên"),
     ("combo_sales", "Bán combo"), ("total_salary", "Tổng lương"),
-    ("violation_penalty", "Tiền phạt vi phạm"), ("late_penalty", "Tiền phạt đi trễ"),
-    ("advance", "Tiền đã ứng"), ("net_salary", "Số tiền thực nhận"),
+    ("advance", "Ứng lương"), ("violation_penalty", "Tiền phạt vi phạm"), ("late_penalty", "Tiền phạt đi trễ"),
+    ("net_salary", "Số tiền thực nhận"),
 )
 
 
