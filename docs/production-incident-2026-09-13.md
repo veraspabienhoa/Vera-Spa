@@ -2387,3 +2387,18 @@ until the operator explicitly calculates and saves/completes the new payroll.
 No production database, Support rate configuration or September approved payroll
 has been read or changed during this fix. The connected workstation is offline.
 Source-level diagnosis is confirmed; production verification remains pending.
+
+## 06-10-2026 — Administrative payroll sharing and violation corrections
+
+Sharing now opens a file-choice dialog for PNG/PDF. Payroll workday and three
+shift-hour columns use equal widths; advance appears immediately before the
+violation penalty, including exports, without a second deduction.
+
+Admin can edit/archive schedule violations using the canonical leave transaction
+lock and optimistic row versions. Archive zeros the fine and hides the ledger
+entry while retaining its source and audit history for retry deduplication.
+Attendance-derived entries preserve their source date/reason and absence days;
+only financial amount/note may be corrected here. Managers retain creation
+permission; mutation APIs reject non-Admin roles before database access. The
+creation button replaces the shift legend. Saved payroll requires recalculation
+to reflect corrections. No production data or deployment has been verified.

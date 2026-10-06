@@ -20,6 +20,7 @@ async function fixture(t, expireSave=false){
   const body=path.endsWith('/settings/employees')?{salary_config_tables:{operations:JSON.parse(options.body).rows,tapvu:[]},message:'Đã lưu cấu hình'}:path.endsWith('/settings')?data:path.endsWith('/history')?{items:[]}:path.endsWith('/calculate')?{rows,start:'2026-09-01',end:'2026-09-26',source_label:'Lịch làm việc'}:path.endsWith('/draft')?{rows:draftRows,message:'Đã lưu'}:{}
   return new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}})
  }}
+ dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true};dom.window.HTMLDialogElement.prototype.close=function(){this.open=false}
  const saved=Object.fromEntries(Object.keys(globals).map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));for(const[k,v]of Object.entries(globals))Object.defineProperty(globalThis,k,{value:v,configurable:true})
  const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root'))
  t.after(async()=>{await act(()=>root.unmount());dom.window.close();for(const[k,v]of Object.entries(saved)){if(v)Object.defineProperty(globalThis,k,v);else delete globalThis[k]}})
@@ -101,6 +102,8 @@ test('save then reopen draft preserves edits and clears stale filters',async t=>
 })
 test('deduction summary updates all rows despite visible filters',async t=>{
  const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ const headers=[...document.querySelectorAll('.department-payroll-table th')].map(el=>el.textContent)
+ assert.equal(headers[headers.indexOf('Ứng lương')+1],'Phạt vi phạm')
  const month=document.querySelector('.department-payroll-toolbar input[type="month"]').value
  await f.change(document.querySelector('.department-payroll-table-search input'),'Quản Lý')
  await act(()=>window.dispatchEvent(new window.CustomEvent('vera-salary-advance-summary',{detail:{month,byEmployee:{a:{payroll_total:100000}}}})))
@@ -112,6 +115,6 @@ test('payroll actions precede table and share offers prepared PNG or PDF',async 
  const toolbar=document.querySelector('.department-payroll-top-actions'),table=document.querySelector('.department-payroll-table')
  assert.ok(toolbar.compareDocumentPosition(table)&window.Node.DOCUMENT_POSITION_FOLLOWING)
  const buttons=[...toolbar.querySelectorAll('button')];const exportIndex=buttons.findIndex(b=>b.textContent.trim()==='Xuất excel');assert.equal(buttons[exportIndex+1].textContent.trim(),'Chia sẻ')
- await f.click('Chia sẻ');assert.ok(document.querySelector('[aria-label="Chia sẻ bảng lương"]'));assert.ok(f.requests.some(r=>r.path.endsWith('/export.png')));assert.ok(f.requests.some(r=>r.path.endsWith('/export.pdf')))
+ await f.click('Chia sẻ');assert.equal(document.querySelector('dialog[aria-label="Chia sẻ bảng lương"]').open,true);assert.ok(f.requests.some(r=>r.path.endsWith('/export.png')));assert.ok(f.requests.some(r=>r.path.endsWith('/export.pdf')))
  assert.equal([...document.querySelectorAll('button')].find(b=>b.textContent==='Ảnh PNG').disabled,false)
 })

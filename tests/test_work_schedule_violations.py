@@ -88,3 +88,50 @@ def test_penalty_is_in_existing_payroll_source_and_reduces_net():
 def test_invalid_amount_rejected():
     for amount in [-1, float('nan'), 1_000_000_001]:
         with pytest.raises(ValidationError): body().model_validate({**body().model_dump(), 'amount':amount})
+
+
+@pytest.mark.parametrize('method', ['PUT','DELETE'])
+@pytest.mark.parametrize('role', ['quanly','letan','leader','nhanvien'])
+def test_only_admin_can_edit_or_delete_before_database(monkeypatch, method, role):
+    app = FastAPI()
+    schedule.install_work_schedule_routes(app, engine_instance=lambda: pytest.fail('no database for denied role'),
+        current_identity=lambda: None, feature_allowed=lambda *args: True)
+    endpoint = next(r.endpoint for r in app.routes if r.path == '/v2/work-schedule/violations/{violation_id}' and method in r.methods)
+    from datetime import datetime, timezone
+    values = dict(department='letan',expected_updated_at=datetime.now(timezone.utc))
+    model = schedule.ScheduleViolationRevision(**values) if method == 'DELETE' else schedule.ScheduleViolationUpdate(
+        **values,violation_date=date(2026,10,6),reason='Đồng phục',amount=10000)
+    with pytest.raises(HTTPException) as exc: endpoint('uid',model,actor(role))
+    assert exc.value.status_code == 403
+
+
+def test_edit_delete_archive_and_stale_guard(monkeypatch):
+    from datetime import datetime, timezone
+    updated = datetime(2026,10,6,2,tzinfo=timezone.utc)
+    row = dict(record_uid='uid',employee_name='linh',leave_date=date(2026,10,6),leave_reason='Vi phạm · Đồng phục',
+        leave_type='Vi phạm',source_sheet_id='postgres:work_schedule_violation',penalty=50000,detail='Old',
+        payload={'schedule_violation':{'original':'kept'}},updated_at=updated,updated_by='manager')
+    class MutationConnection:
+        def __init__(self): self.writes=[]
+        def execute(self,sql,params=None):
+            if 'SELECT *' in str(sql): return SimpleNamespace(mappings=lambda:SimpleNamespace(first=lambda:row))
+            if 'UPDATE leave_records' in str(sql): self.writes.append(params)
+            return Result()
+    conn=MutationConnection()
+    monkeypatch.setattr(schedule,'_employee_catalog',lambda *args:[{'username':'linh'}])
+    model=schedule.ScheduleViolationUpdate(department='letan',expected_updated_at=updated,violation_date='2026-10-05',
+        reason='Đồng phục sửa',amount=80000,note='Updated')
+    assert schedule._mutate_schedule_violation(conn,'uid',model,actor('admin'))['ok']
+    saved=conn.writes[-1];payload=json.loads(saved['payload'])
+    assert saved['amount']==80000 and saved['day']==date(2026,10,5)
+    assert payload['schedule_violation']=={'original':'kept'}
+    assert payload['schedule_violation_changes'][-1]['before']['penalty']=='50000'
+    assert payload['schedule_violation_changes'][-1]['actor']=='operator'
+    stale=model.model_copy(update={'expected_updated_at':datetime(2026,10,6,1,tzinfo=timezone.utc)})
+    with pytest.raises(HTTPException) as exc: schedule._mutate_schedule_violation(conn,'uid',stale,actor('admin'))
+    assert exc.value.status_code==409 and len(conn.writes)==1
+    schedule._mutate_schedule_violation(conn,'uid',model,actor('admin'),deleting=True)
+    saved=conn.writes[-1];payload=json.loads(saved['payload'])
+    assert saved['amount']==0 and payload['__schedule_violation_deleted'] is True
+    assert payload['schedule_violation_changes'][-1]['action']=='delete'
+    assert saved['day']==row['leave_date'], 'financial deletion preserves source attendance/leave date'

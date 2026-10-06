@@ -126,16 +126,77 @@ class ScheduleViolationCreate(BaseModel):
     note: str = Field(default="", max_length=1000)
 
 
+class ScheduleViolationRevision(BaseModel):
+    department: Literal["quanly", "letan", "locker", "tapvu"]
+    expected_updated_at: datetime
+
+
+class ScheduleViolationUpdate(ScheduleViolationRevision):
+    violation_date: date
+    reason: str = Field(min_length=1, max_length=400)
+    amount: int = Field(ge=0, le=1_000_000_000)
+    note: str = Field(default="", max_length=1000)
+
+
+def _mutate_schedule_violation(conn, uid, body, ident, *, deleting=False):
+    # Use the canonical leave lock and row version, preserving original source
+    # records and automatic-event deduplication while correcting only the fine.
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+    row = conn.execute(text("SELECT * FROM leave_records WHERE record_uid=:uid FOR UPDATE"), {"uid":uid}).mappings().first()
+    if not row:
+        raise HTTPException(404, "Không tìm thấy vi phạm.")
+    people = _employee_catalog(conn, body.department)
+    if not any(str(p['username']).strip().casefold() == str(row['employee_name']).strip().casefold() for p in people):
+        raise HTTPException(403, "Vi phạm không thuộc bộ phận đã chọn.")
+    payload = row.get('payload') or {}
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if payload.get('__schedule_violation_deleted'):
+        raise HTTPException(404, "Vi phạm đã được xóa.")
+    if not (float(row.get('penalty') or 0) > 0 or row.get('leave_type') == 'Vi phạm'):
+        raise HTTPException(400, "Bản ghi không phải vi phạm có thể quản lý.")
+    if row.get('updated_at') != body.expected_updated_at:
+        raise HTTPException(409, "Vi phạm vừa được thay đổi. Hãy làm mới trước khi sửa/xóa.")
+    manual = row['source_sheet_id'] == 'postgres:work_schedule_violation'
+    now = datetime.now(ZoneInfo('Asia/Ho_Chi_Minh'))
+    before = {key: str(row.get(key) or '') for key in ('leave_date','leave_reason','detail','penalty','updated_by','updated_at')}
+    day, reason, note, amount = row['leave_date'], row['leave_reason'], row.get('detail') or '', 0
+    if not deleting:
+        day, reason, note, amount = body.violation_date, body.reason.strip(), body.note.strip(), body.amount
+        if not reason:
+            raise HTTPException(400, "Vui lòng nhập nội dung vi phạm.")
+        if not manual and (day != row['leave_date'] or reason != row['leave_reason']):
+            raise HTTPException(400, "Vi phạm từ chấm công/lịch nghỉ chỉ sửa tiền phạt và ghi chú tại bảng này.")
+    else:
+        payload['__schedule_violation_deleted'] = True
+    history = list(payload.get('schedule_violation_changes') or [])
+    history.append({'action':'delete' if deleting else 'edit','actor':_actor(ident),'at':now.isoformat(),
+                    'before':before,'after':{'date':day.isoformat(),'reason':reason,'note':note,'amount':amount}})
+    payload['schedule_violation_changes'] = history
+    payload['Phạt vi phạm'] = amount
+    payload['Ngày'] = day.strftime('%d/%m/%Y')
+    payload['Lý do nghỉ'] = reason
+    payload['Chi tiết'] = note
+    conn.execute(text("""UPDATE leave_records SET leave_date=:day,leave_reason=:reason,detail=:note,penalty=:amount,
+        updated_by=:actor,update_date=:udate,update_time=:utime,weekday_label=:weekday,payload=CAST(:payload AS jsonb),updated_at=NOW()
+        WHERE record_uid=:uid"""), {'uid':uid,'day':day,'reason':reason,'note':note,'amount':amount,'actor':_actor(ident),
+        'udate':now.strftime('%d/%m/%Y'),'utime':now.strftime('%H:%M:%S'),
+        'weekday':'Chủ nhật' if day.weekday()==6 else f'Thứ {day.weekday()+2}', 'payload':json.dumps(payload,ensure_ascii=False)})
+    return {'ok':True,'message':'Đã xóa vi phạm.' if deleting else 'Đã cập nhật vi phạm.'}
+
+
 def _schedule_violations(conn, department, start, end):
     employees = _employee_catalog(conn, department)
     names = {str(e["username"]).strip().casefold(): e for e in employees}
     rows = conn.execute(text("""
         SELECT record_uid AS id, employee_name AS employee_username,
                leave_date AS violation_date, leave_reason AS reason, detail AS note,
-               COALESCE(penalty,0) AS amount, updated_by, created_at
+               COALESCE(penalty,0) AS amount, updated_by, created_at, updated_at,
+               (source_sheet_id='postgres:work_schedule_violation') AS is_manual
         FROM leave_records WHERE leave_date BETWEEN :start AND :end
           AND (COALESCE(penalty,0)>0 OR leave_type='Vi phạm')
           AND lower(btrim(employee_name)) = ANY(:employees)
+          AND COALESCE(payload->>'__schedule_violation_deleted','false') <> 'true'
         ORDER BY leave_date DESC, created_at DESC
     """), {"start": start, "end": end, "employees": list(names)}).mappings().all()
     return [dict(row, employee_name=names[str(row["employee_username"]).strip().casefold()]["full_name"])
@@ -855,6 +916,23 @@ def install_work_schedule_routes(
                  "weekday": "Chủ nhật" if body.violation_date.weekday()==6 else f"Thứ {body.violation_date.weekday()+2}",
                  "payload": json.dumps(payload, ensure_ascii=False), "uid": uid})
         return {"ok": True, "message": "Đã lưu vi phạm và tiền phạt vào dữ liệu tính lương.", "id": uid}
+
+
+    def manage_violation(uid, body, ident, *, deleting=False):
+        if _role(ident) != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được sửa/xóa vi phạm.')
+        with engine_instance().begin() as conn:
+            if not _allowed_department(conn, ident, body.department, feature_allowed):
+                raise HTTPException(403, 'Bạn không có quyền quản lý vi phạm bộ phận này.')
+            return _mutate_schedule_violation(conn, uid, body, ident, deleting=deleting)
+
+    @app.put('/v2/work-schedule/violations/{violation_id}')
+    def update_schedule_violation(violation_id: str, body: ScheduleViolationUpdate, ident=Depends(current_identity)):
+        return manage_violation(violation_id, body, ident)
+
+    @app.delete('/v2/work-schedule/violations/{violation_id}')
+    def delete_schedule_violation(violation_id: str, body: ScheduleViolationRevision, ident=Depends(current_identity)):
+        return manage_violation(violation_id, body, ident, deleting=True)
 
     @app.get("/v2/work-schedule/template.xlsx")
     def export_work_schedule_template(
