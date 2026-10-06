@@ -140,7 +140,7 @@ DEFAULT_EMAIL_TEMPLATE = {
 
 ROW_MONEY_FIELDS = (
     "base_salary", "salary", "full_allowance", "attendance_bonus", "responsibility",
-    "seniority", "combo_sales", "other_income_1", "other_income_2", "total_salary",
+    "seniority", "combo_sales", "total_salary",
     "violation_penalty", "late_penalty", "advance", "net_salary",
 )
 
@@ -151,8 +151,7 @@ EXCEL_COLUMNS = (
     ("hours_ca2_after_22", "Giờ Ca 2 sau 22h"), ("salary", "Tiền lương"),
     ("full_allowance", "Phụ cấp Full"), ("attendance_bonus", "Tiền chuyên cần"),
     ("responsibility", "Tiền trách nhiệm"), ("seniority", "Phụ cấp thâm niên"),
-    ("combo_sales", "Bán combo"), ("other_income_1", "Khoản cộng khác 1"),
-    ("other_income_2", "Khoản cộng khác 2"), ("total_salary", "Tổng lương"),
+    ("combo_sales", "Bán combo"), ("total_salary", "Tổng lương"),
     ("violation_penalty", "Tiền phạt vi phạm"), ("late_penalty", "Tiền phạt đi trễ"),
     ("advance", "Tiền đã ứng"), ("net_salary", "Số tiền thực nhận"),
 )
@@ -385,7 +384,7 @@ def _attendance_totals(records: list[dict[str, Any]], employee: str, norm: Calla
 
 
 def _recalculate(row: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
-    result = dict(row)
+    result = {key: value for key, value in row.items() if key not in {"other_income_1", "other_income_2"}}
     for field in ROW_MONEY_FIELDS:
         result[field] = _number(result.get(field))
     for field in ("hours_ca1", "hours_ca2_before_22", "hours_ca2_after_22", "work_days"):
@@ -403,7 +402,7 @@ def _recalculate(row: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
         ))
     result["total_salary"] = sum(result[field] for field in (
         "salary", "full_allowance", "attendance_bonus", "responsibility", "seniority",
-        "combo_sales", "other_income_1", "other_income_2",
+        "combo_sales",
     ))
     result["net_salary"] = result["total_salary"] - sum(
         result[field] for field in ("violation_penalty", "late_penalty", "advance")
@@ -508,7 +507,6 @@ def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], 
             "responsibility": employee_cfg["default_responsibility"], "seniority": employee_cfg["default_seniority"],
             "combo_count": combo_counts.get(username.casefold(), 0),
             "combo_sales": combo_counts.get(username.casefold(), 0) * COMBO_COMMISSION,
-            "other_income_1": 0, "other_income_2": 0,
             "violation_penalty": violation_map.get(norm(username), 0),
             "late_penalty": late_map.get(norm(username), 0), "advance": 0,
             "incomplete_days": totals["incomplete_days"],
@@ -649,7 +647,6 @@ def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any
             "seniority": employee_cfg["default_seniority"],
             "combo_count": combo_counts.get(username.casefold(), 0),
             "combo_sales": combo_counts.get(username.casefold(), 0) * COMBO_COMMISSION,
-            "other_income_1": 0, "other_income_2": 0,
             "violation_penalty": violation_map.get(norm(username), 0),
             "late_penalty": late_map.get(norm(username), 0), "advance": 0,
             "incomplete_days": 0, "calculation_source": "schedule",
@@ -802,6 +799,15 @@ def _workbook(rows: list[dict[str, Any]], department: str, label: str) -> bytes:
         if key in ROW_MONEY_FIELDS:
             for cell in ws.iter_cols(min_col=index, max_col=index, min_row=3):
                 for item in cell: item.number_format = '#,##0"đ"'
+    from openpyxl.utils import get_column_letter
+    total_row = ws.max_row + 1
+    ws.cell(total_row, 2, 'TỔNG')
+    for column in range(5, 20):
+        letter = get_column_letter(column)
+        ws.cell(total_row, column, f'=SUM({letter}3:{letter}{total_row - 1})')
+    for cell in ws[total_row]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill('solid', fgColor='E5F0E9')
     stream = BytesIO(); wb.save(stream); return stream.getvalue()
 
 
@@ -829,6 +835,24 @@ def _combined_workbook(rows: list[dict[str, Any]], label: str) -> bytes:
             for column in worksheet.iter_cols(min_col=index, max_col=index, min_row=3):
                 for cell in column:
                     cell.number_format = '#,##0"đ"'
+    total_row = worksheet.max_row + 1
+    worksheet.cell(total_row, 2, 'TỔNG')
+    from openpyxl.utils import get_column_letter
+    for column in range(5, 20):
+        letter = get_column_letter(column)
+        worksheet.cell(total_row, column, f'=SUM({letter}3:{letter}{total_row - 1})')
+    for cell in worksheet[total_row]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill('solid', fgColor='E5F0E9')
+        cell.number_format = '#,##0.##' if cell.column <= 8 else '#,##0"đ"'
+    worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+    worksheet.page_setup.orientation = 'landscape'
+    worksheet.page_setup.paperSize = worksheet.PAPERSIZE_A4
+    worksheet.page_setup.fitToWidth = 1
+    worksheet.page_setup.fitToHeight = 0
+    worksheet.print_title_rows = '1:2'
+    worksheet.print_options.horizontalCentered = True
+    worksheet.print_area = f'A1:S{total_row}'
     stream = BytesIO()
     workbook.save(stream)
     return stream.getvalue()
@@ -840,7 +864,7 @@ def _money(value: Any) -> str:
 
 def _detail_text(row: dict[str, Any]) -> str:
     labels = dict(EXCEL_COLUMNS)
-    keys = ("work_days", "salary", "full_allowance", "attendance_bonus", "responsibility", "seniority", "combo_sales", "other_income_1", "other_income_2", "violation_penalty", "late_penalty", "advance")
+    keys = ("work_days", "salary", "full_allowance", "attendance_bonus", "responsibility", "seniority", "combo_sales", "violation_penalty", "late_penalty", "advance")
     return "\n".join(f"{labels[key]}: {_money(row.get(key)) if key != 'work_days' else row.get(key, 0)}" for key in keys)
 
 
@@ -1046,6 +1070,20 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             headers={"Content-Disposition": f"attachment; filename=Luong_hanh_chanh_{body.month}.xlsx"},
         )
 
+    @app.post("/v2/department-payroll/combined/export.{file_type}")
+    def export_combined_share(file_type: str, body: CombinedPayrollDraft, ident: identity_type = Depends(current_identity)):
+        if file_type not in {'png', 'pdf'}:
+            raise HTTPException(400, 'Định dạng chia sẻ không hợp lệ.')
+        _, _, label = _month_range(body.month)
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, "payroll_export")
+            rows = _clean_combined_rows(conn, body.rows, norm, month=body.month)
+            _require_complete_attendance(conn, body.month, rows, norm)
+        from vera_department_payroll_share import payroll_pdf, payroll_png
+        content = (payroll_pdf if file_type == 'pdf' else payroll_png)(rows, label, EXCEL_COLUMNS)
+        return StreamingResponse(BytesIO(content), media_type='application/pdf' if file_type == 'pdf' else 'image/png',
+                                 headers={'Content-Disposition': f'attachment; filename=Luong_hanh_chanh_{body.month}.{file_type}'})
+
     @app.get("/v2/department-payroll/draft")
     def get_draft(department: str = Query(...), month: str = Query(...), ident: identity_type = Depends(current_identity)):
         department = valid_department(department); _month_range(month)
@@ -1134,7 +1172,7 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
                     "Tiền Lương": row.get("salary"),
                     "Tiền Hỗ Trợ Hoàn Lại": sum(_number(row.get(key)) for key in (
                         "full_allowance", "attendance_bonus", "responsibility", "seniority",
-                        "combo_sales", "other_income_1", "other_income_2",
+                        "combo_sales",
                     )),
                     "Hoàn trả tiền tích lũy": 0, "Tích lũy": 0, "Chi Phí Sinh Hoạt": 0,
                     "Tiền phạt trong tháng": _number(row.get("violation_penalty")) + _number(row.get("late_penalty")),
