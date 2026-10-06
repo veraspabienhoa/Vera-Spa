@@ -46,14 +46,27 @@ jobs:
               with engine.connect() as conn:
                   rows=[dict(r) for r in conn.execute(text("SELECT status,stage,error_code,upload_session,operation_type,profile_id FROM vera_facegate_enrollment ORDER BY created_at DESC LIMIT 5")).mappings()]
               print('JOURNAL',json.dumps([{k:r[k] for k in ('status','stage','error_code','operation_type')} for r in rows]))
-              if rows and rows[0]['status']=='unverified' and rows[0]['stage']=='uploading':
-                  with use_registered_facegate(engine):
-                      client=FaceGateEnrollmentClient()
-                      value=fields(client.request('/webs/getUploadPercent',{'action':'list','group':'UPLOAD','sessionid':rows[0]['upload_session']}))
-                      state=value.get('UPLOAD.state','')
-                      print('PENDING_UPLOAD_STATE',state if re.fullmatch(r'[0-9]{1,3}',state) else 'invalid')
-                      print('PENDING_UPLOAD_SESSION_MATCH',value.get('UPLOAD.sessionid')==rows[0]['upload_session'])
-                      print('PENDING_UPLOAD_SESSION_ZERO',value.get('UPLOAD.sessionid')=='0')
+              from html.parser import HTMLParser
+              class FormCheck(HTMLParser):
+                  def __init__(self): super().__init__();self.frames=[];self.forms=[];self.inputs=[]
+                  def handle_starttag(self,tag,attrs):
+                      item=dict(attrs)
+                      if tag=='iframe' and item.get('id')=='fileframe': self.frames.append(item.get('src',''))
+                      if tag=='form': self.forms.append(item)
+                      if tag=='input' and item.get('type','').lower()=='file': self.inputs.append(item)
+              with use_registered_facegate(engine):
+                  client=FaceGateEnrollmentClient()
+                  page=FormCheck();page.feed(client.request('/bwlist.asp',{'action':'list'}))
+                  print('UPLOAD_FORM_FRAME_FOUND',len(page.frames)==1)
+                  if len(page.frames)==1:
+                      path=page.frames[0].lstrip('/')
+                      if re.fullmatch(r'[A-Za-z0-9_./-]+\\.(asp|html|htm)',path) and '..' not in path:
+                          form=FormCheck();form.feed(client.request('/'+path,{'action':'list'}))
+                          print('UPLOAD_FORM_POST',any(f.get('method','').lower()=='post' for f in form.forms))
+                          print('UPLOAD_FORM_MULTIPART',any(f.get('enctype','').lower()=='multipart/form-data' for f in form.forms))
+                          print('UPLOAD_FORM_FILE_INPUTS',len(form.inputs))
+                          for candidate in ('vfileselector','file','filename','uploadfile','Filedata'):
+                              print('UPLOAD_FORM_NAME_MATCH_'+candidate,any(f.get('name')==candidate for f in form.inputs))
 
           except Exception as exc:
               print('DIAGNOSTIC_ERROR',json.dumps(safe_error(exc)))
