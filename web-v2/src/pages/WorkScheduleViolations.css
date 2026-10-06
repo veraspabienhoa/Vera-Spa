@@ -1,0 +1,17 @@
+.schedule-violations{display:grid;gap:12px;min-width:0;padding:16px;border:1px solid #d6e2dc;border-radius:14px;background:#fffaf0}
+.schedule-violation-heading{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.schedule-violation-heading h3{margin:0;color:#193d31}
+.schedule-violation-filters{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+.schedule-violation-filters label,.schedule-violation-form label{display:grid;gap:5px;min-width:0;font-size:12px;font-weight:700}
+.schedule-violation-filters input,.schedule-violation-form input,.schedule-violation-form select{min-width:0;width:100%;min-height:38px;padding:8px;border:1px solid #527b67;border-radius:8px;background:#fff}
+.schedule-violations table{width:100%;border-collapse:collapse;min-width:600px}
+.schedule-violations th,.schedule-violations td{padding:8px;border:1px solid #527b67;text-align:left;overflow-wrap:anywhere}
+.schedule-violations th,.schedule-violations tfoot{background:#e5f1eb}
+.violation-positive{background:#fff0e9;color:#a5322b;font-weight:800}
+.schedule-violation-dialog{width:min(960px,calc(100% - 24px));max-height:90vh;overflow:auto;padding:20px;border:2px solid #527b67;border-radius:14px;background:#fffaf0;color:#193d31}
+.schedule-violation-dialog::backdrop{background:rgba(0,0,0,.45)}
+.schedule-violation-dialog form{display:grid;gap:16px}
+.schedule-violation-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:end}
+.schedule-violation-form .vera-date-input>input[type=text],.schedule-violation-filters .vera-date-input>input[type=text]{padding-right:40px}
+.schedule-violation-form .vera-native-date-picker,.schedule-violation-filters .vera-native-date-picker{min-height:0;padding:0;border:0;width:32px}
+@media(max-width:620px){.schedule-violation-form{grid-template-columns:1fr}.schedule-violation-filters>label{flex:1 1 140px;max-width:100%}}
