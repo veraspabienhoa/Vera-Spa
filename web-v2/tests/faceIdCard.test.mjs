@@ -136,6 +136,36 @@ test('a reconciled precommit failure permits registration again',async()=>{
  }finally{await dom.window.unmount();dom.window.close()}
 })
 
+test('HTTP 502 recovers the saved error and reconciliation keeps it visible without resending',async()=>{
+ let writes=0,checks=0
+ const sha='a'.repeat(64)
+ let current={status:'not_registered',can_replace:true,mapped_profile:{profile_id:123}}
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:sha}}),
+  enrollment:async()=>current,
+  enroll:async()=>{writes++;current={status:'unverified',operation_id:'failed',photo_sha256:sha,error_code:'upload_timeout'};throw new Error('HTTP 502')},
+  verifyEnrollment:async()=>{checks++;current={...current,status:'rejected',can_replace:true,mapped_profile:{profile_id:123}};return current}})
+ try{
+  await dom.window.act(async()=>button(dom,'Cập nhật ảnh trên máy').click())
+  assert.match(dom.window.document.body.textContent,/Hết thời gian chờ phản hồi khi gửi ảnh/)
+  assert.match(dom.window.document.body.textContent,/Mã lỗi: upload_timeout/)
+  assert.doesNotMatch(dom.window.document.body.textContent,/Máy chưa trả kết quả cập nhật ảnh/)
+  await dom.window.act(async()=>{dom.window.dispatchEvent(new dom.window.Event('focus'));await new Promise(r=>setTimeout(r,0))})
+  assert.equal(writes,1);assert.equal(checks,1)
+  assert.match(dom.window.document.body.textContent,/Mã lỗi: upload_timeout/)
+  assert.match(dom.window.document.body.textContent,/Hồ sơ trên máy chưa được cập nhật/)
+  assert.ok(button(dom,'Cập nhật ảnh trên máy'))
+ }finally{await dom.window.unmount();dom.window.close()}
+})
+
+test('a reopened Face ID panel displays the preserved failure reason',async()=>{
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),
+  enrollment:async()=>({status:'rejected',error_code:'invalid_reference'})})
+ try{
+  assert.match(dom.window.document.body.textContent,/Máy chưa trả tham chiếu ảnh mới hợp lệ/)
+  assert.match(dom.window.document.body.textContent,/Mã lỗi: invalid_reference/)
+ }finally{await dom.window.unmount();dom.window.close()}
+})
+
 test('focus automatically reconciles a stale device-wide blocker and releases buttons',async()=>{
  let pending=true;const checks=[]
  const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:{size_bytes:20,sha256:'a'.repeat(64)}}),

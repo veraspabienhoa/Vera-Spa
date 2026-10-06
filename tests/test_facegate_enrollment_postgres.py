@@ -258,6 +258,23 @@ def test_failed_read_keeps_precommit_reservation_and_journal(setup,monkeypatch):
     assert s.calls.count('upload')==1 and 'add' not in s.calls
 
 
+@pytest.mark.parametrize('code', ['upload_not_started', 'upload_timeout', 'invalid_reference'])
+def test_reconciliation_keeps_original_failure_code_for_status_and_reload(setup, monkeypatch, code):
+    s = setup
+    def fail(self, photo, session, **kwargs):
+        self._call('upload')
+        raise routes.EnrollmentError(code, 'Safe device failure')
+    monkeypatch.setattr(routes.FaceGateEnrollmentClient, 'upload', fail)
+    assert send(s).status_code == 502
+    before = s.api.get(PATH).json()
+    assert before['status'] == 'unverified' and before['error_code'] == code
+    checked = s.api.post(PATH + '/verify').json()
+    assert checked['status'] == 'rejected' and checked['error_code'] == code
+    latest = s.api.get(PATH).json()
+    assert latest['error_code'] == code and latest['can_enroll']
+    assert s.calls.count('upload') == 1 and 'add' not in s.calls
+
+
 def test_precommit_collision_keeps_reservation(setup,monkeypatch):
     s=setup;s.mode['value']='upload_timeout'
     assert send(s).status_code==502

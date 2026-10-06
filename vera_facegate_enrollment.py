@@ -90,8 +90,9 @@ class FaceGateEnrollmentClient:
                                   'Expires': 'Wed, 26 Oct 2016 23:48:01 GMT'}
             if mutation:
                 options['data'] = nonce
-        response = method(self.base + path, **options)
+        response = None
         try:
+            response = method(self.base + path, **options)
             if response.status_code != 200:
                 raise EnrollmentError('device_http', 'Máy chưa trả kết quả hợp lệ.')
             chunks, size = [], 0
@@ -101,8 +102,19 @@ class FaceGateEnrollmentClient:
                     raise EnrollmentError('invalid_response', 'Phản hồi máy vượt giới hạn.')
                 chunks.append(chunk)
             return b''.join(chunks).decode('utf-8', errors='strict')
+        except requests.Timeout:
+            code = 'upload_timeout' if photo is not None else 'commit_timeout' if mutation else 'device_timeout'
+            raise EnrollmentError(code,
+                'Hết thời gian chờ phản hồi từ máy. Cần kiểm tra lại kết quả; không tự gửi lại ảnh.') from None
+        except requests.ConnectionError:
+            code = 'upload_connection_error' if photo is not None else 'commit_connection_error' if mutation else 'device_connection_error'
+            raise EnrollmentError(code,
+                'Kết nối tới máy bị gián đoạn. Cần kiểm tra lại kết quả; không tự gửi lại ảnh.') from None
+        except UnicodeDecodeError:
+            raise EnrollmentError('invalid_response_encoding', 'Phản hồi từ máy không đúng định dạng văn bản hỗ trợ.') from None
         finally:
-            response.close()
+            if response is not None:
+                response.close()
 
     def login(self):
         value = fields(self.request('/webs/login', {'action': 'list', 'group': 'LOGIN',

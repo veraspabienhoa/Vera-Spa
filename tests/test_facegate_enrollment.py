@@ -138,8 +138,54 @@ def test_rejected_faces_never_become_success(monkeypatch, state):
 
 def test_timeout_does_not_replay_post(monkeypatch):
     c, s = client(monkeypatch, [requests.Timeout('secret URL must not reach UI')])
-    with pytest.raises(requests.Timeout): c.upload(b'jpeg', '12345678')
+    with pytest.raises(fg.EnrollmentError) as exc:
+        c.upload(b'jpeg', '12345678')
+    assert exc.value.code == 'upload_timeout'
+    assert 'secret' not in str(exc.value)
     assert len(s.calls) == 1
+
+
+@pytest.mark.parametrize('failure,code', [
+    (requests.ConnectionError('private URL'), 'upload_connection_error'),
+    (requests.ReadTimeout('private URL'), 'upload_timeout'),
+])
+def test_upload_transport_failure_has_safe_durable_code_without_replay(monkeypatch, failure, code):
+    c, s = client(monkeypatch, [failure])
+    with pytest.raises(fg.EnrollmentError) as exc:
+        c.upload(b'jpeg', '12345678', profile_id=123)
+    assert exc.value.code == code
+    assert 'private' not in str(exc.value)
+    assert len(s.calls) == 1
+
+
+def test_poll_timeout_is_distinct_from_upload_timeout(monkeypatch):
+    c, s = client(monkeypatch, ['<html>uploaded</html>', requests.ReadTimeout('private URL')])
+    with pytest.raises(fg.EnrollmentError) as exc:
+        c.upload(b'jpeg', '12345678')
+    assert exc.value.code == 'device_timeout'
+    assert 'private' not in str(exc.value)
+    assert [call[0] for call in s.calls] == ['POST', 'GET']
+
+
+@pytest.mark.parametrize('failure,code', [
+    (requests.ConnectionError('private stream'), 'upload_connection_error'),
+    (UnicodeDecodeError('utf-8', b'\xff', 0, 1, 'private response'), 'invalid_response_encoding'),
+])
+def test_response_read_failure_closes_response_and_does_not_replay(monkeypatch, failure, code):
+    c, s = client(monkeypatch, [])
+    class BrokenResponse(Response):
+        def iter_content(self, size): raise failure
+    response = BrokenResponse('')
+    writes = []
+    def post(url, **kwargs):
+        writes.append(url)
+        return response
+    s.post = post
+    with pytest.raises(fg.EnrollmentError) as exc:
+        c.upload(b'jpeg', '12345678')
+    assert exc.value.code == code
+    assert 'private' not in str(exc.value)
+    assert response.closed and len(writes) == 1
 
 
 def test_upload_http_200_device_rejection_is_not_discarded_or_polled(monkeypatch):
@@ -211,7 +257,10 @@ def test_transport_conversion_preserves_original_and_ratio():
 
 def test_profile_save_timeout_never_retries_mutation(monkeypatch):
     c, s = client(monkeypatch, [requests.Timeout('private device detail')])
-    with pytest.raises(requests.Timeout): c.add('Test Staff', 'vera:token', REF, (1, 0))
+    with pytest.raises(fg.EnrollmentError) as exc:
+        c.add('Test Staff', 'vera:token', REF, (1, 0))
+    assert exc.value.code == 'commit_timeout'
+    assert 'private' not in str(exc.value)
     assert len(s.calls) == 1 and s.calls[0][0] == 'POST'
 
 

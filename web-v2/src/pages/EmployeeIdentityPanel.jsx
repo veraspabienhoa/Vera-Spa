@@ -581,8 +581,41 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
 }
 
 
+const ENROLLMENT_FAILURE_MESSAGES = {
+  upload_not_started: 'Máy chưa bắt đầu xử lý file ảnh.',
+  upload_pending: 'Máy chưa hoàn tất xử lý ảnh.',
+  upload_timeout: 'Hết thời gian chờ phản hồi khi gửi ảnh.',
+  upload_connection_error: 'Kết nối bị gián đoạn khi gửi ảnh.',
+  device_timeout: 'Hết thời gian chờ khi đọc kết quả từ máy.',
+  device_connection_error: 'Kết nối bị gián đoạn khi đọc kết quả từ máy.',
+  commit_timeout: 'Hết thời gian chờ phản hồi khi lưu hồ sơ trên máy.',
+  commit_connection_error: 'Kết nối bị gián đoạn khi lưu hồ sơ trên máy.',
+  invalid_response_encoding: 'Phản hồi từ máy không đúng định dạng văn bản hỗ trợ.',
+  invalid_reference: 'Máy chưa trả tham chiếu ảnh mới hợp lệ.',
+  invalid_response: 'Phản hồi từ máy không hợp lệ.',
+  invalid_state: 'Trạng thái xử lý ảnh do máy trả về không hợp lệ.',
+  wrong_session: 'Máy trả kết quả của phiên gửi ảnh khác.',
+  device_http: 'Máy trả lỗi khi tiếp nhận yêu cầu.',
+  device_error: 'Máy chưa chấp nhận yêu cầu.',
+  upload_request_rejected: 'Máy từ chối nhận file ảnh.',
+  upload_105: 'Máy không tìm thấy khuôn mặt rõ trong ảnh.',
+  upload_106: 'Máy phát hiện khuôn mặt đã đăng ký.',
+  connection_or_verification_error: 'Chưa kết nối hoặc xác minh được kết quả trên máy.',
+  worker_interrupted: 'Lượt cập nhật bị gián đoạn trước khi hoàn tất.',
+}
+
+function enrollmentFailureMessage(value) {
+  if (!['rejected', 'unverified'].includes(value?.status)) return ''
+  const reason = Object.hasOwn(ENROLLMENT_FAILURE_MESSAGES, value.error_code) ? ENROLLMENT_FAILURE_MESSAGES[value.error_code] : ''
+  if (!reason) return ''
+  const result = value.status === 'rejected'
+    ? 'Hồ sơ trên máy chưa được cập nhật.'
+    : 'VERA chưa xác nhận thành công; hãy kiểm tra lại kết quả.'
+  return `${reason} ${result} Mã lỗi: ${value.error_code}.`
+}
+
 function enrollmentResultMessage(value, owner, username, replace = false) {
-  if (value.status === 'rejected') return 'Lượt gửi ảnh chưa thành công; hồ sơ trên máy chưa được cập nhật. Đã đối chiếu và mở lại đăng ký/cập nhật.'
+  if (value.status === 'rejected') return `${enrollmentFailureMessage(value) || 'Lượt gửi ảnh chưa thành công; hồ sơ trên máy chưa được cập nhật.'} Đã đối chiếu và mở lại đăng ký/cập nhật.`
   if (value.status !== 'verified') return 'Lượt gửi ảnh chưa xác minh xong. Hãy kiểm tra lại kết quả.'
   if (owner !== username) return `Đã xác minh lượt đăng ký của ${owner}. Có thể tiếp tục đăng ký nhân viên này.`
   return replace || value.operation_type === 'replace'
@@ -615,7 +648,16 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
       setMessage(enrollmentResultMessage(value, owner, username, replace))
     } catch (error) {
       setMessage(error.message === 'HTTP 502' ? 'Máy chưa trả kết quả cập nhật ảnh. VERA chưa xác nhận thành công; hãy kiểm tra lại kết quả.' : error.message)
-      try { setEnrollment(await faceIdApi.enrollment(username)) } catch { /* Preserve the original error. */ }
+      try {
+        const latest = await faceIdApi.enrollment(username)
+        setEnrollment(latest)
+        // A proxy may replace the API's error body. Recover the durable reason
+        // through the authenticated status read, without submitting another photo.
+        const reason = enrollmentFailureMessage(latest)
+        if (error.message === 'HTTP 502' && reason && latest.photo_sha256 === photo?.sha256) {
+          setMessage(`Trạng thái lượt gần nhất: ${reason}`)
+        }
+      } catch { /* Preserve the original error. */ }
     } finally { activeOperation.current = false; setBusy(false) }
   }
   useEffect(() => {
@@ -663,8 +705,7 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
     {!verified && !pending && !blocked && !replaceAvailable && <button type="button" className="primary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy) || !photo} onClick={() => act(false)}>{busy || automaticBusy ? 'Đang đăng ký…' : 'Đăng ký lên máy'}</button>}
     {!verified && blocked && <><p role="status">Máy đang chờ xác minh lượt đăng ký của {blocked.employee_username}.</p><button type="button" className="secondary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(true, blocked.employee_username)}>{busy || automaticBusy ? 'Đang kiểm tra…' : 'Kiểm tra lượt đang chặn máy'}</button></>}
     {pending && <button type="button" className="secondary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(true)}>{busy || automaticBusy ? 'Đang kiểm tra…' : 'Kiểm tra lại kết quả'}</button>}
-    {!message && enrollment.error_code === 'upload_pending' && <p role="status">Máy chưa hoàn tất xử lý ảnh; ảnh đã lưu trên VERA nhưng chưa cập nhật vào hồ sơ trên máy.</p>}
-    {!message && enrollment.error_code === 'upload_not_started' && <p role="status">Máy chưa bắt đầu xử lý file ảnh. Ảnh đang lưu trên VERA, chưa cập nhật lên máy.</p>}
+    {!message && enrollmentFailureMessage(enrollment) && <p role="status">{enrollmentFailureMessage(enrollment)}</p>}
     {!message && enrollment.error_code === 'precommit_reconciled' && <p role="status">Lượt gửi trước chưa cập nhật hồ sơ trên máy. Có thể gửi lại ảnh đã lưu.</p>}
     {message && <p role="status">{message}</p>}
   </div>

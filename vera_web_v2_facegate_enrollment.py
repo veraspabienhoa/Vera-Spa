@@ -407,7 +407,10 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
                     else:
                         profile = client.verify(row['device_name'], 'vera:' + row['operation_id'], ref)
             if recover_precommit:
-                checkpoint(row['operation_id'], status='rejected', code='precommit_reconciled', expected_status='unverified')
+                # Reconciliation releases the reservation, but is not the cause
+                # of the failed upload. Keep that cause available after recovery.
+                checkpoint(row['operation_id'], status='rejected',
+                           code=row.get('error_code') or 'precommit_reconciled', expected_status='unverified')
                 with engine_instance().begin() as conn:
                     current = conn.execute(text('SELECT * FROM vera_facegate_enrollment WHERE operation_id=:op'),
                                            {'op':row['operation_id']}).mappings().one()
