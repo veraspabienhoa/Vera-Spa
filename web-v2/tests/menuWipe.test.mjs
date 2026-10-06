@@ -14,7 +14,8 @@ test('mobile reveal follows horizontal drag, settles, and preserves native gestu
     const ref = useRef(null), [open, setOpen] = useState(false)
     useMenuWipe(ref, open, setOpen)
     return React.createElement('div', { ref, 'data-open': String(open) },
-      React.createElement('aside', { className: 'sidebar' }), React.createElement('input'),
+      React.createElement('aside', { className: 'sidebar' },
+        React.createElement('nav', { className: 'nav-list' }, React.createElement('a', { href: '#settings' }, 'Settings'))), React.createElement('input'),
       React.createElement('button', { onClick: () => clicks++ }, 'Page action'))
   }
   const root = createRoot(document.getElementById('root'))
@@ -32,6 +33,15 @@ test('mobile reveal follows horizontal drag, settles, and preserves native gestu
   assert.ok(shell.classList.contains('menu-dragging'))
   await touch('touchend', 155); assert.equal(shell.dataset.open, 'true')
   await act(() => shell.querySelector('button').click()); assert.equal(clicks, 0)
+  // A diagonal start over a menu link must never capture the native scroll,
+  // even when its first movement is more horizontal than vertical.
+  const menuLink = shell.querySelector('.nav-list a')
+  await touch('touchstart', 150, 300, menuLink)
+  assert.equal((await touch('touchmove', 130, 290, menuLink)).defaultPrevented, false)
+  assert.equal((await touch('touchmove', 125, 180, menuLink)).defaultPrevented, false)
+  assert.equal(shell.classList.contains('menu-dragging'), false)
+  await touch('touchend', 125, 180, menuLink)
+  assert.equal(shell.dataset.open, 'true')
   await touch('touchstart', 250); await touch('touchmove', 100); await touch('touchend', 100)
   assert.equal(shell.dataset.open, 'false')
   // A short drag returns closed; cancel restores the current settled state.
