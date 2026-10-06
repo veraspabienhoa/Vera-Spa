@@ -1,13 +1,12 @@
 name: Diagnose FaceGate photo update
 on:
-  workflow_dispatch:
+  push:
+    branches: [codex/faceid-diagnostics]
+    paths: [.github/workflows/diagnose-faceid.yml]
 permissions:
   contents: read
 jobs:
   diagnose:
-    # Authorized single upload completed: state 105 (no face), profiles unchanged.
-    # Retained for audit only. No further device upload is authorized here.
-    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -22,13 +21,13 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Probe multipart upload using a synthetic image without registering any profile
+      - name: Read update journal and device result without uploads or profile writes
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'cd /opt/vera-spa/current && timeout 60 /opt/vera-spa/.venv/bin/python -' <<'PYCODE'
-          import json, os, re
+          import json, os, re, subprocess
           from collections import Counter
           from sqlalchemy import create_engine,text
           from sqlalchemy.pool import NullPool
@@ -36,7 +35,9 @@ jobs:
           from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS,load_managed_runtime_environment
           from vera_facegate_readiness import runtime_device_environment
           from vera_facegate_enrollment import FaceGateEnrollmentClient,fields,EnrollmentError
+          from vera_facegate_control_log import registration_ref
           from vera_web_v2_devices import use_registered_facegate
+          print('ACTIVE_COMMIT',subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip())
           runtime_device_environment()
           env={k:os.environ.get(k,'') for k in RUNTIME_ENV_KEYS} if load_managed_runtime_environment() else _running_api_environment()
           engine=create_engine(_database_url(env),poolclass=NullPool,connect_args={'connect_timeout':5,'sslmode':env.get('DB_SSLMODE','require'),'options':'-c default_transaction_read_only=on -c statement_timeout=3000 -c lock_timeout=1000'})
@@ -45,46 +46,31 @@ jobs:
               return {'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else 'unknown'}
           try:
               with engine.connect() as conn:
-                  busy=conn.execute(text("SELECT COUNT(*) FROM vera_facegate_enrollment WHERE status IN ('running','unverified')")).scalar()
+                  rows=[dict(r) for r in conn.execute(text("SELECT status,stage,error_code,upload_session,operation_type,profile_id,previous_ref,registration_ref FROM vera_facegate_enrollment WHERE profile_id=189 ORDER BY created_at DESC LIMIT 1")).mappings()]
+                  busy=conn.execute(text("SELECT COUNT(*) FROM vera_facegate_enrollment WHERE status='running'")).scalar()
+              print('UPDATE_JOURNAL',json.dumps([{**{k:r[k] for k in ('status','stage','error_code','operation_type')},'has_uploaded_ref':bool(r['registration_ref'])} for r in rows]))
               if busy:
-                  print('SYNTHETIC_PROBE_SKIPPED_BUSY_DEVICE')
-              else:
-                  from io import BytesIO
-                  from PIL import Image
-                  import requests,secrets
-                  class NativeFormSession(requests.Session):
-                      upload_count=0
-                      def post(self,url,**kwargs):
-                          if kwargs.get('files'):
-                              self.upload_count+=1
-                              if self.upload_count>1: raise RuntimeError('second_upload_blocked')
-                              kwargs['data']={'txt':'FaceID.jpg'}
-                          return super().post(url,**kwargs)
-                  class ProbeClient(FaceGateEnrollmentClient):
-                      def request(self,path,params,*,photo=None):
-                          if path not in ('/webs/login','/webs/getWhitelist','/webs/uploadfile','/webs/getUploadPercent'):
-                              raise RuntimeError('outside_probe_scope')
-                          raw=super().request(path,params,photo=photo)
-                          if path in ('/webs/uploadfile','/webs/getUploadPercent'):
-                              values=re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S)
-                              safe={k:v.strip() for k,v in values if k in ('UPLOAD.state','ERR.no') and re.fullmatch(r'[0-9-]{1,12}',v.strip())}
-                              print('SYNTHETIC_PROTOCOL',path,json.dumps(safe),flush=True)
-                          return raw
-                  photo=BytesIO()
-                  Image.new('RGB',(320,320),(0,90,180)).save(photo,'JPEG')
+                  print('DEVICE_READ_SKIPPED_ACTIVE_OPERATION')
+              elif rows:
+                  row=rows[0]
                   with use_registered_facegate(engine):
-                      client=ProbeClient(session=NativeFormSession())
+                      client=FaceGateEnrollmentClient()
                       client.login()
-                      before=client.profiles()
-                      session_id=str(secrets.randbelow(90000000)+10000000)
+                      print('DEVICE_LOGIN_OK')
+                      raw=client.request('/webs/getUploadPercent',{'action':'list','group':'UPLOAD','sessionid':row['upload_session']})
+                      matches=re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)',raw,re.S)
+                      print('UPLOAD_FIELD_COUNTS',json.dumps(dict(Counter(k for k,v in matches if k.startswith('UPLOAD.') or k.startswith('ERR.')))))
+                      print('UPLOAD_RESULT',json.dumps({k:v.strip() for k,v in matches if k in ('UPLOAD.state','ERR.no') and re.fullmatch(r'[0-9-]{1,12}',v.strip())}))
+                      print('UPLOAD_SESSION_MATCH',any(k=='UPLOAD.sessionid' and v.strip()==row['upload_session'] for k,v in matches))
                       try:
-                          client.upload(photo.getvalue(),session_id)
-                          print('SYNTHETIC_UPLOAD_RESULT','temporary_image_accepted')
-                      except EnrollmentError as exc:
-                          print('SYNTHETIC_UPLOAD_RESULT',exc.code)
-                      after=client.profiles()
-                      print('SYNTHETIC_PROBE_PROFILES_UNCHANGED',before==after)
-
+                          value=fields(raw)
+                          print('UPLOAD_PARSE_OK')
+                          print('UPLOAD_REFERENCE_VALID',bool(registration_ref({k.removeprefix('UPLOAD.'):v for k,v in value.items()})))
+                      except Exception as exc: print('UPLOAD_PARSE',json.dumps(safe_error(exc)))
+                      profile=client.profile_details(int(row['profile_id']))
+                      ref=registration_ref(profile)
+                      print('PROFILE_REFERENCE_CHECK',json.dumps({'previous':ref==row['previous_ref'],'uploaded':bool(row['registration_ref']) and ref==row['registration_ref']}))
+                      print('PROFILE_READ_OK')
           except Exception as exc:
               print('DIAGNOSTIC_ERROR',json.dumps(safe_error(exc)))
           finally:
