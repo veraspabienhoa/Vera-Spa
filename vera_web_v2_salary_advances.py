@@ -154,13 +154,23 @@ def _public_items(rows: list[dict[str, Any]], month: str) -> list[dict[str, Any]
     )
 
 
+def _public_date_items(rows: list[dict[str, Any]], start: date, end: date) -> list[dict[str, Any]]:
+    return sorted(
+        [dict(item, status="settled" if item.get("settled_at") else "pending")
+         for item in rows if start.isoformat() <= str(item.get("advance_date") or "") <= end.isoformat()],
+        key=lambda item: (item["advance_date"], item.get("created_at", "")), reverse=True,
+    )
+
+
 def install_salary_advance_routes(app, *, engine_instance, current_identity, require_feature, identity_type) -> None:
     if getattr(app.state, "salary_advance_routes_installed", False):
         return
 
     @app.get("/v2/department-payroll/advances")
-    def get_advances(month: str = Query(...), ident: identity_type = Depends(current_identity)):
+    def get_advances(month: str = Query(...), start: date | None = None, end: date | None = None, ident: identity_type = Depends(current_identity)):
         department_payroll._month_range(month)
+        if bool(start) != bool(end) or (start and end and (end < start or (end-start).days > 366)):
+            raise HTTPException(400, "Khoảng ngày ứng lương không hợp lệ, tối đa 367 ngày.")
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
             rows = _entries(conn)
@@ -168,7 +178,7 @@ def install_salary_advance_routes(app, *, engine_instance, current_identity, req
         return {
             "ok": True,
             "release": RELEASE,
-            "items": _public_items(rows, month),
+            "items": _public_date_items(rows, start, end) if start and end else _public_items(rows, month),
             "summary": _summary(rows, month),
             "employee_catalog": catalog,
         }

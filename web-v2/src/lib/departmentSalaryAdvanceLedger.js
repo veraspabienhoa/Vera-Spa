@@ -1,3 +1,4 @@
+import { violationMonthRange } from './businessMonthRange'
 import { createElement, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
@@ -11,6 +12,28 @@ const STYLE_ID = 'vera-department-salary-advance-ledger-style'
 
 let currentPayload = { items: [], summary: {}, employee_catalog: [] }
 let dateRoot = null
+let filterRoot = null
+let ledgerRange = violationMonthRange()
+let ledgerSequence = 0
+
+function AdvancePeriodFilters() {
+  const [mode, setMode] = useState('month')
+  const [range, setRange] = useState(ledgerRange)
+  const apply = (next) => {
+    ledgerRange = next
+    setRange(next)
+    if (next.start && next.end && next.end >= next.start) scheduleRefresh(true)
+  }
+  return createElement('div', { className: 'advance-period-filters' },
+    ...[['last_month', 'Tháng trước'], ['month', 'Tháng này'], ['custom', 'Tùy chỉnh']].map(([key, label]) => createElement('button', {
+      key, type: 'button', className: mode === key ? 'primary-button' : 'secondary-button', 'aria-pressed': mode === key,
+      onClick: () => { setMode(key); if (key !== 'custom') apply(violationMonthRange(key === 'last_month' ? -1 : 0)) },
+    }, label)),
+    ...(mode === 'custom' ? ['start', 'end'].map(key => createElement('label', { key }, key === 'start' ? 'Từ ngày' : 'Đến ngày', createElement(VeraDateInput, {
+      value: range[key], required: true, 'aria-label': key === 'start' ? 'Ứng lương từ ngày' : 'Ứng lương đến ngày',
+      onChange: event => apply({ ...range, [key]: event.target.value }),
+    }))) : []))
+}
 
 function AdvanceDate({ initialValue }) {
   const [value, setValue] = useState(initialValue)
@@ -87,7 +110,7 @@ function ensureStyles() {
   style.textContent = `
     #${PANEL_ID}{display:grid;gap:12px;margin:14px 0;padding:16px;border:1px solid #e4d6b7;border-radius:14px;background:#fffaf0}
     #${PANEL_ID} .advance-ledger-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
-    #${PANEL_ID} .advance-ledger-controls{display:flex;gap:8px;align-items:center}#${PANEL_ID} .advance-ledger-controls button{width:auto;min-height:36px;padding:7px 12px;font-size:12px}
+    #${PANEL_ID} .advance-period-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px}#${PANEL_ID} .advance-period-filters label{display:grid;gap:4px;font-size:12px}#${PANEL_ID} .advance-period-filters button{width:auto;min-height:36px}#${PANEL_ID} .advance-ledger-controls{display:flex;gap:8px;align-items:center}#${PANEL_ID} .advance-ledger-controls button{width:auto;min-height:36px;padding:7px 12px;font-size:12px}
     #${PANEL_ID} h3{margin:0;color:#72551c;font-size:18px}#${PANEL_ID} p{margin:4px 0 0;color:#746b5b;font-size:12px}
     #${PANEL_ID} [data-advance-content]{display:grid;gap:12px}#${PANEL_ID} [data-advance-content][hidden]{display:none}
     #${PANEL_ID} .advance-ledger-summary{display:flex;gap:8px;flex-wrap:wrap}#${PANEL_ID} .advance-ledger-summary span{display:grid;gap:2px;min-width:145px;padding:9px 12px;border:1px solid #eadfc8;border-radius:10px;background:#fff;color:#746b5b;font-size:11px;font-weight:700}#${PANEL_ID} .advance-ledger-summary strong{font-size:16px;color:#193d31}
@@ -159,12 +182,12 @@ function renderEmployeeSuggestions(panel, value = '', showAll = false) {
 function panelHtml(month) {
   return `
     <div class="advance-ledger-title">
-      <div><h3>💵 NHÂN VIÊN ỨNG LƯƠNG</h3></div>
+      <div><h3>💵 NHÂN VIÊN ỨNG LƯƠNG</h3></div><div data-advance-period></div>
       <div class="advance-ledger-controls"><button type="button" class="secondary-button" data-advance-toggle aria-expanded="false" aria-controls="vera-salary-advance-content">Hiện</button><button type="button" class="secondary-button" data-advance-refresh>↻ Làm mới</button></div>
     </div>
     <div id="vera-salary-advance-content" data-advance-content hidden>
     <div class="advance-ledger-summary">
-      <span>Tổng ứng tháng<strong data-advance-total>0đ</strong></span>
+      <span>Tổng ứng theo tháng trừ lương<strong data-advance-total>0đ</strong></span>
       <span>Chờ trừ vào lương<strong data-advance-pending>0đ</strong></span>
       <span>Đã trừ vào lương<strong data-advance-settled>0đ</strong></span>
     </div>
@@ -187,12 +210,16 @@ function ensurePanel() {
   if (!payrollPage) {
     dateRoot?.unmount()
     dateRoot = null
+    filterRoot?.unmount()
+    filterRoot = null
     return null
   }
   let panel = document.getElementById(PANEL_ID)
   if (panel && panel.closest('.department-payroll-panel') === payrollPage) return panel
   dateRoot?.unmount()
   dateRoot = null
+  filterRoot?.unmount()
+  filterRoot = null
   panel?.remove()
   const toolbar = payrollPage.querySelector('.department-payroll-toolbar')
   if (!toolbar) return null
@@ -201,6 +228,8 @@ function ensurePanel() {
   panel.id = PANEL_ID
   panel.innerHTML = panelHtml(month)
   toolbar.insertAdjacentElement('afterend', panel)
+  filterRoot = createRoot(panel.querySelector('[data-advance-period]'))
+  filterRoot.render(createElement(AdvancePeriodFilters))
   dateRoot = createRoot(panel.querySelector('[data-advance-date]'))
   renderAdvanceDate(month)
 
@@ -328,7 +357,7 @@ function renderLedger() {
   if (!body) return
   const items = currentPayload.items || []
   if (!items.length) {
-    body.innerHTML = '<tr><td colspan="8" class="advance-empty">Tháng này chưa có khoản ứng lương.</td></tr>'
+    body.innerHTML = '<tr><td colspan="8" class="advance-empty">Không có khoản ứng lương trong khoảng ngày đã chọn.</td></tr>'
     return
   }
   body.innerHTML = items.map((item, index) => {
@@ -357,7 +386,10 @@ async function refreshLedger(force = false) {
   if (monthChanged && deductionInput) deductionInput.value = month
   if (monthChanged) renderAdvanceDate(month)
   try {
-    currentPayload = await apiRequest(`/v2/department-payroll/advances?month=${encodeURIComponent(month)}`)
+    const seq = ++ledgerSequence
+    const result = await apiRequest(`/v2/department-payroll/advances?month=${encodeURIComponent(month)}&start=${ledgerRange.start}&end=${ledgerRange.end}`)
+    if (seq !== ledgerSequence) return
+    currentPayload = result
     renderLedger()
     queueApply()
   } catch (error) {

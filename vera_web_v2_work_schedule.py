@@ -11,6 +11,7 @@ from __future__ import annotations
 from vera_employee_names import canonical_username, load_identity_index, project_employee_rows
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from io import BytesIO
 import re
 import json
@@ -113,6 +114,32 @@ class ComboSaleSave(BaseModel):
     customer_phone: str = Field(default="", max_length=50)
     combo_ticket: str = Field(min_length=1, max_length=300)
     note: str = Field(default="", max_length=500)
+
+
+class ScheduleViolationCreate(BaseModel):
+    request_id: uuid.UUID
+    department: Literal["quanly", "letan", "locker", "tapvu"]
+    employee_username: str = Field(min_length=1, max_length=200)
+    violation_date: date
+    reason: str = Field(min_length=1, max_length=300)
+    amount: int = Field(ge=0, le=1_000_000_000)
+    note: str = Field(default="", max_length=1000)
+
+
+def _schedule_violations(conn, department, start, end):
+    employees = _employee_catalog(conn, department)
+    names = {str(e["username"]).strip().casefold(): e for e in employees}
+    rows = conn.execute(text("""
+        SELECT record_uid AS id, employee_name AS employee_username,
+               leave_date AS violation_date, leave_reason AS reason, detail AS note,
+               COALESCE(penalty,0) AS amount, updated_by, created_at
+        FROM leave_records WHERE leave_date BETWEEN :start AND :end
+          AND (COALESCE(penalty,0)>0 OR leave_type='Vi phạm')
+          AND lower(btrim(employee_name)) = ANY(:employees)
+        ORDER BY leave_date DESC, created_at DESC
+    """), {"start": start, "end": end, "employees": list(names)}).mappings().all()
+    return [dict(row, employee_name=names[str(row["employee_username"]).strip().casefold()]["full_name"])
+            for row in rows if str(row["employee_username"]).strip().casefold() in names]
 
 
 def _combo_customers(conn):
@@ -776,6 +803,58 @@ def install_work_schedule_routes(
             "overtime_mode": {"locker": "shared", "letan": "shared", "tapvu": "shared", "quanly": "shared"},
             "overtime_choices": ["TC Ca 1", "TC Ca 2", "Từ giờ tới giờ"],
         }
+
+
+    @app.get("/v2/work-schedule/violations")
+    def get_schedule_violations(start: date, end: date, department: str, ident=Depends(current_identity)):
+        if end < start or (end-start).days > 366:
+            raise HTTPException(400, "Khoảng ngày không hợp lệ, tối đa 367 ngày.")
+        with engine_instance().begin() as conn:
+            if department not in WORK_SCHEDULE_FEATURES or not _allowed_department(conn, ident, department, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền xem vi phạm bộ phận này.")
+            return {"ok": True, "rows": _schedule_violations(conn, department, start, end)}
+
+    @app.post("/v2/work-schedule/violations")
+    def create_schedule_violation(body: ScheduleViolationCreate, ident=Depends(current_identity)):
+        if _role(ident) not in {"admin", "quanly"}:
+            raise HTTPException(403, "Chỉ Admin và Quản lý được nhập phạt vi phạm.")
+        reason = body.reason.strip()
+        if not reason:
+            raise HTTPException(400, "Vui lòng nhập nội dung vi phạm.")
+        with engine_instance().begin() as conn:
+            if not _allowed_department(conn, ident, body.department, feature_allowed):
+                raise HTTPException(403, "Bạn không có quyền nhập vi phạm bộ phận này.")
+            employee = _combo_employee(conn, body.department, body.employee_username)
+            if employee.get("employment_status") == "Đã nghỉ việc":
+                raise HTTPException(400, "Nhân viên đã nghỉ việc.")
+            # Serialize allocation and retries on the caller connection. The same
+            # request cannot create two financial records after a network retry.
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('work_schedule_violation'))"))
+            uid = str(body.request_id)
+            source = "postgres:work_schedule_violation"
+            existing = conn.execute(text("SELECT payload FROM leave_records WHERE record_uid=:uid"), {"uid": uid}).scalar()
+            snapshot = {"department": body.department, "employee_username": employee["username"],
+                        "violation_date": body.violation_date.isoformat(), "reason": reason,
+                        "amount": body.amount, "note": body.note.strip(), "actor": _actor(ident)}
+            if existing:
+                if isinstance(existing, str):
+                    existing = json.loads(existing)
+                if existing.get("schedule_violation") != snapshot:
+                    raise HTTPException(409, "Mã yêu cầu đã được sử dụng. Hãy mở lại form.")
+                return {"ok": True, "message": "Vi phạm đã được lưu.", "id": uid}
+            srow = conn.execute(text("SELECT COALESCE(MIN(source_row),0)-1 FROM leave_records WHERE source_sheet_id=:source"), {"source": source}).scalar()
+            now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
+            payload = {"record_uid": uid, "schedule_violation": snapshot, "Số ngày tính": 0,
+                       "Phạt vi phạm": body.amount, "__source_sheet_id": source, "__source_row": srow}
+            conn.execute(text("""INSERT INTO leave_records(source_sheet_id,source_row,leave_date,employee_name,leave_reason,leave_type,detail,
+                calculated_days,accumulated_leave,penalty,update_date,update_time,updated_by,weekday_label,payload,record_uid,created_at,updated_at)
+                VALUES(:source,:srow,:day,:employee,:reason,'Vi phạm',:note,0,0,:amount,:udate,:utime,:actor,:weekday,CAST(:payload AS jsonb),:uid,NOW(),NOW())"""),
+                {"source": source, "srow": srow, "day": body.violation_date, "employee": employee["username"],
+                 "reason": "Vi phạm · " + reason, "note": body.note.strip(), "amount": body.amount,
+                 "udate": now.strftime("%d/%m/%Y"), "utime": now.strftime("%H:%M:%S"), "actor": _actor(ident),
+                 "weekday": "Chủ nhật" if body.violation_date.weekday()==6 else f"Thứ {body.violation_date.weekday()+2}",
+                 "payload": json.dumps(payload, ensure_ascii=False), "uid": uid})
+        return {"ok": True, "message": "Đã lưu vi phạm và tiền phạt vào dữ liệu tính lương.", "id": uid}
 
     @app.get("/v2/work-schedule/template.xlsx")
     def export_work_schedule_template(

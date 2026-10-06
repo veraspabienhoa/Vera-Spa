@@ -1,3 +1,4 @@
+import ScheduleViolations from '../components/ScheduleViolations'
 import ComboCustomerFields from '../components/ComboCustomerFields'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -341,6 +342,9 @@ export default function WorkSchedulePage({ user }) {
   const [saved, setSaved] = useState({})
   const [drafts, setDrafts] = useState({})
   const [monthlyRows, setMonthlyRows] = useState([])
+  const [monthlyViolations, setMonthlyViolations] = useState([])
+  const [violationRevision, setViolationRevision] = useState(0)
+  const [violationStatsError, setViolationStatsError] = useState('')
   const [comboSales, setComboSales] = useState([])
   const [comboCustomers, setComboCustomers] = useState([])
   const customerRead = useRef({ at: 0, department: '', pending: null })
@@ -794,10 +798,21 @@ export default function WorkSchedulePage({ user }) {
     }))
   }, [days, department, drafts, employees, shiftDefinitions])
 
+  useEffect(() => {
+    let active = true
+    const range = monthRange(month)
+    setMonthlyViolations([]); setViolationStatsError('')
+    if (!availableDepartments.includes(department)) return
+    scheduleRequest(`/v2/work-schedule/violations?department=${department}&start=${range.start}&end=${range.end}`)
+      .then(result => { if (active) setMonthlyViolations(result.rows || []) })
+      .catch(error => { if (active) setViolationStatsError(error.message) })
+    return () => { active = false }
+  }, [department, month, violationRevision, availableDepartments])
+
   const monthlyStatistics = useMemo(() => {
     const definitions = shiftDefinitions?.[department] || {}
     const byEmployee = Object.fromEntries(employees.map((employee) => [employee.username, {
-      username: employee.username, name: systemName(employee), workDays: 0, offDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0,
+      username: employee.username, name: systemName(employee), workDays: 0, offDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0, violations: 0, penalty: 0,
     }]))
     monthlyRows.filter((row) => row.work_date <= todayIso).forEach((row) => {
       const item = byEmployee[row.employee_username]
@@ -812,6 +827,10 @@ export default function WorkSchedulePage({ user }) {
       if (bucket === 'Ca 2') item.ca2Days += 1
       item.overtimeHours += overtimeHours(row, definitions)
     })
+    monthlyViolations.filter(row => row.violation_date <= todayIso).forEach(row => {
+      const key = Object.keys(byEmployee).find(name => name.toLowerCase() === row.employee_username.toLowerCase())
+      if (key) { byEmployee[key].violations++; byEmployee[key].penalty += Number(row.amount || 0) }
+    })
     const rows = Object.values(byEmployee)
     const departmentTotal = rows.reduce((total, item) => ({
       workDays: total.workDays + item.workDays,
@@ -819,9 +838,10 @@ export default function WorkSchedulePage({ user }) {
       ca1Days: total.ca1Days + item.ca1Days,
       ca2Days: total.ca2Days + item.ca2Days,
       overtimeHours: total.overtimeHours + item.overtimeHours,
-    }), { workDays: 0, offDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0 })
+      violations: total.violations + item.violations, penalty: total.penalty + item.penalty,
+    }), { workDays: 0, offDays: 0, ca1Days: 0, ca2Days: 0, overtimeHours: 0, violations: 0, penalty: 0 })
     return { rows, departmentTotal }
-  }, [department, employees, monthlyRows, shiftDefinitions, todayIso])
+  }, [department, employees, monthlyRows, monthlyViolations, shiftDefinitions, todayIso])
 
   const captureFullSchedule = async () => {
     if (loading || captureBusy) return
@@ -1143,12 +1163,14 @@ export default function WorkSchedulePage({ user }) {
           return <button type="button" key={mode} className={month === targetMonth ? 'active' : ''} aria-pressed={month === targetMonth} onClick={() => selectRange(mode)}>{label}</button>
         })}
       </div>
+      {violationStatsError && <div className="error-box">Không tải được thống kê vi phạm: {violationStatsError}</div>}
       <table data-ui-key="u-8fdcd960382d">
-        <thead><tr><th data-ui-key="u-aa04bfca6a93" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-aa04bfca6a93">Nhân viên</UiCustomText></th><th data-ui-key="u-60cb3725cefa" data-ui-label-default="Ngày làm việc"><UiCustomText uiKey="u-60cb3725cefa">Ngày làm việc</UiCustomText></th><th data-ui-key="u-633c4405c5b1" data-ui-label-default="Ngày nghỉ"><UiCustomText uiKey="u-633c4405c5b1">Ngày nghỉ</UiCustomText></th><th data-ui-key="u-1d9cca3c2396" data-ui-label-default="Ngày Ca 1"><UiCustomText uiKey="u-1d9cca3c2396">Ngày Ca 1</UiCustomText></th><th data-ui-key="u-6b76f996ba14" data-ui-label-default="Ngày Ca 2"><UiCustomText uiKey="u-6b76f996ba14">Ngày Ca 2</UiCustomText></th><th data-ui-key="u-3692d119b2c2" data-ui-label-default="Giờ tăng ca"><UiCustomText uiKey="u-3692d119b2c2">Giờ tăng ca</UiCustomText></th></tr></thead>
-        <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.offDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr>)}</tbody>
-        <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td></tr></tfoot>
+        <thead><tr><th data-ui-key="u-aa04bfca6a93" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-aa04bfca6a93">Nhân viên</UiCustomText></th><th data-ui-key="u-60cb3725cefa" data-ui-label-default="Ngày làm việc"><UiCustomText uiKey="u-60cb3725cefa">Ngày làm việc</UiCustomText></th><th data-ui-key="u-633c4405c5b1" data-ui-label-default="Ngày nghỉ"><UiCustomText uiKey="u-633c4405c5b1">Ngày nghỉ</UiCustomText></th><th data-ui-key="u-1d9cca3c2396" data-ui-label-default="Ngày Ca 1"><UiCustomText uiKey="u-1d9cca3c2396">Ngày Ca 1</UiCustomText></th><th data-ui-key="u-6b76f996ba14" data-ui-label-default="Ngày Ca 2"><UiCustomText uiKey="u-6b76f996ba14">Ngày Ca 2</UiCustomText></th><th data-ui-key="u-3692d119b2c2" data-ui-label-default="Giờ tăng ca"><UiCustomText uiKey="u-3692d119b2c2">Giờ tăng ca</UiCustomText></th><th>Vi phạm</th><th>Phạt vi phạm</th></tr></thead>
+        <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.offDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{violationStatsError ? '—' : item.violations}</td><td>{violationStatsError ? '—' : `${item.penalty.toLocaleString('vi-VN')}đ`}</td></tr>)}</tbody>
+        <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{violationStatsError ? '—' : monthlyStatistics.departmentTotal.violations}</td><td>{violationStatsError ? '—' : `${monthlyStatistics.departmentTotal.penalty.toLocaleString('vi-VN')}đ`}</td></tr></tfoot>
       </table>
     </div>}
+    <ScheduleViolations department={department} employees={employees} canEdit={['admin', 'quanly'].includes(role) && availableDepartments.includes(department)} request={scheduleRequest} onSaved={() => setViolationRevision(value => value + 1)} />
     {!loading && comboEditor}
   </section>
 }
