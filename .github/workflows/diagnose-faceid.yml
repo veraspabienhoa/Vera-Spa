@@ -63,7 +63,7 @@ jobs:
                       path=urlsplit(page.frames[0]).path.lstrip('/')
                       print('UPLOAD_FORM_SRC_EMPTY',not bool(path))
                       print('UPLOAD_FORM_SRC_QUERY','?' in page.frames[0])
-                      if re.fullmatch(r'[A-Za-z0-9_./-]+\\.(asp|html|htm|shtml)',path) and '..' not in path:
+                      if re.fullmatch(r'[A-Za-z0-9_./-]+\.(asp|html|htm|shtml)',path) and '..' not in path:
                           form=FormCheck();form.feed(client.request('/'+path,{'action':'list'}))
                           print('UPLOAD_FORM_POST',any(f.get('method','').lower()=='post' for f in form.forms))
                           print('UPLOAD_FORM_MULTIPART',any(f.get('enctype','').lower()=='multipart/form-data' for f in form.forms))
