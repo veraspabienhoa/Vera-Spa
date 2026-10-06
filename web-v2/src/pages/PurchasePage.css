@@ -75,3 +75,11 @@
     width: min(16px,100%); height: 16px; margin: 0; padding: 0;
   }
 }
+
+/* Keep the purchase total compact rather than stretching beside all actions. */
+.purchase-controls .purchase-summary-head { grid-template-columns: minmax(0,1fr); align-items: start; }
+.purchase-controls .purchase-filter-total { align-self: start; justify-self: start; width: fit-content; max-width: 100%; min-width: 0; padding: 8px 10px; }
+.purchase-controls .purchase-filter-total > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
+.purchase-controls .purchase-filter-total span { flex-basis: 100%; }
+.purchase-controls .purchase-filter-total strong { margin: 0; font-size: 18px; white-space: nowrap; }
+.purchase-controls .purchase-filter-total small { white-space: nowrap; }
