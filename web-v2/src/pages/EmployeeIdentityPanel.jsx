@@ -581,6 +581,15 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
 }
 
 
+function enrollmentResultMessage(value, owner, username, replace = false) {
+  if (value.status === 'rejected') return 'Lượt gửi ảnh chưa thành công; hồ sơ trên máy chưa được cập nhật. Đã đối chiếu và mở lại đăng ký/cập nhật.'
+  if (value.status !== 'verified') return 'Lượt gửi ảnh chưa xác minh xong. Hãy kiểm tra lại kết quả.'
+  if (owner !== username) return `Đã xác minh lượt đăng ký của ${owner}. Có thể tiếp tục đăng ký nhân viên này.`
+  return replace || value.operation_type === 'replace'
+    ? 'Đã thay ảnh trên hồ sơ hiện có và xác minh lại hồ sơ trên máy.'
+    : 'Đã lưu hồ sơ trên máy và xác minh ánh xạ với nhân viên.'
+}
+
 function FaceIdEnrollment({ username, photo, photoBusy }) {
   const [enrollment, setEnrollment] = useState(null)
   const recoveryAttempts = useRef(new Map())
@@ -603,9 +612,9 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
     try {
       const value = await (verify ? faceIdApi.verifyEnrollment(owner) : faceIdApi.enroll(username, photo.sha256, !replace))
       setEnrollment(owner === username ? value : await faceIdApi.enrollment(username))
-      setMessage(value.status === 'rejected' ? 'Đã đối chiếu lượt lỗi chưa tạo hồ sơ và mở lại đăng ký. Có thể đăng ký ảnh đã lưu.' : owner !== username && value.status === 'verified' ? `Đã xác minh lượt đăng ký của ${owner}. Có thể tiếp tục đăng ký nhân viên này.` : value.status === 'verified' ? (replace ? 'Đã thay ảnh trên hồ sơ hiện có và xác minh lại hồ sơ trên máy.' : 'Đã lưu hồ sơ trên máy và xác minh ánh xạ với nhân viên.') : 'Lượt đăng ký chưa xác minh xong. Hãy kiểm tra lại kết quả.')
+      setMessage(enrollmentResultMessage(value, owner, username, replace))
     } catch (error) {
-      setMessage(error.message)
+      setMessage(error.message === 'HTTP 502' ? 'Máy chưa trả kết quả cập nhật ảnh. VERA chưa xác nhận thành công; hãy kiểm tra lại kết quả.' : error.message)
       try { setEnrollment(await faceIdApi.enrollment(username)) } catch { /* Preserve the original error. */ }
     } finally { activeOperation.current = false; setBusy(false) }
   }
@@ -627,9 +636,9 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
             activeOperation.current = true
             setAutomaticBusy(true)
             try {
-              await faceIdApi.verifyEnrollment(pending.employee_username)
+              const checked = await faceIdApi.verifyEnrollment(pending.employee_username)
               const latest = await faceIdApi.enrollment(username)
-              if (active) { setEnrollment(latest); setMessage('Đã kiểm tra và cập nhật lượt đăng ký trên máy.') }
+              if (active) { setEnrollment(latest); setMessage(enrollmentResultMessage(checked, pending.employee_username, username)) }
             } catch (error) { if (active) setMessage(error.message) }
             finally { activeOperation.current = false; setAutomaticBusy(false) }
           }
@@ -654,11 +663,15 @@ function FaceIdEnrollment({ username, photo, photoBusy }) {
     {!verified && !pending && !blocked && !replaceAvailable && <button type="button" className="primary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy) || !photo} onClick={() => act(false)}>{busy || automaticBusy ? 'Đang đăng ký…' : 'Đăng ký lên máy'}</button>}
     {!verified && blocked && <><p role="status">Máy đang chờ xác minh lượt đăng ký của {blocked.employee_username}.</p><button type="button" className="secondary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(true, blocked.employee_username)}>{busy || automaticBusy ? 'Đang kiểm tra…' : 'Kiểm tra lượt đang chặn máy'}</button></>}
     {pending && <button type="button" className="secondary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(true)}>{busy || automaticBusy ? 'Đang kiểm tra…' : 'Kiểm tra lại kết quả'}</button>}
+    {!message && enrollment.error_code === 'upload_pending' && <p role="status">Máy chưa hoàn tất xử lý ảnh; ảnh đã lưu trên VERA nhưng chưa cập nhật vào hồ sơ trên máy.</p>}
+    {!message && enrollment.error_code === 'upload_not_started' && <p role="status">Máy chưa bắt đầu xử lý file ảnh. Ảnh đang lưu trên VERA, chưa cập nhật lên máy.</p>}
+    {!message && enrollment.error_code === 'precommit_reconciled' && <p role="status">Lượt gửi trước chưa cập nhật hồ sơ trên máy. Có thể gửi lại ảnh đã lưu.</p>}
     {message && <p role="status">{message}</p>}
   </div>
 }
 
-export function FaceIdCard({ username }) {
+export function FaceIdCard({ username, compact = false }) {
+  const [view, setView] = useState('photo')
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
@@ -674,20 +687,25 @@ export function FaceIdCard({ username }) {
   }, [username])
   const run = async (key, callback) => {
     setBusy(key); setNotice(null)
-    try { if (await callback()) await load() }
+    try { if (await callback()) { await load(); setView('photo') } }
     catch (error) { setNotice({type: 'error', message: error.message}) }
     finally { setBusy('') }
   }
   if (!data) return notice ? <p role="alert">{notice.message}</p> : null
   const asFile = (blob) => new File([blob], 'FaceID.jpg', {type: blob.type})
-  return <div className="face-id-card" style={{border: '1px solid #315d4b', padding: 12, minWidth: 0}}>
+  return <div className={`face-id-card ${compact ? `face-id-compact face-id-view-${view}` : ''}`}>
+    {compact && data.can_view_device_tools && <nav className="face-id-view-tabs" aria-label="Chọn nguồn ảnh Face ID">
+      <button type="button" className="secondary-button compact" aria-pressed={view === 'photo'} onClick={() => setView('photo')}>Ảnh đã lưu</button>
+      <button type="button" className="secondary-button compact" aria-pressed={view === 'captures'} onClick={() => setView('captures')}>Ảnh từ máy</button>
+    </nav>}
     <PortraitSide key={username} username={username} metadata={data.photo} busy={busy}
       onChanged={run} setNotice={setNotice} showControls={Boolean(data.can_view_device_tools)} allowAdminEdit allowDownload={data.can_view_device_tools} canEdit={data.can_manage && data.can_view_device_tools}
       mediaApi={faceIdApi} side="face_id" title="ẢNH FACE ID"
-      sources={data.can_view_device_tools ? (acceptFile) => <div className="employee-id-actions">
+      sources={data.can_view_device_tools ? (acceptFile) => <div className="employee-id-actions face-id-sources">
         <button type="button" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => run('portrait', async () => { acceptFile(asFile(await faceIdApi.portrait(username))); return false })}>Từ ảnh đại diện</button>
-        <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/>
-        <FaceIdCapturePicker key={`${username}:${day}`} username={username} day={day} busy={busy} onSelect={acceptFile}/>
+        {!compact && <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/>}
+        <FaceIdCapturePicker key={`${username}:${day}`} username={username} day={day} busy={busy} onSelect={acceptFile} compact={compact}
+          dateControl={compact ? <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/> : undefined}/>
       </div> : undefined}/>
     <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ.</p>
     {data.can_view_device_tools && <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy}/>}

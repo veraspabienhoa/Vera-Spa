@@ -118,3 +118,18 @@ test('history typing suggests employee names/codes and event IDs, with independe
   assert.equal(employee.value, ''); assert.equal(doc.querySelector('[role=listbox]'), null)
   assert.equal(queries.length, 1)
 })
+
+
+test('history reports configured attendance source without claiming every log is payroll eligible',async context=>{
+ let policy={source:'facegate',effective_date:'2026-09-29'}
+ const dom=await page('history',{checkinHistory:async()=>({records:[],attendance_policy:policy})},context)
+ const reload=async()=>dom.window.testAct(async()=>button(dom,'Xem lịch sử').click())
+ await reload()
+ assert.match(dom.window.document.body.textContent,/FaceGate là nguồn chấm công từ 29-09-2026/)
+ assert.match(dom.window.document.body.textContent,/số sự kiện ở đây không phải số ngày công/)
+ assert.doesNotMatch(dom.window.document.body.textContent,/chưa dùng tính công/)
+ policy={source:'timesoft'};await reload()
+ assert.match(dom.window.document.body.textContent,/Nguồn tính công hiện tại là TimeSoft/)
+ policy={source:'unknown'};await reload()
+ assert.match(dom.window.document.body.textContent,/Xem nguồn tính công hiện tại tại Quản lý thiết bị/)
+})

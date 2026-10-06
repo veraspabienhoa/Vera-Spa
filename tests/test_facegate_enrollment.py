@@ -100,6 +100,25 @@ def test_timeout_does_not_replay_post(monkeypatch):
     assert len(s.calls) == 1
 
 
+def test_upload_http_200_device_rejection_is_not_discarded_or_polled(monkeypatch):
+    c, s = client(monkeypatch, [body(**{'ERR.no': 1, 'ERR.des': 'private firmware detail'})])
+    with pytest.raises(fg.UploadRejected) as exc:
+        c.upload(b'jpeg', '12345678')
+    assert exc.value.code == 'upload_request_rejected'
+    assert 'private' not in str(exc.value)
+    assert len(s.calls) == 1
+
+
+@pytest.mark.parametrize('progress,code', [(0, 'upload_not_started'), (25, 'upload_pending')])
+def test_upload_distinguishes_idle_from_incomplete_processing_without_replay(monkeypatch, progress, code):
+    reply = body(**{'UPLOAD.state': progress, 'UPLOAD.sessionid': '12345678'})
+    c, s = client(monkeypatch, ['<html>uploaded</html>'] + [reply] * 12)
+    with pytest.raises(fg.EnrollmentError) as exc:
+        c.upload(b'jpeg', '12345678')
+    assert exc.value.code == code
+    assert len([call for call in s.calls if call[0] == 'POST']) == 1
+
+
 @pytest.mark.parametrize('changes', [{'UPLOAD.sessionid':'99999999'}, {'UPLOAD.dwfiletype':3}, {'UPLOAD.dwfilepos':0}])
 def test_wrong_session_or_reference_fails_closed(monkeypatch, changes):
     c, _ = client(monkeypatch, ['', body(**{'UPLOAD.state':100, 'UPLOAD.sessionid':'12345678',

@@ -18,3 +18,42 @@
 
 .face-id-capture-pagination{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;margin-top:12px;min-width:0}
 .face-id-capture-pagination span{overflow-wrap:anywhere}
+.face-id-card{border:1px solid #315d4b;padding:12px;min-width:0}
+.face-id-view-tabs{display:flex;gap:8px;margin-bottom:8px}
+.face-id-view-tabs button[aria-pressed="true"]{background:#173d31;color:white}
+.face-id-compact.face-id-view-photo .face-id-sources>:not(button){display:none}
+.face-id-compact.face-id-view-captures .employee-portrait-side>:not(.face-id-sources):not(.identity-editor-backdrop),
+.face-id-compact.face-id-view-captures .face-id-sources>button,
+.face-id-compact.face-id-view-captures>.face-id-enrollment,
+.face-id-compact.face-id-view-captures>p:not(.employee-identity-notice){display:none}
+.face-id-profile-modal.employee-profile-modal{height:calc(100dvh - 40px);display:flex;flex-direction:column;overflow:hidden}
+.face-id-profile-modal>h2{overflow-wrap:anywhere;font-size:20px;line-height:1.2;margin-block:12px 8px;flex-shrink:0}
+.face-id-profile-modal>.staff-face-switch{margin-block:0 8px;padding:8px 12px;font-size:13px;flex-shrink:0}
+.face-id-profile-modal>.face-id-card{flex:1;min-height:0;border:0;padding:8px 16px;display:flex;flex-direction:column;gap:6px}
+.face-id-profile-modal .face-id-card p{margin-block:6px;line-height:1.35}
+.face-id-profile-modal .employee-portrait-side{min-height:0;flex:1;padding:10px;display:flex;flex-direction:column;gap:4px}
+.face-id-profile-modal .face-id-card .employee-portrait-preview{flex:1;min-height:0;width:100%;margin:4px auto;max-height:30dvh;border:0}
+.face-id-profile-modal .face-id-card .employee-portrait-preview img{width:100%;height:100%;max-height:100%;object-fit:contain}
+.face-id-profile-modal .employee-id-actions{margin:4px 0}
+.face-id-profile-modal .face-id-sources{min-height:0}
+.face-id-profile-modal .face-id-view-captures .face-id-sources{flex:1;display:flex;flex-direction:column;flex-wrap:nowrap}
+.face-id-profile-modal .face-id-capture-picker{flex:1;flex-basis:auto;min-height:0;display:flex;flex-direction:column;gap:4px}
+.face-id-capture-toolbar{display:flex;gap:8px;align-items:center}
+.face-id-profile-modal .face-id-capture-toolbar{flex-shrink:0}
+.face-id-profile-modal .face-id-capture-toolbar>.vera-date-input{flex:1;max-width:210px;min-width:0}
+.face-id-profile-modal .face-id-capture-gallery{flex:1;min-height:0;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:minmax(0,1fr);gap:8px}
+.face-id-profile-modal .face-id-capture-preview{min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto auto;gap:4px}
+.face-id-profile-modal .face-id-capture-gallery img{width:100%;height:100%;min-height:0;max-height:100%;object-fit:contain}
+.face-id-profile-modal .face-id-capture-preview figcaption{font-size:11px}
+.face-id-profile-modal .face-id-capture-pagination{flex-shrink:0;margin-top:4px;gap:6px;font-size:12px}
+.face-id-profile-modal .face-id-profile-actions{flex-shrink:0;padding-block:8px}
+.face-id-profile-modal .face-id-profile-actions>button{min-height:34px}
+@media(max-width:640px){
+ .face-id-profile-modal.employee-profile-modal{height:100dvh;max-height:100dvh}
+ .face-id-profile-modal>.face-id-card{padding:6px 10px}
+ .face-id-profile-modal>h2{font-size:17px}
+ .face-id-profile-modal>.staff-face-switch{font-size:12px;padding:6px}
+ .face-id-profile-modal .face-id-capture-gallery{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr))}
+ .face-id-profile-modal .face-id-card button{font-size:12px;padding:6px 8px;min-height:32px}
+ .face-id-profile-modal .face-id-capture-preview figcaption{font-size:10px}
+}

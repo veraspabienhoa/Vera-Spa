@@ -180,3 +180,23 @@ def test_device_delete_requires_admin_even_when_device_manage_is_granted():
     api = TestClient(app)
     assert api.delete('/v2/devices/registry/facegate-current?expected_revision=0').status_code == 403
     assert api.put('/v2/devices/registry', json={'expected_revision': 0, 'devices': []}).status_code == 403
+
+
+@pytest.mark.parametrize('policy', [
+    {'source': 'facegate', 'effective_date': '2026-09-29', 'version': 1},
+    {'source': 'timesoft', 'effective_date': None},
+])
+def test_history_reports_active_attendance_policy_without_internal_config(policy):
+    client, _ = fixture()
+    with patch('vera_attendance_source.configuration', return_value=policy):
+        response = client.get('/v2/devices/checkin-history?' + BASE + '&source=timesoft')
+    assert response.status_code == 200
+    assert response.json()['attendance_policy'] == {key: policy[key] for key in ('source', 'effective_date')}
+
+
+def test_invalid_attendance_policy_does_not_claim_a_source_or_break_history():
+    client, _ = fixture()
+    with patch('vera_attendance_source.configuration', side_effect=RuntimeError('invalid')):
+        response = client.get('/v2/devices/checkin-history?' + BASE + '&source=timesoft')
+    assert response.status_code == 200
+    assert response.json()['attendance_policy'] == {'source': 'unknown', 'effective_date': None}

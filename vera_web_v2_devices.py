@@ -372,7 +372,14 @@ def install_device_routes(app, *, engine_instance, current_identity, require_fea
             except ConnectionError as exc:
                 raise HTTPException(502, str(exc)) from exc
         records = data['records']
+        from vera_attendance_source import configuration
+        try:
+            policy = configuration()
+            attendance_policy = {key: policy.get(key) for key in ('source', 'effective_date')}
+        except RuntimeError:
+            attendance_policy = {'source': 'unknown', 'effective_date': None}
         return {**data, 'source': source, 'start': start.isoformat(), 'end': end.isoformat(),
+                'attendance_policy': attendance_policy,
                 'records': filtered_records(records, source, employee, event_id, event_date, status, event_type),
                 'filters': {'employee': employee, 'event_id': event_id, 'event_date': event_date.isoformat() if event_date else '', 'status': status, 'event_type': event_type},
                 'options': {'statuses': sorted({record_status(r, source) for r in records} - {''}),
