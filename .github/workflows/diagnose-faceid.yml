@@ -1,12 +1,11 @@
 name: Diagnose FaceGate photo update
 on:
-  push:
-    branches: [codex/faceid-diagnostics]
-    paths: [.github/workflows/diagnose-faceid.yml]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   diagnose:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
