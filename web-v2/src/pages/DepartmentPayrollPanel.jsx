@@ -22,7 +22,16 @@ const normalizeSearch = (value) => String(value || '').normalize('NFD').replace(
 
 async function request(path, options = {}) {
   if (options.download) return (await apiBinaryResponse(path, options)).blob()
-  return apiRequest(path, options)
+  if (!path.includes('/combined/draft')) return apiRequest(path, options)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 30000)
+  try { return await apiRequest(path, { ...options, signal: controller.signal }) }
+  catch (error) {
+    if (controller.signal.aborted) throw new Error(options.method === 'PUT'
+      ? 'Máy chủ phản hồi quá lâu. Chưa xác nhận được kết quả lưu; hãy Mở bảng nháp để kiểm tra trước khi lưu lại.'
+      : 'Máy chủ phản hồi quá lâu khi mở bảng nháp. Vui lòng thử lại.')
+    throw error
+  } finally { clearTimeout(timer) }
 }
 
 function recalculate(source, config) {
@@ -93,6 +102,25 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState(null)
 
+  useEffect(() => {
+    const apply = (event) => {
+      if (event.detail?.month !== month) return
+      const totals = event.detail.byEmployee || {}
+      setRows(items => {
+        let changed = false
+        const next = items.map(row => {
+          const advance = Number(totals[row.employee_username]?.payroll_total || 0)
+          if (Number(row.advance || 0) === advance) return row
+          changed = true
+          return recalculate({ ...row, advance }, row.calculation_config || settings[row.department]?.config || {})
+        })
+        return changed ? next : items
+      })
+    }
+    window.addEventListener('vera-salary-advance-summary', apply)
+    return () => window.removeEventListener('vera-salary-advance-summary', apply)
+  }, [month, settings])
+
   const visibleRows = rows.filter(row => (!departmentFilter || row.department === departmentFilter)
     && searchTextMatches([row.employee_name, row.employee_username], payrollSearch))
   const rowDepartments = [...new Map(rows.map(row => [row.department, row.department_label])).entries()]
@@ -131,6 +159,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     const result = await request(`/v2/department-payroll/combined/draft?month=${month}`)
     if (!result.rows?.length) throw new Error('Kỳ này chưa có bảng lương nháp.')
     setRows(result.rows); setSelected([])
+    setPayrollSearch(''); setDepartmentFilter('')
     setEditingHistoryId('')
     setCalculationPeriod(null)
     setNotice({ type: 'success', message: 'Đã mở bảng Lương hành chánh nháp.' })
@@ -269,7 +298,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
         <label>Tháng lương<input type="month" value={month} onChange={(event) => { setMonth(event.target.value); setRows([]); setEditingHistoryId(''); setCalculationPeriod(null) }} /></label>
         <button data-ui-key="u-a1770567e66f" data-ui-label-default="Tính lương nháp từ Thống kê tháng" className="primary-button" disabled={Boolean(busy)} onClick={() => calculate('schedule')}><CalendarDays size={16} /><UiCustomText uiKey="u-a1770567e66f"> Tính lương nháp từ Thống kê tháng</UiCustomText></button>
         <button data-ui-key="u-d8739a388253" data-ui-label-default="Tính từ chấm công (đối chiếu)" className="secondary-button" disabled={Boolean(busy)} onClick={() => calculate('attendance')}><RefreshCw size={16} className={busy === 'calculate-attendance' ? 'spin' : ''} /><UiCustomText uiKey="u-d8739a388253"> Tính từ chấm công (đối chiếu)</UiCustomText></button>
-        <button data-ui-key="u-00757540fcc5" data-ui-label-default="Mở bảng nháp" className="secondary-button" disabled={Boolean(busy)} onClick={loadDraft}><UiCustomText uiKey="u-00757540fcc5">Mở bảng nháp</UiCustomText></button>
+        <button data-ui-key="u-00757540fcc5" data-ui-label-default="Mở bảng nháp" className="secondary-button" disabled={Boolean(busy)} onClick={loadDraft}>{busy === 'draft-load' ? 'Đang mở…' : <UiCustomText uiKey="u-00757540fcc5">Mở bảng nháp</UiCustomText>}</button>
       </UiToolbar>
 
       {!!rows.length && <>
@@ -288,7 +317,10 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
         <UiToolbar data-ui-key="u-aa8a22274bd6" className="list-actions department-payroll-table-toolbar"><label className="department-payroll-table-search">Tìm nhân viên<input type="search" value={payrollSearch} placeholder="Nhập tên hoặc tên đăng nhập…" onChange={event => { setPayrollSearch(event.target.value); setSelected([]) }} /></label>{canEmail && <><button data-ui-key="u-d49687da041e" data-ui-label-default="Chọn tất cả có email" className="secondary-button" type="button" onClick={() => setSelected(visibleRows.filter((row) => String(row.email || '').includes('@')).map((row) => row.employee_username))}><Mail size={15} /><UiCustomText uiKey="u-d49687da041e"> Chọn tất cả có email</UiCustomText></button><button data-ui-key="u-af8e39d106bb" data-ui-label-default="Bỏ chọn" className="secondary-button" type="button" onClick={() => setSelected([])}><UiCustomText uiKey="u-af8e39d106bb">Bỏ chọn</UiCustomText></button></>}</UiToolbar>
         <div className="responsive-data-table department-payroll-table"><table data-ui-key="u-5b7cb5285f2e"><thead><tr><th data-ui-key="u-7686681f16f7" data-ui-label-default="Gửi"><UiCustomText uiKey="u-7686681f16f7">Gửi</UiCustomText></th><th data-ui-key="u-66c870616026" data-ui-label-default="TT"><UiCustomText uiKey="u-66c870616026">TT</UiCustomText></th><th data-ui-key="u-4f0fce3caf56" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-4f0fce3caf56">Nhân viên</UiCustomText></th><th data-ui-key="u-d4304a915425" data-ui-label-default="Bộ phận"><UiCustomText uiKey="u-d4304a915425">Bộ phận</UiCustomText></th><th data-ui-key="u-bcd797055bad" data-ui-label-default="Ngày công"><UiCustomText uiKey="u-bcd797055bad">Ngày công</UiCustomText></th><th data-ui-key="u-b67ed3d40c39" data-ui-label-default="Giờ Ca 1"><UiCustomText uiKey="u-b67ed3d40c39">Giờ Ca 1</UiCustomText></th><th data-ui-key="u-e9f4fe60b599" data-ui-label-default="Ca 2 trước 22h"><UiCustomText uiKey="u-e9f4fe60b599">Ca 2 trước 22h</UiCustomText></th><th data-ui-key="u-d6b67e042cda" data-ui-label-default="Ca 2 sau 22h"><UiCustomText uiKey="u-d6b67e042cda">Ca 2 sau 22h</UiCustomText></th><th data-ui-key="u-a16a026c7a8b" data-ui-label-default="Tiền lương"><UiCustomText uiKey="u-a16a026c7a8b">Tiền lương</UiCustomText></th>{editableFields.map(([, label]) => <th data-ui-key="u-ece4a4df8e43" key={label}>{label}</th>)}<th data-ui-key="u-4adc40dcdb1a" data-ui-label-default="Tổng lương"><UiCustomText uiKey="u-4adc40dcdb1a">Tổng lương</UiCustomText></th><th data-ui-key="u-c286089dd0b6" data-ui-label-default="Thực nhận"><UiCustomText uiKey="u-c286089dd0b6">Thực nhận</UiCustomText></th></tr></thead><tbody>{visibleRows.map((row) => <tr key={row.employee_username}><td data-label="Gửi email"><input type="checkbox" aria-label={`Chọn gửi email ${row.employee_name}`} checked={selected.includes(row.employee_username)} onChange={() => setSelected((items) => items.includes(row.employee_username) ? items.filter((item) => item !== row.employee_username) : [...items, row.employee_username])} /></td><td data-label="TT">{row.tt}</td><td data-label="Nhân viên"><div className="department-payroll-identity"><strong>{row.employee_username}</strong><span>{row.employee_name}</span><span>{row.email || 'Chưa có email'}</span></div>{row.incomplete_days > 0 && <small className="attendance-warning">{row.incomplete_days} ngày thiếu đủ FaceID</small>}</td><td data-label="Bộ phận"><strong>{row.department_label}</strong></td><td data-label="Ngày công">{row.work_days}</td><td data-label="Giờ Ca 1">{row.hours_ca1}</td><td data-label="Ca 2 trước 22h">{row.hours_ca2_before_22}</td><td data-label="Ca 2 sau 22h">{row.hours_ca2_after_22}</td><td data-label="Tiền lương" className="money-cell">{row.attendance_pending ? 'Chờ xác nhận công' : money(row.salary)}</td>{editableFields.map(([key, label]) => <td key={key} data-label={label} className={['violation_penalty', 'late_penalty'].includes(key) && Number(row[key]) > 0 ? 'payroll-penalty-positive' : undefined}><VeraMoneyInput className="payroll-money-input" aria-label={`${label} ${row.employee_name}`} style={{ width: `${Math.max(6, String(row[key] ?? '').replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.').length + 1)}ch` }} value={row[key]} onChange={(event) => editRow(row.employee_username, key, event.target.value)} /></td>)}<td data-label="Tổng lương" className="money-cell"><strong>{row.attendance_pending ? 'Chờ xác nhận công' : money(row.total_salary)}</strong></td><td data-label="Thực nhận" className="money-cell"><strong>{row.attendance_pending ? 'Chờ xác nhận công' : money(row.net_salary)}</strong></td></tr>)}</tbody></table></div>
         {!visibleRows.length && <p role="status">Không có nhân viên phù hợp bộ lọc.</p>}
-        <UiToolbar data-ui-key="u-9f377bd94706" className="list-actions department-payroll-actions">{canSave && <button data-ui-key="u-d8d128bf8ea0" data-ui-label-default="Lưu bảng nháp" className="secondary-button" disabled={Boolean(busy)} onClick={saveDraft}><Save size={16} /><UiCustomText uiKey="u-d8d128bf8ea0"> Lưu bảng nháp</UiCustomText></button>}{canSave && <button data-ui-key="u-da44815b5034" data-ui-label-default="Hoàn thành bảng lương" className="primary-button" disabled={Boolean(busy)} onClick={completePayroll}><CheckCircle2 size={16} /><UiCustomText uiKey="u-da44815b5034"> Hoàn thành bảng lương</UiCustomText></button>}{canExport && <button data-ui-key="u-ad79c9ff49c8" data-ui-label-default="Xuất excel" className="secondary-button" disabled={Boolean(busy) || !visibleRows.length} onClick={exportExcel}><Download size={16} /><UiCustomText uiKey="u-ad79c9ff49c8"> Xuất excel</UiCustomText></button>}{canEmail && <button data-ui-key="u-08d9057d122b" className="secondary-button" disabled={Boolean(busy) || !selected.length} onClick={sendEmail}><Send size={16} /> <Mail size={14} /> Gửi email ({selected.length})</button>}</UiToolbar>
+        <UiToolbar data-ui-key="u-9f377bd94706" className="list-actions department-payroll-actions">{canSave && <button data-ui-key="u-d8d128bf8ea0" data-ui-label-default="Lưu bảng nháp" className="secondary-button" disabled={Boolean(busy)} onClick={saveDraft}><Save size={16} />{busy === 'draft-save' ? 'Đang lưu…' : <UiCustomText uiKey="u-d8d128bf8ea0"> Lưu bảng nháp</UiCustomText>}</button>}{canSave && <button data-ui-key="u-da44815b5034" data-ui-label-default="Hoàn thành bảng lương" className="primary-button" disabled={Boolean(busy)} onClick={completePayroll}><CheckCircle2 size={16} /><UiCustomText uiKey="u-da44815b5034"> Hoàn thành bảng lương</UiCustomText></button>}{canExport && <button data-ui-key="u-ad79c9ff49c8" data-ui-label-default="Xuất excel" className="secondary-button" disabled={Boolean(busy) || !visibleRows.length} onClick={exportExcel}><Download size={16} /><UiCustomText uiKey="u-ad79c9ff49c8"> Xuất excel</UiCustomText></button>}{canEmail && <button data-ui-key="u-08d9057d122b" className="secondary-button" disabled={Boolean(busy) || !selected.length} onClick={sendEmail}><Send size={16} /> <Mail size={14} /> Gửi email ({selected.length})</button>}</UiToolbar>
+        <StableFeedback>{busy === 'draft-save' || busy === 'draft-load'
+          ? <div role="status">{busy === 'draft-save' ? 'Đang lưu bảng lương nháp…' : 'Đang mở bảng lương nháp…'}</div>
+          : notice && <div role="status" className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
       </>}
     </section>
     <section data-ui-key="u-aacee11d5e23" className="panel department-payroll-history">
