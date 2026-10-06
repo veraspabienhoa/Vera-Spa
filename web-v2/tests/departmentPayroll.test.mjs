@@ -106,3 +106,12 @@ test('deduction summary updates all rows despite visible filters',async t=>{
  await act(()=>window.dispatchEvent(new window.CustomEvent('vera-salary-advance-summary',{detail:{month,byEmployee:{a:{payroll_total:100000}}}})))
  await f.click('Lưu bảng nháp');const saved=JSON.parse(f.requests.find(r=>r.path.endsWith('/draft')&&r.options.method==='PUT').options.body);assert.equal(saved.rows.find(r=>r.employee_username==='a').advance,100000)
 })
+
+test('payroll actions precede table and share offers prepared PNG or PDF',async t=>{
+ const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương nháp từ Thống kê tháng')
+ const toolbar=document.querySelector('.department-payroll-top-actions'),table=document.querySelector('.department-payroll-table')
+ assert.ok(toolbar.compareDocumentPosition(table)&window.Node.DOCUMENT_POSITION_FOLLOWING)
+ const buttons=[...toolbar.querySelectorAll('button')];const exportIndex=buttons.findIndex(b=>b.textContent.trim()==='Xuất excel');assert.equal(buttons[exportIndex+1].textContent.trim(),'Chia sẻ')
+ await f.click('Chia sẻ');assert.ok(document.querySelector('[aria-label="Chia sẻ bảng lương"]'));assert.ok(f.requests.some(r=>r.path.endsWith('/export.png')));assert.ok(f.requests.some(r=>r.path.endsWith('/export.pdf')))
+ assert.equal([...document.querySelectorAll('button')].find(b=>b.textContent==='Ảnh PNG').disabled,false)
+})

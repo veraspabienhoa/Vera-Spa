@@ -3,3 +3,10 @@
 .department-payroll-filters input,.department-payroll-filters select{width:100%;min-width:0}
 .department-payroll-filters>span{padding:8px 0}
 .department-payroll-filter-note{font-size:12px;color:#596e61}
+
+.department-payroll-top-actions{display:flex!important;flex-wrap:nowrap!important;align-items:center;gap:6px;max-width:100%;min-width:0;overflow-x:auto;margin:12px 0;padding-bottom:4px}
+.department-payroll-top-actions>button,.department-payroll-top-actions>label{flex:0 0 auto;width:auto!important;min-width:0!important;white-space:nowrap}
+.department-payroll-top-actions>button{padding:8px 10px;font-size:12px;min-height:36px}
+.department-payroll-top-actions .department-payroll-table-search{font-size:0;flex:1 1 180px;min-width:130px!important;max-width:240px}
+.department-payroll-top-actions .department-payroll-table-search input{font-size:12px;width:100%}
+.department-payroll-share-options{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
