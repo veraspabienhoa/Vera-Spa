@@ -28,7 +28,7 @@ import vera_web_v2_work_schedule as work_schedule
 import vera_attendance_participation as participation
 
 
-RELEASE = "department-payroll-department-exclusion-2026-09-30-v10"
+RELEASE = "department-payroll-support-september-restored-2026-10-06-v11"
 COMBO_COMMISSION = 100_000
 PAYROLL_EXCLUDED_SQL = "lower(btrim(COALESCE(payload->>'Không tính lương','false'))) IN ('1','true','yes','y','có','x','ẩn')"
 DEPARTMENTS = {
@@ -470,7 +470,7 @@ def _visible_payroll_rows(conn, rows, *, month=None):
                and str(row.get("employee_username") or "").strip().casefold() not in excluded]
     if month:
         start, end, _ = _draft_month_range(month)
-        visible = participation.eligible(visible, start, end, key='employee_username')
+        visible = participation.eligible(visible, start, end, key='employee_username', administrative_payroll=True)
     return [dict(row, tt=index) for index, row in enumerate(visible, 1)]
 
 
@@ -481,7 +481,7 @@ def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], 
     settings = _settings(conn, department)
     cfg = settings["config"]
     employee_configs = _employee_config_map(conn)
-    employees = participation.eligible(_employees(conn, department), start, end, key='username')
+    employees = participation.eligible(_employees(conn, department), start, end, key='username', administrative_payroll=True)
     records = attendance._records(conn, start, end)
     violation_map, late_map = _penalty_maps(conn, start, end, norm)
     rows = []
@@ -606,7 +606,7 @@ def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any
     settings = _settings(conn, department)
     cfg = settings["config"]
     employee_configs = _employee_config_map(conn)
-    employees = participation.eligible(_employees(conn, department), start, end, key='username')
+    employees = participation.eligible(_employees(conn, department), start, end, key='username', administrative_payroll=True)
     records = [dict(item) for item in conn.execute(text("""
         SELECT work_date,employee_username,department AS schedule_department,shift_code,overtime_shift,start_time,end_time,
                overtime_start_time,overtime_end_time
@@ -730,7 +730,7 @@ def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any],
         raise HTTPException(400, "Bảng Lương hành chánh chưa có nhân viên.")
     if month:
         start, end, _ = _draft_month_range(month)
-        participation.require_payroll_participants(output, start, end, key='employee_username')
+        participation.require_payroll_participants(output, start, end, key='employee_username', administrative_payroll=True)
     return output
 
 
@@ -757,7 +757,7 @@ def _clean_rows(conn, department: str, rows: list[dict[str, Any]], cfg: dict[str
         raise HTTPException(400, "Bảng lương chưa có nhân viên.")
     if month:
         start, end, _ = _draft_month_range(month)
-        participation.require_payroll_participants(output, start, end, key='employee_username')
+        participation.require_payroll_participants(output, start, end, key='employee_username', administrative_payroll=True)
     return output
 
 
@@ -765,7 +765,7 @@ def _require_complete_attendance(conn, month, rows, norm):
     from vera_attendance_source import effective_date
     cutoff = effective_date()
     start, end, _ = _draft_month_range(month)
-    participation.require_payroll_participants(rows, start, end, key='employee_username')
+    participation.require_payroll_participants(rows, start, end, key='employee_username', administrative_payroll=True)
     if not cutoff or end < cutoff:
         return
     selected = {norm(r.get('employee_username')) for r in rows
@@ -1040,6 +1040,8 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             start, end, _ = _draft_month_range(body.month)
             preserved = participation.preserved_payroll(
                 (existing or {}).get('rows', []), start, end, key='employee_username')
+            replaced = {norm(row.get('employee_username')) for row in rows}
+            preserved = [row for row in preserved if norm(row.get('employee_username')) not in replaced]
             source_label = next((str(row.get("calculation_source") or "") for row in rows if row.get("calculation_source")), "")
             completed = {
                 "id": history_id, "month": body.month, "month_label": label,
@@ -1116,6 +1118,8 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             preserved = participation.preserved_payroll(
                 [row for item in history if isinstance(item, dict) and item.get('month') == body.month
                  for row in item.get('rows', [])], start, end, key='employee_username')
+            replaced = {norm(row.get('employee_username')) for row in rows}
+            preserved = [row for row in preserved if norm(row.get('employee_username')) not in replaced]
             history = [item for item in history if not (isinstance(item, dict) and item.get("month") == body.month)]
             history.append({"id": str(uuid.uuid4()), "month": body.month, "month_label": label, "saved_at": datetime.now(VN_TZ).isoformat(), "saved_by": ident.employee_username, "rows": rows + preserved})
             payroll._put_setting(conn, _setting_key(department, "history"), history[-120:], ident.employee_username)

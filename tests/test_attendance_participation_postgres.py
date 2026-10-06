@@ -13,64 +13,72 @@ import vera_web_v2_payroll as payroll
 
 
 @pytest.mark.parametrize('source', ['attendance', 'schedule'])
-def test_suspension_filters_calculation_and_blocks_stale_finalization(database, client, monkeypatch, source):
+def test_september_support_calculates_drafts_exports_and_replaces_history_once(database, client, monkeypatch, source):
     class Clock(datetime):
         @classmethod
-        def now(cls, tz=None): return datetime(2026, 9, 29, 22, tzinfo=dep.VN_TZ)
+        def now(cls, tz=None): return datetime(2026, 10, 6, 12, tzinfo=dep.VN_TZ)
     monkeypatch.setattr(dep, 'datetime', Clock)
     http, ident = client
-    suspended = ['admin', 'akamen', 'letan', 'Ms Tuyết']
-    before_enrollment = ['Cậu Tưởng', 'Nguyễn Thị Sen', 'Nguyễn Thị Thu Hiền', 'Ngô Sĩ Đạt', 'Vũ Tân']
+    names = ['admin', 'akamen', 'letan', 'Ms Tuyết']
     saved = [{'employee_username': 'a', 'department': 'letan', 'net_salary': 12345},
-             {'employee_username': 'Ms Tuyết', 'department': 'letan', 'net_salary': 45678}]
+             {'employee_username': 'Ms Tuyết', 'department': 'support', 'net_salary': 45678}]
     history = [{'id': 'approved-before-suspension', 'month': '2026-09', 'rows': saved}]
     with database.begin() as conn:
-        for name in suspended + before_enrollment:
-            conn.execute(text("INSERT INTO employees(username,full_name,role) VALUES(:name,:name,'letan')"), {'name': name})
+        for name in names:
+            conn.execute(text("INSERT INTO employees(username,full_name,role) VALUES(:name,:name,'admin')"), {'name': name})
+        payroll._put_setting(conn, 'hr_registry', {'assignments': {name:'support' for name in names}}, 'synthetic')
+        payroll._put_setting(conn, 'department_support_config', {
+            'rate_ca1':20000, 'rate_ca2_before_22':25000, 'rate_ca2_after_22':30000}, 'synthetic')
+        payroll._put_setting(conn, 'department_employee_salary_configs', {'Ms Tuyết':{'rate_ca1':35000}}, 'synthetic')
+        for name in ['letan', 'Ms Tuyết']:
+            conn.execute(text("""INSERT INTO vera_work_schedule(work_date,employee_username,employee_name,department,shift_code)
+                VALUES('2026-09-28',:name,:name,'letan','Ca 1')"""), {'name':name})
         payroll._put_setting(conn, 'department_payroll_combined_draft_2026-09', saved, 'synthetic')
         payroll._put_setting(conn, 'department_payroll_combined_history', history, 'synthetic')
         profiles = [tuple(r) for r in conn.execute(text('SELECT * FROM employees ORDER BY username'))]
-    result = http.get(f'/v2/department-payroll/combined/calculate?month=2026-09&source={source}')
-    assert result.status_code == 200, result.text
-    users = {r['employee_username'] for r in result.json()['rows']}
-    assert not users.intersection(suspended)
-    assert set(before_enrollment).issubset(users), 'enrollment deferred, not payroll-exempt'
-    result = http.get('/v2/department-payroll/combined/draft?month=2026-09')
-    assert [r['employee_username'] for r in result.json()['rows']] == ['a']
-    for method, path in [('put', 'draft'), ('post', 'complete'), ('post', 'export.xlsx')]:
-        response = getattr(http, method)(f'/v2/department-payroll/combined/{path}',
-            json={'month': '2026-09', 'rows': [dict(row, calculation_source=source) for row in saved]})
-        assert response.status_code == 409, response.text
-    for method, path in [('put', 'draft'), ('post', 'save'), ('post', 'export.xlsx')]:
-        response = getattr(http, method)(f'/v2/department-payroll/{path}',
-            json={'month': '2026-09', 'department': 'letan', 'rows': saved})
-        assert response.status_code == 409, response.text
-    with database.connect() as conn:
-        assert payroll._setting(conn, 'department_payroll_combined_history', []) == history
-        assert payroll._setting(conn, 'department_payroll_combined_draft_2026-09', []) == saved
-        assert [tuple(r) for r in conn.execute(text('SELECT * FROM employees ORDER BY username'))] == profiles
-    historic = http.get(f'/v2/department-payroll/combined/calculate?month=2026-08&source={source}')
-    historic_users = {r['employee_username'] for r in historic.json()['rows']}
-    assert {'letan', 'Ms Tuyết'}.issubset(historic_users)
-    assert not {'admin', 'akamen'}.intersection(historic_users)
-    # Completing other employees must not erase the suspended account's saved money.
-    response = http.post('/v2/department-payroll/combined/complete', json={
-        'month': '2026-09', 'rows': [dict(saved[0], calculation_source='schedule')]})
+    monkeypatch.setattr(dep.attendance, '_records', lambda *_: [
+        {'employee_name':name, 'date':'28/09/2026', 'shift':'Ca 1', 'check_in':'09:00', 'check_out':'17:00', 'total_minutes':480}
+        for name in ['letan','Ms Tuyết']])
+    response = http.get(f'/v2/department-payroll/combined/calculate?month=2026-09&source={source}')
     assert response.status_code == 200, response.text
-    assert [r['employee_username'] for r in response.json()['rows']] == ['a']
+    rows = response.json()['rows']; by_name = {r['employee_username']:r for r in rows}
+    assert {'letan','Ms Tuyết'}.issubset(by_name)
+    assert not {'admin','akamen'}.intersection(by_name)
+    assert by_name['letan']['department'] == by_name['Ms Tuyết']['department'] == 'support'
+    assert by_name['letan']['salary'] > 0 and by_name['Ms Tuyết']['salary'] > by_name['letan']['salary']
+    assert response.json()['end'] == '2026-09-30'
+    draft = http.get('/v2/department-payroll/combined/draft?month=2026-09').json()['rows']
+    assert {r['employee_username'] for r in draft} == {'a','Ms Tuyết'}
+    # Merely calculating or opening the saved view cannot rewrite approved money.
     with database.connect() as conn:
-        completed = payroll._setting(conn, 'department_payroll_combined_history', [])[0]['rows']
-        assert next(r for r in completed if r['employee_username'] == 'Ms Tuyết') == saved[1]
-
-    class OctoberClock(datetime):
-        @classmethod
-        def now(cls, tz=None): return datetime(2026, 10, 1, 12, tzinfo=dep.VN_TZ)
-    monkeypatch.setattr(dep, 'datetime', OctoberClock)
-    resumed = http.get(f'/v2/department-payroll/combined/calculate?month=2026-10&source={source}')
-    assert resumed.status_code == 200, resumed.text
-    resumed_users = {r['employee_username'] for r in resumed.json()['rows']}
-    assert {'letan', 'Ms Tuyết'}.issubset(resumed_users)
-    assert not {'admin', 'akamen'}.intersection(resumed_users)
+        assert payroll._setting(conn,'department_payroll_combined_history',[]) == history
+        assert [tuple(r) for r in conn.execute(text('SELECT * FROM employees ORDER BY username'))] == profiles
+    # A partial save must retain previously approved Support money until replaced.
+    partial = http.post('/v2/department-payroll/combined/complete', json={
+        'month':'2026-09','rows':[dict(saved[0],calculation_source='schedule')]})
+    assert partial.status_code == 200, partial.text
+    with database.connect() as conn:
+        kept = payroll._setting(conn,'department_payroll_combined_history',[])[0]['rows']
+        assert next(r for r in kept if r['employee_username']=='Ms Tuyết') == saved[1]
+    assert http.put('/v2/department-payroll/combined/draft', json={'month':'2026-09','rows':rows}).status_code == 200
+    assert http.post('/v2/department-payroll/combined/export.xlsx', json={'month':'2026-09','rows':rows}).status_code == 200
+    for _ in range(2):
+        result = http.post('/v2/department-payroll/combined/complete', json={'month':'2026-09','rows':rows})
+        assert result.status_code == 200, result.text
+    with database.connect() as conn:
+        items = payroll._setting(conn,'department_payroll_combined_history',[])
+        assert len(items) == 1 and items[0]['id'] == history[0]['id']
+        completed = items[0]['rows']
+        assert len([r for r in completed if r['employee_username']=='Ms Tuyết']) == 1
+        assert next(r for r in completed if r['employee_username']=='Ms Tuyết')['salary'] == by_name['Ms Tuyết']['salary']
+    support_rows = [r for r in rows if r['department']=='support']
+    for method, path in [('put','draft'),('post','save'),('post','export.xlsx')]:
+        result = getattr(http,method)(f'/v2/department-payroll/{path}', json={'month':'2026-09','department':'support','rows':support_rows})
+        assert result.status_code == 200, result.text
+    for month in ['2026-08','2026-10']:
+        result = http.get(f'/v2/department-payroll/combined/calculate?month={month}&source={source}')
+        assert result.status_code == 200, result.text
+        assert {'letan','Ms Tuyết'}.issubset({r['employee_username'] for r in result.json()['rows']})
 
 
 def test_tip_period_update_keeps_suspended_money_and_passes_old_deductions_to_hook(database, monkeypatch):
