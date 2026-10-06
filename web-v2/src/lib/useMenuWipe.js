@@ -19,6 +19,9 @@ export default function useMenuWipe(shellRef, open, onOpenChange) {
     const start = event => {
       if (!window.matchMedia('(max-width: 820px)').matches || event.touches.length !== 1) return
       if (event.target.closest?.('input,textarea,select,[contenteditable="true"],dialog,[role="dialog"]')) return
+      // Leave the scrollable menu to the browser, including diagonal finger
+      // motion. Closing gestures remain available on its header and backdrop.
+      if (event.target.closest?.('.sidebar .nav-list')) return
       const touch = event.touches[0]
       if (!latest.current.open && touch.clientX > 48) return
       const width = shell.querySelector('.sidebar')?.getBoundingClientRect().width

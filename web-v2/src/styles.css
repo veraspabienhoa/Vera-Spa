@@ -1307,6 +1307,13 @@ body .department-payroll-page .department-payroll-table :is(th, td).payroll-hour
     transition: transform .3s cubic-bezier(.22,.8,.25,1), visibility .3s;
   }
   .app-shell:is(.mobile-menu-open, .menu-dragging) .sidebar { visibility: visible; }
+  .app-shell .sidebar { overflow: hidden; padding-bottom: max(22px, env(safe-area-inset-bottom)); }
+  .app-shell .sidebar > :not(.nav-list) { flex-shrink: 0; }
+  .app-shell .sidebar .nav-list {
+    flex: 1 1 0; min-height: 0; align-content: start; grid-auto-rows: max-content;
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch; touch-action: pan-y;
+  }
   .app-shell > .main-area { position: relative; z-index: 30; background: var(--cream, #fffaf0); transition: transform .3s cubic-bezier(.22,.8,.25,1), border-radius .3s; }
   .app-shell:is(.mobile-menu-open, .menu-dragging) > .main-area {
     transform: translateX(var(--menu-offset)); border-radius: 20px 0 0 20px;
