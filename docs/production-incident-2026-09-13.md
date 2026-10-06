@@ -2421,3 +2421,23 @@ The HC UI now displays the effective activation timestamp and explains that
 earlier shifts need a manual violation entry. No eligibility/cutoff, wage or
 financial data was altered. The connected workstation is offline; deployed
 policy, exact shift, rates and records have not been independently read.
+
+
+## 06-10-2026 — Employee-only violation history
+
+Source inspection confirms the schedule violation GET previously returned every
+record for the authorized department, including to non-management staff. The
+endpoint now binds non-management reads to the authenticated employee username
+before querying financial records. Authorized Admin/quanly/giamdoc retain their
+department scope. Blank linked usernames fail closed; names never identify owners.
+
+Profile adds a read-only personal ledger with month/date/custom filters, using
+profile permission and a server-owned identity endpoint independent of calendar
+permissions or current department assignment. Schedule staff also see their own
+ledger, with other employees' statistics and department penalty totals hidden.
+The mandatory password-change screen does not mount the personal ledger. Financial
+records, calculation rules, write permissions and notifications are unchanged.
+No deployed runtime or production data has been read or changed.
+
+The supplied email-reference attachment is a check-in table, not an email sample;
+matching the requested administrative email layout awaits the correct reference.

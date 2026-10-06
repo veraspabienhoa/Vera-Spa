@@ -4,7 +4,8 @@ import UiCustomText from '../components/UiCustomText'
 import useAutoSave from '../hooks/useAutoSave'
 import { BellRing, CheckCircle2, RefreshCw, Save, ShieldCheck, Smartphone } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { veraApi } from '../lib/api'
+import { apiRequest, veraApi } from '../lib/api'
+import ScheduleViolations from '../components/ScheduleViolations'
 import { refreshProfileReferenceData } from '../lib/profileReferenceRefresh'
 import EmployeeIdentityPanel from './EmployeeIdentityPanel'
 import { disablePushNotifications, enablePushNotifications, readPushState, syncExistingPushSubscription } from '../lib/pushNotifications'
@@ -213,6 +214,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <button data-ui-key="u-659d131a516a" className="primary-button wide-field" disabled={saving}><Save size={16} /> {saving ? 'Đang lưu…' : 'Lưu hồ sơ'}</button>
       </form>
     </section>
+    {!forcePasswordChange && user?.employee_username && user?.role !== 'admin' && <ScheduleViolations key={user.employee_username} personal request={apiRequest} />}
     {user?.role === 'admin' && !forcePasswordChange && <section data-ui-key="u-7b5ff454d01f" className="panel android-push-panel admin-username-panel">
       <div>
         <span className="eyebrow"><ShieldCheck size={14} /> Chỉ Admin</span>

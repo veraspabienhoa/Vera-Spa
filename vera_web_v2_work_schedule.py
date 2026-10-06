@@ -185,9 +185,18 @@ def _mutate_schedule_violation(conn, uid, body, ident, *, deleting=False):
     return {'ok':True,'message':'Đã xóa vi phạm.' if deleting else 'Đã cập nhật vi phạm.'}
 
 
-def _schedule_violations(conn, department, start, end):
+def _schedule_violations(conn, department, start, end, *, employee_username=None):
     employees = _employee_catalog(conn, department)
+    if employee_username is not None:
+        wanted = str(employee_username).strip().casefold()
+        employees = [e for e in employees if str(e["username"]).strip().casefold() == wanted and wanted]
+    return _employee_violations(conn, employees, start, end)
+
+
+def _employee_violations(conn, employees, start, end):
     names = {str(e["username"]).strip().casefold(): e for e in employees}
+    if not names:
+        return []
     rows = conn.execute(text("""
         SELECT record_uid AS id, employee_name AS employee_username,
                leave_date AS violation_date, leave_reason AS reason, detail AS note,
@@ -873,7 +882,27 @@ def install_work_schedule_routes(
         with engine_instance().begin() as conn:
             if department not in WORK_SCHEDULE_FEATURES or not _allowed_department(conn, ident, department, feature_allowed):
                 raise HTTPException(403, "Bạn không có quyền xem vi phạm bộ phận này.")
-            return {"ok": True, "rows": _schedule_violations(conn, department, start, end)}
+            scope = None if _role(ident) in {"admin", "quanly", "giamdoc"} else str(getattr(ident, "employee_username", "") or "").strip()
+            if scope == "":
+                raise HTTPException(403, "Tài khoản chưa liên kết với nhân viên.")
+            return {"ok": True, "rows": _schedule_violations(conn, department, start, end, employee_username=scope)}
+
+    @app.get("/v2/work-schedule/violations/me")
+    def get_my_schedule_violations(start: date, end: date, ident=Depends(current_identity)):
+        if end < start or (end-start).days > 366:
+            raise HTTPException(400, "Khoảng ngày không hợp lệ, tối đa 367 ngày.")
+        username = str(getattr(ident, "employee_username", "") or "").strip()
+        if not username:
+            raise HTTPException(403, "Tài khoản chưa liên kết với nhân viên.")
+        with engine_instance().begin() as conn:
+            if not feature_allowed(conn, ident, "profile"):
+                raise HTTPException(403, "Bạn không có quyền xem hồ sơ cá nhân.")
+            employees = conn.execute(text("""
+                SELECT username, COALESCE(NULLIF(full_name,''), username) AS full_name
+                FROM employees WHERE lower(btrim(username))=lower(btrim(:username))
+                  AND COALESCE(payload->>'__deleted','false') <> 'true'
+            """), {"username": username}).mappings().all()
+            return {"ok": True, "rows": _employee_violations(conn, employees, start, end)}
 
     @app.post("/v2/work-schedule/violations")
     def create_schedule_violation(body: ScheduleViolationCreate, ident=Depends(current_identity)):
