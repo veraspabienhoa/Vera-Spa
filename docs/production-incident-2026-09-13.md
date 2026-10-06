@@ -2365,3 +2365,25 @@ supports employee, date and month/custom range filters and includes existing fin
 Production data, deployment and real PostgreSQL behavior have not been verified
 by this source change. Existing payroll drafts/history need recalculation to pick
 up newly recorded fines; existing saved financial rows are not rewritten.
+
+## 06-10-2026 — Restore September administrative payroll for Support
+
+Operator reports September 2026 payroll omits Support accounts letan and Ms Tuyết
+and explicitly requests their inclusion. Confirmed source defect: the closed
+29-09 to 01-10 attendance suspension excludes each account for the entire payroll
+period, hides saved rows and rejects save/export/finalization. Prior inclusion
+of all wage departments did not override this independent participation guard.
+
+Administrative payroll now ignores only that exact closed interval for these two
+canonical usernames across calculation, saved views, validation and preservation.
+Admin/akamen, named excluded departments, No salary flags, wage configurations
+and FaceGate evidence checks remain authoritative. Attendance/TIP retain the
+original historical suspension; later/open suspensions are still enforced.
+Recalculation uses the configured employee/department rates and original VERA
+schedule department after HR reassignment. Replacing an approved payroll does
+not append the old restored account a second time. Saved amounts are unchanged
+until the operator explicitly calculates and saves/completes the new payroll.
+
+No production database, Support rate configuration or September approved payroll
+has been read or changed during this fix. The connected workstation is offline.
+Source-level diagnosis is confirmed; production verification remains pending.

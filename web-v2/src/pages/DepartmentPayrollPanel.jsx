@@ -152,6 +152,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   const calculate = (source) => run(`calculate-${source}`, async () => {
     const result = await request(`/v2/department-payroll/combined/calculate?month=${month}&source=${source}`)
     setRows(result.rows || []); setSelected([])
+    setPayrollSearch(''); setDepartmentFilter('')
     setEditingHistoryId('')
     setCalculationPeriod({ start: result.start, end: result.end, source: result.source_label })
     setNotice({ type: 'success', message: `Đã tính lương nháp ${result.rows?.length || 0} nhân viên từ ${result.source_label}, kỳ ${displayIsoDate(result.start)} – ${displayIsoDate(result.end)}.` })

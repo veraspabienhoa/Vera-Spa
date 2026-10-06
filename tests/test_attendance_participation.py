@@ -95,15 +95,33 @@ def test_alert_eligibility_does_not_alert_suspended_accounts(monkeypatch):
 
 
 @pytest.mark.parametrize('calculation_source', ['attendance', 'schedule'])
-def test_finalization_rejects_stale_client_rows_even_schedule_source(monkeypatch, facegate, calculation_source):
-    monkeypatch.setattr(department.attendance, '_records', lambda *_: pytest.fail('must reject before attendance read'))
-    for username in policy.status(DAY)['excluded_usernames']:
+def test_administrative_payroll_restores_support_without_changing_attendance(monkeypatch, facegate, calculation_source):
+    monkeypatch.setattr(department.attendance, '_records', lambda *_: [])
+    for username in ['admin', 'akamen']:
         with pytest.raises(HTTPException) as error:
             department._require_complete_attendance(object(), '2026-09',
                 [{'employee_username': username, 'calculation_source': calculation_source}], str)
         assert error.value.status_code == 409
-    department._require_complete_attendance(object(), '2026-08',
-        [{'employee_username': 'Ms Tuyết'}], str)
+    for username in ['letan', 'Ms Tuyết']:
+        department._require_complete_attendance(object(), '2026-09',
+            [{'employee_username': username, 'calculation_source': calculation_source}], str)
+        assert policy.suspended(username, DAY), 'attendance history stays suspended'
+
+
+@pytest.mark.parametrize('username', ['letan', 'MS TUYẾT', 'Ms Tuyết'])
+def test_support_restoration_is_only_the_closed_september_admin_payroll_interval(monkeypatch, username):
+    start, end = date(2026,9,1), date(2026,9,30)
+    rows = [{'employee_username':username}]
+    assert policy.eligible(rows, start, end, key='employee_username', administrative_payroll=True) == rows
+    policy.require_payroll_participants(rows, start, end, key='employee_username', administrative_payroll=True)
+    assert policy.preserved_payroll(rows, start, end, key='employee_username', administrative_payroll=True) == []
+    assert policy.suspended(username, start, end), 'ordinary attendance/TIP policy unchanged'
+    for interval in [
+        {'username':username, 'effective_from':date(2026,9,29), 'effective_until':None},
+        {'username':username, 'effective_from':date(2026,10,6), 'effective_until':date(2026,10,8)},
+    ]:
+        monkeypatch.setattr(policy, 'SUSPENSIONS', (interval,))
+        assert policy.suspended(username, interval['effective_from'], administrative_payroll=True)
 
 
 def test_tip_draft_validates_canonical_identity_and_keeps_history(monkeypatch):
