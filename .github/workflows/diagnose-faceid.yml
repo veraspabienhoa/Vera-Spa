@@ -62,6 +62,14 @@ jobs:
                       print('UPLOAD_FIELD_COUNTS',json.dumps(dict(Counter(k for k,v in matches if k.startswith('UPLOAD.') or k.startswith('ERR.')))))
                       print('UPLOAD_RESULT',json.dumps({k:v.strip() for k,v in matches if k in ('UPLOAD.state','ERR.no') and re.fullmatch(r'[0-9-]{1,12}',v.strip())}))
                       print('UPLOAD_SESSION_MATCH',any(k=='UPLOAD.sessionid' and v.strip()==row['upload_session'] for k,v in matches))
+                      result_fields={k:v.strip() for k,v in matches}
+                      def number(key):
+                          value=result_fields.get(key,'')
+                          return int(value) if re.fullmatch(r'-?\d{1,20}',value) else None
+                      file_type=number('UPLOAD.dwfiletype')
+                      file_index=number('UPLOAD.dwfileindex')
+                      file_position=number('UPLOAD.dwfilepos')
+                      print('UPLOAD_REFERENCE_SHAPE',json.dumps({'file_type':file_type if file_type is not None and -1<=file_type<=16 else 'other','index_valid':file_index is not None and 0<=file_index<=65535,'position_positive':file_position is not None and file_position>0,'position_in_range':file_position is not None and 0<file_position<=2**63-1,'error_kind':result_fields.get('ERR.des') if result_fields.get('ERR.des') in ('OK','ImportingList','LoginTimeout','') else 'other'}))
                       try:
                           value=fields(raw)
                           print('UPLOAD_PARSE_OK')
