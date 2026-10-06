@@ -1,13 +1,13 @@
 name: Diagnose FaceGate photo update
 on:
-  push:
-    branches: [codex/faceid-diagnostics]
-    paths: [.github/workflows/diagnose-faceid.yml]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   diagnose:
-    if: ${{ github.run_attempt == 1 }}
+    # Authorized single upload completed: state 105 (no face), profiles unchanged.
+    # Retained for audit only. No further device upload is authorized here.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
