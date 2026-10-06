@@ -78,6 +78,7 @@ function ensureStyles() {
     #${PANEL_ID}{display:grid;gap:12px;margin:14px 0;padding:16px;border:1px solid #e4d6b7;border-radius:14px;background:#fffaf0}
     #${PANEL_ID} .advance-ledger-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
     #${PANEL_ID} h3{margin:0;color:#72551c;font-size:18px}#${PANEL_ID} p{margin:4px 0 0;color:#746b5b;font-size:12px}
+    #${PANEL_ID} [data-advance-content]{display:grid;gap:12px}#${PANEL_ID} [data-advance-content][hidden]{display:none}
     #${PANEL_ID} .advance-ledger-summary{display:flex;gap:8px;flex-wrap:wrap}#${PANEL_ID} .advance-ledger-summary span{display:grid;gap:2px;min-width:145px;padding:9px 12px;border:1px solid #eadfc8;border-radius:10px;background:#fff;color:#746b5b;font-size:11px;font-weight:700}#${PANEL_ID} .advance-ledger-summary strong{font-size:16px;color:#193d31}
     #${PANEL_ID} .advance-ledger-form{display:grid;grid-template-columns:minmax(220px,1.4fr) 160px 180px minmax(220px,1.5fr) auto;gap:8px;align-items:end}
     #${PANEL_ID} .advance-ledger-form label{display:grid;gap:5px;font-size:11px;font-weight:800;color:#4d5f56}#${PANEL_ID} .advance-ledger-form input{width:100%;min-height:38px;padding:8px 10px;border:1px solid #cfdad4;border-radius:9px;background:#fff;color:#1f342b;font:inherit}
@@ -144,9 +145,11 @@ function renderEmployeeSuggestions(panel, value = '', showAll = false) {
 function panelHtml(month) {
   return `
     <div class="advance-ledger-title">
-      <div><h3>💵 NHÂN VIÊN ỨNG LƯƠNG</h3><p>Mỗi lần ứng là một giao dịch riêng. Khi hoàn thành bảng lương, các khoản đang chờ sẽ tự chuyển sang Đã trừ lương.</p></div>
-      <button type="button" class="secondary-button" data-advance-refresh>↻ Làm mới</button>
+      <div><h3>💵 NHÂN VIÊN ỨNG LƯƠNG</h3></div>
+      <button type="button" class="secondary-button" data-advance-toggle aria-expanded="false" aria-controls="vera-salary-advance-content">Hiện</button>
     </div>
+    <div id="vera-salary-advance-content" data-advance-content hidden>
+    <button type="button" class="secondary-button" data-advance-refresh>↻ Làm mới</button>
     <div class="advance-ledger-summary">
       <span>Tổng ứng tháng<strong data-advance-total>0đ</strong></span>
       <span>Chờ trừ vào lương<strong data-advance-pending>0đ</strong></span>
@@ -161,6 +164,7 @@ function panelHtml(month) {
     </form>
     <div class="advance-ledger-message" data-advance-message></div>
     <div class="advance-ledger-table-wrap"><table><thead><tr><th>TT</th><th>Tên nhân viên</th><th>Ngày</th><th>Số tiền</th><th>Ghi chú</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody data-advance-tbody></tbody></table></div>
+    </div>
   `
 }
 
@@ -178,6 +182,15 @@ function ensurePanel() {
   panel.innerHTML = panelHtml(month)
   toolbar.insertAdjacentElement('afterend', panel)
 
+  panel.querySelector('[data-advance-toggle]').addEventListener('click', (event) => {
+    const content = panel.querySelector('[data-advance-content]')
+    content.hidden = !content.hidden
+    event.currentTarget.textContent = content.hidden ? 'Hiện' : 'Ẩn'
+    event.currentTarget.setAttribute('aria-expanded', String(!content.hidden))
+  })
+  panel.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('[data-advance-employee-option]')) event.preventDefault()
+  })
   panel.querySelector('[data-advance-refresh]')?.addEventListener('click', () => scheduleRefresh(true))
   const employeeSearch = panel.querySelector('[data-advance-employee]')
   employeeSearch?.addEventListener('focus', () => {
@@ -194,10 +207,11 @@ function ensurePanel() {
     panel.querySelector('[data-advance-employee-options]')?.setAttribute('hidden', '')
     employeeSearch.setAttribute('aria-expanded', 'false')
   })
-  employeeSearch?.addEventListener('blur', () => window.setTimeout(() => {
+  panel.querySelector('.advance-employee-field')?.addEventListener('focusout', (event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) return
     panel.querySelector('[data-advance-employee-options]')?.setAttribute('hidden', '')
     employeeSearch.setAttribute('aria-expanded', 'false')
-  }))
+  })
   panel.querySelector('[data-advance-date]')?.addEventListener('input', (event) => {
     event.target.value = maskDisplayDate(event.target.value)
   })
