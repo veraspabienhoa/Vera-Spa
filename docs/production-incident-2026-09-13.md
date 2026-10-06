@@ -2344,3 +2344,24 @@ ordering, duplicate appointment times, old-token cleanup and leave exclusion.
 
 These are source/test observations; this change has not been deployed or verified
 against production booking records. Deploy both API and Web V2 after CI and merge.
+
+## 06-10-2026 — Schedule violation ledger and payroll filters (source changes)
+
+Administrative payroll keeps employee search and department selection in one row.
+The advance ledger adds previous/current Vietnam calendar month and custom payment-date
+filters next to its title. Deduction-month summaries remain independent so
+filtering payment dates cannot change what gets deducted from the selected payroll.
+
+Work Schedule adds a manual violation modal limited to Admin/quanly and authorized
+departments. The server resolves the employee within the selected department and
+writes one zero-day financial leave record, retaining actor, Vietnam timestamp,
+request UUID and input snapshot. Transaction-scoped allocation and replay checks
+prevent duplicate fines on network retries; a changed request UUID payload fails.
+The existing payroll penalty calculation reads this same financial source. No
+additional leave day, attendance evidence or network notification is generated.
+Department statistics add violation count and penalty totals; the detail table
+supports employee, date and month/custom range filters and includes existing fines.
+
+Production data, deployment and real PostgreSQL behavior have not been verified
+by this source change. Existing payroll drafts/history need recalculation to pick
+up newly recorded fines; existing saved financial rows are not rewritten.
