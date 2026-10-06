@@ -2402,3 +2402,22 @@ only financial amount/note may be corrected here. Managers retain creation
 permission; mutation APIs reject non-Admin roles before database access. The
 creation button replaces the shift legend. Saved payroll requires recalculation
 to reflect corrections. No production data or deployment has been verified.
+
+## 06-10-2026 — Combo month filters, check-in lookup and HC activation timing
+
+Employee combo tables add current/previous Vietnam month filters, independently
+of the schedule month/drafts and monthly statistics. Combo Excel export uses the
+selected combo month. Stale filter reads are discarded. Check-in employee/code
+and event-ID fields use the existing searchable dropdown with independent Clear
+buttons. Suggestions use authorized saved-history reads and the applied date
+range; typing does not fetch the physical device or alter the applied export.
+
+The operator's screenshot shows Mạnh Đạt scans at 10:10:43/10:10:46 on 06-10-2026
+and no violation ledger entry. The operator explicitly confirms Locker's HC
+late rule was activated after the late arrival. Source inspection confirms HC
+activation does not backfill an already-started main/effective overtime shift.
+KTV catalog fines continue excluding Locker; HC fines use configured wage rules.
+The HC UI now displays the effective activation timestamp and explains that
+earlier shifts need a manual violation entry. No eligibility/cutoff, wage or
+financial data was altered. The connected workstation is offline; deployed
+policy, exact shift, rates and records have not been independently read.

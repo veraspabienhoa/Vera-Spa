@@ -89,3 +89,32 @@ test('device page retries initial failure and can submit a new device without lo
   assert.equal(saved.devices[1].name, 'Máy thử nghiệm')
   assert.equal(saved.devices[1].adapter, 'pending')
 })
+
+
+test('history typing suggests employee names/codes and event IDs, with independent clear buttons', async context => {
+  const queries = []
+  const dom = await page('history', { checkinHistory: async query => {
+    queries.push(query)
+    return { records: [{ event_id: 80351, employee_name: 'Mạnh Đạt', employee_code: '42', device_name: 'Vu Manh Dat', occurred_at: '2026-10-06T10:10:43+07:00' }], options: { statuses: [], types: [] } }
+  } }, context)
+  const doc = dom.window.document
+  const input = async (node, value) => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(node, value)
+    await dom.window.testAct(() => node.dispatchEvent(new dom.window.Event('input', { bubbles: true })))
+  }
+  const employee = doc.querySelector('[aria-label="Tên / mã nhân viên"]')
+  await input(employee, '42')
+  await dom.window.testAct(async () => { await new Promise(resolve => dom.window.setTimeout(resolve, 230)) })
+  assert.equal(queries.length, 1); assert.equal(queries[0].employee, '')
+  const choice = [...doc.querySelectorAll('[role=option]')].find(node => node.textContent.includes('Mạnh Đạt'))
+  assert.ok(choice)
+  await dom.window.testAct(() => choice.click()); assert.equal(employee.value, 'Mạnh Đạt')
+  const eventId = doc.querySelector('[aria-label="Mã sự kiện"]')
+  await input(eventId, '803')
+  assert.ok([...doc.querySelectorAll('[role=option]')].some(node => node.textContent.includes('80351')))
+  await dom.window.testAct(() => doc.querySelector('[aria-label="Clear Mã sự kiện"]').click())
+  assert.equal(eventId.value, ''); assert.equal(employee.value, 'Mạnh Đạt')
+  await dom.window.testAct(() => doc.querySelector('[aria-label="Clear Tên / mã nhân viên"]').click())
+  assert.equal(employee.value, ''); assert.equal(doc.querySelector('[role=listbox]'), null)
+  assert.equal(queries.length, 1)
+})

@@ -4,6 +4,7 @@ import { veraApi } from '../lib/api'
 import usePageRefresh from '../lib/usePageRefresh'
 import './HcRulesPage.css'
 import DepartmentRulesPanel from './DepartmentRulesPanel'
+import { formatVeraDateTime } from '../lib/veraDate'
 
 export default function HcRulesPage({ user }) {
   const [data, setData] = useState(null)
@@ -25,7 +26,7 @@ export default function HcRulesPage({ user }) {
     setBusy(`${rule.id}:${item.code}`); setError(''); setNotice('')
     try {
       setData(await veraApi.saveHcRuleDepartment(item.code, rule.id, { enabled: !enabled, expected_revision: data.revision }))
-      setNotice(`${rule.name} · ${item.name}: đã ${enabled ? 'tắt' : 'kích hoạt'}.`)
+      setNotice(`${rule.name} · ${item.name}: đã ${enabled ? 'tắt' : 'kích hoạt'}.${enabled ? '' : ' Chỉ tự ghi phạt cho ca bắt đầu sau lúc kích hoạt; ca đã bắt đầu cần nhập vi phạm thủ công.'}`)
     } catch (cause) { setError(cause.message || 'Không lưu được Nội quy HC.') }
     finally { setBusy('') }
   }
@@ -60,8 +61,11 @@ export default function HcRulesPage({ user }) {
         </> : <><h3>{rule.name}</h3><p>{rule.description}</p><p>{rule.mode === 'fixed' ? `${Number(rule.value).toLocaleString('vi-VN')}đ / vi phạm` : `Lương tương ứng × ${rule.value}`} · {rule.enabled ? 'Áp dụng' : 'Đã tắt'} · {rule.kind === 'manual' ? 'Ghi nhận thủ công' : 'Tự động khi bộ phận kích hoạt'}</p></>}
         {!draft && <div className="hc-department-grid">{data?.departments.map(item => {
           const enabled = item.rules?.[rule.id]?.enabled === true
+          const activatedAt = item.rules?.[rule.id]?.enabled_since
+          const effectiveAt = activatedAt && rule.effective_since ? new Date(Math.max(Date.parse(activatedAt), Date.parse(rule.effective_since))).toISOString() : activatedAt
           return <article className={`hc-department ${enabled ? 'enabled' : ''}`} key={item.code}>
             <h4>{item.name}</h4><p>{enabled ? 'Đã kích hoạt' : 'Đã tắt'}</p>
+            {enabled && effectiveAt && rule.kind !== 'manual' && <p>Áp dụng cho ca bắt đầu từ {formatVeraDateTime(effectiveAt)}. Ca đã bắt đầu trước mốc này cần nhập vi phạm thủ công.</p>}
             {!rule.enabled && <p>Hạng mục đang tắt chung.</p>}
             {item.salary_mode === 'tip' && rule.kind !== 'manual' && <p>Chưa có đơn giá lương giờ/tháng: chưa tự phạt.</p>}
             {canEdit && <button type="button" className="primary-button" aria-label={`${enabled ? 'Tắt' : 'Kích hoạt'} ${rule.name} · ${item.name}`} aria-pressed={enabled} disabled={Boolean(busy)} onClick={() => toggle(item, rule)}>{busy === `${rule.id}:${item.code}` ? 'Đang lưu…' : enabled ? 'Tắt kích hoạt' : 'Kích hoạt'}</button>}
