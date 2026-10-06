@@ -33,8 +33,8 @@ export default function LiveTourFilters({ value, onChange, rows, customers = EMP
   return <UiToolbar data-ui-key="u-aee0d456f8e9" className="live-tour-filters" role="group" aria-label="Bộ lọc danh sách">
     <UiToolbar data-ui-key="u-6cab38b8ea72" className="live-tour-filters-row live-tour-filters-dates">
       <ReportDatePreset key={value.preset + value.date_from + value.date_to} className="live-tour-filters-preset" value={value.preset} presets={TOUR_DATE_PRESETS} onChange={choosePreset}/>
-      <label><span>Từ ngày</span><VeraDateInput value={value.date_from} max={value.date_to || undefined} onChange={e => change({ date_from: e.target.value, preset: 'custom' })}/></label>
-      <label><span>Đến ngày</span><VeraDateInput value={value.date_to} min={value.date_from || undefined} onChange={e => change({ date_to: e.target.value, preset: 'custom' })}/></label>
+      <label><span>Từ ngày</span><VeraDateInput value={value.date_from} max={value.date_to || undefined} onChange={e => change({ date: '', date_from: e.target.value, preset: 'custom' })}/></label>
+      <label><span>Đến ngày</span><VeraDateInput value={value.date_to} min={value.date_from || undefined} onChange={e => change({ date: '', date_to: e.target.value, preset: 'custom' })}/></label>
     </UiToolbar>
     <UiToolbar data-ui-key="u-f4dd81a665cc" className={`live-tour-filters-row live-tour-filters-search${showTotal || showTip ? ' live-tour-filters-five' : ''}${showDate ? ' live-tour-filters-date-search' : ''}`}>
       {showDate && <label><span>Ngày</span><VeraDateInput clearable aria-label="Lọc ngày hóa đơn" value={value.date || ''} onChange={event => change({ date: event.target.value, date_from: event.target.value, date_to: event.target.value, preset: event.target.value ? 'custom' : 'all' })} /></label>}

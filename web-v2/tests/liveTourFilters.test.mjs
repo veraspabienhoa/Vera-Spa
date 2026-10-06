@@ -239,5 +239,9 @@ test('report exact date accepts typing and picker, Clear removes date bounds wit
     await type(field, '31-02-2026')
     assert.equal(current.date, '2026-10-07')
     assert.equal(field.getAttribute('aria-invalid'), 'true')
+    await type(document.querySelector('.live-tour-filters-dates .vera-date-input>input[type=text]'), '01-10-2026')
+    assert.equal(current.date, '')
+    assert.equal(current.date_from, '2026-10-01')
+    assert.equal(current.date_to, '2026-10-07')
   } finally { await act(() => root.unmount()) }
 })

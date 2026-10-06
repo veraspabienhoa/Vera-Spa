@@ -9,7 +9,7 @@ export default function OnlineBookingDetails({ row }) {
     <dt>Giờ hẹn</dt><dd>{row.appointment_time || missing}</dd>
     <dt>Dịch vụ</dt><dd>{row.service || missing}</dd>
     <dt>Số khách</dt><dd>{row.guests ?? missing}</dd>
-    <dt>Yêu cầu nhân viên</dt><dd>{row.requested_staff || missing}</dd>
+    <dt>YC nhân viên</dt><dd>{row.requested_staff || missing}</dd>
     <dt>Lời nhắn</dt><dd className="online-booking-message">{row.message || 'Không có lời nhắn'}</dd>
   </dl>
 }
