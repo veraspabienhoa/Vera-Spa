@@ -94,6 +94,7 @@ def test_canonical_calculation_only_deducts_available_net(monkeypatch, salary, d
         def __exit__(self, *args): pass
         def execute(self, statement, *args):
             return Result([employee] if 'FROM employees' in str(statement) else [])
+    monkeypatch.setattr(payroll, '_setting', lambda conn, key, default: default)
     monkeypatch.setattr(payroll, '_read_source', lambda p: None)
     monkeypatch.setattr(payroll, '_config', lambda c: payroll.DEFAULT_CONFIG)
     monkeypatch.setattr(payroll, '_tichluy_map', lambda *a: {norm('A'): 0})

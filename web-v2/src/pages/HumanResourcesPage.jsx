@@ -10,7 +10,8 @@ const modes = { monthly: 'Lương tháng', hourly: 'Lương giờ', tip: 'Tip' }
 const empty = { code: '', name: '', salary_mode: 'hourly' }
 
 export default function HumanResourcesPage({ user }) {
-  usePageRefresh(() => isAdmin && load(), () => Boolean(busy || editing || JSON.stringify(assignments) !== JSON.stringify(Object.fromEntries((data?.employees || []).map(person => [person.username, person.department])))))
+  usePageRefresh(() => isAdmin && load(), () => Boolean(busy || editing || JSON.stringify(commission) !== JSON.stringify(data?.commission || null) || JSON.stringify(assignments) !== JSON.stringify(Object.fromEntries((data?.employees || []).map(person => [person.username, person.department])))))
+  const [commission, setCommission] = useState(null)
   const [data, setData] = useState(null)
   const [draft, setDraft] = useState(empty)
   const [editing, setEditing] = useState(false)
@@ -24,6 +25,7 @@ export default function HumanResourcesPage({ user }) {
   const load = async () => {
     const result = await veraApi.hr()
     setData(result)
+    setCommission(result.commission)
     setAssignments(Object.fromEntries(result.employees.map(person => [person.username, person.department])))
   }
   useEffect(() => { if (isAdmin) load().catch(e => setError(e.message)) }, [isAdmin])
@@ -46,6 +48,16 @@ export default function HumanResourcesPage({ user }) {
   return <div className="feature-page hr-page">
     <div data-ui-key="u-7fd60f444946" className="page-heading"><div><h1>NHÂN SỰ</h1><p>Quản lý bộ phận và hình thức lương độc lập với phân quyền tài khoản.</p></div><button data-ui-key="u-eca8c9b24429" data-ui-label-default="Làm mới" className="secondary-button" disabled={busy} onClick={() => run(load, 'Đã làm mới.')}><UiCustomText uiKey="u-eca8c9b24429">Làm mới</UiCustomText></button></div>
     <StableFeedback>{error && <div className="error-box" role="alert">{error}</div>}{notice && <div className="success-box" role="status">{notice}</div>}</StableFeedback>
+    {commission && <section className="panel"><h2>Hoa hồng dịch vụ & sản phẩm</h2>
+      <p>Leader và Nhân viên giữ nguyên 100% TIP. Hoa hồng cộng thêm vào Lương KTV, chỉ ghi nhận cho hóa đơn thanh toán mới sau khi bật. Bảng lương đã lưu không tự thay đổi.</p>
+      <p>Dịch vụ và sản phẩm bán riêng tính sau giảm giá, không gồm TIP. Combo chỉ tính khi dùng vé: giá combo đã mua ÷ tổng số vé × số vé sử dụng; không tính khi bán combo lần đầu.</p>
+      <form onSubmit={event => { event.preventDefault(); void run(() => veraApi.saveHrCommission({ enabled: commission.enabled, ...commission.rates, revision: data.revision }), 'Đã lưu cấu hình hoa hồng. Áp dụng cho hóa đơn thanh toán mới.') }}>
+        <label className="hr-commission-toggle"><input type="checkbox" disabled={busy} checked={commission.enabled} onChange={event => setCommission({ ...commission, enabled: event.target.checked })}/>Bật hoa hồng dịch vụ và sản phẩm</label>
+        <div className="hr-departments">{[['leader', 'Leader'], ['nhanvien', 'Nhân viên']].map(([code, label]) => <article className="hr-department" key={code}><strong>{label}</strong>{[['service', 'Dịch vụ (%)'], ['product', 'Sản phẩm (%)']].map(([kind, title]) => <label key={kind}>{title}<input type="number" required min="0" max="100" step="0.01" disabled={busy} value={commission.rates[code][kind]} onChange={event => setCommission({ ...commission, rates: { ...commission.rates, [code]: { ...commission.rates[code], [kind]: event.target.value } } })}/></label>)}</article>)}</div>
+        <p>Phân loại sản phẩm bán riêng tại Cài đặt → Dịch vụ → Loại doanh thu. Chỉ tính cho dòng hóa đơn có nhân viên thuộc Leader/Nhân viên; dòng chưa gán nhân viên không có người hưởng.</p>
+        <button className="primary-button" disabled={busy || !data || JSON.stringify(commission) === JSON.stringify(data.commission)}>Lưu cấu hình hoa hồng</button>
+      </form>
+    </section>}
     <section data-ui-key="u-f6aa77c86491" className="panel"><h2>Bộ phận & hình thức lương</h2>
       <p>Lương tháng: lương cơ bản theo 26 ngày công. Lương giờ: theo giờ làm và mức lương từng ca. Tip: dùng cách tính Lương KTV hiện tại, cùng các khoản phụ cấp và khấu trừ.</p>
       <form className="hr-department-form" onSubmit={submit}>

@@ -1165,7 +1165,7 @@ def _service_selection(state, payload, now, *, quick=False):
     if requested is None:
         name, duration, price = _service_values(state, payload, now)
         service = next(row for row in state["services"] if row["name"] == name)
-        return name, duration, price, [{"service_id": service["id"], "name": name, "quantity": 1, "unit_price": price, "duration": duration, "ticket_units": service.get("ticket_units", 1)}]
+        return name, duration, price, [{"service_id": service["id"], "name": name, "quantity": 1, "unit_price": price, "duration": duration, "revenue_kind": service.get("revenue_kind", "service"), "ticket_units": service.get("ticket_units", 1)}]
     if not isinstance(requested, list) or not requested or (not quick and len(requested) > 30):
         raise HTTPException(400, "Hãy chọn dịch vụ hợp lệ (booking tối đa 30 dịch vụ).")
     items, seen = [], set()
@@ -1175,7 +1175,7 @@ def _service_selection(state, payload, now, *, quick=False):
         seen.add(item["service_id"])
         quantity = int(_bounded_number(item.get("quantity", 1), label="Số lượng dịch vụ", minimum=1, maximum=MAX_MONEY if quick else 30, integer=True))
         name, duration, price = _service_values(state, {"service_id": item["service_id"], "request": payload.get("request", "")}, now)
-        items.append({"service_id": item["service_id"], "name": name, "quantity": quantity, "unit_price": price, "duration": duration, "ticket_units": _service_ticket_units(state, name)})
+        items.append({"service_id": item["service_id"], "name": name, "quantity": quantity, "unit_price": price, "duration": duration, "revenue_kind": next(row for row in state["services"] if row["id"] == item["service_id"]).get("revenue_kind", "service"), "ticket_units": _service_ticket_units(state, name)})
     total_quantity = sum(row["quantity"] for row in items)
     duration = sum((row["duration"] or 0) * row["quantity"] for row in items)
     price = sum(row["unit_price"] * row["quantity"] for row in items)
@@ -1606,7 +1606,7 @@ def _quick_booking_entry(state, booking, now, payment=None):
         if price > MAX_MONEY:
             raise HTTPException(400, "Tổng dịch vụ vượt giá trị cho phép.")
         items += extra_items
-    combo_metadata = {"combo_generic_base_units": base_units, "quick_extra_subtotal": sum(row["unit_price"] * row["quantity"] for row in extra_items)} if (payment or {}).get("combo_purchase_id") else {}
+    combo_metadata = {"commission_cash_items": deepcopy(extra_items), "combo_generic_base_units": base_units, "quick_extra_subtotal": sum(row["unit_price"] * row["quantity"] for row in extra_items)} if (payment or {}).get("combo_purchase_id") else {}
     if items and all(re.match(r"^xong hoi(?:\b|$)", _norm(item['name'])) for item in items):
         return {**combo_metadata, "employee_id": "", "employee_name": "", "room": "", "service": service,
                 "service_items": items, "duration": duration, "price": price,
@@ -5137,6 +5137,17 @@ def install_live_tour_routes(
             # Build response capabilities before entering the global state
             # critical section. Some grants read employee/payment metadata.
             grants = permissions(conn, ident)
+            commission_context = None
+            if action in {'checkout', 'quick_checkout'}:
+                from vera_web_v2_hr import registry, DEPARTMENT_SQL
+                hr_state = registry(conn)
+                if hr_state['commission']['enabled']:
+                    commission_context = {
+                        'policy': hr_state['commission'],
+                        'departments': {row['username']: row['department'] for row in conn.execute(text(
+                            f'SELECT username, {DEPARTMENT_SQL} AS department FROM employees'
+                        )).mappings().all()},
+                    }
             timing.mark('authorize')
             if action == "sync_daily_status":
                 state, revision = read_board(conn, now, project=False)
@@ -5199,6 +5210,11 @@ def install_live_tour_routes(
             # from a payload flag, an account name or a delegated feature grant.
             result = _apply_action(working, action, payload, actor, now,
                                    admin_invoice_override=str(getattr(ident, "role", "") or "").strip().lower() == "admin")
+            if commission_context and result.get('invoice'):
+                from vera_web_v2_commission import record_commission
+                invoice = next(row for row in working['invoices'] if row['id'] == result['invoice']['id'])
+                record_commission(invoice, working, commission_context)
+                result['invoice'] = deepcopy(invoice)
             timing.mark('apply')
             if action in {"checkout", "quick_checkout", "combo_purchase", "combo_sale_decide"} and result.get("invoice"):
                 bank = _selected_bank(working.get("payment_settings") or {}, grants.get("viewer_bank"), payload.get("bank_selection", "auto"))

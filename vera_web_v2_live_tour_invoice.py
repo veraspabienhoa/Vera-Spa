@@ -132,6 +132,8 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
         if "invoice_at" in payload:
             for row in reports + usage:
                 row.update(effective_at=invoice["effective_at"], business_date=invoice["business_date"])
+        from vera_web_v2_commission import refresh_commission
+        refresh_commission(invoice)
         after = deepcopy(invoice)
     change = {"id": str(uuid4()), "invoice_id": before["id"], "action": action, "actor": actor,
               "at": iso(now), "reason": reason.strip(), "before": before, "after": after,

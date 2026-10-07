@@ -547,6 +547,8 @@ def _clean_draft_rows(
             continue
         seen.add(key)
         row = _net({field: supplied.get(field, "") for field in DRAFT_FIELDS})
+        if isinstance(supplied.get("__earnings"), dict):
+            row["__earnings"] = {key: _number(supplied["__earnings"].get(key)) for key in ("tip", "service", "product")}
         row.update({
             "TT": len(clean_rows) + 1,
             "Tên Hệ thống": employee["username"],
@@ -635,7 +637,7 @@ def _read_source(content: bytes) -> pd.DataFrame:
     return output
 
 
-def _tip_rows(source: pd.DataFrame, start: date, end: date, norm) -> tuple[pd.DataFrame, dict[str, Any]]:
+def _tip_rows(source: pd.DataFrame, start: date, end: date, norm, *, allow_zero=False) -> tuple[pd.DataFrame, dict[str, Any]]:
     dated = source.dropna(subset=["time"]).copy()
     if dated.empty:
         preview = ", ".join(str(value) for value in source["time"].head(5).tolist())
@@ -665,7 +667,7 @@ def _tip_rows(source: pd.DataFrame, start: date, end: date, norm) -> tuple[pd.Da
     if not tips["key"].astype(str).str.strip().ne("").any():
         raise HTTPException(400, "Các dòng Tip chưa có tên nhân viên ở cột I (NV tư vấn).")
     salary_total = int(tips["amount"].sum())
-    if salary_total <= 0:
+    if salary_total <= 0 and not allow_zero:
         raise HTTPException(400, "Tổng tiền các dòng Tip đang bằng 0; hệ thống dừng để tránh tạo bảng lương sai.")
     return tips, {
         "source_rows": int(len(source)),
@@ -1401,13 +1403,16 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
             tichluy = _tichluy_map(conn, employees, start, end, norm)
             obligations = _obligation_map(conn, start, norm, end)
             accumulation_refunds = _accumulation_refund_map(conn, start, end, norm, employees)
-        tips, source_summary = _tip_rows(source, start, end, norm)
+            from vera_web_v2_commission import payroll_commissions
+            commissions = payroll_commissions(conn, start, end, norm)
+        commission_total = sum(sum(commissions.get(norm(employee["username"]), {}).values()) for employee in employees)
+        tips, source_summary = _tip_rows(source, start, end, norm, allow_zero=True) if commission_total > 0 else _tip_rows(source, start, end, norm)
         known = {norm(item["username"]) for item in employees}
         matched_tips = tips[tips["key"].isin(known)].copy()
         unmatched = sorted({
             value for value in tips.loc[~tips["key"].isin(known), "employee"].tolist() if value
         }, key=norm)
-        if matched_tips.empty:
+        if matched_tips.empty and commission_total <= 0:
             preview = ", ".join(unmatched[:10])
             raise HTTPException(
                 400,
@@ -1415,23 +1420,25 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
                 f"Tên TimeSoft đầu tiên: {preview}",
             )
         matched_salary_total = int(matched_tips["amount"].sum())
-        if matched_salary_total <= 0:
+        if matched_salary_total + commission_total <= 0:
             raise HTTPException(400, "Tổng Tiền Lương sau khi khớp tên nhân viên đang bằng 0; hệ thống dừng tính.")
         source_summary.update({
-            "matched_tip_rows": int(len(matched_tips)),
+            "commission_total": commission_total,
+            "matched_tip_rows": int((matched_tips["amount"] > 0).sum()),
             "matched_salary_total": matched_salary_total,
             "employee_rows": int(len(employees)),
             "unmatched_tip_names": int(len(unmatched)),
         })
         salaries = matched_tips.groupby("key")["amount"].sum().to_dict()
-        counts = matched_tips.groupby("key").size().to_dict()
+        counts = matched_tips[matched_tips["amount"] > 0].groupby("key").size().to_dict()
         rows = []
         for index, employee in enumerate(employees, start=1):
             key = norm(employee["username"])
             accumulation_refund = accumulation_refunds.get(key, 0)
             row = {
                 "TT": index, "Tên Hệ thống": employee["username"], "Họ và tên": employee["full_name"],
-                "Tiền Lương": _number(salaries.get(key)),
+                "Tiền Lương": _number(salaries.get(key)) + sum(commissions.get(key, {}).values()),
+                "__earnings": {"tip": _number(salaries.get(key)), **commissions.get(key, {"service": 0, "product": 0})},
                 "Tiền Hỗ Trợ Hoàn Lại": cfg["leader_responsibility_allowance"] if employee["role"] == "leader" and period_no == 2 else 0,
                 "Hoàn trả tiền tích lũy": accumulation_refund,
                 "Tích lũy": 0 if accumulation_refund else tichluy.get(key, 0),
