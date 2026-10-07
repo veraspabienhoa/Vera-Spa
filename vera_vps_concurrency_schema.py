@@ -198,5 +198,6 @@ if __name__ == "__main__":
         # Never expose connection strings, SQL parameters or business payloads
         # in a public GitHub Actions log.
         raise SystemExit(
-            f"SYSTEM RESOURCE CONCURRENCY FAILED: {type(exc).__name__}; no migration committed"
+            f"SYSTEM RESOURCE CONCURRENCY FAILED: {type(exc).__name__}; "
+            "failed transaction rolled back; earlier migration phases may have committed"
         ) from None
