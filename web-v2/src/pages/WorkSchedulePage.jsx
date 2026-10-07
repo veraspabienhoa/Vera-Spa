@@ -1128,7 +1128,7 @@ export default function WorkSchedulePage({ user }) {
       <VeraDateInput aria-label="Đến ngày" min={customStart} value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} />
     </div>}
 
-    <UiToolbar data-ui-key="u-8e8fa302b3e3" className="schedule-department-tabs">{availableDepartments.map((item) => <button data-ui-key="u-c72ddb608d35" type="button" key={item} className={department === item ? 'active' : ''} onClick={() => { setDepartment(item) }}>{DEPARTMENT_INFO[item].label}</button>)}</UiToolbar>
+    <UiToolbar data-ui-key="u-8e8fa302b3e3" className="schedule-department-tabs">{availableDepartments.map((item) => <button data-ui-key="u-c72ddb608d35" type="button" key={item} className={department === item ? 'active' : ''} onClick={() => { setViolationOpenSequence(0); setDepartment(item) }}>{DEPARTMENT_INFO[item].label}</button>)}</UiToolbar>
 
     <div className="schedule-violation-launch date-search-toolbar">{['admin', 'quanly'].includes(role) && availableDepartments.includes(department) && <button type="button" className="primary-button" onClick={() => setViolationOpenSequence(value => value + 1)}>+ Nhập phạt vi phạm</button>}<DateSearchField ariaLabel="Ngày lịch làm việc" value={rangeMode === 'day' ? customStart : ''} onChange={date => { if (!date) { selectRange('week'); return }; setCustomStart(date); setCustomEnd(date); selectRange('day') }} /></div>
 
@@ -1174,6 +1174,7 @@ export default function WorkSchedulePage({ user }) {
       </table>
       {!employees.length && <div className="revenue-meta">Không có nhân viên đang hiển thị trong nhóm {DEPARTMENT_INFO[department].label}.</div>}
     </div></StableDataRegion>
+    <ScheduleViolations key={department} departmentLabel={DEPARTMENT_INFO[department].label} personal={!canViewDepartmentViolations} openSequence={violationOpenSequence} canManage={isAdmin} department={department} employees={employees} canEdit={['admin', 'quanly'].includes(role) && availableDepartments.includes(department)} request={scheduleRequest} onSaved={() => setViolationRevision(value => value + 1)} />
     {!loading && <div className="schedule-scroll monthly-statistics">
       <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · đến ngày hiện tại · {DEPARTMENT_INFO[department].label}</h3>
       <div className="schedule-filter-bar statistics-month-filters" role="group" aria-label="Lọc bảng thống kê tháng">
@@ -1189,7 +1190,6 @@ export default function WorkSchedulePage({ user }) {
         <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{violationStatsError || !canViewDepartmentViolations ? '—' : monthlyStatistics.departmentTotal.violations}</td><td>{violationStatsError || !canViewDepartmentViolations ? '—' : `${monthlyStatistics.departmentTotal.penalty.toLocaleString('vi-VN')}đ`}</td></tr></tfoot>
       </table>
     </div>}
-    <ScheduleViolations personal={!canViewDepartmentViolations} openSequence={violationOpenSequence} canManage={isAdmin} department={department} employees={employees} canEdit={['admin', 'quanly'].includes(role) && availableDepartments.includes(department)} request={scheduleRequest} onSaved={() => setViolationRevision(value => value + 1)} />
     {!loading && comboEditor}
   </section>
 }

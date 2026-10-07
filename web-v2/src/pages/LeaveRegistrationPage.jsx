@@ -198,6 +198,7 @@ export default function LeaveRegistrationPage({ user }) {
   const canDeleteRecord = (item) => canDeleteLeaveRecord({ ...recordPermissionContext(item), allowedByPermission: canDelete })
   const dateIsPast = role !== 'admin' && date < today()
   const canCreate = isApiConfigured
+    && (canChooseEmployee || ['leader', 'nhanvien'].includes(role))
     && loadState.reasons === 'ready' && loadState.employees === 'ready'
     && (employeeSelfService || user?.permissions?.leave_create !== false)
     && !user?.registration_locked
@@ -839,6 +840,7 @@ export default function LeaveRegistrationPage({ user }) {
               riêng Loại nghỉ Không phép trước ít nhất {employeeSelfServicePolicy.unpaid_notice_days} ngày.
             </div>
           )}
+          <div className="info-box">Đăng ký nghỉ chỉ áp dụng cho bộ phận Leader và nhân viên. Các bộ phận khác theo dõi nghỉ và vi phạm tại Lịch làm việc.</div>
           <form ref={leaveFormRef} className="leave-form" onSubmit={submit}>
             <fieldset disabled={saving || managing} className="autosave-fields">
             <label>Tên nhân viên</label>

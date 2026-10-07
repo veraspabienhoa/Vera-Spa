@@ -61,10 +61,12 @@ def summarize(rows, *, include_approved_borrow=False):
 def read_report(conn, start=None, end=None, *, include_approved_borrow=False):
     # Whole calendar months, even when the UI selects only part of a month.
     params = {}
-    where = ''
+    where = """WHERE EXISTS (SELECT 1 FROM employees e
+        WHERE lower(btrim(e.username))=lower(btrim(leave_records.employee_name))
+          AND lower(btrim(COALESCE(e.role,''))) IN ('leader','nhanvien'))"""
     if start is not None:
         params = {'start': start.replace(day=1), 'end': end.replace(day=monthrange(end.year, end.month)[1])}
-        where = 'WHERE leave_date <= :end'
+        where += ' AND leave_date <= :end'
     rows = conn.execute(text(f'''SELECT employee_name, leave_date, leave_reason, leave_type,
         calculated_days FROM leave_records {where} ORDER BY leave_date, record_uid'''), params).mappings().all()
     items = summarize(rows, include_approved_borrow=include_approved_borrow)

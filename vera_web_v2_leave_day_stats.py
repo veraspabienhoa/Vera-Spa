@@ -74,7 +74,7 @@ def install_leave_day_stats_routes(
                     SELECT 1
                     FROM employees e
                     WHERE lower(btrim(e.username)) = lower(btrim(l.employee_name))
-                      AND lower(COALESCE(e.role, '')) NOT IN ('admin','letan','locker','tapvu')
+                      AND lower(COALESCE(e.role, '')) IN ('leader','nhanvien')
                   )
                 ORDER BY l.leave_date, l.employee_name, l.record_uid
             """), {"start_date": start_date, "end_date": end_date}).mappings().all()
@@ -132,11 +132,14 @@ def install_leave_day_stats_routes(
                        COALESCE(penalty, 0) AS penalty
                 FROM leave_records
                 WHERE leave_date BETWEEN :start_date AND :end_date
+                  AND EXISTS (SELECT 1 FROM employees e
+                      WHERE lower(btrim(e.username))=lower(btrim(leave_records.employee_name))
+                        AND lower(btrim(COALESCE(e.role,''))) IN ('leader','nhanvien'))
                 ORDER BY leave_date, employee_name, record_uid
             """), {"start_date": start_date, "end_date": end_date}).mappings().all()
 
             if employee_filter:
-                employees = conn.execute(text("SELECT username, monthly_leave FROM employees")).mappings().all()
+                employees = conn.execute(text("SELECT username, monthly_leave FROM employees WHERE lower(btrim(COALESCE(role,''))) IN ('leader','nhanvien')")).mappings().all()
                 matched = [emp for emp in employees if employee_name_matches(emp['username'], employee_filter)]
                 if matched:
                     history = conn.execute(text("""

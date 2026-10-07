@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_employee_self_service_permissions_follow_dynamic_policy():
     api = (ROOT / "vera_web_v2_api.py").read_text(encoding="utf-8")
 
-    assert '_EMPLOYEE_SELF_SERVICE_ROLES = {"nhanvien", "leader", "locker", "tapvu"}' in api
+    assert '_EMPLOYEE_SELF_SERVICE_ROLES = {"nhanvien", "leader"}' in api
     assert '"leave_detail_edit"' in api
     assert '"leave_detail_delete"' in api
     assert "load_employee_self_service_policy(conn)[\"enabled\"]" in api
