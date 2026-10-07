@@ -16,6 +16,7 @@ import re
 from typing import Any, Callable
 from urllib.parse import quote
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
@@ -420,6 +421,7 @@ def install_staff_routes(
     restore_sheet_updates: Callable[[Any, dict[int, list[Any]]], None],
     identity_type: type,
     vn_tz,
+    feature_map=None,
 ) -> None:
     def restore_pruned_leave(change: dict[str, Any] | None) -> None:
         if not change or change.get("restored"):
@@ -530,7 +532,7 @@ def install_staff_routes(
             "employee_delete", "employee_delete_confirm", "shift_assignment_edit", "account_lock_edit",
             "employees_visibility_manage", "ktv_shift_view", "ktv_shift_create", "ktv_shift_edit", "ktv_shift_delete",
         )
-        output = {key: feature_allowed(conn, ident, key) for key in keys}
+        output = feature_map(conn, ident, keys) if feature_map else {key: feature_allowed(conn, ident, key) for key in keys}
         # Xóa nhân viên là thao tác quản trị tài khoản chỉ dựa trên vai trò
         # Admin. Không để một override phân quyền cũ làm giao diện hiện nút Xóa
         # nhưng API lại từ chối ở quyền xác nhận ẩn.
@@ -1282,56 +1284,58 @@ def install_staff_routes(
         if length > 5 * 1024 * 1024:
             raise HTTPException(413, "File Excel vượt quá 5 MB.")
         content = await request.body()
-        if not content:
-            raise HTTPException(400, "Chưa chọn file Excel.")
-        if len(content) > 5 * 1024 * 1024:
-            raise HTTPException(413, "File Excel vượt quá 5 MB.")
-        imported = parse_import(content)
-        engine = engine_instance()
-        conn = engine.connect()
-        tx = conn.begin()
-        leave_prunes: list[dict[str, Any]] = []
-        try:
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
-            require_feature(conn, ident, "staff_import")
-            rows = _select_staff_rows(conn, for_update=True)
-            known = {norm(row["username"]): row for row in rows}
-            unknown = [str(item["Tên nhân viên"]) for item in imported if norm(item["Tên nhân viên"]) not in known]
-            if unknown:
-                raise HTTPException(400, "Không tìm thấy trong hệ thống: " + ", ".join(unknown))
-            updates = []
-            for item in imported:
-                row = known[norm(item["Tên nhân viên"])]
-                ensure_manageable(ident, str(row.get("role") or ""))
-                values = import_values(item)
-                updates.append(update_database_row(conn, ident, row, values))
+        def process():
+            if not content:
+                raise HTTPException(400, "Chưa chọn file Excel.")
+            if len(content) > 5 * 1024 * 1024:
+                raise HTTPException(413, "File Excel vượt quá 5 MB.")
+            imported = parse_import(content)
+            engine = engine_instance()
+            conn = engine.connect()
+            tx = conn.begin()
+            leave_prunes: list[dict[str, Any]] = []
+            try:
+                conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
+                require_feature(conn, ident, "staff_import")
+                rows = _select_staff_rows(conn, for_update=True)
+                known = {norm(row["username"]): row for row in rows}
+                unknown = [str(item["Tên nhân viên"]) for item in imported if norm(item["Tên nhân viên"]) not in known]
+                if unknown:
+                    raise HTTPException(400, "Không tìm thấy trong hệ thống: " + ", ".join(unknown))
+                updates = []
+                for item in imported:
+                    row = known[norm(item["Tên nhân viên"])]
+                    ensure_manageable(ident, str(row.get("role") or ""))
+                    values = import_values(item)
+                    updates.append(update_database_row(conn, ident, row, values))
 
-            effective_date = datetime.now(vn_tz).date()
-            for updated in updates:
-                if updated["_status_changed"] and updated["_status"] in {STATUS_OPTIONS[1], STATUS_OPTIONS[2]}:
-                    change = prune_registered_leave(conn, updated["username"], effective_date)
-                    if int(change.get("count") or 0):
-                        leave_prunes.append(change)
-            tx.commit()
-            deleted_leave = sum(int(change.get("count") or 0) for change in leave_prunes)
-            suffix = f" Đã xóa {deleted_leave} lịch nghỉ từ ngày hiệu lực trở về sau." if deleted_leave else ""
-            return {
-                "ok": True,
-                "updated": len(updates),
-                "deleted_leave_records": deleted_leave,
-                "message": f"Đã Import và cập nhật {len(updates)} nhân viên THÀNH CÔNG.{suffix}",
-            }
-        except HTTPException:
-            if tx.is_active:
-                tx.rollback()
-            for change in reversed(leave_prunes):
-                restore_pruned_leave(change)
-            raise
-        except Exception as exc:
-            if tx.is_active:
-                tx.rollback()
-            for change in reversed(leave_prunes):
-                restore_pruned_leave(change)
-            raise HTTPException(500, f"Không Import được danh sách nhân viên an toàn: {type(exc).__name__}: {exc}") from exc
-        finally:
-            conn.close()
+                effective_date = datetime.now(vn_tz).date()
+                for updated in updates:
+                    if updated["_status_changed"] and updated["_status"] in {STATUS_OPTIONS[1], STATUS_OPTIONS[2]}:
+                        change = prune_registered_leave(conn, updated["username"], effective_date)
+                        if int(change.get("count") or 0):
+                            leave_prunes.append(change)
+                tx.commit()
+                deleted_leave = sum(int(change.get("count") or 0) for change in leave_prunes)
+                suffix = f" Đã xóa {deleted_leave} lịch nghỉ từ ngày hiệu lực trở về sau." if deleted_leave else ""
+                return {
+                    "ok": True,
+                    "updated": len(updates),
+                    "deleted_leave_records": deleted_leave,
+                    "message": f"Đã Import và cập nhật {len(updates)} nhân viên THÀNH CÔNG.{suffix}",
+                }
+            except HTTPException:
+                if tx.is_active:
+                    tx.rollback()
+                for change in reversed(leave_prunes):
+                    restore_pruned_leave(change)
+                raise
+            except Exception as exc:
+                if tx.is_active:
+                    tx.rollback()
+                for change in reversed(leave_prunes):
+                    restore_pruned_leave(change)
+                raise HTTPException(500, f"Không Import được danh sách nhân viên an toàn: {type(exc).__name__}: {exc}") from exc
+            finally:
+                conn.close()
+        return await run_in_threadpool(process)

@@ -37,7 +37,8 @@ def test_combined_feed_reuses_one_connection_and_keeps_recipient_channel_filters
     assert len(connections) == 1
     assert response.json()['inbox'][0]['id'] == 1
     assert response.json()['popup'][0]['id'] == 2
-    assert len(calls) == 3
+    assert len(calls) == 2
+    assert all(sql.lstrip().startswith("SELECT") for sql, _ in calls)
     assert 'recipients' not in response.json()
 
 

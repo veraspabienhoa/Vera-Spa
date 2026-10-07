@@ -75,6 +75,11 @@ ACTIVE_EMPLOYEE_SQL = "lower(COALESCE(e.payload->>'Trạng thái làm việc', e
 
 
 def _schema(conn) -> None:
+    from vera_versioned_schema import ensure
+    ensure(conn, "training", 1, _migrate_read_schema)
+
+
+def _migrate_read_schema(conn):
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS vera_training_scope (
             trainer_username TEXT NOT NULL,

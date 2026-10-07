@@ -197,7 +197,7 @@ install_ktv_shift_routes(_shared.app, engine_instance=_api._engine_instance, cur
 install_system_name_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, identity_type=_api.Identity)
 install_tour_leave_sync_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID, vn_tz=_api.VN_TZ, invalidate_tour_cache=invalidate_tour_cache)
 install_tour_source_routes(_shared.app, current_identity=_api.current_identity, identity_type=_api.Identity, invalidate_tour_cache=invalidate_tour_cache)
-install_live_tour_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, identity_type=_api.Identity, vn_tz=_api.VN_TZ, attendance_reader=lambda conn, start, end: _snapshot._records(conn, start, end))
+install_live_tour_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed, feature_map=_api._features_allowed, identity_type=_api.Identity, vn_tz=_api.VN_TZ, attendance_reader=lambda conn, start, end: _snapshot._records(conn, start, end))
 install_leave_source_export_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity, norm=_api._norm, google_client=_api._google_client, leave_sheet_id=_api.LEAVE_SHEET_ID)
 install_work_schedule_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, feature_allowed=_api._feature_allowed)
 install_auto_check_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
@@ -250,3 +250,7 @@ from vera_web_v2_leave_month import install_month_api
 install_month_api(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, feature_allowed=_api._feature_allowed)
 
 install_online_booking_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity)
+
+# One request scope includes authentication dependencies and response serialization.
+from vera_request_metrics import RequestMetricsMiddleware
+_shared.app.add_middleware(RequestMetricsMiddleware)

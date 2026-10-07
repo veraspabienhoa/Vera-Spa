@@ -21,6 +21,11 @@ HEADERS = [
 
 
 def ensure_schema(conn) -> None:
+    from vera_versioned_schema import ensure
+    ensure(conn, "revenue_ledger", SCHEMA_VERSION, _migrate_read_schema)
+
+
+def _migrate_read_schema(conn):
     conn.execute(text(f"""
         CREATE TABLE IF NOT EXISTS {TABLE} (
             id bigserial PRIMARY KEY,

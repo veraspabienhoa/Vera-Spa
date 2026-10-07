@@ -88,9 +88,10 @@ def test_inbox_expires_previous_day_and_hides_viewed_rows(monkeypatch):
     app=FastAPI()
     settings.install_notification_settings_routes(app,engine_instance=Engine,current_identity=Identity,identity_type=Identity)
     assert TestClient(app).get('/v2/notification-inbox').status_code==200
-    assert 'DELETE FROM vera_notification_delivery' in queries[0][0]
+    assert all('DELETE' not in sql for sql, _ in queries)
     assert "Asia/Ho_Chi_Minh" in queries[0][0]
-    assert "d.read_at IS NULL" in queries[1][0]
+    assert "d.read_at IS NULL" in queries[0][0]
+    assert "d.created_at >=" in queries[0][0]
 
 
 def test_popup_inbox_scopes_account_channel_and_membership(monkeypatch):

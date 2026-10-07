@@ -14,6 +14,7 @@ from vera_web_v2_hr import TIP_SQL, DEPARTMENT_SQL
 import json
 from typing import Any
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -322,14 +323,16 @@ def install_payroll_v38_routes(
             payload=payload,
             ident=ident,
         )
-        with engine_instance().begin() as conn:
-            overrides, _ = _load_or_bootstrap_overrides(
-                conn,
-                google_client=google_client,
-                norm=norm,
-                actor=ident.employee_username,
-            )
-        return _apply_overrides_to_calculation(result, overrides, norm)
+        def process():
+            with engine_instance().begin() as conn:
+                overrides, _ = _load_or_bootstrap_overrides(
+                    conn,
+                    google_client=google_client,
+                    norm=norm,
+                    actor=ident.employee_username,
+                )
+            return _apply_overrides_to_calculation(result, overrides, norm)
+        return await run_in_threadpool(process)
 
     app.state.payroll_v38_installed = True
     app.state.payroll_release = PAYROLL_V38_RELEASE

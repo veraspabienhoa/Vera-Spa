@@ -411,9 +411,26 @@ def _identity_ocr(conn, row: dict[str, Any]) -> dict[str, str]:
     return combined
 
 
-def _contract_employee(conn, row: dict[str, Any]) -> dict[str, str]:
+def _cached_identity_ocr(conn, usernames):
+    _ensure_identity_table(conn)
+    rows = conn.execute(text("""SELECT employee_username,side,ocr_payload
+        FROM vera_employee_identity_document
+        WHERE employee_username = ANY(:usernames) AND side IN ('front','back')
+        ORDER BY employee_username,side"""), {"usernames": usernames}).mappings().all()
+    output = {}
+    for row in rows:
+        combined = output.setdefault(row["employee_username"], {})
+        cached = row.get("ocr_payload") if isinstance(row.get("ocr_payload"), dict) else {}
+        for key, value in cached.items():
+            if value and not combined.get(key):
+                combined[key] = str(value)
+    return output
+
+
+def _contract_employee(conn, row: dict[str, Any], *, ocr=None) -> dict[str, str]:
     payload = dict(row.get("payload") or {}) if isinstance(row.get("payload"), dict) else {}
-    ocr = _identity_ocr(conn, row)
+    if ocr is None:
+        ocr = _identity_ocr(conn, row)
     permanent_address = str(
         ocr.get("permanent_address")
         or payload.get("Địa chỉ thường trú CCCD")
@@ -768,12 +785,13 @@ def install_contract_1_routes(
                 raise HTTPException(404, "Không có nhân viên phù hợp để xuất hợp đồng.")
 
             settings, _revision = _settings(conn, body.contract_type)
-            employees = [_contract_employee(conn, row) for row in rows]
-            _ensure_complete_contract_profiles(employees)
-            content = _merge_contract_pdfs(
-                [(employee, settings) for employee in employees],
-                body.contract_type,
-            )
+            cached_ocr = _cached_identity_ocr(conn, [row["username"] for row in rows])
+            employees = [_contract_employee(conn, row, ocr=cached_ocr.get(row["username"], {})) for row in rows]
+        _ensure_complete_contract_profiles(employees)
+        content = _merge_contract_pdfs(
+            [(employee, settings) for employee in employees],
+            body.contract_type,
+        )
 
         file_slug = config["file_slug"]
         if len(employees) == 1:

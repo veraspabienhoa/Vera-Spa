@@ -5,6 +5,7 @@ from io import BytesIO
 from uuid import UUID
 import hashlib
 import json
+from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -159,21 +160,23 @@ def install_purchase_routes(app, *, engine_instance, current_identity, require_f
             content.extend(chunk)
             if len(content) > store.MAX_FILE:
                 raise HTTPException(413,'File tối đa 20 MB.')
-        try:
-            # Validate before acquiring a pooled database connection.
-            parsed = store.parse_workbook(bytes(content))
-        except Exception:
-            raise HTTPException(400,'File Input không hợp lệ. Kiểm tra ngày, số lượng và thành tiền.') from None
-        with engine_instance().begin() as conn:
-            prepare(conn,ident,'purchase_view')
-            key=f'import:{actor(ident)}:{request_id}'
-            fingerprint=hashlib.sha256(bytes(content)+mode.encode()).hexdigest()
-            previous=replay(conn,key,fingerprint)
-            if previous is not None:
-                return previous
-            result = dict(ok=True,**store.import_workbook(conn,bytes(content),actor(ident),mode,rows=parsed))
-            remember(conn,key,fingerprint,result)
-        return result
+        def process():
+            try:
+                # Validate before acquiring a pooled database connection.
+                parsed = store.parse_workbook(bytes(content))
+            except Exception:
+                raise HTTPException(400,'File Input không hợp lệ. Kiểm tra ngày, số lượng và thành tiền.') from None
+            with engine_instance().begin() as conn:
+                prepare(conn,ident,'purchase_view')
+                key=f'import:{actor(ident)}:{request_id}'
+                fingerprint=hashlib.sha256(bytes(content)+mode.encode()).hexdigest()
+                previous=replay(conn,key,fingerprint)
+                if previous is not None:
+                    return previous
+                result = dict(ok=True,**store.import_workbook(conn,bytes(content),actor(ident),mode,rows=parsed))
+                remember(conn,key,fingerprint,result)
+            return result
+        return await run_in_threadpool(process)
 
     @app.get('/v2/purchases/export.xlsx')
     def export(preset:str='this_month', start:date | None=None, end:date | None=None, ident=Depends(current_identity)):

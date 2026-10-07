@@ -338,6 +338,12 @@ def _parse_clock(value: Any, work_day: date) -> datetime | None:
     raw = str(value or "").strip()
     if not raw:
         return None
+    if re.fullmatch(r"\d{2}:\d{2}(?::\d{2})?", raw):
+        try:
+            parts = [int(part) for part in raw.split(":")]
+            return datetime(work_day.year, work_day.month, work_day.day, *parts)
+        except ValueError:
+            return None
     for candidate in (raw, f"{work_day.strftime('%d/%m/%Y')} {raw}"):
         for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%H:%M:%S", "%H:%M"):
             try:
@@ -491,7 +497,50 @@ def _visible_payroll_rows(conn, rows, *, month=None):
     return [dict(row, tt=index) for index, row in enumerate(visible, 1)]
 
 
-def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None, probation_policies=None) -> dict[str, Any]:
+def _group_payroll_records(records, field, norm):
+    grouped = {}
+    for row in records:
+        grouped.setdefault(norm(row.get(field)), []).append(row)
+    return grouped
+
+
+def _calculation_inputs(conn, start, end, norm, source, context):
+    # This context belongs to one calculation on one caller-owned transaction.
+    # Do not cache across requests, periods, users or payroll writes.
+    if "employee_configs" not in context:
+        context["employee_configs"] = _employee_config_map(conn)
+    if "penalties" not in context:
+        context["penalties"] = _penalty_maps(conn, start, end, norm)
+    if "records" not in context:
+        if source == "schedule":
+            work_schedule._ensure_schema(conn)
+            records = [dict(item) for item in conn.execute(text("""
+                SELECT work_date,employee_username,department AS schedule_department,shift_code,overtime_shift,start_time,end_time,
+                       overtime_start_time,overtime_end_time
+                FROM vera_work_schedule WHERE work_date BETWEEN :start AND :end
+                ORDER BY work_date,employee_username
+            """), {"start": start, "end": end}).mappings().all()]
+            definitions = {}
+            for item in conn.execute(text("""
+                SELECT department,shift_code,start_time,end_time FROM vera_work_shift_definition
+                WHERE department IS NOT NULL
+            """)).mappings().all():
+                definitions.setdefault(str(item["department"]), {})[str(item["shift_code"])] = {
+                    "start": str(item.get("start_time") or "")[:5],
+                    "end": str(item.get("end_time") or "")[:5],
+                }
+            context["definitions"] = definitions
+            field = "employee_username"
+        else:
+            records = attendance._records(conn, start, end)
+            field = "employee_name"
+        # Group with exactly the same identity normalization as the old scan.
+        # Historical schedule departments remain on each row after reassignment.
+        context["records"] = _group_payroll_records(records, field, norm)
+    return context
+
+
+def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None, probation_policies=None, context=None) -> dict[str, Any]:
     start, end, label = _draft_month_range(month)
     if probation_policies is None:
         probation_policies = _probation_policies(conn, month, department=department)
@@ -499,15 +548,15 @@ def _calculation(conn, department: str, month: str, norm: Callable[[Any], str], 
         combo_counts = _combo_sale_counts(conn, start, end)
     settings = _settings(conn, department)
     cfg = settings["config"]
-    employee_configs = _employee_config_map(conn)
+    context = _calculation_inputs(conn, start, end, norm, "attendance", {} if context is None else context)
+    employee_configs = context["employee_configs"]
     employees = participation.eligible(_employees(conn, department), start, end, key='username', administrative_payroll=True)
-    records = attendance._records(conn, start, end)
-    violation_map, late_map = _penalty_maps(conn, start, end, norm)
+    violation_map, late_map = context["penalties"]
     rows = []
     for index, employee in enumerate(employees, start=1):
         username = str(employee.get("username") or "").strip()
         employee_cfg = employee_configs.get(username.casefold(), cfg)
-        totals = _attendance_totals(records, username, norm, employee_cfg)
+        totals = _attendance_totals(context["records"].get(norm(username), []), username, norm, employee_cfg)
         hours_ca1 = round(totals["minutes_ca1"] / 60, 2)
         hours_before = round(totals["minutes_ca2_before_22"] / 60, 2)
         hours_after = round(totals["minutes_ca2_after_22"] / 60, 2)
@@ -617,46 +666,29 @@ def _schedule_totals(
     return totals
 
 
-def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None, probation_policies=None) -> dict[str, Any]:
+def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any], str], *, combo_counts=None, probation_policies=None, context=None) -> dict[str, Any]:
     start, end, label = _draft_month_range(month)
     if probation_policies is None:
         probation_policies = _probation_policies(conn, month, department=department)
-    work_schedule._ensure_schema(conn)
     if combo_counts is None:
         combo_counts = _combo_sale_counts(conn, start, end)
     settings = _settings(conn, department)
     cfg = settings["config"]
-    employee_configs = _employee_config_map(conn)
+    context = _calculation_inputs(conn, start, end, norm, "schedule", {} if context is None else context)
+    employee_configs = context["employee_configs"]
     employees = participation.eligible(_employees(conn, department), start, end, key='username', administrative_payroll=True)
-    records = [dict(item) for item in conn.execute(text("""
-        SELECT work_date,employee_username,department AS schedule_department,shift_code,overtime_shift,start_time,end_time,
-               overtime_start_time,overtime_end_time
-        FROM vera_work_schedule
-        WHERE work_date BETWEEN :start AND :end
-        ORDER BY work_date,employee_username
-    """), {"start": start, "end": end, "department": department}).mappings().all()]
-    definition_rows = conn.execute(text("""
-        SELECT department,shift_code,start_time,end_time
-        FROM vera_work_shift_definition
-        WHERE department IS NOT NULL
-    """)).mappings().all()
-    definitions: dict[str, dict[str, dict[str, str]]] = {key: {} for key in hr.departments(conn)}
-    for item in definition_rows:
-        definitions.setdefault(str(item["department"]), {})[str(item["shift_code"])] = {
-            "start": str(item.get("start_time") or "")[:5],
-            "end": str(item.get("end_time") or "")[:5],
-        }
-    violation_map, late_map = _penalty_maps(conn, start, end, norm)
+    definitions = context["definitions"]
+    violation_map, late_map = context["penalties"]
     rows = []
     for index, employee in enumerate(employees, start=1):
         username = str(employee.get("username") or "").strip()
         employee_cfg = employee_configs.get(username.casefold(), cfg)
-        totals = _schedule_totals(records, username, department, definitions, employee_cfg, norm)
+        totals = _schedule_totals(context["records"].get(norm(username), []), username, department, definitions, employee_cfg, norm)
         row = {
             "tt": index, "employee_username": username,
             "employee_name": str(employee.get("full_name") or username),
             "email": str(employee.get("email") or ""), "department": department,
-            "department_label": hr.admin_departments(conn)[department]["name"],
+            "department_label": settings["department_label"],
             "base_salary": employee_cfg["default_base_salary"],
             "hours_ca1": round(totals["minutes_ca1"] / 60, 2),
             "hours_ca2_before_22": round(totals["minutes_ca2_before_22"] / 60, 2),
@@ -687,8 +719,9 @@ def _combined_calculation(conn, month: str, norm: Callable[[Any], str], source: 
     rows: list[dict[str, Any]] = []
     settings: dict[str, Any] = {}
     employee_configs = _employee_config_map(conn)
+    context = {"employee_configs": employee_configs}
     for department in hr.admin_departments(conn):
-        result = calculator(conn, department, month, norm, combo_counts=combo_counts, probation_policies=probation_policies)
+        result = calculator(conn, department, month, norm, combo_counts=combo_counts, probation_policies=probation_policies, context=context)
         settings[department] = result
         for row in result["rows"]:
             cfg = employee_configs.get(str(row["employee_username"]).casefold(), result["config"])
@@ -732,6 +765,7 @@ def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any],
     employee_configs = _employee_config_map(conn)
     output = []
     seen = set()
+    department_settings = {}
     for supplied in rows:
         key = str(supplied.get("employee_username") or "").strip().casefold()
         employee = catalog.get(key)
@@ -739,14 +773,17 @@ def _clean_combined_rows(conn, rows: list[dict[str, Any]], norm: Callable[[Any],
             raise HTTPException(400, "Bảng lương có nhân viên trống, trùng, không thuộc Lương hành chánh hoặc đang đánh dấu Không tính lương. Hãy tải lại bảng.")
         seen.add(key)
         department = str(employee.get("role") or "").lower()
+        if department not in department_settings:
+            department_settings[department] = _settings(conn, department)
+        settings = department_settings[department]
         supplied_cfg = supplied.get("calculation_config")
-        cfg = _clean_config(department, supplied_cfg, _settings(conn, department)["config"]["calculation_mode"]) if isinstance(supplied_cfg, dict) else employee_configs.get(key, _settings(conn, department)["config"])
+        cfg = _clean_config(department, supplied_cfg, settings["config"]["calculation_mode"]) if isinstance(supplied_cfg, dict) else employee_configs.get(key, settings["config"])
         row = dict(supplied)
         row.update({
             "tt": len(output) + 1, "employee_username": employee["username"],
             "employee_name": employee.get("full_name") or employee["username"],
             "email": employee.get("email") or "", "department": department,
-            "department_label": hr.admin_departments(conn)[department]["name"], "calculation_config": cfg,
+            "department_label": settings["department_label"], "calculation_config": cfg,
         })
         output.append(_recalculate(probation.apply(row, probation_policies.get(str(employee["username"]).casefold()), saved=True), cfg))
     if not output:

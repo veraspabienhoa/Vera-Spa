@@ -5,6 +5,7 @@ import json
 from datetime import date
 from typing import Any
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Query
 from sqlalchemy import text
 
@@ -89,22 +90,25 @@ def install_payroll_live_tour_tip_routes(
         period_no: int = Query(..., ge=1, le=2),
         ident: identity_type = Depends(current_identity),
     ):
-        start, end, label = payroll._period(month, period_no)
-        with engine_instance().connect() as conn:
-            require_feature(conn, ident, "payroll_calculate")
-            rows = _live_tour_tip_rows(conn, start, end)
-            actual_tip_count = len(rows)
+        def prepare():
+            start, end, label = payroll._period(month, period_no)
+            with engine_instance().connect() as conn:
+                require_feature(conn, ident, "payroll_calculate")
+                rows = _live_tour_tip_rows(conn, start, end)
+                actual_tip_count = len(rows)
+                if not rows:
+                    from vera_web_v2_commission import payroll_commissions
+                    earnings = payroll_commissions(conn, start, end, lambda value: str(value or "").strip().casefold())
+                    if any(sum(row.values()) > 0 for row in earnings.values()):
+                        rows = [{"time": start.strftime("%d/%m/%Y"), "item": "TIP", "amount": 0, "employee": name} for name in earnings]
             if not rows:
-                from vera_web_v2_commission import payroll_commissions
-                earnings = payroll_commissions(conn, start, end, lambda value: str(value or "").strip().casefold())
-                if any(sum(row.values()) > 0 for row in earnings.values()):
-                    rows = [{"time": start.strftime("%d/%m/%Y"), "item": "TIP", "amount": 0, "employee": name} for name in earnings]
-        if not rows:
-            raise HTTPException(409, f"Không có dữ liệu TIP nhân viên trong {label}.")
+                raise HTTPException(409, f"Không có dữ liệu TIP nhân viên trong {label}.")
+            return start, end, label, actual_tip_count, _workbook(rows)
+        start, end, label, actual_tip_count, workbook = await run_in_threadpool(prepare)
         result = await calculate(
             month=month,
             period_no=period_no,
-            payload=_workbook(rows),
+            payload=workbook,
             ident=ident,
         )
         output = dict(result or {})

@@ -1,4 +1,4 @@
-let scheduled = false
+import { startScopedReconciler } from './scopedReconciler'
 
 function ensureStyles() {
   if (document.getElementById('vera-employee-directory-ux-style')) return
@@ -41,21 +41,5 @@ export function startEmployeeDirectoryUx() {
   if (window.__veraEmployeeDirectoryUxStarted) return
   window.__veraEmployeeDirectoryUxStarted = true
   ensureStyles()
-
-  const schedule = () => {
-    if (scheduled) return
-    scheduled = true
-    window.requestAnimationFrame(() => {
-      scheduled = false
-      reconcile()
-    })
-  }
-
-  const observer = new MutationObserver(schedule)
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'class', 'value'] })
-  document.addEventListener('click', schedule, true)
-  document.addEventListener('input', schedule, true)
-  document.addEventListener('change', schedule, true)
-  window.setInterval(reconcile, 1200)
-  schedule()
+  return startScopedReconciler('.staff-list-panel, .staff-form-panel', reconcile, ['disabled', 'class', 'value'])
 }

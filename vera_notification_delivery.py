@@ -176,6 +176,18 @@ def route_event(engine, source_key, payload, event_key=None):
         return enqueue(conn, source_key, payload, event_key)
 
 
+def prune_expired_inbox(conn):
+    # Same expiry/eligibility as the old feed DELETE, now bounded and off GET.
+    # Pending pushes and active claims are never removed.
+    conn.execute(text("""WITH expired AS (
+        SELECT id FROM vera_notification_delivery
+        WHERE (channel='in_app' OR (channel='push' AND sent_at IS NOT NULL))
+          AND claimed_at IS NULL
+          AND created_at < date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
+        ORDER BY id LIMIT 500 FOR UPDATE SKIP LOCKED
+    ) DELETE FROM vera_notification_delivery d USING expired e WHERE d.id=e.id"""))
+
+
 def dispatch_pending(engine, send, vault, limit=30):
     from vera_notification_audience import delivery_joins, delivery_access_sql, public_payload
     with engine.begin() as conn:
@@ -186,6 +198,9 @@ def dispatch_pending(engine, send, vault, limit=30):
           ORDER BY id FOR UPDATE SKIP LOCKED LIMIT :limit)
           UPDATE vera_notification_delivery d SET claimed_at=NOW(), attempts=attempts+1
           FROM pending p WHERE d.id=p.id RETURNING d.*'''), {'limit': limit}).mappings()]
+    # A separate short transaction cannot extend notification delivery claims.
+    with engine.begin() as conn:
+        prune_expired_inbox(conn)
     for row in rows:
         error = None
         sent_ids = set(row.get('sent_subscriptions') or [])

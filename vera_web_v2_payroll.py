@@ -21,6 +21,7 @@ from urllib.parse import quote
 import uuid
 
 import pandas as pd
+from starlette.concurrency import run_in_threadpool
 from fastapi import Body, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
@@ -1200,30 +1201,32 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
 
     @app.post("/v2/payroll/draft/import.xlsx")
     async def import_payroll_draft(month: str = Query(...), period_no: int = Query(..., ge=1, le=2), payload: bytes = Body(..., media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), ident: identity_type = Depends(current_identity)):
-        start, end, label = _period(month, period_no)
-        supplied_rows, labels, period_ranges = _read_draft_workbook(payload)
-        if labels and labels != {label}:
-            raise HTTPException(400, f"File Excel thuộc kỳ {', '.join(sorted(labels))}; màn hình đang chọn {label}.")
-        if period_ranges and period_ranges != {(start, end)}:
-            descriptions = ", ".join(
-                f"{period_start.strftime('%d/%m/%Y')}–{period_end.strftime('%d/%m/%Y')}"
-                for period_start, period_end in sorted(period_ranges)
-            )
-            raise HTTPException(400, f"File Excel thuộc kỳ {descriptions}; màn hình đang chọn {label}.")
-        with engine_instance().connect() as conn:
-            require_feature(conn, ident, "payroll_calculate")
-            clean_rows = _clean_draft_rows(conn, supplied_rows, norm, period=(start, end))
-        return {
-            "period_label": label,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "fields": DRAFT_FIELDS,
-            "editable_fields": sorted(EDITABLE_FIELDS),
-            "rows": clean_rows,
-            "source_name": "Excel Import",
-            "imported": len(clean_rows),
-            "message": f"Đã Import {len(clean_rows)} dòng vào bảng lương nháp {label}.",
-        }
+        def process():
+            start, end, label = _period(month, period_no)
+            supplied_rows, labels, period_ranges = _read_draft_workbook(payload)
+            if labels and labels != {label}:
+                raise HTTPException(400, f"File Excel thuộc kỳ {', '.join(sorted(labels))}; màn hình đang chọn {label}.")
+            if period_ranges and period_ranges != {(start, end)}:
+                descriptions = ", ".join(
+                    f"{period_start.strftime('%d/%m/%Y')}–{period_end.strftime('%d/%m/%Y')}"
+                    for period_start, period_end in sorted(period_ranges)
+                )
+                raise HTTPException(400, f"File Excel thuộc kỳ {descriptions}; màn hình đang chọn {label}.")
+            with engine_instance().connect() as conn:
+                require_feature(conn, ident, "payroll_calculate")
+                clean_rows = _clean_draft_rows(conn, supplied_rows, norm, period=(start, end))
+            return {
+                "period_label": label,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "fields": DRAFT_FIELDS,
+                "editable_fields": sorted(EDITABLE_FIELDS),
+                "rows": clean_rows,
+                "source_name": "Excel Import",
+                "imported": len(clean_rows),
+                "message": f"Đã Import {len(clean_rows)} dòng vào bảng lương nháp {label}.",
+            }
+        return await run_in_threadpool(process)
 
     @app.post("/v2/payroll/draft/export.xlsx")
     def payroll_draft_export(body: PayrollExport, ident: identity_type = Depends(current_identity)):
@@ -1377,87 +1380,89 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
 
     @app.post("/v2/payroll/calculate")
     async def calculate_payroll(month: str = Query(...), period_no: int = Query(..., ge=1, le=2), payload: bytes = Body(..., media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), ident: identity_type = Depends(current_identity)):
-        start, end, label = _period(month, period_no)
-        with engine_instance().connect() as conn:
-            require_feature(conn, ident, "payroll_calculate")
-            source = _read_source(payload)
-            cfg = _config(conn)
-            employees = [dict(row) for row in conn.execute(text(f"""
-                SELECT username,COALESCE(full_name,'') full_name,{DEPARTMENT_SQL} role,
-                       COALESCE(email,'') email,COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
-                       COALESCE(employment_start_date,'') employment_start_date,
-                       COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc') employment_status
-                FROM employees
-                WHERE {TIP_SQL}
-                  AND COALESCE(payload->>'__deleted', 'false') <> 'true'
-                  AND lower(COALESCE(payload->>'Không tính lương','false')) NOT IN ('1','true','yes','y','có','x')
-                ORDER BY COALESCE(stt,2147483647),username
-            """)).mappings().all()]
-            from vera_attendance_participation import eligible
-            employees = eligible(employees, start, end, key='username')
-            penalties = conn.execute(text("""
-                SELECT employee_name,SUM(COALESCE(penalty,0)) amount FROM leave_records
-                WHERE leave_date BETWEEN :start AND :end GROUP BY employee_name
-            """), {"start": start, "end": end}).mappings().all()
-            penalty_map = {norm(item["employee_name"]): _number(item["amount"]) for item in penalties}
-            tichluy = _tichluy_map(conn, employees, start, end, norm)
-            obligations = _obligation_map(conn, start, norm, end)
-            accumulation_refunds = _accumulation_refund_map(conn, start, end, norm, employees)
-            from vera_web_v2_commission import payroll_commissions
-            commissions = payroll_commissions(conn, start, end, norm)
-        commission_total = sum(sum(commissions.get(norm(employee["username"]), {}).values()) for employee in employees)
-        tips, source_summary = _tip_rows(source, start, end, norm, allow_zero=True) if commission_total > 0 else _tip_rows(source, start, end, norm)
-        known = {norm(item["username"]) for item in employees}
-        matched_tips = tips[tips["key"].isin(known)].copy()
-        unmatched = sorted({
-            value for value in tips.loc[~tips["key"].isin(known), "employee"].tolist() if value
-        }, key=norm)
-        if matched_tips.empty and commission_total <= 0:
-            preview = ", ".join(unmatched[:10])
-            raise HTTPException(
-                400,
-                "Đã đọc được dòng Tip nhưng không tên nào khớp Tên Hệ thống của Nhân viên/Leader. "
-                f"Tên TimeSoft đầu tiên: {preview}",
-            )
-        matched_salary_total = int(matched_tips["amount"].sum())
-        if matched_salary_total + commission_total <= 0:
-            raise HTTPException(400, "Tổng Tiền Lương sau khi khớp tên nhân viên đang bằng 0; hệ thống dừng tính.")
-        source_summary.update({
-            "commission_total": commission_total,
-            "matched_tip_rows": int((matched_tips["amount"] > 0).sum()),
-            "matched_salary_total": matched_salary_total,
-            "employee_rows": int(len(employees)),
-            "unmatched_tip_names": int(len(unmatched)),
-        })
-        salaries = matched_tips.groupby("key")["amount"].sum().to_dict()
-        counts = matched_tips[matched_tips["amount"] > 0].groupby("key").size().to_dict()
-        rows = []
-        for index, employee in enumerate(employees, start=1):
-            key = norm(employee["username"])
-            accumulation_refund = accumulation_refunds.get(key, 0)
-            row = {
-                "TT": index, "Tên Hệ thống": employee["username"], "Họ và tên": employee["full_name"],
-                "Tiền Lương": _number(salaries.get(key)) + sum(commissions.get(key, {}).values()),
-                "__earnings": {"tip": _number(salaries.get(key)), **commissions.get(key, {"service": 0, "product": 0})},
-                "Tiền Hỗ Trợ Hoàn Lại": cfg["leader_responsibility_allowance"] if employee["role"] == "leader" and period_no == 2 else 0,
-                "Hoàn trả tiền tích lũy": accumulation_refund,
-                "Tích lũy": 0 if accumulation_refund else tichluy.get(key, 0),
-                "Chi Phí Sinh Hoạt": cfg["default_living_expense"], "Tiền phạt trong tháng": penalty_map.get(key, 0),
-                "Vi phạm kỳ trước": 0, "Tiền ứng lương": 0,
-                "Tiền hỗ trợ Locker": cfg["default_locker_support"], "Số tiền thực nhận": 0,
-                "Email": employee["email"], "Số tài khoản ngân hàng": employee["bank_account"],
-                "Tên ngân hàng": employee["bank_name"], "Số dòng Tip": int(counts.get(key, 0)),
-                "__employment_status": employee.get("employment_status") or "Đang làm việc",
-                "__available_prior_debt": obligations.get(key, 0) + (obligations.get(norm(employee.get("full_name")), 0) if norm(employee.get("full_name")) != key else 0),
+        def process():
+            start, end, label = _period(month, period_no)
+            with engine_instance().connect() as conn:
+                require_feature(conn, ident, "payroll_calculate")
+                source = _read_source(payload)
+                cfg = _config(conn)
+                employees = [dict(row) for row in conn.execute(text(f"""
+                    SELECT username,COALESCE(full_name,'') full_name,{DEPARTMENT_SQL} role,
+                           COALESCE(email,'') email,COALESCE(bank_account,'') bank_account,COALESCE(bank_name,'') bank_name,
+                           COALESCE(employment_start_date,'') employment_start_date,
+                           COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','Đang làm việc') employment_status
+                    FROM employees
+                    WHERE {TIP_SQL}
+                      AND COALESCE(payload->>'__deleted', 'false') <> 'true'
+                      AND lower(COALESCE(payload->>'Không tính lương','false')) NOT IN ('1','true','yes','y','có','x')
+                    ORDER BY COALESCE(stt,2147483647),username
+                """)).mappings().all()]
+                from vera_attendance_participation import eligible
+                employees = eligible(employees, start, end, key='username')
+                penalties = conn.execute(text("""
+                    SELECT employee_name,SUM(COALESCE(penalty,0)) amount FROM leave_records
+                    WHERE leave_date BETWEEN :start AND :end GROUP BY employee_name
+                """), {"start": start, "end": end}).mappings().all()
+                penalty_map = {norm(item["employee_name"]): _number(item["amount"]) for item in penalties}
+                tichluy = _tichluy_map(conn, employees, start, end, norm)
+                obligations = _obligation_map(conn, start, norm, end)
+                accumulation_refunds = _accumulation_refund_map(conn, start, end, norm, employees)
+                from vera_web_v2_commission import payroll_commissions
+                commissions = payroll_commissions(conn, start, end, norm)
+            commission_total = sum(sum(commissions.get(norm(employee["username"]), {}).values()) for employee in employees)
+            tips, source_summary = _tip_rows(source, start, end, norm, allow_zero=True) if commission_total > 0 else _tip_rows(source, start, end, norm)
+            known = {norm(item["username"]) for item in employees}
+            matched_tips = tips[tips["key"].isin(known)].copy()
+            unmatched = sorted({
+                value for value in tips.loc[~tips["key"].isin(known), "employee"].tolist() if value
+            }, key=norm)
+            if matched_tips.empty and commission_total <= 0:
+                preview = ", ".join(unmatched[:10])
+                raise HTTPException(
+                    400,
+                    "Đã đọc được dòng Tip nhưng không tên nào khớp Tên Hệ thống của Nhân viên/Leader. "
+                    f"Tên TimeSoft đầu tiên: {preview}",
+                )
+            matched_salary_total = int(matched_tips["amount"].sum())
+            if matched_salary_total + commission_total <= 0:
+                raise HTTPException(400, "Tổng Tiền Lương sau khi khớp tên nhân viên đang bằng 0; hệ thống dừng tính.")
+            source_summary.update({
+                "commission_total": commission_total,
+                "matched_tip_rows": int((matched_tips["amount"] > 0).sum()),
+                "matched_salary_total": matched_salary_total,
+                "employee_rows": int(len(employees)),
+                "unmatched_tip_names": int(len(unmatched)),
+            })
+            salaries = matched_tips.groupby("key")["amount"].sum().to_dict()
+            counts = matched_tips[matched_tips["amount"] > 0].groupby("key").size().to_dict()
+            rows = []
+            for index, employee in enumerate(employees, start=1):
+                key = norm(employee["username"])
+                accumulation_refund = accumulation_refunds.get(key, 0)
+                row = {
+                    "TT": index, "Tên Hệ thống": employee["username"], "Họ và tên": employee["full_name"],
+                    "Tiền Lương": _number(salaries.get(key)) + sum(commissions.get(key, {}).values()),
+                    "__earnings": {"tip": _number(salaries.get(key)), **commissions.get(key, {"service": 0, "product": 0})},
+                    "Tiền Hỗ Trợ Hoàn Lại": cfg["leader_responsibility_allowance"] if employee["role"] == "leader" and period_no == 2 else 0,
+                    "Hoàn trả tiền tích lũy": accumulation_refund,
+                    "Tích lũy": 0 if accumulation_refund else tichluy.get(key, 0),
+                    "Chi Phí Sinh Hoạt": cfg["default_living_expense"], "Tiền phạt trong tháng": penalty_map.get(key, 0),
+                    "Vi phạm kỳ trước": 0, "Tiền ứng lương": 0,
+                    "Tiền hỗ trợ Locker": cfg["default_locker_support"], "Số tiền thực nhận": 0,
+                    "Email": employee["email"], "Số tài khoản ngân hàng": employee["bank_account"],
+                    "Tên ngân hàng": employee["bank_name"], "Số dòng Tip": int(counts.get(key, 0)),
+                    "__employment_status": employee.get("employment_status") or "Đang làm việc",
+                    "__available_prior_debt": obligations.get(key, 0) + (obligations.get(norm(employee.get("full_name")), 0) if norm(employee.get("full_name")) != key else 0),
+                }
+                row = _net(row)
+                row["Vi phạm kỳ trước"] = min(row["__available_prior_debt"], max(0, row["Số tiền thực nhận"]))
+                rows.append(_net(row))
+            return {
+                "period_label": label, "start": start.isoformat(), "end": end.isoformat(),
+                "fields": DRAFT_FIELDS, "editable_fields": sorted(EDITABLE_FIELDS),
+                "rows": rows, "unmatched": unmatched, "config": cfg, "source_summary": source_summary,
             }
-            row = _net(row)
-            row["Vi phạm kỳ trước"] = min(row["__available_prior_debt"], max(0, row["Số tiền thực nhận"]))
-            rows.append(_net(row))
-        return {
-            "period_label": label, "start": start.isoformat(), "end": end.isoformat(),
-            "fields": DRAFT_FIELDS, "editable_fields": sorted(EDITABLE_FIELDS),
-            "rows": rows, "unmatched": unmatched, "config": cfg, "source_summary": source_summary,
-        }
+        return await run_in_threadpool(process)
 
     @app.post("/v2/payroll/save")
     def save_payroll(body: PayrollSave, ident: identity_type = Depends(current_identity)):

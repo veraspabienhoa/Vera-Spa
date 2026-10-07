@@ -1,3 +1,4 @@
+import { startScopedReconciler } from './scopedReconciler'
 function removeToolbarProxy(select) {
   if (!(select instanceof HTMLSelectElement)) return
   const wrapper = select.__veraTypingWrapper
@@ -36,18 +37,5 @@ function removeDuplicateListSearch() {
 export function startEmployeeToolbarRecovery() {
   if (window.__veraEmployeeToolbarRecoveryStarted) return
   window.__veraEmployeeToolbarRecoveryStarted = true
-
-  const reconcile = () => {
-    restoreToolbar()
-    removeDuplicateListSearch()
-  }
-
-  const observer = new MutationObserver(() => window.requestAnimationFrame(reconcile))
-  observer.observe(document.body, { childList: true, subtree: true })
-
-  // Keep protection active because employeeDirectoryUx still reconciles profile
-  // controls periodically and can recreate legacy toolbar wrappers after a page
-  // refresh if the DOM is replaced by React.
-  window.setInterval(reconcile, 500)
-  window.requestAnimationFrame(reconcile)
+  return startScopedReconciler('.staff-control-panel, .staff-list-panel', () => { restoreToolbar(); removeDuplicateListSearch() })
 }

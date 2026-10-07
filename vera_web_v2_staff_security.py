@@ -23,6 +23,7 @@ from typing import Any, Callable
 from urllib.parse import quote
 from xml.sax.saxutils import escape
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from PIL import Image as PILImage, ImageFilter, ImageOps
@@ -62,6 +63,11 @@ class StaffBatchPdfRequest(BaseModel):
 
 
 def _ensure_identity_table(conn) -> None:
+    from vera_versioned_schema import ensure
+    ensure(conn, "identity_documents", 1, _migrate_identity_table)
+
+
+def _migrate_identity_table(conn):
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS vera_employee_identity_document (
             employee_username text NOT NULL,
@@ -749,56 +755,58 @@ def install_staff_security_routes(
         if content_type not in ALLOWED_IMAGE_TYPES:
             raise HTTPException(400, "Chỉ chấp nhận ảnh WebP, JPEG hoặc PNG.")
         content = await request.body()
-        if not content:
-            raise HTTPException(400, "Ảnh hồ sơ đang trống.")
-        if len(content) > MAX_IDENTITY_BYTES:
-            raise HTTPException(413, "Ảnh sau nén vẫn quá lớn. Vui lòng chọn ảnh rõ hơn hoặc thử lại.")
-        if not _valid_image(content, content_type):
-            raise HTTPException(400, "Nội dung file ảnh không hợp lệ.")
-        _image_dimensions(content, min_edge=1 if side == "portrait" else 160)
+        def process():
+            if not content:
+                raise HTTPException(400, "Ảnh hồ sơ đang trống.")
+            if len(content) > MAX_IDENTITY_BYTES:
+                raise HTTPException(413, "Ảnh sau nén vẫn quá lớn. Vui lòng chọn ảnh rõ hơn hoặc thử lại.")
+            if not _valid_image(content, content_type):
+                raise HTTPException(400, "Nội dung file ảnh không hợp lệ.")
+            _image_dimensions(content, min_edge=1 if side == "portrait" else 160)
 
-        with engine_instance().begin() as conn:
-            row = require_identity_access(conn, ident, username, for_update=True)
-            _ensure_identity_table(conn)
-            digest = hashlib.sha256(content).hexdigest()
-            extracted = _extract_cccd_fields(content) if side in IDENTITY_SIDES else {}
-            conn.execute(text("""
-                INSERT INTO vera_employee_identity_document(
-                    employee_username, side, content_type, content, size_bytes,
-                    sha256, updated_at, updated_by, ocr_payload
-                ) VALUES (
-                    :username, :side, :content_type, :content, :size_bytes,
-                    :sha256, NOW(), :updated_by, CAST(:ocr_payload AS jsonb)
-                )
-                ON CONFLICT (employee_username, side) DO UPDATE SET
-                    content_type=EXCLUDED.content_type,
-                    content=EXCLUDED.content,
-                    size_bytes=EXCLUDED.size_bytes,
-                    sha256=EXCLUDED.sha256,
-                    updated_at=NOW(),
-                    updated_by=EXCLUDED.updated_by,
-                    ocr_payload=EXCLUDED.ocr_payload
-            """), {
-                "username": row["username"],
-                "side": side,
-                "content_type": content_type,
-                "content": content,
-                "size_bytes": len(content),
-                "sha256": digest,
-                "updated_by": str(getattr(ident, "employee_username", "") or ""),
-                "ocr_payload": json.dumps(extracted, ensure_ascii=False),
-            })
-            applied = _apply_extracted_cccd(conn, row, extracted)
-            return {
-                "ok": True,
-                "side": side,
-                "size_bytes": len(content),
-                "sha256": digest,
-                "extracted_fields": extracted,
-                "applied_fields": applied,
-                "ocr_status": "extracted" if extracted else ("not_applicable" if side == "portrait" else "not_detected"),
-                "message": f"Đã lưu {MEDIA_SIDES[side]} ({round(len(content) / 1024)} KB).",
-            }
+            with engine_instance().begin() as conn:
+                row = require_identity_access(conn, ident, username, for_update=True)
+                _ensure_identity_table(conn)
+                digest = hashlib.sha256(content).hexdigest()
+                extracted = _extract_cccd_fields(content) if side in IDENTITY_SIDES else {}
+                conn.execute(text("""
+                    INSERT INTO vera_employee_identity_document(
+                        employee_username, side, content_type, content, size_bytes,
+                        sha256, updated_at, updated_by, ocr_payload
+                    ) VALUES (
+                        :username, :side, :content_type, :content, :size_bytes,
+                        :sha256, NOW(), :updated_by, CAST(:ocr_payload AS jsonb)
+                    )
+                    ON CONFLICT (employee_username, side) DO UPDATE SET
+                        content_type=EXCLUDED.content_type,
+                        content=EXCLUDED.content,
+                        size_bytes=EXCLUDED.size_bytes,
+                        sha256=EXCLUDED.sha256,
+                        updated_at=NOW(),
+                        updated_by=EXCLUDED.updated_by,
+                        ocr_payload=EXCLUDED.ocr_payload
+                """), {
+                    "username": row["username"],
+                    "side": side,
+                    "content_type": content_type,
+                    "content": content,
+                    "size_bytes": len(content),
+                    "sha256": digest,
+                    "updated_by": str(getattr(ident, "employee_username", "") or ""),
+                    "ocr_payload": json.dumps(extracted, ensure_ascii=False),
+                })
+                applied = _apply_extracted_cccd(conn, row, extracted)
+                return {
+                    "ok": True,
+                    "side": side,
+                    "size_bytes": len(content),
+                    "sha256": digest,
+                    "extracted_fields": extracted,
+                    "applied_fields": applied,
+                    "ocr_status": "extracted" if extracted else ("not_applicable" if side == "portrait" else "not_detected"),
+                    "message": f"Đã lưu {MEDIA_SIDES[side]} ({round(len(content) / 1024)} KB).",
+                }
+        return await run_in_threadpool(process)
 
     @app.delete("/v2/staff/{username}/identity/{side}")
     def delete_identity_image(username: str, side: str, ident: identity_type = Depends(current_identity)):

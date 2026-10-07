@@ -71,6 +71,9 @@ def _backfill(conn) -> dict:
               value=GREATEST({concurrency.COUNTER_TABLE}.value,EXCLUDED.value), updated_at=NOW()
         """), {"key": str(row["source_sheet_id"] or ""), "value": int(row["current_value"] or 1)})
 
+    import vera_purchase_store
+    vera_purchase_store.ensure_schema(conn)
+
     mirrored = _backfill_live_tour(conn)
     conn.execute(text("""
         INSERT INTO vera_schema_version(component,version,updated_at)
@@ -154,6 +157,12 @@ def _runtime_engine():
 
 def run(*, apply: bool = False, verify: bool = False, engine=None) -> dict:
     engine = engine or _runtime_engine()
+    if apply:
+        from vera_versioned_schema import prepare_read_schemas
+        with engine.begin() as conn:
+            conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            conn.execute(text("SET LOCAL statement_timeout = '60s'"))
+            prepare_read_schemas(conn)
     context = engine.begin() if apply else engine.connect()
     with context as conn:
         conn.execute(text("SET LOCAL lock_timeout = '5s'"))
@@ -164,7 +173,13 @@ def run(*, apply: bool = False, verify: bool = False, engine=None) -> dict:
             result["backfill"] = backfill
         if verify and not result.get("ok"):
             raise SystemExit("SYSTEM RESOURCE CONCURRENCY VERIFY: FAILED")
-        return result
+    if apply:
+        import vera_revenue_revision
+        with engine.begin() as conn:
+            conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            conn.execute(text("SET LOCAL statement_timeout = '60s'"))
+            vera_revenue_revision.install(conn)
+    return result
 
 
 if __name__ == "__main__":

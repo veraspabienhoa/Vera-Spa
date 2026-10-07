@@ -2485,3 +2485,30 @@ departments share these controls. Accumulation period history defaults closed
 and hides zero-contribution/zero-refund periods in presentation only. Saved
 payroll history, balances and refund records are unchanged. Production behavior
 and mobile layout still require verification after deployment.
+
+## 08-10-2026 — Shared performance foundation (source changes)
+
+See [the implementation and measurement record](system-performance-2026-10-08.md).
+Repeated DDL in schedule, online booking, training, revenue and identity-media
+reads becomes transaction-owned versioned migration. The deploy schema gate
+prepares these schemas with timeouts; readiness is never cached across rollback.
+Revenue polling uses transactional source-table revision triggers after migration,
+with the previous algorithm retained for a not-yet-migrated database.
+
+Administrative payroll groups monthly inputs once, preserving the historical
+schedule department, probation policies and full advance/penalty deductions.
+Imports and KTV payroll move synchronous work to bounded workers that acquire
+and close their own connection. Contract export batches cached metadata and
+releases the connection before PDF rendering. No device upload, financial
+history rewriting, lock removal or automatic replay is introduced.
+
+Shared UI polling pauses while hidden; obsolete schedule/audit responses are
+cancelled and ignored. Auth stays API-owned, permission revisions remain checked,
+and legacy Supabase RPC code loads only when called. Request metrics contain
+route templates and numeric counts/timings only, never SQL parameters or PII.
+
+Synthetic single-caller schedule CPU p50 improves 22.48x for 60 employees and
+58.59x for 200 with identical totals; this excludes PostgreSQL, network and UI.
+The JavaScript entry is about 49% smaller. Production latency, deployment and
+business readback have not been verified for this source change. They must be
+measured on the deployed runtime before claiming a system-wide speed multiplier.

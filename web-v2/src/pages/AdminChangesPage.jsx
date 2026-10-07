@@ -1,3 +1,4 @@
+import { apiRequest as sharedRequest } from '../lib/api'
 import DateSearchField from '../components/DateSearchField'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
@@ -6,7 +7,7 @@ import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { Activity, Archive, CalendarDays, Download, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import VeraDateInput from '../components/VeraDateInput'
 
@@ -47,13 +48,7 @@ async function authHeaders() {
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
 }
 
-async function requestJson(path) {
-  if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
-  const response = await fetch(`${apiBase}${path}`, { headers: await authHeaders() })
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
-  return payload
-}
+const requestJson = sharedRequest
 
 async function downloadExcel(path, fallbackName) {
   const response = await fetch(`${apiBase}${path}`, { headers: await authHeaders() })
@@ -111,14 +106,21 @@ export default function AdminChangesPage() {
     return query.toString()
   }, [actor, end, start])
 
+  const loadRequestRef = useRef(null)
   const load = useCallback(async () => {
+    loadRequestRef.current?.abort()
+    const controller = new AbortController()
+    loadRequestRef.current = controller
     setBusy(true); setError('')
-    try { setData(await requestJson(`/v2/admin/changes-v41?${params()}`)) }
-    catch (e) { setError(e.message || 'Không tải được Thay đổi hệ thống.') }
-    finally { setBusy(false) }
+    try {
+      const result = await requestJson(`/v2/admin/changes-v41?${params()}`, { signal: controller.signal })
+      if (!controller.signal.aborted) setData(result)
+    }
+    catch (e) { if (!controller.signal.aborted) setError(e.message || 'Không tải được Thay đổi hệ thống.') }
+    finally { if (!controller.signal.aborted) setBusy(false) }
   }, [params])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load(); return () => loadRequestRef.current?.abort() }, [load])
   useEffect(() => {
     const timer = window.setTimeout(() => setActor(actorSearch.trim()), 250)
     return () => window.clearTimeout(timer)

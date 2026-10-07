@@ -1,3 +1,4 @@
+import { apiRequest as sharedRequest } from '../lib/api'
 import DateSearchField from '../components/DateSearchField'
 import ScheduleViolations from '../components/ScheduleViolations'
 import { monthlyStatisticsExportRows, violationExportRows } from '../lib/scheduleTableRows'
@@ -210,17 +211,7 @@ function canvasToPngBlob(canvas) {
   })
 }
 
-async function scheduleRequest(path, options = {}) {
-  if (!API_BASE) throw new Error('Python API V2 chưa được cấu hình.')
-  const session = await getCurrentSession()
-  const headers = new Headers(options.headers || {})
-  headers.set('Content-Type', 'application/json')
-  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload?.detail || payload?.message || 'Không thực hiện được thao tác lịch làm việc.')
-  return payload
-}
+const scheduleRequest = sharedRequest
 
 async function scheduleFileRequest(path, options = {}) {
   if (!API_BASE) throw new Error('Python API V2 chưa được cấu hình.')
@@ -427,7 +418,12 @@ export default function WorkSchedulePage({ user }) {
     setPastePanelOpen(false)
   }
 
+  const loadRequestRef = useRef(null)
   const load = async () => {
+    loadRequestRef.current?.abort()
+    const controller = new AbortController()
+    loadRequestRef.current = controller
+    const options = { signal: controller.signal }
     if (!availableDepartments.length || !availableDepartments.includes(department)) {
       setEmployees([])
       setSaved({})
@@ -442,10 +438,12 @@ export default function WorkSchedulePage({ user }) {
       const statisticsRange = monthRange(month)
       const currentPath = `/v2/work-schedule?start=${rangeStart}&end=${rangeEnd}&department=${department}`
       const statisticsPath = `/v2/work-schedule?start=${statisticsRange.start}&end=${statisticsRange.end}&department=${department}`
-      const [result, statisticsResult] = await Promise.all([
-        scheduleRequest(currentPath),
-        statisticsPath === currentPath ? Promise.resolve(null) : scheduleRequest(statisticsPath),
+      const [result, statisticsResult, comboResult] = await Promise.all([
+        scheduleRequest(currentPath, options),
+        statisticsPath === currentPath ? Promise.resolve(null) : scheduleRequest(statisticsPath, options),
+        ['quanly', 'letan'].includes(department) ? scheduleRequest(`/v2/work-schedule/combo-sales?start=${statisticsRange.start}&end=${statisticsRange.end}&department=${department}`, options) : Promise.resolve(null),
       ])
+      if (controller.signal.aborted) return
       const monthlyResult = statisticsResult || result
       const wanted = (result.employees || [])
         .filter((item) => item.employment_status !== 'Đã nghỉ việc')
@@ -458,7 +456,6 @@ export default function WorkSchedulePage({ user }) {
       setEmployees(wanted)
       setMonthlyRows(monthlyResult.rows || [])
       if (['quanly', 'letan'].includes(department)) {
-        const comboResult = await scheduleRequest(`/v2/work-schedule/combo-sales?start=${statisticsRange.start}&end=${statisticsRange.end}&department=${department}`)
         setComboSales(comboResult.rows || [])
       } else {
         setComboSales([])
@@ -496,13 +493,14 @@ export default function WorkSchedulePage({ user }) {
         setSelectedCell(null)
       }
     } catch (error) {
+      if (controller.signal.aborted) return
       setNotice(error.message || 'Không tải được lịch làm việc.')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }
 
-  useEffect(() => { void load() }, [department, month, rangeKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(); return () => loadRequestRef.current?.abort() }, [department, month, rangeKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const renameSystemName = async (employee) => {
     if (!isAdmin) return

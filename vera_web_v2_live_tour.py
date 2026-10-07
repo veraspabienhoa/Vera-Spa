@@ -35,6 +35,7 @@ from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid4, uuid5
 from zoneinfo import ZoneInfo
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
@@ -4483,7 +4484,7 @@ def _sync_online_booking_requests(state, bookings, today):
 
 def install_live_tour_routes(
     app, *, engine_instance: Callable[[], Any], current_identity, require_feature,
-    feature_allowed: Callable[..., bool], identity_type, vn_tz=VN_TZ, attendance_reader=None,
+    feature_allowed: Callable[..., bool], identity_type, vn_tz=VN_TZ, attendance_reader=None, feature_map=None,
 ) -> None:
     if getattr(app.state, "live_tour_installed", False):
         return
@@ -4777,19 +4778,21 @@ def install_live_tour_routes(
     app.state.website_booking_appointment_writer = record_website_booking_appointment
 
     def permissions(conn, ident) -> dict[str, bool]:
+        keys = {"live_tour_payment", "live_tour_admin", "live_tour_operate", "live_tour_view", "live_tour_export", *CAPABILITY_FEATURES.values()}
+        grants = feature_map(conn, ident, keys) if feature_map else {key: feature_allowed(conn, ident, key) for key in keys}
         viewer_bank = None
-        if feature_allowed(conn, ident, "live_tour_payment"):
+        if grants["live_tour_payment"]:
             bank_row = conn.execute(text("SELECT full_name, bank_name, bank_account FROM employees WHERE username=:username"), {"username": ident.employee_username}).mappings().first()
             viewer_bank = _profile_bank(dict(bank_row)) if bank_row else None
-        can_admin = bool(feature_allowed(conn, ident, "live_tour_admin"))
-        can_operate = bool(feature_allowed(conn, ident, "live_tour_operate"))
+        can_admin = bool(grants["live_tour_admin"])
+        can_operate = bool(grants["live_tour_operate"])
         return {
-            "can_appointment_edit": str(getattr(ident, "role", "") or "").strip().lower() in {"admin", "quanly", "letan"} and bool(feature_allowed(conn, ident, "live_tour_view")),
+            "can_appointment_edit": str(getattr(ident, "role", "") or "").strip().lower() in {"admin", "quanly", "letan"} and bool(grants["live_tour_view"]),
             "viewer_bank": viewer_bank,
             "can_admin": can_admin, "can_operate": can_operate,
-            "can_payment": bool(feature_allowed(conn, ident, "live_tour_payment")),
-            "can_export": bool(feature_allowed(conn, ident, "live_tour_export")),
-            **{f"can_{name}": bool(feature_allowed(conn, ident, feature)) for name, feature in CAPABILITY_FEATURES.items()},
+            "can_payment": bool(grants["live_tour_payment"]),
+            "can_export": bool(grants["live_tour_export"]),
+            **{f"can_{name}": bool(grants[feature]) for name, feature in CAPABILITY_FEATURES.items()},
         }
 
     def action_response(
@@ -4871,6 +4874,24 @@ def install_live_tour_routes(
             state, revision, now, include_hidden=include_hidden,
             **grants,
         )
+
+    @app.get("/v2/live-tour/appearance")
+    def live_tour_appearance(ident: identity_type = Depends(current_identity)):
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, "live_tour_admin")
+            # Project only configuration and its committed revision in the DB.
+            # No financial rows, device calls, normalization or projection jobs.
+            if resource_store.enabled():
+                row = conn.execute(text(f"""SELECT payload->'appearance_settings' AS appearance_settings,
+                    aggregate_revision AS revision FROM {relational_store.META_TABLE} WHERE singleton=1
+                    AND payload->>'_resource_ready'='true'""")).mappings().first()
+            else:
+                row = conn.execute(text("""SELECT value_json->'appearance_settings' AS appearance_settings,revision
+                    FROM vera_app_setting WHERE category=:category AND setting_key=:key"""),
+                    {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
+            if not row:
+                raise HTTPException(503, "Dữ liệu giao diện chưa sẵn sàng. Hãy mở Live Tour và thử lại.")
+            return {"appearance_settings": row.get("appearance_settings") or {}, "revision": int(row["revision"])}
 
     @app.get("/v2/live-tour/collections/{panel}")
     def live_tour_collection(
@@ -5378,31 +5399,33 @@ def install_live_tour_routes(
         if length > 5 * 1024 * 1024:
             raise HTTPException(413, "File Excel vượt quá 5 MB.")
         content = await request.body()
-        if len(content) > 5 * 1024 * 1024:
-            raise HTTPException(413, "File Excel vượt quá 5 MB.")
-        rows = _board_import_rows(content)
-        now = datetime.now(timezone)
-        actor = str(ident.employee_username or ident.full_name or "web_v2")
-        with engine_instance().begin() as conn:
-            require_feature(conn, ident, "live_tour_admin")
-            if resource_store.enabled():
-                resource_store.lock(conn)
-            else:
-                acquire_state_lock(conn, STATE_LOCK)
-            state, revision = read_state(conn, now, for_update=True)
-            if expected_revision != revision:
-                raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi Import lại.")
-            working = deepcopy(state)
-            imported = _import_board_into_state(working, rows, now)
-            working["updated_at"] = _iso(now)
-            working["business_date"] = _business_date(now).isoformat()
-            _audit(working, "board_excel_import", {"imported": imported}, actor, now)
-            next_revision = _write_state_compat(
-                conn, working, revision, actor, previous_state=state,
-            )
-            grants = permissions(conn, ident)
-        response = _state_response(working, next_revision, now, **grants)
-        return {**response, "ok": True, "imported": imported, "message": f"Đã Import và lưu {imported} nhân viên vào Bảng tua."}
+        def process():
+            if len(content) > 5 * 1024 * 1024:
+                raise HTTPException(413, "File Excel vượt quá 5 MB.")
+            rows = _board_import_rows(content)
+            now = datetime.now(timezone)
+            actor = str(ident.employee_username or ident.full_name or "web_v2")
+            with engine_instance().begin() as conn:
+                require_feature(conn, ident, "live_tour_admin")
+                if resource_store.enabled():
+                    resource_store.lock(conn)
+                else:
+                    acquire_state_lock(conn, STATE_LOCK)
+                state, revision = read_state(conn, now, for_update=True)
+                if expected_revision != revision:
+                    raise HTTPException(409, "Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi Import lại.")
+                working = deepcopy(state)
+                imported = _import_board_into_state(working, rows, now)
+                working["updated_at"] = _iso(now)
+                working["business_date"] = _business_date(now).isoformat()
+                _audit(working, "board_excel_import", {"imported": imported}, actor, now)
+                next_revision = _write_state_compat(
+                    conn, working, revision, actor, previous_state=state,
+                )
+                grants = permissions(conn, ident)
+            response = _state_response(working, next_revision, now, **grants)
+            return {**response, "ok": True, "imported": imported, "message": f"Đã Import và lưu {imported} nhân viên vào Bảng tua."}
+        return await run_in_threadpool(process)
 
     @app.get("/v2/live-tour/export.png")
     def live_tour_export_png(
