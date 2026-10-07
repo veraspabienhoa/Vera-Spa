@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
-const built=await build({stdin:{contents:"export {default as Custom} from './src/components/LayoutCustomElements'; export {default as Toolbar} from './src/components/UiToolbar'; export {default as Text} from './src/components/UiCustomText'; export {publishCustomization} from './src/lib/uiCustomizationStore'",resolveDir:fileURLToPath(new URL('..',import.meta.url)),loader:'jsx'},bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react/jsx-runtime'],loader:{'.css':'empty'}})
+const built=await build({stdin:{contents:"export {default as Custom} from './src/components/LayoutCustomElements'; export {default as Toolbar} from './src/components/UiToolbar'; export {default as Text} from './src/components/UiCustomText'; export {publishCustomization} from './src/lib/uiCustomizationStore'",resolveDir:fileURLToPath(new URL('..',import.meta.url)),loader:'jsx'},bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react/jsx-runtime']})
 test('Labels preserve business handler; toolbar sorts actual DOM, groups safely, restores defaults and forwards refs',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true})
  const saved=Object.fromEntries(['window','document','navigator','MutationObserver','IS_REACT_ACT_ENVIRONMENT'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]))

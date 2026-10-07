@@ -1,6 +1,5 @@
 import { CalendarDays } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import './ClearableSearchInput.css'
 
 import { FILTER_CONTROL_SCOPE } from '../lib/filterControlScope'
 import { ISO_DATE, formatVeraDate, parseVeraDate } from '../lib/veraDate'
