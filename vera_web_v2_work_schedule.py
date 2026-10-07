@@ -25,6 +25,7 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -66,6 +67,56 @@ SCHEDULE_EXCEL_HEADERS = (
 SCHEDULE_DEPARTMENT_LABELS = {
     "quanly": "Quản lý", "locker": "Locker", "letan": "Lễ tân", "tapvu": "Tạp vụ",
 }
+
+SCHEDULE_TABLE_HEADERS = {
+    'statistics': ('Nhân viên', 'Ngày làm việc', 'Ngày nghỉ', 'Ngày Ca 1', 'Ngày Ca 2', 'Giờ tăng ca', 'Vi phạm', 'Phạt vi phạm'),
+    'violations': ('Nhân viên', 'Ngày vi phạm', 'Nội dung vi phạm', 'Tiền phạt', 'Ghi chú', 'Người nhập', 'Ngày ghi nhận'),
+}
+
+
+class ScheduleTableExport(BaseModel):
+    department: str = Field(min_length=1, max_length=50)
+    kind: Literal['statistics', 'violations']
+    start: date
+    end: date
+    rows: list[list[str | float | None]] = Field(default_factory=list, max_length=5000)
+
+
+def _schedule_table_workbook(body: ScheduleTableExport):
+    """Export the visible snapshot; never query or expose additional employee data."""
+    headers = SCHEDULE_TABLE_HEADERS[body.kind]
+    if any(len(row) != len(headers) or any(isinstance(cell, str) and len(cell) > 2000 for cell in row) for row in body.rows):
+        raise HTTPException(400, 'Dữ liệu bảng xuất Excel không hợp lệ.')
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = 'Thống kê tháng' if body.kind == 'statistics' else 'Vi phạm'
+    label = SCHEDULE_DEPARTMENT_LABELS[body.department]
+    sheet.append([f'{sheet.title.upper()} · {label}'])
+    sheet.append([f'{body.start:%d-%m-%Y} – {body.end:%d-%m-%Y}'])
+    sheet.append(headers)
+    for values in body.rows:
+        sheet.append(values)
+        for cell in sheet[sheet.max_row]:
+            if isinstance(cell.value, str):
+                cell.value = ILLEGAL_CHARACTERS_RE.sub('', cell.value)
+                cell.data_type = 's'  # Names/notes beginning with '=' remain literal text.
+            elif isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.##'
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+        money_column = 8 if body.kind == 'statistics' else 4
+        if isinstance(sheet.cell(sheet.max_row, money_column).value, (int, float)):
+            sheet.cell(sheet.max_row, money_column).number_format = '#,##0"đ"'
+    for cell in sheet[3]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor='204C3E')
+    sheet.freeze_panes = 'A4'
+    sheet.auto_filter.ref = f'A3:{sheet.cell(3, len(headers)).column_letter}{sheet.max_row}'
+    for index in range(1, len(headers) + 1):
+        sheet.column_dimensions[sheet.cell(3, index).column_letter].width = 28 if index == 1 else (38 if body.kind == 'violations' and index in {3, 5} else 20)
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
 
 
 class ScheduleRow(BaseModel):
@@ -886,6 +937,18 @@ def install_work_schedule_routes(
             if scope == "":
                 raise HTTPException(403, "Tài khoản chưa liên kết với nhân viên.")
             return {"ok": True, "rows": _schedule_violations(conn, department, start, end, employee_username=scope)}
+
+    @app.post('/v2/work-schedule/table/export.xlsx')
+    def export_schedule_table(body: ScheduleTableExport, ident=Depends(current_identity)):
+        if body.end < body.start or (body.end - body.start).days > 366:
+            raise HTTPException(400, 'Khoảng ngày xuất Excel không hợp lệ.')
+        with engine_instance().begin() as conn:
+            if body.department not in WORK_SCHEDULE_FEATURES or not _allowed_department(conn, ident, body.department, feature_allowed):
+                raise HTTPException(403, 'Bạn không có quyền xuất bảng của bộ phận này.')
+        output = _schedule_table_workbook(body)
+        filename = f'VERA_{body.kind}_{body.department}_{body.start}_{body.end}.xlsx'
+        return StreamingResponse(output, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                 headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 
     @app.get("/v2/work-schedule/violations/me")
     def get_my_schedule_violations(start: date, end: date, ident=Depends(current_identity)):

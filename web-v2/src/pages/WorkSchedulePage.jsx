@@ -1,5 +1,6 @@
 import DateSearchField from '../components/DateSearchField'
 import ScheduleViolations from '../components/ScheduleViolations'
+import { monthlyStatisticsExportRows, violationExportRows } from '../lib/scheduleTableRows'
 import ComboCustomerFields from '../components/ComboCustomerFields'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -345,6 +346,7 @@ export default function WorkSchedulePage({ user }) {
   const [violationRevision, setViolationRevision] = useState(0)
   const [violationOpenSequence, setViolationOpenSequence] = useState(0)
   const [violationStatsError, setViolationStatsError] = useState('')
+  const [exportingStatistics, setExportingStatistics] = useState(false)
   const [comboSales, setComboSales] = useState([])
   const [comboFilterMonth, setComboFilterMonth] = useState('')
   const [comboFilteredSales, setComboFilteredSales] = useState([])
@@ -862,6 +864,18 @@ export default function WorkSchedulePage({ user }) {
     return { rows, departmentTotal }
   }, [department, employees, monthlyRows, monthlyViolations, shiftDefinitions, todayIso])
 
+  const exportMonthlyStatistics = async () => {
+    setExportingStatistics(true); setNotice('')
+    try {
+      const range = monthRange(month)
+      await veraApi.exportScheduleTable({ department, kind: 'statistics', ...range,
+        rows: monthlyStatisticsExportRows(monthlyStatistics, DEPARTMENT_INFO[department].label, canViewEmployeeViolations, canViewDepartmentViolations, Boolean(violationStatsError)) })
+    } catch (error) { setNotice(error.message || 'Không xuất được thống kê tháng.') }
+    finally { setExportingStatistics(false) }
+  }
+
+  const exportViolations = ({ range, rows }) => veraApi.exportScheduleTable({ department, kind: 'violations', ...range, rows: violationExportRows(rows) })
+
   const captureFullSchedule = async () => {
     if (loading || captureBusy) return
     setCaptureBusy(true)
@@ -1174,10 +1188,10 @@ export default function WorkSchedulePage({ user }) {
       </table>
       {!employees.length && <div className="revenue-meta">Không có nhân viên đang hiển thị trong nhóm {DEPARTMENT_INFO[department].label}.</div>}
     </div></StableDataRegion>
-    <ScheduleViolations key={department} departmentLabel={DEPARTMENT_INFO[department].label} personal={!canViewDepartmentViolations} openSequence={violationOpenSequence} canManage={isAdmin} department={department} employees={employees} canEdit={['admin', 'quanly'].includes(role) && availableDepartments.includes(department)} request={scheduleRequest} onSaved={() => setViolationRevision(value => value + 1)} />
     {!loading && <div className="schedule-scroll monthly-statistics">
       <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · đến ngày hiện tại · {DEPARTMENT_INFO[department].label}</h3>
       <div className="schedule-filter-bar statistics-month-filters" role="group" aria-label="Lọc bảng thống kê tháng">
+        <button type="button" disabled={exportingStatistics || busy} onClick={() => void exportMonthlyStatistics()}><Download size={16}/>{exportingStatistics ? 'Đang xuất…' : 'Xuất excel'}</button>
         {[['month', 'Tháng này'], ['last_month', 'Tháng trước']].map(([mode, label]) => {
           const targetMonth = mode === 'month' ? currentMonthValue() : moveMonth(currentMonthValue(), -1)
           return <button type="button" key={mode} className={month === targetMonth ? 'active' : ''} aria-pressed={month === targetMonth} onClick={() => selectRange(mode)}>{label}</button>
@@ -1190,6 +1204,7 @@ export default function WorkSchedulePage({ user }) {
         <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{violationStatsError || !canViewDepartmentViolations ? '—' : monthlyStatistics.departmentTotal.violations}</td><td>{violationStatsError || !canViewDepartmentViolations ? '—' : `${monthlyStatistics.departmentTotal.penalty.toLocaleString('vi-VN')}đ`}</td></tr></tfoot>
       </table>
     </div>}
+    <ScheduleViolations key={department} departmentLabel={DEPARTMENT_INFO[department].label} personal={!canViewDepartmentViolations} openSequence={violationOpenSequence} canManage={isAdmin} department={department} employees={employees} canEdit={['admin', 'quanly'].includes(role) && availableDepartments.includes(department)} request={scheduleRequest} onSaved={() => setViolationRevision(value => value + 1)} onExport={exportViolations} />
     {!loading && comboEditor}
   </section>
 }

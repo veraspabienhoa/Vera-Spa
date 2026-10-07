@@ -2,6 +2,20 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
+import { monthlyStatisticsExportRows, violationExportRows } from '../src/lib/scheduleTableRows.js'
+
+test('schedule Excel snapshot keeps hidden penalties masked and numeric totals intact',()=>{
+ const item={workDays:2,offDays:1,ca1Days:1,ca2Days:1,overtimeHours:1.234,violations:2,penalty:50000}
+ const data={rows:[{...item,username:'mine',name:'Tên tôi'},{...item,username:'other',name:'Tên khác'}],departmentTotal:item}
+ const result=monthlyStatisticsExportRows(data,'Locker',username=>username==='mine',false)
+ assert.deepEqual(result[0].slice(5),[1.23,2,50000])
+ assert.deepEqual(result[1].slice(6),['—','—'])
+ assert.deepEqual(result[2].slice(6),['—','—'])
+ assert.ok(monthlyStatisticsExportRows(data,'Locker',()=>true,true,true).every(row=>row[6]==='—'&&row[7]==='—'))
+ const violation=violationExportRows([{employee_name:'Tên tôi',violation_date:'2026-10-07',reason:'Lỗi',amount:50000,note:'Ghi chú',created_at:'2026-10-07T12:00:00Z'}])
+ assert.equal(violation[0][1],'07-10-2026');assert.equal(violation[0][6],'07-10-2026 19:00:00')
+ assert.equal(violation[0][3],50000);assert.equal(violation.at(-1)[3],50000)
+})
 const built = await build({stdin:{contents:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Booking from './src/pages/OnlineBookingPage';import Schedule from './src/pages/WorkSchedulePage';import Attendance from './src/pages/SnapshotPage';import Changes from './src/pages/AdminChangesPage';const pages={Booking,Schedule,Attendance,Changes};window.act=act;window.root=createRoot(document.getElementById('root'));window.mount=(key,role='letan')=>window.root.render(React.createElement(pages[key],{user:{role,username:'Gia Anh',permissions:{work_schedule_letan:true}}}));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},define:{'import.meta.env':JSON.stringify({VITE_VERA_API_BASE_URL:'https://api.test'})},plugins:[{name:'fixtures',setup(b){
  b.onResolve({filter:/\/lib\/(api|supabase)$/},args=>({path:args.path.endsWith('supabase')?'auth':'api',namespace:'mock'}))
  b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:args.path==='auth'?'export const getCurrentSession=async()=>({access_token:"test"});':'export const veraApi={onlineBookings:async params=>{window.bookingCalls.push(params);return {rows:[],total:0}}};'}))
@@ -48,7 +62,9 @@ test('every work-schedule department displays its own violation ledger on tab ch
    assert.match(ledger.querySelector('h3').textContent,new RegExp(`VI PHẠM · PHẠT VI PHẠM · ${label}`))
    assert.match(ledger.textContent,new RegExp(`Violation ${department}`))
    assert.ok(calls.some(u=>u.pathname.endsWith('/violations')&&u.searchParams.get('department')===department))
-   assert.ok(ledger.compareDocumentPosition(w.document.querySelector('.monthly-statistics'))&w.Node.DOCUMENT_POSITION_FOLLOWING)
+   assert.ok(ledger.compareDocumentPosition(w.document.querySelector('.monthly-statistics'))&w.Node.DOCUMENT_POSITION_PRECEDING)
+   assert.ok([...ledger.querySelectorAll('button')].some(button => button.textContent === 'Xuất excel'))
+   assert.ok([...w.document.querySelectorAll('.monthly-statistics button')].some(button => button.textContent === 'Xuất excel'))
   }
  }finally{await w.act(async()=>w.root.unmount());w.close()}
 })

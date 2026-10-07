@@ -2471,3 +2471,17 @@ See [the upload reference record](facegate-upload-reference.md) for evidence and
 regressions. Device writes are simulated in tests; the existing no-replay,
 durable journal and exact image/profile verification rules are preserved.
 Production enrollment success still requires verification after deployment.
+
+## 07-10-2026 — Visible schedule table exports and collapsed accumulation history
+
+Schedule month statistics now precede the department violation ledger. Both
+export the current visible snapshot as a real XLSX workbook. Penalty visibility
+is copied from the displayed table; the export endpoint checks the same
+schedule department permission using one connection, then renders after release.
+It does not read additional employee records, write business data, call devices
+or hold a database transaction during workbook creation. Text is stored as
+literal cells and visible dates remain dd-mm-yyyy. All four existing schedule
+departments share these controls. Accumulation period history defaults closed
+and hides zero-contribution/zero-refund periods in presentation only. Saved
+payroll history, balances and refund records are unchanged. Production behavior
+and mobile layout still require verification after deployment.
