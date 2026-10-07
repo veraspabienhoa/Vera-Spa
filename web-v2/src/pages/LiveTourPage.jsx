@@ -1681,7 +1681,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       </div>}
       {['pending', 'invoices', 'reports', 'history'].includes(activePanel) && <LiveTourFilters
         value={listFilters}
-        showDate={activePanel === 'reports'}
+        showDate
         onChange={setListFilters}
         rows={activePanel === 'pending' ? allPendingPayments : activePanel === 'invoices' ? asArray(data.state?.invoices) : activePanel === 'reports' ? allReports : [...asArray(data.customer_changes), ...asArray(data.pending_changes), ...asArray(data.invoice_changes), ...asArray(data.break_events), ...asArray(data.backups)]}
         customers={customers}
