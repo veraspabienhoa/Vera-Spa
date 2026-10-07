@@ -1,3 +1,4 @@
+import { startScopedReconciler } from './scopedReconciler'
 const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim()
 
 function ensureStyles() {
@@ -166,24 +167,5 @@ export function startEmployeeProfileSwitchGuard() {
   if (window.__veraEmployeeProfileSwitchGuardStarted) return
   window.__veraEmployeeProfileSwitchGuardStarted = true
   ensureStyles()
-
-  let timer = null
-  const schedule = () => {
-    if (timer) window.clearTimeout(timer)
-    timer = window.setTimeout(reconcileProfile, 60)
-  }
-
-  const observer = new MutationObserver(schedule)
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'class', 'value'] })
-  document.addEventListener('click', schedule, true)
-  document.addEventListener('input', schedule, true)
-  document.addEventListener('change', schedule, true)
-  const interval = window.setInterval(reconcileProfile, 700)
-  schedule()
-
-  window.addEventListener('beforeunload', () => {
-    observer.disconnect()
-    window.clearInterval(interval)
-    if (timer) window.clearTimeout(timer)
-  }, { once: true })
+  return startScopedReconciler('.staff-form-panel', reconcileProfile, ['src', 'class', 'value'])
 }

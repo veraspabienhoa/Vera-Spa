@@ -6,7 +6,7 @@ import { MessageChannel } from 'node:worker_threads'
 import { violationMonthRange } from '../src/lib/businessMonthRange.js'
 const bundle = await build({ stdin: { contents: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Page from './src/pages/WorkSchedulePage';window.act=act;window.mount=()=>{window.root=createRoot(document.getElementById('root'));window.root.render(<Page user={{role:'letan',username:'Gia Anh',permissions:{work_schedule_letan:true}}}/>)};`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', loader: { '.css': 'empty' }, define: { 'import.meta.env': JSON.stringify({ VITE_VERA_API_BASE_URL: 'https://api.test' }) }, plugins: [{ name: 'dependencies', setup(b) {
   b.onResolve({ filter: /\/lib\/(api|supabase)$/ }, args => ({ path: args.path.endsWith('supabase') ? 'auth' : 'api', namespace: 'mock' }))
-  b.onLoad({ filter: /.*/, namespace: 'mock' }, args => ({ contents: args.path === 'auth' ? 'export const getCurrentSession=async()=>({access_token:"test"});' : 'export const veraApi={exportComboSalesExcel:async(...args)=>window.exported=args};' }))
+  b.onLoad({ filter: /.*/, namespace: 'mock' }, args => ({ contents: args.path === 'auth' ? 'export const getCurrentSession=async()=>({access_token:"test"});' : 'export const apiRequest=async(path,options={})=>(await fetch("https://api.test"+path,options)).json();export const veraApi={exportComboSalesExcel:async(...args)=>window.exported=args};' }))
 } }] })
 test('combo month filters fetch the chosen period without reloading schedule and export that period', async t => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://example.test', runScripts: 'dangerously', pretendToBeVisual: true })

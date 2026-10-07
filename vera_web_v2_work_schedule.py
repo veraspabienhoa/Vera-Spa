@@ -20,6 +20,7 @@ import unicodedata
 from urllib.parse import quote
 import uuid
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
@@ -299,6 +300,11 @@ def _time_is_next_day(start_time: str, end_time: str) -> bool:
 
 
 def _ensure_schema(conn) -> None:
+    from vera_versioned_schema import ensure
+    ensure(conn, "work_schedule", 1, _migrate_read_schema)
+
+
+def _migrate_read_schema(conn):
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS vera_work_schedule (
             work_date DATE NOT NULL,
@@ -1080,51 +1086,53 @@ def install_work_schedule_routes(
         if end < start or (end - start).days > 62:
             raise HTTPException(400, "Khoảng Import Excel phải từ 1 đến 63 ngày.")
         payload = await request.body()
-        imported = _schedule_import_rows(payload, dep)
-        with engine_instance().begin() as conn:
-            _ensure_schema(conn)
-            if not _allowed_department(conn, ident, dep, feature_allowed):
-                raise HTTPException(403, "Bạn không có quyền Import lịch của bộ phận này.")
-            employee_map = {
-                str(item.get("username") or "").strip().casefold(): item
-                for item in _employee_catalog(conn, dep)
-                if str(item.get("employment_status") or "").strip().casefold() != "đã nghỉ việc".casefold()
+        def process():
+            imported = _schedule_import_rows(payload, dep)
+            with engine_instance().begin() as conn:
+                _ensure_schema(conn)
+                if not _allowed_department(conn, ident, dep, feature_allowed):
+                    raise HTTPException(403, "Bạn không có quyền Import lịch của bộ phận này.")
+                employee_map = {
+                    str(item.get("username") or "").strip().casefold(): item
+                    for item in _employee_catalog(conn, dep)
+                    if str(item.get("employment_status") or "").strip().casefold() != "đã nghỉ việc".casefold()
+                }
+                definitions = _load_shift_definitions(conn)
+                normalized: list[dict[str, Any]] = []
+                for item in imported:
+                    work_date = item["work_date"]
+                    username = str(item.get("employee_username") or "").strip()
+                    employee = employee_map.get(username.casefold())
+                    if not employee:
+                        raise HTTPException(400, f"Nhân viên '{username}' không thuộc bộ phận {SCHEDULE_DEPARTMENT_LABELS[dep]}.")
+                    if work_date < start or work_date > end:
+                        raise HTTPException(400, f"Ngày {work_date:%d/%m/%Y} nằm ngoài khoảng lịch đang xem.")
+                    item["employee_username"] = str(employee.get("username") or username)
+                    item["employee_name"] = str(employee.get("full_name") or username)
+                    if item.get("shift_code"):
+                        validated = ScheduleRow(**item)
+                        start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time = _validate_row(validated, definitions)
+                        item.update({
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "overtime_shift": overtime_shift,
+                            "overtime_start_time": overtime_start_time,
+                            "overtime_end_time": overtime_end_time,
+                        })
+                    else:
+                        item.update({
+                            "start_time": "", "end_time": "", "overtime_shift": "",
+                            "overtime_start_time": "", "overtime_end_time": "", "note": "",
+                        })
+                    normalized.append({**item, "work_date": work_date.isoformat()})
+            return {
+                "ok": True,
+                "rows": normalized,
+                "count": len(normalized),
+                "save_mode": "manual",
+                "message": f"Đã đọc {len(normalized)} ô lịch từ Excel. Kiểm tra và bấm Lưu lịch để ghi vào hệ thống.",
             }
-            definitions = _load_shift_definitions(conn)
-            normalized: list[dict[str, Any]] = []
-            for item in imported:
-                work_date = item["work_date"]
-                username = str(item.get("employee_username") or "").strip()
-                employee = employee_map.get(username.casefold())
-                if not employee:
-                    raise HTTPException(400, f"Nhân viên '{username}' không thuộc bộ phận {SCHEDULE_DEPARTMENT_LABELS[dep]}.")
-                if work_date < start or work_date > end:
-                    raise HTTPException(400, f"Ngày {work_date:%d/%m/%Y} nằm ngoài khoảng lịch đang xem.")
-                item["employee_username"] = str(employee.get("username") or username)
-                item["employee_name"] = str(employee.get("full_name") or username)
-                if item.get("shift_code"):
-                    validated = ScheduleRow(**item)
-                    start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time = _validate_row(validated, definitions)
-                    item.update({
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "overtime_shift": overtime_shift,
-                        "overtime_start_time": overtime_start_time,
-                        "overtime_end_time": overtime_end_time,
-                    })
-                else:
-                    item.update({
-                        "start_time": "", "end_time": "", "overtime_shift": "",
-                        "overtime_start_time": "", "overtime_end_time": "", "note": "",
-                    })
-                normalized.append({**item, "work_date": work_date.isoformat()})
-        return {
-            "ok": True,
-            "rows": normalized,
-            "count": len(normalized),
-            "save_mode": "manual",
-            "message": f"Đã đọc {len(normalized)} ô lịch từ Excel. Kiểm tra và bấm Lưu lịch để ghi vào hệ thống.",
-        }
+        return await run_in_threadpool(process)
 
     @app.put("/v2/work-schedule/shifts")
     def save_shift_definitions(body: ShiftDefinitionSave, ident=Depends(current_identity)):
@@ -1383,72 +1391,75 @@ def install_work_schedule_routes(
         dep = department.strip().lower()
         if dep not in {"quanly", "letan"}:
             raise HTTPException(400, "Bảng bán combo chỉ áp dụng cho Quản lý và Lễ tân.")
-        imported = _combo_import_rows(await request.body(), dep)
-        inserted = updated = 0
-        with engine_instance().begin() as conn:
-            _ensure_schema(conn)
-            if not _allowed_department(conn, ident, dep, feature_allowed):
-                raise HTTPException(403, "Bạn không có quyền Import bảng bán combo của bộ phận này.")
-            catalog = {
-                str(item.get("username") or "").strip().casefold(): item
-                for item in _employee_catalog(conn, dep)
-            }
-            identities = load_identity_index(conn, lock=True)
-            ids = [str(item["id"]) for item in imported if item.get("id")]
-            existing = {}
-            if ids:
-                existing = {
-                    str(row["id"]): str(row["department"])
-                    for row in conn.execute(text("""
-                        SELECT id, department FROM vera_work_schedule_combo_sale WHERE id = ANY(:ids)
-                    """), {"ids": ids}).mappings().all()
+        payload = await request.body()
+        def process():
+            imported = _combo_import_rows(payload, dep)
+            inserted = updated = 0
+            with engine_instance().begin() as conn:
+                _ensure_schema(conn)
+                if not _allowed_department(conn, ident, dep, feature_allowed):
+                    raise HTTPException(403, "Bạn không có quyền Import bảng bán combo của bộ phận này.")
+                catalog = {
+                    str(item.get("username") or "").strip().casefold(): item
+                    for item in _employee_catalog(conn, dep)
                 }
-            for item in imported:
-                item["employee_username"] = canonical_username(identities, item["employee_username"])
-                key = item["employee_username"].casefold()
-                employee = catalog.get(key)
-                if not employee:
-                    raise HTTPException(400, f"Tên hệ thống '{item['employee_username']}' không thuộc bộ phận {dep}.")
-                sale_id = str(item.get("id") or uuid.uuid4())
-                if sale_id in existing and existing[sale_id] != dep:
-                    raise HTTPException(400, f"ID {sale_id} đang thuộc bộ phận khác.")
-                was_existing = sale_id in existing
-                conn.execute(text("""
-                    INSERT INTO vera_work_schedule_combo_sale(
-                        id, sale_date, employee_username, employee_name, department,
-                        customer_name, customer_phone, combo_ticket, note, updated_by,
-                        created_at, updated_at
-                    ) VALUES (
-                        :id, :sale_date, :employee_username, :employee_name, :department,
-                        :customer_name, :customer_phone, :combo_ticket, :note, :updated_by,
-                        NOW(), NOW()
-                    )
-                    ON CONFLICT(id) DO UPDATE SET
-                        sale_date=EXCLUDED.sale_date,
-                        employee_username=EXCLUDED.employee_username,
-                        employee_name=EXCLUDED.employee_name,
-                        customer_name=EXCLUDED.customer_name,
-                        customer_phone=EXCLUDED.customer_phone,
-                        combo_ticket=EXCLUDED.combo_ticket,
-                        note=EXCLUDED.note,
-                        updated_by=EXCLUDED.updated_by,
-                        updated_at=NOW()
-                """), {
-                    **item,
-                    "id": sale_id,
-                    "employee_name": _combo_employee_name(employee, item["employee_username"]),
-                    "updated_by": _actor(ident),
-                })
-                if was_existing:
-                    updated += 1
-                else:
-                    inserted += 1
-        return {
-            "ok": True,
-            "inserted": inserted,
-            "updated": updated,
-            "message": f"Đã Import {inserted} dòng mới và cập nhật {updated} dòng bán combo.",
-        }
+                identities = load_identity_index(conn, lock=True)
+                ids = [str(item["id"]) for item in imported if item.get("id")]
+                existing = {}
+                if ids:
+                    existing = {
+                        str(row["id"]): str(row["department"])
+                        for row in conn.execute(text("""
+                            SELECT id, department FROM vera_work_schedule_combo_sale WHERE id = ANY(:ids)
+                        """), {"ids": ids}).mappings().all()
+                    }
+                for item in imported:
+                    item["employee_username"] = canonical_username(identities, item["employee_username"])
+                    key = item["employee_username"].casefold()
+                    employee = catalog.get(key)
+                    if not employee:
+                        raise HTTPException(400, f"Tên hệ thống '{item['employee_username']}' không thuộc bộ phận {dep}.")
+                    sale_id = str(item.get("id") or uuid.uuid4())
+                    if sale_id in existing and existing[sale_id] != dep:
+                        raise HTTPException(400, f"ID {sale_id} đang thuộc bộ phận khác.")
+                    was_existing = sale_id in existing
+                    conn.execute(text("""
+                        INSERT INTO vera_work_schedule_combo_sale(
+                            id, sale_date, employee_username, employee_name, department,
+                            customer_name, customer_phone, combo_ticket, note, updated_by,
+                            created_at, updated_at
+                        ) VALUES (
+                            :id, :sale_date, :employee_username, :employee_name, :department,
+                            :customer_name, :customer_phone, :combo_ticket, :note, :updated_by,
+                            NOW(), NOW()
+                        )
+                        ON CONFLICT(id) DO UPDATE SET
+                            sale_date=EXCLUDED.sale_date,
+                            employee_username=EXCLUDED.employee_username,
+                            employee_name=EXCLUDED.employee_name,
+                            customer_name=EXCLUDED.customer_name,
+                            customer_phone=EXCLUDED.customer_phone,
+                            combo_ticket=EXCLUDED.combo_ticket,
+                            note=EXCLUDED.note,
+                            updated_by=EXCLUDED.updated_by,
+                            updated_at=NOW()
+                    """), {
+                        **item,
+                        "id": sale_id,
+                        "employee_name": _combo_employee_name(employee, item["employee_username"]),
+                        "updated_by": _actor(ident),
+                    })
+                    if was_existing:
+                        updated += 1
+                    else:
+                        inserted += 1
+            return {
+                "ok": True,
+                "inserted": inserted,
+                "updated": updated,
+                "message": f"Đã Import {inserted} dòng mới và cập nhật {updated} dòng bán combo.",
+            }
+        return await run_in_threadpool(process)
 
     @app.put("/v2/work-schedule")
     def save_work_schedule(body: ScheduleSave, ident=Depends(current_identity)):

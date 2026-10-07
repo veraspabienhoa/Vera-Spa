@@ -80,6 +80,11 @@ def verify_signature(body, timestamp, signature, secret, now=None):
 
 
 def ensure_schema(conn):
+    from vera_versioned_schema import ensure
+    ensure(conn, "online_booking", 1, _migrate_read_schema)
+
+
+def _migrate_read_schema(conn):
     conn.execute(text("SELECT pg_advisory_xact_lock(726409291)"))
     if conn.execute(text("SELECT to_regclass('vera_online_booking')")).scalar_one_or_none():
         conn.execute(text("ALTER TABLE vera_online_booking ADD COLUMN IF NOT EXISTS requested_staff text NOT NULL DEFAULT ''"))

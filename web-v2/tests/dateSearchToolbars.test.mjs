@@ -18,7 +18,7 @@ test('schedule Excel snapshot keeps hidden penalties masked and numeric totals i
 })
 const built = await build({stdin:{contents:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Booking from './src/pages/OnlineBookingPage';import Schedule from './src/pages/WorkSchedulePage';import Attendance from './src/pages/SnapshotPage';import Changes from './src/pages/AdminChangesPage';const pages={Booking,Schedule,Attendance,Changes};window.act=act;window.root=createRoot(document.getElementById('root'));window.mount=(key,role='letan')=>window.root.render(React.createElement(pages[key],{user:{role,username:'Gia Anh',permissions:{work_schedule_letan:true}}}));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},define:{'import.meta.env':JSON.stringify({VITE_VERA_API_BASE_URL:'https://api.test'})},plugins:[{name:'fixtures',setup(b){
  b.onResolve({filter:/\/lib\/(api|supabase)$/},args=>({path:args.path.endsWith('supabase')?'auth':'api',namespace:'mock'}))
- b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:args.path==='auth'?'export const getCurrentSession=async()=>({access_token:"test"});':'export const veraApi={onlineBookings:async params=>{window.bookingCalls.push(params);return {rows:[],total:0}}};'}))
+ b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:args.path==='auth'?'export const getCurrentSession=async()=>({access_token:"test"});':'export const apiRequest=async(path,options={})=>(await fetch("https://api.test"+path,options)).json();export const veraApi={onlineBookings:async params=>{window.bookingCalls.push(params);return {rows:[],total:0}}};'}))
 }}]})
 for (const [page,label,path] of [['Booking','Ngày booking',''],['Schedule','Ngày lịch làm việc','/v2/work-schedule'],['Attendance','Ngày chấm công','/v2/snapshot'],['Changes','Ngày thay đổi hệ thống','/v2/admin/changes-v41']]) {
  test(`${page}: typed date and picker apply one day; incomplete drafts do not reload`,async()=>{
@@ -68,3 +68,34 @@ test('every work-schedule department displays its own violation ledger on tab ch
   }
  }finally{await w.act(async()=>w.root.unmount());w.close()}
 })
+
+for (const [page,label,path] of [['Schedule','Ngày lịch làm việc','/v2/work-schedule'],['Changes','Ngày thay đổi hệ thống','/v2/admin/changes-v41']]) {
+ test(`${page}: a slow previous date cannot overwrite the new selection`, async()=>{
+  const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true}),w=dom.window
+  w.MessageChannel=class{constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}}
+  w.HTMLDialogElement.prototype.close=function(){this.open=false};w.HTMLDialogElement.prototype.showModal=function(){this.open=true}
+  w.Headers=Headers;w.IS_REACT_ACT_ENVIRONMENT=true
+  let releaseOld,oldSignal
+  const payload=name=>({employees:name?[{username:name,role:'letan',employment_status:'Đang làm việc'}]:[],rows:[],changes:name?[{id:name,employee_name:name,event_type:'insert',created_at:'2026-10-08T12:00:00Z'}]:[],archive:[]})
+  w.fetch=async(url,options={})=>{
+   const u=new URL(url),day=u.searchParams.get('start')
+   if(u.pathname===path&&day===u.searchParams.get('end')&&day==='2026-10-07') {
+    oldSignal=options.signal
+    return new Promise(resolve=>{releaseOld=()=>resolve({ok:true,json:async()=>payload('Old response')})})
+   }
+   return {ok:true,json:async()=>payload(u.pathname===path&&day==='2026-10-08'?'New response':'')}
+  }
+  w.eval(built.outputFiles[0].text)
+  try {
+   await w.act(async()=>w.mount(page))
+   const input=w.document.querySelector(`input[aria-label="${label}"]`)
+   const type=value=>w.act(async()=>{Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new w.Event('input',{bubbles:true}))})
+   await type('07-10-2026');assert.ok(releaseOld)
+   await type('08-10-2026');assert.equal(oldSignal.aborted,true)
+   assert.match(w.document.body.textContent,/New response/)
+   await w.act(async()=>releaseOld())
+   assert.match(w.document.body.textContent,/New response/)
+   assert.doesNotMatch(w.document.body.textContent,/Old response/)
+  } finally {await w.act(async()=>w.root.unmount());w.close()}
+ })
+}

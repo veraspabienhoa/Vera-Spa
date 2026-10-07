@@ -166,6 +166,11 @@ def totals(days):
 
 
 def change_revision(conn):
+    from vera_revenue_revision import read
+    versions = read(conn)
+    if versions is not None:
+        value = json.dumps([versions, datetime.now(VN_TZ).date().isoformat()])
+        return hashlib.sha256(value.encode()).hexdigest()
     # Read counters only; a poll never reloads the historical ledger or JSON bills.
     row = conn.execute(text("""SELECT
         (SELECT concat(COUNT(*),':',COALESCE(MAX(aggregate_revision),0),':',COUNT(deleted_at))

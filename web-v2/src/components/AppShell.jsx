@@ -1,3 +1,4 @@
+import { createVisiblePoller } from '../lib/visiblePoller'
 import PageContent from './PageContent'
 import StableFeedback from './StableFeedback'
 import { PAGE_REFRESH_ERROR } from '../lib/usePageRefresh'
@@ -6,7 +7,9 @@ import NotificationInbox from './NotificationInbox'
 import DevicePushMenu from './DevicePushMenu'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
-import LayoutDesigner from './LayoutDesigner'
+import { recoverablePage as lazyPage } from '../lib/recoverablePage'
+import PageErrorBoundary from './PageErrorBoundary'
+const LayoutDesigner = lazyPage(() => import('./LayoutDesigner'))
 import BackToTop from './BackToTop'
 import PopupNotifications from './PopupNotifications'
 import BookingNotificationPopup from './BookingNotificationPopup'
@@ -14,7 +17,7 @@ import OnlineBookingPopup from './OnlineBookingPopup'
 import MissingCheckinPopup from './MissingCheckinPopup'
 import { canSeeMissingCheckins } from '../lib/missingCheckinAudience'
 import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Server, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
 
@@ -134,10 +137,9 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
     const loadSettings=()=>veraApi.notificationSettings().then((result) => {
       if (active) setNotificationSettings(Object.fromEntries((result.settings || []).flatMap((item) => [[item.key, item.enabled && item.channel_enabled?.in_app !== false],[`${item.key}_routed`,item.routed],[`${item.key}_has_rules`,item.has_rules]])))
     }).catch(() => { if (active) setNotificationSettings({}) })
-    void loadSettings()
-    const timer=window.setInterval(loadSettings,60000)
-    window.addEventListener('vera-notification-settings-changed',loadSettings)
-    return () => { active = false;window.clearInterval(timer);window.removeEventListener('vera-notification-settings-changed',loadSettings) }
+    const settingsPoller = createVisiblePoller(loadSettings, { interval: 60000 })
+    window.addEventListener('vera-notification-settings-changed',settingsPoller.refresh)
+    return () => { active = false;settingsPoller.stop();window.removeEventListener('vera-notification-settings-changed',settingsPoller.refresh) }
   }, [user?.employee_username])
 
   useEffect(() => {
@@ -165,7 +167,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
     let stopped = false
     let running = false
     const poll = async () => {
-      if (running || stopped) return
+      if (running || stopped || document.hidden) return
       running = true
       try {
         let control = { disabled: false }
@@ -190,17 +192,13 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
         running = false
       }
     }
-    void poll()
-    const timer = window.setInterval(poll, BREAK_ALERT_POLL_MS)
-    const onFocus = () => { void poll() }
-    const onVisible = () => { if (document.visibilityState === 'visible') void poll() }
+    const breakPoller = createVisiblePoller(poll, { interval: BREAK_ALERT_POLL_MS })
+    const onFocus = () => { void breakPoller.refresh() }
     window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onVisible)
     return () => {
       stopped = true
-      window.clearInterval(timer)
+      breakPoller.stop()
       window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [role, user?.must_change_password])
 
@@ -493,7 +491,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           <PageContent navigationToggle={navigationToggle}>{children}</PageContent>
         </div>
       </main>
-      <LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/>
+      <PageErrorBoundary page={currentPage} onRetry={() => LayoutDesigner.reset()}><Suspense fallback={null}><LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/></Suspense></PageErrorBoundary>
       <BackToTop/>
       {showPageNotifications && <PopupNotifications user={user}/>}
       {currentPage === 'live-tour' && <OnlineBookingPopup key={`online-booking:${user?.id || user?.employee_username}`} user={user} onOpen={() => choose('online-bookings', true)}/>}

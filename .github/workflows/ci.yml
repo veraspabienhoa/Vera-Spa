@@ -1290,7 +1290,7 @@ jobs:
         run: node --test tests/profileViolationHistory.test.mjs tests/comboMonthFilters.test.mjs tests/payrollUnifiedSettings.test.mjs tests/departmentPayroll.test.mjs tests/scheduleViolations.test.mjs tests/salaryAdvanceSelection.test.mjs tests/payrollObligationTable.test.mjs tests/payrollPeriod.test.mjs tests/payrollAccumulation.test.mjs tests/payrollHistory.test.mjs tests/payrollHistorySearch.test.mjs
 
       - name: Verify navigation performance and concurrent read isolation
-        run: node --test tests/navigationPerformance.test.mjs tests/sharedRead.test.mjs tests/leaveRoute.test.mjs tests/leaveRecordPermissions.test.mjs tests/leaveNavigation.test.mjs tests/employeeNavigation.test.mjs tests/employeeProfileModal.test.mjs tests/employeeCreateModal.test.mjs tests/pageRecovery.test.mjs
+        run: node --test tests/scopedReconciler.test.mjs tests/dateSearchToolbars.test.mjs tests/navigationPerformance.test.mjs tests/sharedRead.test.mjs tests/leaveRoute.test.mjs tests/leaveRecordPermissions.test.mjs tests/leaveNavigation.test.mjs tests/employeeNavigation.test.mjs tests/employeeProfileModal.test.mjs tests/employeeCreateModal.test.mjs tests/pageRecovery.test.mjs
 
       - name: Lint
         run: npm run lint

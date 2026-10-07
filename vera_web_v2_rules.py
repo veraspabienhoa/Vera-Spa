@@ -17,6 +17,7 @@ from typing import Any, Callable
 from urllib.parse import quote
 import uuid
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
@@ -1305,15 +1306,17 @@ def install_rules_routes(
 
     @app.post("/v2/rules/import.xlsx")
     async def import_rules(request: Request, ident: identity_type = Depends(current_identity)):
-        with engine_instance().connect() as conn:
-            require_feature(conn, ident, "official_rules_import")
         raw = await request.body()
-        if not raw:
-            raise HTTPException(400, "Chưa chọn file Excel.")
-        if len(raw) > MAX_XLSX_BYTES:
-            raise HTTPException(400, "File Excel vượt quá 5 MB.")
-        document = _read_excel(raw)
-        return {
-            **document,
-            "message": f"Đã nạp {len(document['rows'])} dòng từ Excel vào vùng chỉnh sửa. Chưa áp dụng cho hệ thống.",
-        }
+        def process():
+            with engine_instance().connect() as conn:
+                require_feature(conn, ident, "official_rules_import")
+            if not raw:
+                raise HTTPException(400, "Chưa chọn file Excel.")
+            if len(raw) > MAX_XLSX_BYTES:
+                raise HTTPException(400, "File Excel vượt quá 5 MB.")
+            document = _read_excel(raw)
+            return {
+                **document,
+                "message": f"Đã nạp {len(document['rows'])} dòng từ Excel vào vùng chỉnh sửa. Chưa áp dụng cho hệ thống.",
+            }
+        return await run_in_threadpool(process)

@@ -62,7 +62,7 @@ export default function AppearanceSettingsPage({ user, section, onDirtyChange })
     setBusy(true); setError('')
     if (announce) setMessage('')
     try {
-      const result = await veraApi.liveTour(true)
+      const result = await veraApi.liveTourAppearance()
       const loaded = withCurrentEffectiveColumnFontSizes(result?.appearance_settings || {})
       setDraft(loaded)
       setDefaultDraft(loaded)

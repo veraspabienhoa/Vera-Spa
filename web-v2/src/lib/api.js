@@ -535,6 +535,7 @@ export const veraApi = {
   }),
   birthdays: (month = new Date().getMonth() + 1) => request(`/v2/birthdays?month=${encodeURIComponent(month)}`),
   tour: (refresh = false) => request(`/v2/tour?refresh=${refresh ? 'true' : 'false'}`),
+  liveTourAppearance: () => request('/v2/live-tour/appearance'),
   liveTour: (refresh = false, includeHidden = false, knownRevision = null, view = 'full') => {
     const params = new URLSearchParams({
       view, refresh: refresh ? 'true' : 'false',

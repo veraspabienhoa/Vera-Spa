@@ -31,6 +31,7 @@ from urllib.parse import quote
 
 import gspread
 import requests
+from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -532,6 +533,12 @@ def _feature_allowed(
     if legacy_feature:
         return _feature_allowed(conn, ident, legacy_feature, payload)
     return feature in WEB_V2_DEFAULT_FEATURES.get(role, set())
+
+
+def _features_allowed(conn, ident, features):
+    # One fresh permission revision/payload per response, never cached identities.
+    payload = {} if str(ident.role or "").strip().lower() == "admin" else _permission_payload(conn)
+    return {feature: _feature_allowed(conn, ident, feature, payload) for feature in features}
 
 
 def _registration_role_locked(conn, role: str) -> bool:
@@ -2186,177 +2193,179 @@ async def import_leave_excel(request: Request, ident: Identity = Depends(current
     if length > LEAVE_IMPORT_MAX_BYTES:
         raise HTTPException(413, "File Excel vượt quá 5 MB.")
     content = await request.body()
-    if not content:
-        raise HTTPException(400, "Chưa chọn file Excel.")
-    if len(content) > LEAVE_IMPORT_MAX_BYTES:
-        raise HTTPException(413, "File Excel vượt quá 5 MB.")
-    if not content.startswith(b"PK"):
-        raise HTTPException(400, "File không đúng định dạng Excel .xlsx.")
-    imported, duplicate_rows = _parse_leave_import(content)
+    def process():
+        if not content:
+            raise HTTPException(400, "Chưa chọn file Excel.")
+        if len(content) > LEAVE_IMPORT_MAX_BYTES:
+            raise HTTPException(413, "File Excel vượt quá 5 MB.")
+        if not content.startswith(b"PK"):
+            raise HTTPException(400, "File không đúng định dạng Excel .xlsx.")
+        imported, duplicate_rows = _parse_leave_import(content)
 
-    engine = _engine_instance()
-    conn = engine.connect()
-    tx = conn.begin()
-    worksheet = None
-    sheet_range = ""
-    try:
-        conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
-        if ident.role != "admin":
-            raise HTTPException(403, "Chỉ tài khoản admin được Import dữ liệu lịch nghỉ cũ.")
-        _require_feature(conn, ident, "leave")
-        now = datetime.now(VN_TZ)
-        eligible_employees = conn.execute(text("""
-            SELECT username FROM employees
-            WHERE lower(btrim(COALESCE(role,''))) IN ('leader','nhanvien')
-        """)).scalars().all()
-        eligible_names = {str(name).strip().casefold() for name in eligible_employees}
-        if any(str(record["employee_name"]).strip().casefold() not in eligible_names for record in imported):
-            raise HTTPException(400, "Import đăng ký nghỉ chỉ áp dụng cho bộ phận Leader và nhân viên.")
-        for record in imported:
-            policy = {}
-            if not record["leave_type"] or record["calculated_days"] is None or record["penalty"] is None:
+        engine = _engine_instance()
+        conn = engine.connect()
+        tx = conn.begin()
+        worksheet = None
+        sheet_range = ""
+        try:
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+            if ident.role != "admin":
+                raise HTTPException(403, "Chỉ tài khoản admin được Import dữ liệu lịch nghỉ cũ.")
+            _require_feature(conn, ident, "leave")
+            now = datetime.now(VN_TZ)
+            eligible_employees = conn.execute(text("""
+                SELECT username FROM employees
+                WHERE lower(btrim(COALESCE(role,''))) IN ('leader','nhanvien')
+            """)).scalars().all()
+            eligible_names = {str(name).strip().casefold() for name in eligible_employees}
+            if any(str(record["employee_name"]).strip().casefold() not in eligible_names for record in imported):
+                raise HTTPException(400, "Import đăng ký nghỉ chỉ áp dụng cho bộ phận Leader và nhân viên.")
+            for record in imported:
+                policy = {}
+                if not record["leave_type"] or record["calculated_days"] is None or record["penalty"] is None:
+                    try:
+                        policy = _reason_item(conn, record["leave_reason"])
+                    except HTTPException:
+                        policy = {}
+                record["leave_type"] = record["leave_type"] or str(policy.get("leave_type") or "")
+                record["calculated_days"] = float(
+                    policy.get("days") if record["calculated_days"] is None and policy else record["calculated_days"] or 0
+                )
+                record["accumulated_leave"] = float(record["accumulated_leave"] or 0)
+                record["penalty"] = float(
+                    policy.get("penalty") if record["penalty"] is None and policy else record["penalty"] or 0
+                )
+                record["update_date"] = record["update_date"] or now.strftime("%d/%m/%Y")
+                record["update_time"] = record["update_time"] or now.strftime("%H:%M:%S")
+                record["updated_by"] = record["updated_by"] or ident.employee_username
+
+            existing_uids: set[str] = set()
+            uid_query = text("SELECT record_uid FROM leave_records WHERE record_uid IN :uids").bindparams(
+                bindparam("uids", expanding=True)
+            )
+            for offset in range(0, len(imported), 500):
+                chunk = [record["record_uid"] for record in imported[offset:offset + 500]]
+                existing_uids.update(str(value) for value in conn.execute(uid_query, {"uids": chunk}).scalars())
+            existing_identities: set[tuple[str, str, str]] = set()
+            date_query = text("""
+                SELECT leave_date, employee_name, leave_reason
+                FROM leave_records
+                WHERE leave_date IN :dates
+            """).bindparams(bindparam("dates", expanding=True))
+            imported_dates = sorted({record["leave_date"] for record in imported})
+            for offset in range(0, len(imported_dates), 300):
+                chunk = imported_dates[offset:offset + 300]
+                rows = conn.execute(date_query, {"dates": chunk}).mappings().all()
+                existing_identities.update(_leave_import_identity(dict(row)) for row in rows)
+            new_records = [
+                record for record in imported
+                if record["record_uid"] not in existing_uids
+                and _leave_import_identity(record) not in existing_identities
+            ]
+            skipped = duplicate_rows + len(imported) - len(new_records)
+            if not new_records:
+                tx.rollback()
+                return {
+                    "ok": True,
+                    "imported": 0,
+                    "skipped": skipped,
+                    "message": f"Không có dữ liệu mới. Đã bỏ qua {skipped} dòng đã tồn tại hoặc bị trùng.",
+                }
+
+            worksheet = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
+            all_values = worksheet.get_all_values()
+            headers = all_values[0][:13] if all_values else []
+            if len(headers) < 13:
+                raise HTTPException(503, "MainData chưa có đủ 13 cột A:M để nhận dữ liệu import.")
+            sheet_last_row = 1
+            for index, values in enumerate(all_values[1:], start=2):
+                if any(str(value or "").strip() for value in values[:13]):
+                    sheet_last_row = index
+            database_last_row = conn.execute(text("""
+                SELECT COALESCE(MAX(source_row), 1)
+                FROM leave_records
+                WHERE source_sheet_id=:source_sheet_id AND source_row IS NOT NULL
+            """), {"source_sheet_id": LEAVE_SHEET_ID}).scalar() or 1
+            start_row = max(sheet_last_row + 1, int(database_last_row) + 1, 2)
+            sheet_values = []
+            for index, record in enumerate(new_records):
+                source_row = start_row + index
+                record["source_row"] = source_row
+                sheet_values.append(_sheet_values_for_record(headers, record, source_row))
+            insert_rows = [
+                {
+                    **record,
+                    "sid": LEAVE_SHEET_ID,
+                    "srow": record["source_row"],
+                    "payload": json_text(_record_payload(record, record["source_row"])),
+                }
+                for record in new_records
+            ]
+            conn.execute(text("""
+                INSERT INTO leave_records(
+                    source_sheet_id, source_row, leave_date, employee_name, leave_reason,
+                    leave_type, detail, calculated_days, accumulated_leave, penalty,
+                    update_date, update_time, updated_by, weekday_label, payload, record_uid,
+                    created_at, updated_at
+                ) VALUES (
+                    :sid, :srow, :leave_date, :employee_name, :leave_reason,
+                    :leave_type, :detail, :calculated_days, :accumulated_leave, :penalty,
+                    :update_date, :update_time, :updated_by, :weekday_label, CAST(:payload AS jsonb), :record_uid,
+                    NOW(), NOW()
+                )
+            """), insert_rows)
+            try:
+                with conn.begin_nested():
+                    conn.execute(text("""
+                        INSERT INTO vera_sync_event(dataset_key,event_type,detail,created_at)
+                        VALUES ('leave_primary','web_v2_leave_import',:detail,NOW())
+                    """), {"detail": f"count={len(new_records)}; actor={ident.employee_username}"})
+            except Exception:
+                pass
+            end_row = start_row + len(new_records) - 1
+            sheet_range = f"A{start_row}:M{end_row}"
+            worksheet.update(range_name=sheet_range, values=sheet_values, value_input_option="USER_ENTERED")
+            try:
+                tx.commit()
+            except Exception:
                 try:
-                    policy = _reason_item(conn, record["leave_reason"])
-                except HTTPException:
-                    policy = {}
-            record["leave_type"] = record["leave_type"] or str(policy.get("leave_type") or "")
-            record["calculated_days"] = float(
-                policy.get("days") if record["calculated_days"] is None and policy else record["calculated_days"] or 0
-            )
-            record["accumulated_leave"] = float(record["accumulated_leave"] or 0)
-            record["penalty"] = float(
-                policy.get("penalty") if record["penalty"] is None and policy else record["penalty"] or 0
-            )
-            record["update_date"] = record["update_date"] or now.strftime("%d/%m/%Y")
-            record["update_time"] = record["update_time"] or now.strftime("%H:%M:%S")
-            record["updated_by"] = record["updated_by"] or ident.employee_username
-
-        existing_uids: set[str] = set()
-        uid_query = text("SELECT record_uid FROM leave_records WHERE record_uid IN :uids").bindparams(
-            bindparam("uids", expanding=True)
-        )
-        for offset in range(0, len(imported), 500):
-            chunk = [record["record_uid"] for record in imported[offset:offset + 500]]
-            existing_uids.update(str(value) for value in conn.execute(uid_query, {"uids": chunk}).scalars())
-        existing_identities: set[tuple[str, str, str]] = set()
-        date_query = text("""
-            SELECT leave_date, employee_name, leave_reason
-            FROM leave_records
-            WHERE leave_date IN :dates
-        """).bindparams(bindparam("dates", expanding=True))
-        imported_dates = sorted({record["leave_date"] for record in imported})
-        for offset in range(0, len(imported_dates), 300):
-            chunk = imported_dates[offset:offset + 300]
-            rows = conn.execute(date_query, {"dates": chunk}).mappings().all()
-            existing_identities.update(_leave_import_identity(dict(row)) for row in rows)
-        new_records = [
-            record for record in imported
-            if record["record_uid"] not in existing_uids
-            and _leave_import_identity(record) not in existing_identities
-        ]
-        skipped = duplicate_rows + len(imported) - len(new_records)
-        if not new_records:
-            tx.rollback()
+                    worksheet.batch_clear([sheet_range])
+                except Exception:
+                    pass
+                raise
+            dates = [record["leave_date"] for record in new_records]
             return {
                 "ok": True,
-                "imported": 0,
+                "imported": len(new_records),
                 "skipped": skipped,
-                "message": f"Không có dữ liệu mới. Đã bỏ qua {skipped} dòng đã tồn tại hoặc bị trùng.",
+                "start": min(dates).isoformat(),
+                "end": max(dates).isoformat(),
+                "message": (
+                    f"Đã Import {len(new_records)} lịch nghỉ cũ THÀNH CÔNG"
+                    + (f"; bỏ qua {skipped} dòng đã tồn tại hoặc bị trùng." if skipped else ".")
+                ),
             }
-
-        worksheet = _google_client().open_by_key(LEAVE_SHEET_ID).get_worksheet(0)
-        all_values = worksheet.get_all_values()
-        headers = all_values[0][:13] if all_values else []
-        if len(headers) < 13:
-            raise HTTPException(503, "MainData chưa có đủ 13 cột A:M để nhận dữ liệu import.")
-        sheet_last_row = 1
-        for index, values in enumerate(all_values[1:], start=2):
-            if any(str(value or "").strip() for value in values[:13]):
-                sheet_last_row = index
-        database_last_row = conn.execute(text("""
-            SELECT COALESCE(MAX(source_row), 1)
-            FROM leave_records
-            WHERE source_sheet_id=:source_sheet_id AND source_row IS NOT NULL
-        """), {"source_sheet_id": LEAVE_SHEET_ID}).scalar() or 1
-        start_row = max(sheet_last_row + 1, int(database_last_row) + 1, 2)
-        sheet_values = []
-        for index, record in enumerate(new_records):
-            source_row = start_row + index
-            record["source_row"] = source_row
-            sheet_values.append(_sheet_values_for_record(headers, record, source_row))
-        insert_rows = [
-            {
-                **record,
-                "sid": LEAVE_SHEET_ID,
-                "srow": record["source_row"],
-                "payload": json_text(_record_payload(record, record["source_row"])),
-            }
-            for record in new_records
-        ]
-        conn.execute(text("""
-            INSERT INTO leave_records(
-                source_sheet_id, source_row, leave_date, employee_name, leave_reason,
-                leave_type, detail, calculated_days, accumulated_leave, penalty,
-                update_date, update_time, updated_by, weekday_label, payload, record_uid,
-                created_at, updated_at
-            ) VALUES (
-                :sid, :srow, :leave_date, :employee_name, :leave_reason,
-                :leave_type, :detail, :calculated_days, :accumulated_leave, :penalty,
-                :update_date, :update_time, :updated_by, :weekday_label, CAST(:payload AS jsonb), :record_uid,
-                NOW(), NOW()
-            )
-        """), insert_rows)
-        try:
-            with conn.begin_nested():
-                conn.execute(text("""
-                    INSERT INTO vera_sync_event(dataset_key,event_type,detail,created_at)
-                    VALUES ('leave_primary','web_v2_leave_import',:detail,NOW())
-                """), {"detail": f"count={len(new_records)}; actor={ident.employee_username}"})
-        except Exception:
-            pass
-        end_row = start_row + len(new_records) - 1
-        sheet_range = f"A{start_row}:M{end_row}"
-        worksheet.update(range_name=sheet_range, values=sheet_values, value_input_option="USER_ENTERED")
-        try:
-            tx.commit()
-        except Exception:
-            try:
-                worksheet.batch_clear([sheet_range])
-            except Exception:
-                pass
+        except HTTPException:
+            if tx.is_active:
+                tx.rollback()
+            if worksheet is not None and sheet_range:
+                try:
+                    worksheet.batch_clear([sheet_range])
+                except Exception:
+                    pass
             raise
-        dates = [record["leave_date"] for record in new_records]
-        return {
-            "ok": True,
-            "imported": len(new_records),
-            "skipped": skipped,
-            "start": min(dates).isoformat(),
-            "end": max(dates).isoformat(),
-            "message": (
-                f"Đã Import {len(new_records)} lịch nghỉ cũ THÀNH CÔNG"
-                + (f"; bỏ qua {skipped} dòng đã tồn tại hoặc bị trùng." if skipped else ".")
-            ),
-        }
-    except HTTPException:
-        if tx.is_active:
-            tx.rollback()
-        if worksheet is not None and sheet_range:
-            try:
-                worksheet.batch_clear([sheet_range])
-            except Exception:
-                pass
-        raise
-    except Exception as exc:
-        if tx.is_active:
-            tx.rollback()
-        if worksheet is not None and sheet_range:
-            try:
-                worksheet.batch_clear([sheet_range])
-            except Exception:
-                pass
-        raise HTTPException(500, f"Không Import được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
-    finally:
-        conn.close()
+        except Exception as exc:
+            if tx.is_active:
+                tx.rollback()
+            if worksheet is not None and sheet_range:
+                try:
+                    worksheet.batch_clear([sheet_range])
+                except Exception:
+                    pass
+            raise HTTPException(500, f"Không Import được lịch nghỉ an toàn: {type(exc).__name__}: {exc}") from exc
+        finally:
+            conn.close()
+    return await run_in_threadpool(process)
 
 
 @app.get("/v2/leave/export.xlsx")
@@ -2820,6 +2829,7 @@ install_staff_routes(
     current_identity=current_identity,
     require_feature=_require_feature,
     feature_allowed=_feature_allowed,
+    feature_map=_features_allowed,
     norm=_norm,
     google_client=_google_client,
     leave_sheet_id=LEAVE_SHEET_ID,

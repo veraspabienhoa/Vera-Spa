@@ -18,6 +18,7 @@ import hashlib
 import unicodedata
 from typing import Any
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -460,13 +461,16 @@ def install_payroll_debt_sync_routes(
         ),
         ident: identity_type = Depends(current_identity),
     ):
-        with engine_instance().connect() as conn:
-            require_feature(conn, ident, "payroll_calculate")
+        def prepare():
+            with engine_instance().connect() as conn:
+                require_feature(conn, ident, "payroll_calculate")
 
-        sync = _refresh_legacy_obligations(
-            engine_instance=engine_instance,
-            google_client=google_client,
-        )
+            sync = _refresh_legacy_obligations(
+                engine_instance=engine_instance,
+                google_client=google_client,
+            )
+            return sync
+        sync = await run_in_threadpool(prepare)
         result = await original_calculate(
             month=month,
             period_no=period_no,

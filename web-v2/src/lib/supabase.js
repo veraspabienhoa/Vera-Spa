@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js'
 import { apiBase } from './apiConfig'
 import { authJsonRequest } from './authTransport'
 
@@ -13,18 +12,21 @@ let authEpoch = 0
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 export const isAuthConfigured = Boolean(apiBase)
 
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        // Authentication is owned by the Vera API. Keep this client only for
-        // legacy data RPCs and never load, refresh, or create a browser-side
-        // Supabase Auth session.
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    })
-  : null
+let legacyClientPromise
+export async function getLegacySupabase() {
+  if (!isSupabaseConfigured) return null
+  if (!legacyClientPromise) {
+    legacyClientPromise = import('@supabase/supabase-js').then(({ createClient }) => createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })).catch(error => { legacyClientPromise = undefined; throw error })
+  }
+  return legacyClientPromise
+}
+
+// Keep the legacy RPC surface without loading its SDK during API authentication.
+export const supabase = isSupabaseConfigured ? {
+  async rpc(name, args) { return (await getLegacySupabase()).rpc(name, args) },
+} : null
 
 const parseApiSession = (raw) => {
   try {

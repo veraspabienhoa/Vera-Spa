@@ -9,6 +9,7 @@ import os
 import re
 from typing import Any, Callable, Literal
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import Response, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from io import BytesIO
@@ -825,18 +826,20 @@ def install_revenue_leave_list_routes(
     async def import_revenue_excel(request: Request, mode: Literal["append", "replace"] = Query("append"), ident=Depends(current_identity)):
         _require_revenue_admin(ident)
         content = await request.body()
-        with engine_instance().begin() as conn:
-            require_feature(conn, ident, REVENUE_FEATURE)
-            revenue_auto.require_manual(conn)
-            try:
-                result = revenue_store.import_ledger_xlsx(
-                    conn, content, mode=mode,
-                    actor=str(getattr(ident, "employee_username", "") or ""),
-                )
-            except ValueError as exc:
-                raise HTTPException(400, str(exc))
-        action = "thay thế toàn bộ dữ liệu" if mode == "replace" else "cập nhật dữ liệu mới"
-        return {"ok": True, **result, "message": f"Đã {action}: thêm {result['inserted']} dòng, bỏ qua {result['skipped']} dòng trùng."}
+        def process():
+            with engine_instance().begin() as conn:
+                require_feature(conn, ident, REVENUE_FEATURE)
+                revenue_auto.require_manual(conn)
+                try:
+                    result = revenue_store.import_ledger_xlsx(
+                        conn, content, mode=mode,
+                        actor=str(getattr(ident, "employee_username", "") or ""),
+                    )
+                except ValueError as exc:
+                    raise HTTPException(400, str(exc))
+            action = "thay thế toàn bộ dữ liệu" if mode == "replace" else "cập nhật dữ liệu mới"
+            return {"ok": True, **result, "message": f"Đã {action}: thêm {result['inserted']} dòng, bỏ qua {result['skipped']} dòng trùng."}
+        return await run_in_threadpool(process)
 
     @app.patch("/v2/revenue/entries/{entry_id}")
     def update_revenue_entry(entry_id: int, body: RevenueEntryUpdate, background_tasks: BackgroundTasks, ident=Depends(current_identity)):

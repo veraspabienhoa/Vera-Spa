@@ -281,11 +281,7 @@ def _missing_checkin_rows(conn, ident, settings):
 
 
 def _inbox_rows(conn, ident):
-    # Inbox items expire at midnight in the Vietnam business timezone.
-    conn.execute(text("""DELETE FROM vera_notification_delivery
-        WHERE recipient=:recipient AND (channel='in_app' OR (channel='push' AND sent_at IS NOT NULL))
-        AND created_at < date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'"""),
-        {'recipient':str(ident.auth_user_id)})
+    # Expiry is a read filter; the notification worker owns bounded deletion.
     rows=conn.execute(text(f"""SELECT * FROM (
         SELECT DISTINCT ON (d.event_key,d.rule_key) d.id,d.payload,d.created_at,d.read_at
         {delivery_joins()}
