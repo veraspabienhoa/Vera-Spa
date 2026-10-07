@@ -61,24 +61,16 @@ def _notification_audience(conn, employee: str) -> tuple[list[dict[str, Any]], b
         enabled = department_attendance.control_for(conn, department)["notifications_enabled"]
         if not enabled:
             return [], True, department
-        rows = conn.execute(text("""
-            SELECT DISTINCT ON (s.subscription_id)
-                   s.subscription_id::text AS subscription_id,s.endpoint,s.p256dh,s.auth_secret
-            FROM vera_v2_push_subscription s
-            LEFT JOIN vera_v2_user_profile p ON p.auth_user_id=s.auth_user_id
-            WHERE s.is_active=true AND (
-              lower(btrim(s.employee_username))=lower(btrim(:employee))
-              OR (p.is_active=true AND lower(COALESCE(p.role,'')) IN ('admin','quanly'))
-            )
-            ORDER BY s.subscription_id,s.updated_at DESC
-        """), {"employee": employee}).mappings().all()
-        return [dict(row) for row in rows], False, department
     rows = conn.execute(text("""
-        SELECT subscription_id::text AS subscription_id,endpoint,p256dh,auth_secret
-        FROM vera_v2_push_subscription
-        WHERE is_active=true
-          AND lower(btrim(employee_username))=lower(btrim(:employee))
-        ORDER BY updated_at DESC
+        SELECT DISTINCT ON (s.subscription_id)
+               s.subscription_id::text AS subscription_id,s.endpoint,s.p256dh,s.auth_secret
+        FROM vera_v2_push_subscription s
+        JOIN vera_v2_user_profile p ON p.auth_user_id=s.auth_user_id AND p.is_active=true
+        WHERE s.is_active=true AND (
+          lower(btrim(p.employee_username))=lower(btrim(:employee))
+          OR lower(btrim(COALESCE(p.role,''))) IN ('admin','quanly')
+        )
+        ORDER BY s.subscription_id,s.updated_at DESC
     """), {"employee": employee}).mappings().all()
     return [dict(row) for row in rows], False, department
 

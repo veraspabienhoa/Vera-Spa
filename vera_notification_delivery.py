@@ -114,6 +114,13 @@ def enqueue(conn, source_key, payload, event_key=None, *, default_usernames=None
                           'custom': False, 'native': True, 'enabled': is_enabled(conn, source_key)})
             # Training retains its native detail records and popup compatibility.
             handled = source_key not in {'training_completed', 'training_cycle'}
+    from vera_notification_audience import PRIVATE_PENALTY_SOURCES
+    if source_key in PRIVATE_PENALTY_SOURCES:
+        # Route settings may select channels, never other recipients for a penalty.
+        from vera_notification_audience import native_audience
+        fixed_audience = native_audience(conn, source_key, payload)
+        for rule in rules:
+            rule['recipients'] = fixed_audience
     event_key = event_key or fingerprint(source_key, payload)
     # Store plain text and a fixed application URL, never arbitrary HTML or external links.
     title = str(payload.get('title') or 'Thông báo').strip()
@@ -130,6 +137,8 @@ def enqueue(conn, source_key, payload, event_key=None, *, default_usernames=None
         from datetime import date
         try: safe['watched_date'] = date.fromisoformat(str(payload['watched_date'])).isoformat()
         except ValueError: pass
+    if source_key in PRIVATE_PENALTY_SOURCES:
+        safe['_source_key'] = source_key
     for rule in rules:
         if not rule['enabled']:
             continue

@@ -185,3 +185,42 @@ def test_watch_removal_and_old_quota_suppress_existing_native_rows(database, not
         conn.execute(text("UPDATE vera_notification_delivery SET payload=jsonb_set(payload,'{quota_month}','\"2000-01\"') WHERE rule_key='native:leave_quota_exceeded'"))
     assert client.get('/v2/notification-inbox').json()['notifications'] == []
     assert dispatch(database) == []
+
+
+@pytest.mark.parametrize('route', [None, ['group:all'], ['group:letan']])
+@pytest.mark.parametrize('source', ['auto_penalty', 'missing_checkin_absence'])
+def test_auto_penalty_private_audience_and_old_broad_deliveries(database, notices, route, source):
+    accounts, identity, client = notices
+    allowed = {'admin', 'quanly', 'nhanvien'}
+    accounts['other'] = str(uuid4())
+    with database.begin() as conn:
+        conn.execute(text("INSERT INTO vera_v2_user_profile VALUES(CAST(:id AS uuid),'other','nhanvien',true)"), {'id':accounts['other']})
+    for identifier in accounts.values():
+        subscribe(database, identifier)
+    with database.begin() as conn:
+        if route is not None:
+            conn.execute(text("""INSERT INTO vera_notification_route(key,source_key,label,recipients,channels,updated_by)
+                VALUES(:source,:source,'Test',CAST(:recipients AS jsonb),'["in_app","push"]','test')"""),
+                {'recipients':json.dumps(route),'source':source})
+        delivery.enqueue(conn, source, {'employee':'nhanvien', 'tag':'private-penalty', 'body':'private'})
+        rows = list(conn.execute(text('SELECT * FROM vera_notification_delivery')).mappings())
+        assert {row['recipient'] for row in rows} == {accounts[role] for role in allowed}
+        template = rows[0]
+        # Simulate old deliveries from a previously broad route; every read/send rechecks policy.
+        for role in set(accounts) - allowed:
+            conn.execute(text("""INSERT INTO vera_notification_delivery(event_key,rule_key,recipient,channel,payload)
+                VALUES('private-penalty',:rule,:recipient,'push',CAST(:payload AS jsonb))"""),
+                {'rule':template['rule_key'], 'recipient':accounts[role], 'payload':json.dumps(template['payload'])})
+    if route == ['group:letan']:
+        # Reclassifying the route cannot expose its old private penalty content.
+        with database.begin() as conn:
+            conn.execute(text("UPDATE vera_notification_route SET source_key='birthday',recipients='[\"group:all\"]' WHERE key=:source"), {'source':source})
+    for role, identifier in accounts.items():
+        identity[0] = Identity(role=role, auth_user_id=identifier)
+        rows = client.get('/v2/notification-inbox').json()['notifications']
+        assert bool(rows) == (role in allowed)
+        with database.connect() as conn:
+            nid = conn.execute(text("SELECT id FROM vera_notification_delivery WHERE recipient=:id AND channel='push'"), {'id':identifier}).scalar_one()
+        assert client.get(f'/v2/notification-inbox/{nid}').status_code == (200 if role in allowed else 404)
+    sent = dispatch(database)
+    assert {row['recipient_id'] for row in sent} == {accounts[role] for role in allowed}
