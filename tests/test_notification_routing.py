@@ -284,3 +284,34 @@ def test_removed_group_membership_is_rechecked_before_network_send(monkeypatch):
     assert "w.watched_date::text=d.payload->>'watched_date'" in grant[0]
     assert 'p.is_active' in grant[0] and "'group:' || p.role" in grant[0]
     assert [p for q,p in queries if 'last_error=:error' in q][0]['complete'] is True
+
+
+@pytest.mark.parametrize('configured', [False, True])
+@pytest.mark.parametrize('source', ['auto_penalty', 'missing_checkin_absence'])
+def test_auto_penalty_audience_cannot_be_broadened_by_routes_or_producer_hints(monkeypatch, configured, source):
+    import vera_notification_audience as audience
+    monkeypatch.setattr(delivery, 'ensure_schema', lambda conn: None)
+    monkeypatch.setattr(settings, 'is_enabled', lambda *_: True)
+    writes = []
+    class Conn:
+        def execute(self, statement, params=None):
+            query = str(statement)
+            if 'SELECT r.*' in query:
+                return Result([{'key':'custom-penalty', 'custom':False, 'enabled':True,
+                    'recipients':['group:all'], 'channels':['in_app','push']}] if configured else [])
+            if 'ANY(CAST(:names AS text[]))' in query:
+                assert params['names'] == ['penalized']
+                return Result([{'id':'employee'}])
+            if 'SELECT p.auth_user_id::text AS id' in query:
+                assert set(json.loads(params['recipients'])) == {'employee','group:admin','group:quanly'}
+                return Result([{'id':value} for value in ('employee','admin','manager')])
+            if 'INSERT INTO vera_notification_delivery' in query:
+                writes.append(params)
+            return Result()
+    conn = Conn()
+    assert audience.native_audience(conn, source, {'employee':' Penalized '},
+        usernames=['other'], account_ids=['stranger']) == ['employee','group:admin','group:quanly']
+    assert delivery.enqueue(conn, source, {'employee':' Penalized ', 'tag':'penalty-1'},
+        default_usernames=['other'], default_accounts=['stranger'])
+    assert {row['recipient'] for row in writes} == {'employee','admin','manager'}
+    assert {row['channel'] for row in writes} == ({'in_app','push','popup'} if source == 'missing_checkin_absence' and not configured else {'in_app','push'})
