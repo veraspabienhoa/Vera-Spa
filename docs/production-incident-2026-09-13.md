@@ -2458,3 +2458,16 @@ violation dates use dd-mm-yyyy. The greeting, violation detail, XLSX attachment,
 recipient selection, SMTP transport and shared renderer defaults are preserved.
 The HC health endpoint reports its dedicated template release. No production
 email has been sent and no production deployment/data has been verified.
+
+## 07-10-2026 — FaceGate upload rejected after successful device processing
+
+The operator supplied a successful getUploadPercent response with unprefixed
+LIST metadata following the numeric upload position. The parser absorbed those
+lines into UPLOAD.dwfilepos and rejected the result as invalid_reference. A local
+reproduction confirms the failure and the fix: recognize these metadata line
+boundaries only during upload polling and leave profile data unchanged.
+
+See [the upload reference record](facegate-upload-reference.md) for evidence and
+regressions. Device writes are simulated in tests; the existing no-replay,
+durable journal and exact image/profile verification rules are preserved.
+Production enrollment success still requires verification after deployment.

@@ -28,11 +28,17 @@ class UploadRejected(EnrollmentError):
     pass
 
 
-def fields(body, *, only=None, ignore=()):
+def fields(body, *, only=None, ignore=(), upload_metadata=False):
     if len(body.encode('utf-8')) > device.MAX_RESPONSE_BYTES:
         raise EnrollmentError('invalid_response', 'Phản hồi máy vượt giới hạn.')
     result = {}
-    for key, value in re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=\s+root\.|</html>|$)', body, re.S):
+    boundary = r'\s+root\.|</html>|$'
+    if upload_metadata:
+        # getUploadPercent can append bare LIST.* metadata after dwfilepos.
+        # End the numeric value at that line; never trust this metadata as
+        # profile fields or relax parsing for login/list/detail responses.
+        boundary += r'|[\r\n][ \t]*LIST\.[A-Za-z0-9_.]+='
+    for key, value in re.findall(r'root\.([A-Za-z0-9_.]+)=(.*?)(?=' + boundary + ')', body, re.S):
         # Login firmware repeats unrelated capability flags with different
         # values. Ignore only fields the login caller explicitly does not use.
         if only is not None and key not in only:
@@ -243,7 +249,7 @@ class FaceGateEnrollmentClient:
         started = False
         for _ in range(12):
             value = fields(self.request('/webs/getUploadPercent', {
-                'action': 'list', 'group': 'UPLOAD', 'sessionid': session_id}))
+                'action': 'list', 'group': 'UPLOAD', 'sessionid': session_id}), upload_metadata=True)
             if value.get('UPLOAD.sessionid') not in (session_id, '0'):
                 raise EnrollmentError('wrong_session', 'Máy trả kết quả của phiên gửi ảnh khác.')
             state = value.get('UPLOAD.state')

@@ -34,3 +34,24 @@ images, incorrect identity, invalid/oversized image responses and recovery after
 an interrupted commit. The live diagnostic did not test committing a profile or
 post-commit image equivalence. That business operation still requires explicit
 authorization and production verification; unit/CI success does not establish it.
+
+## 07-10-2026: bare LIST metadata contaminates the upload position
+
+An operator-provided getUploadPercent response reports state 100, ERR.no 0,
+type 3, index 0 and position 524288. Immediately after the position, the firmware
+emits LIST.uname, LIST.ubirth and LIST.usex without the root. prefix. The old
+parser only stopped a field at another root. assignment, so all three metadata
+lines became part of UPLOAD.dwfilepos. Integer validation then raised
+invalid_reference even though the returned position was valid. This failure was
+reproduced locally with the observed wire shape and synthetic identity values.
+
+Only upload polling now recognizes a newline followed by a bare LIST.*
+assignment as a field boundary. These metadata values are ignored, not used to
+replace profile data. Login, roster and profile-detail parsing retain their
+existing rules. Session checks, duplicate-field rejection, numeric bounds,
+image fingerprints and persistent profile verification remain required.
+
+Regressions cover LF/CRLF responses, the complete simulated add/replace and
+read-back flow, wrong sessions, malformed references, device errors, missing
+root. error fields and duplicate upload positions. No production upload,
+profile commit or deployment was performed for this parser fix.
