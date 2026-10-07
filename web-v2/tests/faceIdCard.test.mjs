@@ -212,3 +212,76 @@ test('compact dialog switches photo sources and keeps four captures per page',as
   assert.ok(dom.window.document.querySelector('.face-id-view-photo'))
  }finally{await dom.window.unmount();dom.window.close()}
 })
+
+async function setCaptureTime(dom, label, value) {
+ const w=dom.window,input=w.document.querySelector(`input[aria-label="Ảnh FaceID · ${label}"]`)
+ await w.act(async()=>{
+  Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(input,value)
+  input.dispatchEvent(new w.Event('input',{bubbles:true}))
+ })
+}
+
+test('capture time range filters before pagination, includes the end minute and clears without reloading the list',async()=>{
+ let loads=0
+ const records=['18:59:59','19:00:00','19:05:00','19:10:00','19:15:00','19:20:00','19:30:59','19:31:00'].map((time,event_id)=>({event_id,occurred_at:`2026-10-07T${time}+07:00`}))
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null}),captures:async()=>{loads++;return{records}}},true)
+ try {
+  await dom.window.act(async()=>button(dom,'Ảnh từ máy').click())
+  const ids=()=>[...dom.window.document.querySelectorAll('.face-id-capture-preview img')].map(img=>Number(img.alt.split('#')[1]))
+  assert.equal(button(dom,'Clear'),undefined)
+  await dom.window.act(async()=>button(dom,'Trang sau').click())
+  await setCaptureTime(dom,'Từ giờ','19:00')
+  await setCaptureTime(dom,'Đến giờ','19:30')
+  assert.deepEqual(ids(),[6,5,4,3])
+  assert.match(dom.window.document.querySelector('.face-id-capture-pagination').textContent,/Trang 1\/2 · 6 ảnh/)
+  await dom.window.act(async()=>button(dom,'Trang sau').click())
+  assert.deepEqual(ids(),[2,1])
+  assert.equal(button(dom,'Trang sau').disabled,true)
+  await setCaptureTime(dom,'Từ giờ','19:30')
+  assert.deepEqual(ids(),[6])
+  assert.equal(button(dom,'Trang trước').disabled,true)
+  await setCaptureTime(dom,'Từ giờ','19:31')
+  assert.ok(dom.window.document.querySelector('[role="alert"]'))
+  assert.deepEqual(ids(),[])
+  assert.equal(button(dom,'Trang sau'),undefined)
+  await dom.window.act(async()=>button(dom,'Clear').click())
+  assert.deepEqual(ids(),[7,6,5,4])
+  assert.equal(button(dom,'Clear'),undefined)
+  assert.equal(dom.window.document.querySelector('[role="alert"]'),null)
+  assert.equal(loads,1)
+ }finally{await dom.window.unmount();dom.window.close()}
+})
+
+test('capture filters use Vietnam time, accept open bounds, retain filters on refresh and reset on a new day',async()=>{
+ let loads=0
+ const records=[{event_id:1,occurred_at:'2026-10-06T17:00:00Z'},{event_id:2,occurred_at:'2026-10-07T12:30:59Z'},{event_id:3,occurred_at:'2026-10-07T19:31:00'},{event_id:4,occurred_at:'2026-10-07T23:59:59+07:00'}]
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null}),captures:async()=>{loads++;return{records}}},true)
+ try {
+  const w=dom.window
+  await w.act(async()=>button(dom,'Ảnh từ máy').click())
+  const ids=()=>[...w.document.querySelectorAll('.face-id-capture-preview img')].map(img=>Number(img.alt.split('#')[1]))
+  await setCaptureTime(dom,'Đến giờ','00:00')
+  assert.deepEqual(ids(),[1])
+  await setCaptureTime(dom,'Đến giờ','19:30')
+  assert.deepEqual(ids(),[2,1])
+  await setCaptureTime(dom,'Từ giờ','19:30')
+  assert.deepEqual(ids(),[2])
+  await w.act(async()=>button(dom,'Làm mới').click())
+  assert.deepEqual(ids(),[2]);assert.equal(loads,2)
+  await setCaptureTime(dom,'Đến giờ','')
+  await setCaptureTime(dom,'Từ giờ','23:59')
+  assert.deepEqual(ids(),[4])
+  await setCaptureTime(dom,'Từ giờ','20:00')
+  await setCaptureTime(dom,'Đến giờ','21:00')
+  assert.deepEqual(ids(),[])
+  assert.match(w.document.body.textContent,/Không có ảnh chụp trong khoảng giờ đã chọn/)
+  const date=w.document.querySelector('input[aria-label="Ngày chụp FaceID"]')
+  await w.act(async()=>{
+   Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(date,'01-10-2026')
+   date.dispatchEvent(new w.Event('input',{bubbles:true}))
+  })
+  assert.equal(w.document.querySelector('input[aria-label="Ảnh FaceID · Từ giờ"]').value,'')
+  assert.equal(w.document.querySelector('input[aria-label="Ảnh FaceID · Đến giờ"]').value,'')
+  assert.equal(loads,3)
+ }finally{await dom.window.unmount();dom.window.close()}
+})
