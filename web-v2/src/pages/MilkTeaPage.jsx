@@ -38,7 +38,6 @@ export default function MilkTeaPage({ user }) {
           <h1>Trà sữa</h1>
           <div className="milk-tea-employee"><span>Tên nhân viên</span><strong>{employeeName || '—'}</strong></div>
         </div>
-        <p>Tiền Tip của riêng tài khoản {user?.employee_username || ''}; không hiển thị tiền dịch vụ.</p>
       </div>
       <button data-ui-key="u-e5996bbfaf53" className="secondary-button" disabled={busy} onClick={load}>{busy ? 'Đang tải…' : 'Làm mới'}</button>
     </div>

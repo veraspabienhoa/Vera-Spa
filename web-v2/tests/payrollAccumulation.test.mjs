@@ -6,6 +6,27 @@ import React,{act} from 'react'
 import {JSDOM} from 'jsdom'
 import {accumulationRows,filterAccumulationRows} from '../src/lib/payrollAccumulationRows.js'
 
+test('personal accumulation periods stay closed until opened and omit zero-only payroll periods',async()=>{
+ const built=await build({stdin:{contents:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Page from './src/pages/PayrollPersonalTracking';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=()=>root.render(<Page user={{role:'nhanvien'}} standalone/>);window.unmount=()=>root.unmount();`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},define:{'import.meta.env':'{"VITE_VERA_API_BASE_URL":"https://api.invalid"}'},plugins:[{name:'auth',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const getCurrentSession=async()=>({access_token:"synthetic"})'}))}}]})
+ const dom=new JSDOM('<div id="root"/>',{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true}),w=dom.window
+ w.IS_REACT_ACT_ENVIRONMENT=true;w.Headers=Headers
+ w.MessageChannel=class{constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}}
+ w.fetch=async()=>({ok:true,json:async()=>({employees:[{employee_name:'A',role:'nhanvien',completed:true,remaining:0,periods:[{batch:'Không phát sinh',contribution:0,refund:0},{batch:'Đã đóng',contribution:500000,refund:0},{batch:'Hoàn trả',contribution:0,refund:500000}]}]})})
+ w.eval(built.outputFiles[0].text)
+ try {
+  await w.act(async()=>w.mount())
+  const toggle=()=>w.document.querySelector('.payroll-personal-section-title button')
+  assert.equal(toggle().getAttribute('aria-expanded'),'false')
+  assert.equal(w.document.querySelector('.payroll-personal-table'),null)
+  await w.act(async()=>toggle().click())
+  assert.equal(w.document.querySelectorAll('.payroll-personal-table tbody tr').length,2)
+  assert.doesNotMatch(w.document.body.textContent,/Không phát sinh/)
+  assert.match(w.document.body.textContent,/Đã đóng/);assert.match(w.document.body.textContent,/Hoàn trả/)
+  await w.act(async()=>toggle().click())
+  assert.equal(w.document.querySelector('.payroll-personal-table'),null)
+ }finally{await w.act(async()=>w.unmount());w.close()}
+})
+
 test('accumulation tab follows history and combines completed, active and former staff in one table',async t=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',pretendToBeVisual:true}),requests=[],NativeDate=Date
   const globals={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,IS_REACT_ACT_ENVIRONMENT:true,

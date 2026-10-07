@@ -447,6 +447,9 @@ export const veraApi = {
     `/v2/work-schedule/combo-sales/export.xlsx?${new URLSearchParams({ start, end, department })}`,
     `VERA_Ban_Combo_${department}_${start}_${end}.xlsx`,
   ),
+  exportScheduleTable: body => download('/v2/work-schedule/table/export.xlsx', `VERA_${body.kind}_${body.department}_${body.start}_${body.end}.xlsx`, {
+    method: 'POST', body: JSON.stringify(body),
+  }),
   importComboSalesExcel: (file, department) => upload('/v2/work-schedule/combo-sales/import.xlsx', file, { department }),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),
   notificationSettings: () => request('/v2/notification-settings'),

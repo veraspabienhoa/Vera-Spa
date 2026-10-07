@@ -59,10 +59,11 @@ async function changeAccumulation(method, path, body) {
 }
 
 function PeriodTable({ periods }) {
+  const paidPeriods = (periods || []).filter(item => Number(item.contribution || 0) > 0 || Number(item.refund || 0) > 0)
   return <div className="responsive-data-table payroll-personal-table">
     <table data-ui-key="u-65853d6dfa46">
       <thead><tr><th data-ui-key="u-268aafc40e30" data-ui-label-default="Kỳ lương"><UiCustomText uiKey="u-268aafc40e30">Kỳ lương</UiCustomText></th><th data-ui-key="u-8e0297315458" data-ui-label-default="Từ ngày"><UiCustomText uiKey="u-8e0297315458">Từ ngày</UiCustomText></th><th data-ui-key="u-97c978fcbd30" data-ui-label-default="Đến ngày"><UiCustomText uiKey="u-97c978fcbd30">Đến ngày</UiCustomText></th><th data-ui-key="u-10830d22c67a" data-ui-label-default="Tích lũy đã đóng"><UiCustomText uiKey="u-10830d22c67a">Tích lũy đã đóng</UiCustomText></th><th data-ui-key="u-cac8622f98de" data-ui-label-default="Hoàn trả tích lũy"><UiCustomText uiKey="u-cac8622f98de">Hoàn trả tích lũy</UiCustomText></th><th data-ui-key="u-ae7883325508" data-ui-label-default="Ngày lưu"><UiCustomText uiKey="u-ae7883325508">Ngày lưu</UiCustomText></th></tr></thead>
-      <tbody>{(periods || []).map((item, index) => <tr key={`${item.batch}-${item.start}-${index}`}>
+      <tbody>{paidPeriods.map((item, index) => <tr key={`${item.batch}-${item.start}-${index}`}>
         <td><strong>{item.batch}</strong></td>
         <td>{formatVeraDate(item.start, '—')}</td>
         <td>{formatVeraDate(item.end, '—')}</td>
@@ -71,7 +72,7 @@ function PeriodTable({ periods }) {
         <td>{formatVeraDate(item.saved_date, '—')}</td>
       </tr>)}</tbody>
     </table>
-    {!(periods || []).length && <div className="setup-note">Chưa có kỳ lương ghi nhận Tích lũy.</div>}
+    {!paidPeriods.length && <div className="setup-note">Chưa có kỳ lương ghi nhận Tích lũy.</div>}
   </div>
 }
 
@@ -128,6 +129,7 @@ export default function PayrollPersonalTracking({ user, standalone = false, unif
   const [accumulationFilter, setAccumulationFilter] = useState({ employee: '', status: '', group: 'active' })
   const [sectionOpen, setSectionOpen] = useState(unified || !isAdmin)
   const [completedOpen, setCompletedOpen] = useState(false)
+  const [periodsOpen, setPeriodsOpen] = useState(false)
 
   const load = async () => {
     if (!canUsePersonalTracking) return
@@ -260,8 +262,8 @@ export default function PayrollPersonalTracking({ user, standalone = false, unif
             <div className="payroll-personal-metric"><span>CÒN LẠI</span><strong>{money(mine.remaining)}</strong></div>
             <div className="payroll-personal-metric warning"><span>NGHĨA VỤ CHƯA HOÀN THÀNH</span><strong>{money(mine.obligation_total)}</strong></div>
           </div>
-          <h3>TÍCH LŨY ĐÃ ĐÓNG THEO TỪNG KỲ LƯƠNG</h3>
-          <PeriodTable periods={mine.periods} />
+          <div className="payroll-personal-section-title"><h3>TÍCH LŨY ĐÃ ĐÓNG THEO TỪNG KỲ LƯƠNG</h3><button type="button" className="secondary-button compact" aria-expanded={periodsOpen} onClick={() => setPeriodsOpen(value => !value)}>{periodsOpen ? <ChevronDown size={15}/> : <ChevronRight size={15}/>} {periodsOpen ? 'Ẩn' : 'Mở'}</button></div>
+          {periodsOpen && <PeriodTable periods={mine.periods} />}
           <h3 style={{ marginTop: 18 }}>NGHĨA VỤ VI PHẠM CHƯA HOÀN THÀNH</h3>
           <ObligationList obligations={mine.obligations} />
         </>}

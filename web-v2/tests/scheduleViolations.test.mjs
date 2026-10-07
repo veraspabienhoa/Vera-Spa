@@ -12,9 +12,9 @@ test('violation filters, manager modal and retry-safe request', async t => {
  const dom=new JSDOM('<div id="root"/>',{pretendToBeVisual:true});globalThis.window=dom.window;globalThis.document=dom.window.document;globalThis.IS_REACT_ACT_ENVIRONMENT=true
  dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true};dom.window.HTMLDialogElement.prototype.close=function(){this.open=false}
  const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root'));t.after(async()=>{await act(()=>root.unmount());dom.window.close()})
- let saved=0, fail=true;const calls=[]
+ let saved=0, fail=true;const calls=[],exports=[]
  const request=async(path,options)=>{calls.push({path,options});if(options){if(fail){fail=false;throw Error('Network failed')}return {message:'Đã lưu'}}return {rows:[{id:'one',updated_at:'2026-10-06T03:00:00Z',is_manual:true,employee_name:'Yên Linh',employee_username:'linh',violation_date:'2026-10-06',reason:'Đồng phục',amount:50000},{id:'two',employee_name:'Mạnh Đạt',employee_username:'dat',violation_date:'2026-10-05',reason:'Khác',amount:10000}]}}
- const render=canEdit=>act(async()=>root.render(React.createElement(mod.exports.default,{department:'letan',employees:[{username:'linh',full_name:'Yên Linh'}],canEdit,canManage:canEdit,request,onSaved:()=>saved++})))
+ const render=canEdit=>act(async()=>root.render(React.createElement(mod.exports.default,{department:'letan',employees:[{username:'linh',full_name:'Yên Linh'}],canEdit,canManage:canEdit,request,onSaved:()=>saved++,onExport:async data=>exports.push(data)})))
  const click=label=>act(async()=>[...document.querySelectorAll('button')].find(b=>b.textContent===label).click())
  await render(false);assert.ok(![...document.querySelectorAll('button')].some(b=>b.textContent.includes('Nhập phạt')))
  await render(true);await click('Tháng trước');assert.match(calls.at(-1).path,/start=\d{4}-\d{2}-01&end=/)
@@ -33,6 +33,15 @@ test('violation filters, manager modal and retry-safe request', async t => {
  const update=calls.find(c=>c.options?.method==='PUT');assert.ok(update.path.endsWith('/one'));assert.equal(JSON.parse(update.options.body).expected_updated_at,'2026-10-06T03:00:00Z')
  window.confirm=()=>true;await click('Xóa')
  const removal=calls.find(c=>c.options?.method==='DELETE');assert.ok(removal.path.endsWith('/one'));assert.equal(saved,3)
+ await act(async()=>{
+  for(const [input,value] of [[document.querySelector('input[type="search"]'),'Yên Linh'],[document.querySelector('input[aria-label="Lọc ngày vi phạm"]'),'06-10-2026']]){
+   Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(input,value)
+   input.dispatchEvent(new window.Event('input',{bubbles:true}))
+  }
+ })
+ await click('Xuất excel')
+ assert.equal(exports.length,1);assert.deepEqual(exports[0].range,{start:'2026-10-06',end:'2026-10-06'})
+ assert.deepEqual(exports[0].rows.map(row=>row.id),['one'])
 })
 
 test('personal ledger uses only server-owned identity and retains month/date filters', async t => {
