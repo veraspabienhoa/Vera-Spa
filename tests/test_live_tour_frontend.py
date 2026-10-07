@@ -408,7 +408,9 @@ def test_tip_menu_reports_popups_and_mobile_controls_are_wired():
     popup = read_ui_source((root / "components/PopupNotifications.jsx"))
     controls = (root / "pages/LiveTourControls.css").read_text(encoding="utf-8")
 
-    assert "id: 'milk-tea', label: 'Trà sữa'" not in shell
+    assert "id: 'milk-tea', label: 'Trà sữa'" in shell
+    milk_menu = next(line for line in shell.splitlines() if "id: 'milk-tea'" in line)
+    assert "roles: ['leader', 'nhanvien']" in milk_menu
     assert "page === 'milk-tea'" in app
     for label in ("Hôm qua", "Hôm nay", "Tuần trước", "Tuần này", "Tháng trước", "Tháng này", "Tùy chỉnh"):
         assert label in milk_tea or label in (root / "lib/liveTourFilters.js").read_text(encoding="utf-8")
