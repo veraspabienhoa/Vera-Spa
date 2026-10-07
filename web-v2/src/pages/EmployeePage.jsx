@@ -7,7 +7,7 @@ import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { searchTextMatches } from '../lib/searchText'
 import {
-  BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle, LockKeyhole,
+  BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle,
   PencilLine, Plus, RefreshCw, Save, Trash2, UserCheck, UserRoundCog, UsersRound, X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -559,7 +559,6 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
           ['Đang làm việc', data?.summary?.active || 0, UserCheck, 'Đang làm việc'],
           ['Thử việc', data?.summary?.probation || 0, UserCheck, 'Thử việc'],
           ['Tạm thời nghỉ', data?.summary?.temporary || 0, BriefcaseBusiness, 'Tạm thời nghỉ việc'],
-          ['Đã nghỉ việc', data?.summary?.left || 0, LockKeyhole, 'Đã nghỉ việc'],
         ].map(([label, value, Icon, filterValue]) => (
           <button data-ui-key="u-46cd30381586"
             type="button"
