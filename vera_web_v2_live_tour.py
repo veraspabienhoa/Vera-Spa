@@ -5251,30 +5251,6 @@ def install_live_tour_routes(
             "alerting": alerting,
         }
 
-    @app.get("/v2/live-tour/recovery")
-    def live_tour_recovery(ident: identity_type = Depends(current_identity)):
-        role = str(getattr(ident, "role", "") or "").strip().lower()
-        if role != "admin":
-            raise HTTPException(403, "Chỉ Admin được xem khôi phục Live Tour.")
-        with engine_instance().begin() as conn:
-            require_feature(conn, ident, "live_tour_view")
-        # Each query closes its connection before the next one starts.
-        return {
-            "counts": job_queue.counts(engine_instance, PROJECTION_QUEUE),
-            "metrics": job_queue.health_metrics(engine_instance, PROJECTION_QUEUE),
-            "history": job_queue.recovery_history(engine_instance, PROJECTION_QUEUE),
-            "can_recover": role == "admin",
-        }
-
-    @app.post("/v2/live-tour/recovery/retry")
-    def live_tour_recovery_retry(ident: identity_type = Depends(current_identity)):
-        if str(getattr(ident, "role", "") or "").strip().lower() != "admin":
-            raise HTTPException(403, "Chỉ Admin được thử lại tác vụ quá hạn.")
-        with engine_instance().begin() as conn:
-            require_feature(conn, ident, "live_tour_admin")
-        actor = str(ident.employee_username or ident.full_name or "admin")
-        return job_queue.recover_expired(engine_instance, PROJECTION_QUEUE, actor)
-
     @app.get("/v2/live-tour/customer-count.pdf")
     def live_tour_customer_count_pdf(
         date_from: str = Query(default="", max_length=10), date_to: str = Query(default="", max_length=10),

@@ -74,6 +74,7 @@ for(const entry of ['/', '/?standalone=1&page=leave'])test(`actual application o
   try{
     new Function('require','module','exports',built.outputFiles[0].text)(require,mod,mod.exports)
     await act(async()=>root.render(React.createElement(React.StrictMode,null,React.createElement(Boundary,null,React.createElement(mod.exports.default)))))
+    assert.deepEqual([...document.querySelectorAll('.nav-list .nav-item')].map(node=>node.textContent.trim()),['Live Tour','Đăng ký nghỉ','Lịch làm việc','Booking online','Chấm công','Bảng Lương','Báo cáo','Doanh thu','Nhân viên','Khách hàng','Nhập mua','Hợp đồng','Sinh nhật','Phép năm','Nhân sự','Đào tạo','Hồ sơ','Auto Check','Hệ thống','Cài đặt','Nội qui','Thiết bị','Giao diện'])
     await settle();assert.deepEqual(errors,[]);assert.ok(document.querySelector(entry==='/'?'.live-tour-workspace':'.registration-panel .leave-form'))
     if(entry!=='/')await click('Live Tour')
     await click('Đăng ký nghỉ');assert.deepEqual(errors,[]);assert.ok(document.querySelector('.registration-panel .leave-form'))

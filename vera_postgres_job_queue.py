@@ -38,16 +38,6 @@ def ensure_schema_conn(conn) -> None:
         f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_ready "
         f"ON {TABLE}(queue_name,status,available_at,id)"
     ))
-    conn.execute(text(f"""
-        CREATE TABLE IF NOT EXISTS vera_background_job_recovery (
-            id BIGSERIAL PRIMARY KEY,
-            job_id BIGINT NOT NULL,
-            queue_name TEXT NOT NULL,
-            previous_status TEXT NOT NULL,
-            actor TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-    """))
 
 
 def ensure_schema(engine_instance) -> None:
@@ -195,44 +185,6 @@ def mark_retry(engine_instance, item: dict[str, Any], exc: Exception) -> None:
             "delay": delay,
             "error": f"{type(exc).__name__}: {exc}"[:2000],
         })
-
-
-def recover_expired(engine_instance, queue_name: str, actor: str) -> dict[str, int]:
-    """Requeue one expired or failed job without interrupting a live transaction."""
-    with engine_instance().begin() as conn:
-        row = conn.execute(text(f"""
-            SELECT id,status FROM {TABLE}
-            WHERE queue_name=:queue_name AND (
-                status='failed' OR
-                (status='processing' AND locked_at < NOW() - INTERVAL '10 minutes')
-            )
-            ORDER BY CASE WHEN status='failed' THEN 1 ELSE 0 END, id
-            FOR UPDATE SKIP LOCKED LIMIT 1
-        """), {"queue_name": queue_name}).mappings().first()
-        if not row:
-            return {"requeued": 0}
-        conn.execute(text(f"""
-            UPDATE {TABLE} SET status='retry', attempts=0, locked_at=NULL,
-                available_at=NOW(), last_error=NULL, updated_at=NOW()
-            WHERE id=:id
-        """), {"id": row["id"]})
-        conn.execute(text("""
-            INSERT INTO vera_background_job_recovery
-                (job_id,queue_name,previous_status,actor)
-            VALUES (:job_id,:queue_name,:status,:actor)
-        """), {"job_id": row["id"], "queue_name": queue_name,
-                "status": row["status"], "actor": actor[:160]})
-        return {"requeued": 1}
-
-
-def recovery_history(engine_instance, queue_name: str) -> list[dict[str, Any]]:
-    with engine_instance().connect() as conn:
-        rows = conn.execute(text("""
-            SELECT job_id,previous_status,actor,created_at
-            FROM vera_background_job_recovery
-            WHERE queue_name=:queue_name ORDER BY id DESC LIMIT 10
-        """), {"queue_name": queue_name}).mappings().all()
-    return [dict(row) for row in rows]
 
 
 def counts(engine_instance, queue_name: str) -> dict[str, int]:

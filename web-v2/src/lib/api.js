@@ -551,8 +551,6 @@ export const veraApi = {
       throw error
     }
   },
-  liveTourRecovery: () => request('/v2/live-tour/recovery'),
-  retryLiveTourRecovery: () => request('/v2/live-tour/recovery/retry', { method: 'POST' }),
   uiLayout: () => request('/v2/ui-layout'),
   saveUiLayout: (body) => request('/v2/ui-layout', { method: 'PUT', body: JSON.stringify(body) }),
   previewBoardHistoryCleanup: (body) => request('/v2/live-tour/board-history/cleanup-preview', { method: 'POST', body: JSON.stringify(body) }),

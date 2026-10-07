@@ -6,16 +6,12 @@ import vera_web_v2_notification_settings as settings
 import vera_web_v2_live_tour as live
 from test_notification_routing import Identity
 
-@pytest.mark.parametrize('role', ['quanly', 'letan', 'nhanvien', 'leader'])
-def test_recovery_status_and_retry_admin_only(role):
+def test_removed_manual_recovery_routes_are_not_installed():
     app=FastAPI()
-    def forbidden(): raise AssertionError('database touched before authorization')
+    def forbidden(): raise AssertionError('database touched while installing routes')
     live.install_live_tour_routes(app,engine_instance=forbidden,current_identity=lambda:None,
         require_feature=lambda *a:None,feature_allowed=lambda *a:True,identity_type=Identity)
-    for path in ['/v2/live-tour/recovery','/v2/live-tour/recovery/retry']:
-        endpoint=next(r.endpoint for r in app.routes if r.path==path)
-        with pytest.raises(HTTPException) as exc: endpoint(ident=Identity(role=role))
-        assert exc.value.status_code==403
+    assert not any(r.path.startswith('/v2/live-tour/recovery') for r in app.routes)
 
 @pytest.mark.parametrize('available', [True,False])
 def test_detail_scoped_to_recipient_and_current_routing(monkeypatch,available):

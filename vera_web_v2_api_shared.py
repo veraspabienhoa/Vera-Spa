@@ -93,6 +93,9 @@ def _live_leave_df(conn, exclude_record_uid: str = "") -> pd.DataFrame:
                accumulated_leave, penalty, detail, leave_type
         FROM leave_records
         WHERE (:uid = '' OR record_uid <> :uid)
+          AND EXISTS (SELECT 1 FROM employees e
+              WHERE lower(btrim(e.username))=lower(btrim(leave_records.employee_name))
+                AND lower(btrim(COALESCE(e.role,''))) IN ('leader','nhanvien'))
         ORDER BY leave_date, id
     """), {"uid": str(exclude_record_uid or "")}).mappings().all()
     if not rows:
@@ -262,7 +265,7 @@ def _validate_and_prepare(
         raise HTTPException(403, "Tài khoản hiện tại chỉ được đăng ký lịch nghỉ của chính mình.")
 
     emp = conn.execute(text("""
-        SELECT username, monthly_generated, monthly_leave, annual_leave
+        SELECT username, role, monthly_generated, monthly_leave, annual_leave
         FROM employees
         WHERE lower(btrim(username))=lower(btrim(:u))
           AND (
@@ -276,6 +279,8 @@ def _validate_and_prepare(
     """), {"u": employee, "allow_inactive": bool(allow_inactive_employee)}).mappings().first()
     if not emp:
         raise HTTPException(400, "Không tìm thấy nhân viên đang hoạt động.")
+    if str(emp.get("role") or "").strip().lower() not in {"leader", "nhanvien"}:
+        raise HTTPException(400, "Đăng ký nghỉ chỉ áp dụng cho bộ phận Leader và nhân viên.")
     employee = emp["username"]
 
     item = _reason_item(conn, body.leave_reason)

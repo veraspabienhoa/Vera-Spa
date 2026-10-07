@@ -29,6 +29,8 @@ def database():
                 record_uid text PRIMARY KEY, leave_date date, weekday_label text,
                 employee_name text, leave_reason text, leave_type text, detail text,
                 penalty numeric, updated_by text, updated_at timestamptz DEFAULT now())'''))
+            conn.execute(text('CREATE TABLE employees(username text PRIMARY KEY, role text)'))
+            conn.execute(text("INSERT INTO employees VALUES('Synthetic','nhanvien'),('Locker Test','locker')"))
             ensure_schema_conn(conn)
         yield engine
     finally:
@@ -90,7 +92,7 @@ def test_bulk_statements_bump_once_and_delete_invalidates(database):
     migrate(database)
     start, _ = month_bounds('2026-09')
     with database.begin() as conn:
-        conn.execute(text("INSERT INTO leave_records(record_uid,leave_date) SELECT 'row-'||n,'2026-09-15'::date FROM generate_series(1,100) n"))
+        conn.execute(text("INSERT INTO leave_records(record_uid,leave_date,employee_name) SELECT 'row-'||n,'2026-09-15'::date,'Synthetic' FROM generate_series(1,100) n"))
         assert revision(conn, start) == 1
     reader = MonthReader(lambda: database)
     assert len(reader.read('2026-09', ())['records']) == 100
@@ -148,3 +150,16 @@ def test_uncommitted_changes_never_poison_cache(database):
         insert(writer, 'a', '2026-09-10')
         assert reader.read('2026-09', ())['records'] == []
     assert len(reader.read('2026-09', ())['records']) == 1
+
+
+def test_month_cache_excludes_hc_financial_rows_without_removing_them(database):
+    migrate(database)
+    with database.begin() as conn:
+        insert(conn, 'ktv', '2026-09-10')
+        conn.execute(text("INSERT INTO leave_records(record_uid,leave_date,employee_name,penalty) VALUES('hc','2026-09-10','Locker Test',50000)"))
+    reader = MonthReader(lambda: database)
+    for fresh in [False, False, True]:
+        result = reader.read('2026-09', ('admin', True), fresh=fresh)
+        assert [row['record_uid'] for row in result['records']] == ['ktv']
+    with database.connect() as conn:
+        assert conn.execute(text("SELECT penalty FROM leave_records WHERE record_uid='hc'")).scalar_one() == 50000

@@ -125,7 +125,7 @@ test('Lễ tân future editors are visible without changing the top date, with f
 })
 
 test('Employee notice boundaries distinguish editing to unpaid from deleting a paid row', () => {
-  for (const role of ['nhanvien', 'leader', 'locker', 'tapvu']) {
+  for (const role of ['nhanvien', 'leader']) {
     const context = { role, today: iso(0), recordDate: iso(1), currentReason: 'Nghỉ CÓ phép', currentLeaveType: 'Có phép', isOwnRecord: true, employeeSelfServicePolicy: policies.employee_self_service_policy }
     assert.equal(canEditLeaveRecord(context), true)
     assert.equal(canDeleteLeaveRecord(context), false)
@@ -300,4 +300,13 @@ test('restored leave layout shows loading rows during refresh and never displays
     assert.doesNotMatch(table.textContent, /saved-scope/)
     assert.match(table.textContent, /Không có lịch nghỉ phù hợp/)
   } finally { await f.dispose() }
+})
+
+test('HC roles no longer receive implicit employee leave self-service', () => {
+  for (const role of ['locker','tapvu','support']) {
+    const context={role,today:iso(0),recordDate:iso(3),isOwnRecord:true,currentReason:'Nghỉ CÓ phép',currentLeaveType:'Có phép',employeeSelfServicePolicy:policies.employee_self_service_policy}
+    assert.equal(canEditLeaveRecord(context),false)
+    assert.equal(canDeleteLeaveRecord(context),false)
+    assert.equal(canChangeLeaveReason(context,{name:'Nghỉ KHÔNG phép',leave_type:'Không phép'}),false)
+  }
 })

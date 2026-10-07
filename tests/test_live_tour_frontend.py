@@ -408,8 +408,8 @@ def test_tip_menu_reports_popups_and_mobile_controls_are_wired():
     popup = read_ui_source((root / "components/PopupNotifications.jsx"))
     controls = (root / "pages/LiveTourControls.css").read_text(encoding="utf-8")
 
-    assert "id: 'milk-tea', label: 'Trà sữa'" in shell
-    assert "roles: ['leader', 'nhanvien']" in shell and "page === 'milk-tea'" in app
+    assert "id: 'milk-tea', label: 'Trà sữa'" not in shell
+    assert "page === 'milk-tea'" in app
     for label in ("Hôm qua", "Hôm nay", "Tuần trước", "Tuần này", "Tháng trước", "Tháng này", "Tùy chỉnh"):
         assert label in milk_tea or label in (root / "lib/liveTourFilters.js").read_text(encoding="utf-8")
     assert 'data-label="Tiền dịch vụ"' not in milk_tea and "liveTourMyTips" in milk_tea

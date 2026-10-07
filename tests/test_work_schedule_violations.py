@@ -151,14 +151,15 @@ def test_department_history_is_scoped_to_authenticated_employee(monkeypatch, rol
     assert exc.value.status_code == 403 and len(calls) == 1
 
 
+@pytest.mark.parametrize('department', ['locker', 'letan', 'tapvu', 'quanly'])
 @pytest.mark.parametrize('role', ['admin', 'quanly', 'giamdoc'])
-def test_authorized_management_keeps_department_history(monkeypatch, role):
+def test_authorized_management_keeps_department_history(monkeypatch, role, department):
     app = FastAPI(); engine = Engine(); calls = []
     monkeypatch.setattr(schedule, '_allowed_department', lambda *args: True)
     monkeypatch.setattr(schedule, '_schedule_violations', lambda conn, department, start, end, **scope: calls.append(scope) or [])
     schedule.install_work_schedule_routes(app, engine_instance=lambda: engine, current_identity=lambda: None, feature_allowed=lambda *args: True)
     endpoint = next(r.endpoint for r in app.routes if r.path == '/v2/work-schedule/violations' and 'GET' in r.methods)
-    endpoint(date(2026,10,1), date(2026,10,31), 'letan', actor(role))
+    endpoint(date(2026,10,1), date(2026,10,31), department, actor(role))
     assert calls == [{'employee_username': None}]
 
 

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
-const built = await build({stdin:{contents:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Booking from './src/pages/OnlineBookingPage';import Schedule from './src/pages/WorkSchedulePage';import Attendance from './src/pages/SnapshotPage';import Changes from './src/pages/AdminChangesPage';const pages={Booking,Schedule,Attendance,Changes};window.act=act;window.root=createRoot(document.getElementById('root'));window.mount=key=>window.root.render(React.createElement(pages[key],{user:{role:'letan',username:'Gia Anh',permissions:{work_schedule_letan:true}}}));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},define:{'import.meta.env':JSON.stringify({VITE_VERA_API_BASE_URL:'https://api.test'})},plugins:[{name:'fixtures',setup(b){
+const built = await build({stdin:{contents:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Booking from './src/pages/OnlineBookingPage';import Schedule from './src/pages/WorkSchedulePage';import Attendance from './src/pages/SnapshotPage';import Changes from './src/pages/AdminChangesPage';const pages={Booking,Schedule,Attendance,Changes};window.act=act;window.root=createRoot(document.getElementById('root'));window.mount=(key,role='letan')=>window.root.render(React.createElement(pages[key],{user:{role,username:'Gia Anh',permissions:{work_schedule_letan:true}}}));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},define:{'import.meta.env':JSON.stringify({VITE_VERA_API_BASE_URL:'https://api.test'})},plugins:[{name:'fixtures',setup(b){
  b.onResolve({filter:/\/lib\/(api|supabase)$/},args=>({path:args.path.endsWith('supabase')?'auth':'api',namespace:'mock'}))
  b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:args.path==='auth'?'export const getCurrentSession=async()=>({access_token:"test"});':'export const veraApi={onlineBookings:async params=>{window.bookingCalls.push(params);return {rows:[],total:0}}};'}))
 }}]})
@@ -32,3 +32,23 @@ for (const [page,label,path] of [['Booking','Ngày booking',''],['Schedule','Ng�
   } finally {await w.act(async()=>w.root.unmount());w.close()}
  })
 }
+
+test('every work-schedule department displays its own violation ledger on tab changes',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true}),w=dom.window,calls=[]
+ w.MessageChannel=class{constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}}
+ w.HTMLDialogElement.prototype.close=function(){this.open=false};w.HTMLDialogElement.prototype.showModal=function(){this.open=true}
+ w.Headers=Headers;w.IS_REACT_ACT_ENVIRONMENT=true
+ w.fetch=async url=>{const u=new URL(url);calls.push(u);const department=u.searchParams.get('department');return {ok:true,json:async()=>({employees:[],rows:u.pathname.endsWith('/violations')?[{id:department,employee_name:department,violation_date:'2026-10-07',reason:`Violation ${department}`,amount:10000}]:[],shift_definitions:{}})}}
+ w.eval(built.outputFiles[0].text)
+ try{
+  await w.act(async()=>w.mount('Schedule','admin'))
+  for(const [department,label] of [['locker','Locker'],['letan','Lễ tân'],['tapvu','Tạp vụ'],['quanly','Quản lý'],['locker','Locker']]){
+   await w.act(async()=>[...w.document.querySelectorAll('.schedule-department-tabs button')].find(b=>b.textContent===label).click())
+   const ledger=w.document.querySelector('.schedule-violations')
+   assert.match(ledger.querySelector('h3').textContent,new RegExp(`VI PHẠM · PHẠT VI PHẠM · ${label}`))
+   assert.match(ledger.textContent,new RegExp(`Violation ${department}`))
+   assert.ok(calls.some(u=>u.pathname.endsWith('/violations')&&u.searchParams.get('department')===department))
+   assert.ok(ledger.compareDocumentPosition(w.document.querySelector('.monthly-statistics'))&w.Node.DOCUMENT_POSITION_FOLLOWING)
+  }
+ }finally{await w.act(async()=>w.root.unmount());w.close()}
+})

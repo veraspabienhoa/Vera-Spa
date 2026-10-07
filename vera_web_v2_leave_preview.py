@@ -68,7 +68,7 @@ def install_leave_preview_routes(
             )
             role = str(getattr(ident, "role", "") or "").strip().lower()
             employee_policy = load_employee_self_service_policy(conn)
-            if role not in {"nhanvien", "leader", "locker", "tapvu"} or not employee_policy["enabled"]:
+            if role not in {"nhanvien", "leader"} or not employee_policy["enabled"]:
                 require_feature(conn, ident, "leave_create")
             record, warnings = validate_and_prepare(conn, body, ident)
             can_view_penalty = (

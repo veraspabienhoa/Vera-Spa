@@ -4,7 +4,6 @@ import { PAGE_REFRESH_ERROR } from '../lib/usePageRefresh'
 import '../page-stability.css'
 import NotificationInbox from './NotificationInbox'
 import DevicePushMenu from './DevicePushMenu'
-import { getCustomization, subscribeCustomization } from '../lib/uiCustomizationStore'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
 import LayoutDesigner from './LayoutDesigner'
@@ -15,35 +14,33 @@ import OnlineBookingPopup from './OnlineBookingPopup'
 import MissingCheckinPopup from './MissingCheckinPopup'
 import { canSeeMissingCheckins } from '../lib/missingCheckinAudience'
 import { BellRing, Bot, Cake, CalendarDays, CircleDollarSign, ClipboardList, Compass, ExternalLink, FileSignature, FileText, HardDrive, LogOut, Menu, RadioTower, RefreshCw, ScanLine, Server, Settings2, UserRound, Users, WalletCards, X } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttendanceBreakAlertControl, setAttendanceBreakAlertControl, syncPersistentBreakNotifications } from '../lib/attendanceBreakAlerts'
 
 const items = [
   { id: 'live-tour', label: 'Live Tour', icon: RadioTower, ready: true },
+  { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan', 'leader', 'nhanvien'] },
+  { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_tapvu'] },
   { id: 'online-bookings', label: 'Booking online', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan'] },
-  { id: 'milk-tea', label: 'Trà sữa', icon: CircleDollarSign, ready: true, roles: ['leader', 'nhanvien'] },
-  { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true },
-  { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker'] },
-  { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
-  { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
-  { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, anyPermission: ['live_tour_admin', 'ktv_shift_view', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_quanly', 'work_schedule_tapvu', 'permission_admin'] },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, anyPermission: ['snapshot_today', 'device_history_view'] },
-  { id: 'devices', label: 'Quản lý thiết bị', icon: Server, ready: true, permission: 'device_view' },
-  { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
   { id: 'payroll', label: 'Bảng Lương', icon: WalletCards, ready: true, anyPermission: ['payroll_history', 'payroll_calculate'] },
+  { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
-  { id: 'purchases', label: 'Nhập mua', icon: CircleDollarSign, ready: true, permission: 'purchase_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
-  { id: 'training', label: 'Đào tạo & đánh giá', icon: ClipboardList, ready: true, permission: 'training_view' },
+  { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
+  { id: 'purchases', label: 'Nhập mua', icon: CircleDollarSign, ready: true, permission: 'purchase_view' },
   { id: 'contract-1', label: 'Hợp đồng', icon: FileSignature, ready: true, permission: 'contract_1_view' },
   { id: 'birthday', label: 'Sinh nhật', icon: Cake, ready: true, permission: 'birthday' },
-  { id: 'system', label: 'Hệ thống', icon: HardDrive, ready: true, anyPermission: ['audit_admin_view', 'storage_admin_view'] },
-  { id: 'hr', label: 'Nhân sự', icon: Users, ready: true, adminOnly: true },
   { id: 'long-leave', label: 'Phép năm', icon: ClipboardList, ready: true, anyPermission: ['long_leave', 'long_leave_form', 'long_leave_stats', 'resignation_form'] },
-  { id: 'profile', label: 'Hồ sơ & mật khẩu', icon: UserRound, ready: true, permission: 'profile' },
-  { id: 'live-tour-recovery', label: 'Khôi phục Live Tour', icon: RefreshCw, ready: true, adminOnly: true },
+  { id: 'hr', label: 'Nhân sự', icon: Users, ready: true, adminOnly: true },
+  { id: 'training', label: 'Đào tạo', icon: ClipboardList, ready: true, permission: 'training_view' },
+  { id: 'profile', label: 'Hồ sơ', icon: UserRound, ready: true, permission: 'profile' },
+  { id: 'auto-check', label: 'Auto Check', icon: Bot, ready: true, permission: 'auto_penalty' },
+  { id: 'system', label: 'Hệ thống', icon: HardDrive, ready: true, anyPermission: ['audit_admin_view', 'storage_admin_view'] },
+  { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, anyPermission: ['live_tour_admin', 'ktv_shift_view', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_quanly', 'work_schedule_tapvu', 'permission_admin'] },
   { id: 'rules', label: 'Nội qui', icon: FileText, ready: true, permission: 'official_rules_view' },
+  { id: 'devices', label: 'Thiết bị', icon: Server, ready: true, permission: 'device_view' },
 ]
 
 const BREAK_ALERT_DISMISSED_KEY = 'vera-break-alerts-admin-dismissed'
@@ -116,7 +113,6 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   const [mobileOpen, setMobileOpen] = useState(false)
   const layoutTrigger = useRef(null)
   const [layoutDesignerOpen, setLayoutDesignerOpen] = useState(currentPage === 'appearance')
-  const { items: uiItems } = useSyncExternalStore(subscribeCustomization, getCustomization, getCustomization)
   const [standaloneMenuOpen, setStandaloneMenuOpen] = useState(false)
   const [birthdayNotice, setBirthdayNotice] = useState(null)
   const [notificationSettings, setNotificationSettings] = useState(null)
@@ -417,8 +413,8 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
             if (permission && user?.permissions?.[permission] !== true) return false
             if (anyPermission && !anyPermission.some((key) => user?.permissions?.[key] === true)) return false
             return true
-          }).sort((a,b) => (uiItems['u-menu-'+a.id]?.order ?? items.indexOf(a)) - (uiItems['u-menu-'+b.id]?.order ?? items.indexOf(b))).map(({ id, label, icon: Icon, ready }) => (
-            <Fragment key={id}><a data-ui-key={`u-menu-${id}`}
+          }).map(({ id, label, icon: Icon, ready }) => (
+            <a data-ui-key={`u-menu-${id}`}
               key={id}
               className={`nav-item ${(currentPage === id || (currentPage === 'hc-rules' && id === 'rules') || (currentPage === 'checkin-history' && id === 'snapshot') || (['changes', 'storage'].includes(currentPage) && id === 'system') || (['notifications', 'permissions'].includes(currentPage) && id === 'settings') || (['department-payroll', 'payroll-config'].includes(currentPage) && id === 'payroll')) ? 'active' : ''} ${ready ? '' : 'disabled'}`}
               href={ready ? menuPageUrl(id) : '#'}
@@ -428,15 +424,14 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
               aria-disabled={!ready || undefined}
               title={ready ? `${label} · Có thể nhấp chuột phải để mở tab mới` : 'Sẽ chuyển đổi ở giai đoạn tiếp theo'}
             >
-              <Icon size={19} /><span><UiCustomText uiKey={`u-menu-${id}`}>{label}</UiCustomText></span>{!ready && <span className="soon-pill">Sau</span>}
+              <Icon size={19} /><span>{label}</span>{!ready && <span className="soon-pill">Sau</span>}
             </a>
-            {id === 'rules' && user?.role === 'admin' && !user?.must_change_password && <button data-ui-key="u-783d8360d527"
+          ))}
+          {user?.role === 'admin' && !user?.must_change_password && <button data-ui-key="u-783d8360d527"
             type="button" className={`nav-item appearance-menu-item ${layoutDesignerOpen ? 'active' : ''}`}
             ref={layoutTrigger} aria-expanded={layoutDesignerOpen}
             onClick={() => { setLayoutDesignerOpen(true); setMobileOpen(false); setStandaloneMenuOpen(false) }}
           ><Settings2 size={19} /><span>Giao diện</span></button>}
-            </Fragment>
-          ))}
         </nav>
 
         {!user?.must_change_password && <DevicePushMenu key={user.id}/>}

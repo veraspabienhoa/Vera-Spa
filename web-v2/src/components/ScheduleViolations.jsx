@@ -7,7 +7,7 @@ import { searchTextMatches } from '../lib/searchText'
 
 const money = value => `${Number(value || 0).toLocaleString('vi-VN')}đ`
 
-export default function ScheduleViolations({ department, employees = [], canEdit, canManage = false, personal = false, openSequence, request, onSaved }) {
+export default function ScheduleViolations({ department, departmentLabel, employees = [], canEdit, canManage = false, personal = false, openSequence, request, onSaved }) {
   const [mode, setMode] = useState('month')
   const [range, setRange] = useState(() => violationMonthRange())
   const [search, setSearch] = useState('')
@@ -73,7 +73,7 @@ export default function ScheduleViolations({ department, employees = [], canEdit
   }
   const visible = rows.filter(row => (!date || row.violation_date === date) && searchTextMatches(`${row.employee_name} ${row.employee_username}`, search))
   return <section className="panel schedule-violations">
-    <div className="schedule-violation-title"><h3>{personal ? 'LỊCH SỬ VI PHẠM CỦA TÔI' : 'VI PHẠM · PHẠT VI PHẠM'}</h3>{canEdit && openSequence === undefined && <button className="primary-button" type="button" onClick={open}>+ Nhập phạt vi phạm</button>}</div>
+    <div className="schedule-violation-title"><h3>{personal ? 'LỊCH SỬ VI PHẠM CỦA TÔI' : `VI PHẠM · PHẠT VI PHẠM${departmentLabel ? ` · ${departmentLabel}` : ''}`}</h3>{canEdit && openSequence === undefined && <button className="primary-button" type="button" onClick={open}>+ Nhập phạt vi phạm</button>}</div>
     <div className="schedule-violation-filters">
       {!personal && <label>Tên nhân viên<input type="search" placeholder="Tìm tên nhân viên…" value={search} onChange={e => setSearch(e.target.value)} /></label>}
       <label>Ngày vi phạm<VeraDateInput value={date} aria-label="Lọc ngày vi phạm" onChange={e => setDate(e.target.value)} /></label>

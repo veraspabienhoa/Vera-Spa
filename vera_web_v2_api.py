@@ -747,7 +747,7 @@ class PushDispatch(BaseModel):
 
 _LEAVE_EDIT_FEATURES = ("leave_manage_edit", "leave_detail_edit")
 _LEAVE_DELETE_FEATURES = ("leave_manage_delete", "leave_detail_delete")
-_EMPLOYEE_SELF_SERVICE_ROLES = {"nhanvien", "leader", "locker", "tapvu"}
+_EMPLOYEE_SELF_SERVICE_ROLES = {"nhanvien", "leader"}
 _EMPLOYEE_SELF_SERVICE_FEATURES = {
     "leave", "leave_manage", "leave_create", "leave_detail_edit",
     "leave_detail_delete", "leave_manage_edit", "leave_manage_delete",
@@ -1213,7 +1213,7 @@ def _validate_and_prepare(conn, body: LeaveCreate, ident: Identity) -> tuple[dic
         raise HTTPException(403, "Tài khoản hiện tại chỉ được đăng ký lịch nghỉ của chính mình.")
 
     emp = conn.execute(text("""
-        SELECT username, monthly_generated, monthly_leave, annual_leave
+        SELECT username, role, monthly_generated, monthly_leave, annual_leave
         FROM employees WHERE lower(btrim(username))=lower(btrim(:u))
           AND COALESCE(login_locked,false)=false
           AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
@@ -1221,6 +1221,8 @@ def _validate_and_prepare(conn, body: LeaveCreate, ident: Identity) -> tuple[dic
     """), {"u": employee}).mappings().first()
     if not emp:
         raise HTTPException(400, "Không tìm thấy nhân viên đang hoạt động.")
+    if str(emp.get("role") or "").strip().lower() not in {"leader", "nhanvien"}:
+        raise HTTPException(400, "Đăng ký nghỉ chỉ áp dụng cho bộ phận Leader và nhân viên.")
     employee = emp["username"]
 
     item = _reason_item(conn, body.leave_reason)
@@ -1935,6 +1937,9 @@ def leave_records(
                    detail, penalty, updated_by, updated_at, created_at
             FROM leave_records
             WHERE leave_date BETWEEN :start_date AND :end_date
+              AND EXISTS (SELECT 1 FROM employees e
+                  WHERE lower(btrim(e.username))=lower(btrim(leave_records.employee_name))
+                    AND lower(btrim(COALESCE(e.role,''))) IN ('leader','nhanvien'))
             ORDER BY leave_date, employee_name, record_uid
         """), {"start_date": start_date, "end_date": end_date}).mappings().all()
     records = []
@@ -2200,6 +2205,13 @@ async def import_leave_excel(request: Request, ident: Identity = Depends(current
             raise HTTPException(403, "Chỉ tài khoản admin được Import dữ liệu lịch nghỉ cũ.")
         _require_feature(conn, ident, "leave")
         now = datetime.now(VN_TZ)
+        eligible_employees = conn.execute(text("""
+            SELECT username FROM employees
+            WHERE lower(btrim(COALESCE(role,''))) IN ('leader','nhanvien')
+        """)).scalars().all()
+        eligible_names = {str(name).strip().casefold() for name in eligible_employees}
+        if any(str(record["employee_name"]).strip().casefold() not in eligible_names for record in imported):
+            raise HTTPException(400, "Import đăng ký nghỉ chỉ áp dụng cho bộ phận Leader và nhân viên.")
         for record in imported:
             policy = {}
             if not record["leave_type"] or record["calculated_days"] is None or record["penalty"] is None:
@@ -2370,6 +2382,9 @@ def export_leave_excel(
                    update_date, update_time, updated_by, record_uid
             FROM leave_records
             WHERE leave_date BETWEEN :start_date AND :end_date
+              AND EXISTS (SELECT 1 FROM employees e
+                  WHERE lower(btrim(e.username))=lower(btrim(leave_records.employee_name))
+                    AND lower(btrim(COALESCE(e.role,''))) IN ('leader','nhanvien'))
             ORDER BY leave_date, employee_name, record_uid
         """), {
             "start_date": start_date,
@@ -2460,7 +2475,7 @@ def leave_daily_stats(
                 SELECT 1
                 FROM employees e
                 WHERE lower(btrim(e.username)) = lower(btrim(l.employee_name))
-                  AND lower(COALESCE(e.role, '')) NOT IN ('admin','letan','locker','tapvu')
+                  AND lower(COALESCE(e.role, '')) IN ('leader','nhanvien')
               )
             ORDER BY l.leave_date, l.employee_name, l.record_uid
         """), {"start_date": start_date, "end_date": end_date}).mappings().all()
@@ -2524,11 +2539,14 @@ def leave_summary(date_value: date = Query(alias="date"), ident: Identity = Depe
             WHERE COALESCE(login_locked,false)=false
               AND COALESCE(payload->>'__deleted','false') <> 'true'
               AND COALESCE(payload->>'Trạng thái làm việc', payload->>'employment_status', 'Đang làm việc') = 'Đang làm việc'
-              AND lower(COALESCE(role,'')) NOT IN ('admin','letan','locker','tapvu')
+              AND lower(COALESCE(role,'')) IN ('leader','nhanvien')
         """)).scalar() or 0
         rows = conn.execute(text("""
             SELECT employee_name, leave_reason, leave_type, calculated_days
             FROM leave_records WHERE leave_date=:d
+              AND EXISTS (SELECT 1 FROM employees e
+                  WHERE lower(btrim(e.username))=lower(btrim(leave_records.employee_name))
+                    AND lower(btrim(COALESCE(e.role,''))) IN ('leader','nhanvien'))
         """), {"d": date_value}).mappings().all()
     return summarize_leave_day(rows, int(active))
 
