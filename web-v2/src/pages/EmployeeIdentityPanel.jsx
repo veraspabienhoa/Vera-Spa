@@ -749,9 +749,8 @@ export function FaceIdCard({ username, compact = false }) {
       beforeUpload={compact && data.can_view_device_tools ? <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy} inline/> : undefined}
       sources={data.can_view_device_tools ? (acceptFile) => <div className="employee-id-actions face-id-sources">
         {!compact && <button type="button" className="secondary-button compact" disabled={Boolean(busy)} onClick={() => run('portrait', async () => { acceptFile(asFile(await faceIdApi.portrait(username))); return false })}>Từ ảnh đại diện</button>}
-        {!compact && <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/>}
         <FaceIdCapturePicker key={`${username}:${day}`} username={username} day={day} busy={busy} onSelect={acceptFile} compact={compact}
-          dateControl={compact ? <VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/> : undefined}/>
+          dateControl={<VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/>}/>
       </div> : undefined}/>
     <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ.</p>
     {!compact && data.can_view_device_tools && <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy}/>}
