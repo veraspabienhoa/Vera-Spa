@@ -689,3 +689,33 @@ body .leave-registration-tabs > button:focus-visible { outline: 3px solid #b7872
   .manual-online-booking-modal .clearable-search-input .search-clear-button { min-height:32px; font-size:12px; padding:4px 6px; }
   .manual-online-booking-modal .manual-booking-actions { padding-top:8px; }
 }
+
+/* Salary configuration keeps readable inputs inside its own scroll frame. */
+body .department-payroll-page .responsive-data-table.department-config-table {
+  --config-index-width:42px;
+  --config-name-width:180px;
+  position:relative; min-width:0; width:100%; max-width:100%;
+  max-height:min(60dvh,560px)!important; overflow:auto!important;
+  overscroll-behavior:contain; scrollbar-width:thin;
+}
+body .department-payroll-page .department-config-table table {
+  border-collapse:separate!important; border-spacing:0; font-size:14px;
+}
+body .department-payroll-page .department-config-table th {
+  position:sticky; top:0; z-index:4; background:#e8f1ec;
+}
+body .department-payroll-page .department-config-table :is(th,td).department-config-index-column {
+  position:sticky; left:0; z-index:3; background:#fff;
+  width:var(--config-index-width); min-width:var(--config-index-width); max-width:var(--config-index-width); box-sizing:border-box;
+}
+body .department-payroll-page .department-config-table :is(th,td).department-config-name-column {
+  position:sticky; left:var(--config-index-width); z-index:3; background:#fff;
+  width:var(--config-name-width); min-width:var(--config-name-width); max-width:var(--config-name-width); box-sizing:border-box;
+  white-space:normal!important; box-shadow:2px 0 0 #507562;
+}
+body .department-payroll-page .department-config-table th:is(.department-config-index-column,.department-config-name-column) { z-index:6; background:#e8f1ec; }
+body .department-payroll-page .department-config-identity { width:calc(var(--config-name-width) - 16px); }
+body .department-payroll-page .department-config-identity :is(strong,small) { display:block; white-space:normal; overflow-wrap:anywhere; }
+body .department-payroll-page .department-config-identity small { margin:4px 0 0; font-size:12px; }
+body .department-payroll-page .department-config-table .payroll-money-input { width:112px; min-width:112px; min-height:40px; font-size:16px; box-sizing:border-box; }
+@media(max-width:360px){body .department-payroll-page .department-config-table{--config-name-width:148px}}
