@@ -3862,7 +3862,7 @@ def _export_rows(
         headers = [
             "Ngày", "Ngày giờ hóa đơn", "Nhân viên", "Dịch vụ", "Phòng", "Yêu cầu",
             "Thời gian bắt đầu thực hiện", "Thời gian bắt đầu thực hiện YC", "Số bill",
-            "Khách hàng", "Điện thoại", "Tiền dịch vụ", "Giảm giá", "Tip", "Tổng tiền",
+            "Khách hàng", "Điện thoại", "Tiền dịch vụ", "Giảm giá", "Ghi chú", "Tip", "Tổng tiền",
             "Thanh toán", "Người tạo",
         ]
         invoices = {str(item.get("id") or ""): item for item in state.get("invoices", [])}
@@ -3896,7 +3896,8 @@ def _export_rows(
                 item.get("business_date"), item.get("effective_at"), item.get("employee_name"),
                 item.get("service"), item.get("room"), request, standard_start, requested_start,
                 item.get("bill_no"), item.get("customer_name"), item.get("customer_phone"),
-                service_money, allocated_discount, tip, total, item.get("payment_method"), item.get("actor"),
+                service_money, allocated_discount, invoice.get("note", item.get("note", "")),
+                tip, total, item.get("payment_method"), item.get("actor"),
             ])
         return "Bao_cao", headers, rows
     if kind == "performance":

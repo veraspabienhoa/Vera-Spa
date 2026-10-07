@@ -25,7 +25,7 @@ const built = await build({
   plugins: [{ name: 'mock-boundaries', setup(b) {
     b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const veraApi = globalThis.__tourTestApi;', loader: 'js' }))
-b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(UiToolbar|UiCustomText|VeraDateInput|ClearableSearchInput|LiveTour(Board|PendingPanel|InvoicesPanel|CustomersPanel|ReportsPanel|HistoryPanel|CatalogPanel|AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput))$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
+b.onResolve({ filter: /^\.\.\/components\// }, (args) => /(UiToolbar|UiCustomText|VeraDateInput|ClearableSearchInput|LiveTour(Filters|Board|PendingPanel|InvoicesPanel|CustomersPanel|ReportsPanel|HistoryPanel|CatalogPanel|AppointmentInput|ServiceActions|SearchSelect|TransactionDialog|PageItems|BookingDialog|CheckoutCustomer|TipInput))$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'dialog' }))
     b.onLoad({ filter: /.*/, namespace: 'dialog' }, () => ({ contents: 'export default function Dialog(){return null}', loader: 'js' }))
   } }],
 })
@@ -851,5 +851,25 @@ test('booking permission alone cannot move or settle the old bill', async () => 
     await act(() => document.querySelector('.tour-records-panel .tour-col-employee button').click())
     assert.deepEqual([...document.querySelectorAll('.tour-booking-dialog .live-tour-modal-actions button')].map(button => button.textContent), ['Đóng'])
     assert.equal(f.writes.length, 0)
+  } finally { await f.dispose() }
+})
+
+test('Live Tour revenue export uses the same detailed report kind and selected filters as the Reports menu', async () => {
+  const f = await fixture({ role: 'admin', setup(data) {
+    data.capabilities.export = true
+    data.capabilities.reports_view = true
+  } })
+  try {
+    await clickText('Báo cáo')
+    await f.type(document.querySelector('input[aria-label="Lọc ngày hóa đơn"]'), '06102026')
+    const bill = document.querySelector('input[placeholder="Nhập hoặc chọn số hóa đơn"]')
+    await f.type(bill, 'VERA-20261006-0004')
+    await act(() => new Promise(resolve => setTimeout(resolve, 250)))
+    await clickText('Doanh thu', document.querySelector('.live-tour-panel-toolbar-actions'))
+    assert.equal(f.exports.length, 1)
+    assert.equal(f.exports[0].kind, 'reports')
+    assert.equal(f.exports[0].query.date_from, '2026-10-06')
+    assert.equal(f.exports[0].query.date_to, '2026-10-06')
+    assert.equal(f.exports[0].query.bill_no, 'VERA-20261006-0004')
   } finally { await f.dispose() }
 })
