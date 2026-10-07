@@ -120,6 +120,30 @@ test('payroll actions precede table and share offers prepared PNG or PDF',async 
  assert.equal([...document.querySelectorAll('button')].find(b=>b.textContent==='Ảnh PNG').disabled,false)
 })
 
+test('save image and PDF download prepared files even when native sharing is available',async t=>{
+ const f=await fixture(t),downloads=[],files=[],shares=[]
+ navigator.canShare=()=>true;navigator.share=async payload=>{shares.push(payload)}
+ const originalCreate=URL.createObjectURL,originalRevoke=URL.revokeObjectURL
+ URL.createObjectURL=file=>{files.push(file);return `blob:payroll-${files.length}`}
+ URL.revokeObjectURL=()=>{}
+ t.after(()=>{URL.createObjectURL=originalCreate;URL.revokeObjectURL=originalRevoke})
+ window.HTMLAnchorElement.prototype.click=function(){downloads.push({name:this.download,connected:this.isConnected})}
+ await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương từ Thống kê');await f.click('Chia sẻ')
+ const month=document.querySelector('.department-payroll-toolbar input[type="month"]').value
+ const exportCalls=()=>f.requests.filter(r=>/\/export\.(png|pdf)$/.test(r.path)).length
+ assert.equal(exportCalls(),2)
+ const groups=[...document.querySelectorAll('.department-payroll-share-format')].map(group=>[...group.querySelectorAll('button')].map(button=>button.textContent.trim()))
+ assert.deepEqual(groups,[['Ảnh PNG','Lưu ảnh'],['PDF','Lưu PDF']])
+ await f.click('Lưu ảnh');await f.click('Lưu PDF')
+ assert.deepEqual(downloads.map(item=>item.name),[`Luong_hanh_chanh_${month}.png`,`Luong_hanh_chanh_${month}.pdf`])
+ assert.ok(downloads.every(item=>item.connected));assert.equal(document.querySelectorAll('a[download]').length,0)
+ assert.deepEqual(files.map(file=>file.type),['image/png','application/pdf'])
+ assert.equal(shares.length,0);assert.equal(exportCalls(),2)
+ assert.equal(document.querySelector('dialog[aria-label="Chia sẻ bảng lương"]').open,true)
+ await f.click('Ảnh PNG');assert.equal(shares.length,1);assert.equal(shares[0].files[0],files[0])
+ assert.equal(document.querySelector('dialog[aria-label="Chia sẻ bảng lương"]').open,false)
+})
+
 test('delete draft confirms and removes only the draft; recalculate retains attendance source',async t=>{
  const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính từ chấm công');await f.click('Lưu bảng nháp')
  window.confirm=()=>false;const before=f.requests.length
