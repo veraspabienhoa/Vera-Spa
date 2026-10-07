@@ -1,3 +1,4 @@
+import DateSearchField from '../components/DateSearchField'
 import ManualOnlineBooking from '../components/ManualOnlineBooking'
 import { useEffect, useState } from 'react'
 import { veraApi } from '../lib/api'
@@ -77,7 +78,7 @@ export default function OnlineBookingPage({ user }) {
       <select aria-label="Loại yêu cầu" value={kind} onChange={e => { setPage(1); setKind(e.target.value) }}><option value="">Đặt lịch và liên hệ</option><option value="booking">Đặt lịch</option><option value="contact">Liên hệ</option></select>
       <div className="online-booking-filter-buttons"><button type="submit">Tìm</button><button type="button" disabled={busy} onClick={reload}>Làm mới</button></div>
     </form>
-    <div className="online-booking-periods" aria-label="Lọc ngày booking">{[['today','Hôm nay'],['tomorrow','Ngày mai'],['week','Tuần này'],['next-week','Tuần sau'],['custom','Tuỳ chỉnh']].map(([key,label]) => <button key={key} type="button" aria-pressed={period===key} onClick={() => { setPeriod(key); if(key!=='custom') { setPage(1); setRange(bookingDateRange(key)) } }}>{label}</button>)}</div>
+    <div className="online-booking-periods date-search-toolbar" aria-label="Lọc ngày booking"><DateSearchField ariaLabel="Ngày booking" value={period === 'day' ? range.date_from : ''} onChange={date => { setPage(1); setPeriod(date ? 'day' : ''); setRange({ date_from: date, date_to: date }) }} />{[['today','Hôm nay'],['tomorrow','Ngày mai'],['week','Tuần này'],['next-week','Tuần sau'],['custom','Tuỳ chỉnh']].map(([key,label]) => <button key={key} type="button" aria-pressed={period===key} onClick={() => { setPeriod(key); if(key!=='custom') { setPage(1); setRange(bookingDateRange(key)) } }}>{label}</button>)}</div>
     {period==='custom' && <form className="online-booking-actions" onSubmit={e => { e.preventDefault(); if(draftRange.date_from && draftRange.date_to && draftRange.date_from>draftRange.date_to) return; setPage(1); setRange({...draftRange}) }}>
       <label>Từ ngày<VeraDateInput aria-label="Từ ngày" value={draftRange.date_from} onChange={e=>setDraftRange(v=>({...v,date_from:e.target.value}))}/></label>
       <label>Đến ngày<VeraDateInput aria-label="Đến ngày" min={draftRange.date_from} value={draftRange.date_to} onChange={e=>setDraftRange(v=>({...v,date_to:e.target.value}))}/></label>

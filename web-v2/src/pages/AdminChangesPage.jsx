@@ -1,3 +1,4 @@
+import DateSearchField from '../components/DateSearchField'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -28,13 +29,13 @@ const dateText = (value) => {
 }
 const today = () => dateText(new Date())
 const addDays = (value, days) => { const next = new Date(value); next.setDate(next.getDate() + days); return next }
-const FILTERS = ['Hôm Qua', 'Hôm nay', 'Tuần Trước', 'Tuần này', 'Tháng trước', 'Tháng này', 'Tùy chỉnh']
+const FILTERS = ['Hôm nay', 'Hôm qua', 'Tuần này', 'Tuần trước', 'Tháng này', 'Tháng trước', 'Tùy chỉnh']
 const rangeFor = (filter) => {
   const now = new Date()
   const monday = addDays(now, -((now.getDay() + 6) % 7))
-  if (filter === 'Hôm Qua') { const d = addDays(now, -1); return [dateText(d), dateText(d)] }
+  if (filter === 'Hôm qua') { const d = addDays(now, -1); return [dateText(d), dateText(d)] }
   if (filter === 'Hôm nay') return [today(), today()]
-  if (filter === 'Tuần Trước') { const start = addDays(monday, -7); return [dateText(start), dateText(addDays(start, 6))] }
+  if (filter === 'Tuần trước') { const start = addDays(monday, -7); return [dateText(start), dateText(addDays(start, 6))] }
   if (filter === 'Tuần này') return [dateText(monday), dateText(addDays(monday, 6))]
   if (filter === 'Tháng trước') return [dateText(new Date(now.getFullYear(), now.getMonth() - 1, 1)), dateText(new Date(now.getFullYear(), now.getMonth(), 0))]
   if (filter === 'Tháng này') return [dateText(new Date(now.getFullYear(), now.getMonth(), 1)), dateText(new Date(now.getFullYear(), now.getMonth() + 1, 0))]
@@ -161,7 +162,7 @@ export default function AdminChangesPage() {
     <StableFeedback>{error && <div className="error-box">{error}</div>}</StableFeedback>
 
     <section data-ui-key="u-6d7ee12b26b7" className="panel data-toolbar"><UiToolbar data-ui-key="u-3175e389120b" className="audit-toolbar-content">
-      <div className="audit-filter-buttons" role="group" aria-label="Lọc thời gian thay đổi hệ thống">{FILTERS.map((item) => <button data-ui-key="u-afa1823cde30" type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>
+      <div className="audit-filter-buttons date-search-toolbar" role="group" aria-label="Lọc thời gian thay đổi hệ thống"><DateSearchField ariaLabel="Ngày thay đổi hệ thống" value={period === 'Ngày' ? start : ''} onChange={date => { if (!date) { choosePeriod('Hôm nay'); return }; setStart(date); setEnd(date); setPeriod('Ngày') } } />{FILTERS.map((item) => <button data-ui-key="u-afa1823cde30" type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>
       {period === 'Tùy chỉnh' && <div className="audit-custom-range"><label><CalendarDays size={15}/> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }}/></label><label><CalendarDays size={15}/> Đến ngày<VeraDateInput aria-label="Đến ngày" min={start} value={end} onChange={(e) => setEnd(e.target.value)}/></label></div>}
       <div className="audit-search-line"><label>Người thực hiện<ClearableSearchInput type="search" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Tìm tên người thực hiện" list="audit-actors"/></label><datalist id="audit-actors">{actors.map((value) => <option key={value} value={value}/>)}</datalist><div className="audit-total">{data.changes?.length || 0} thay đổi</div></div>
     </UiToolbar></section>

@@ -1,3 +1,4 @@
+import './dateSearchToolbars.test.mjs'
 import './bookingDateRange.test.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
