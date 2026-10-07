@@ -95,6 +95,12 @@ test('wide payroll tables fit the available width and restore full size after re
  table.parentElement.clientWidth=0;fitPayrollTable(table);assert.equal(table.style.zoom,'1')
 })
 
+test('editable salary configuration stays full size even under the parent payroll fitter',()=>{
+ const table={parentElement:{clientWidth:320},scrollWidth:2000,style:{zoom:'0.16'},closest:selector=>selector==='.department-config-table'?{}:null}
+ fitPayrollTable(table);assert.equal(table.style.zoom,'1')
+ table.parentElement.clientWidth=0;table.style.zoom='0.4';fitPayrollTable(table);assert.equal(table.style.zoom,'1')
+})
+
 test('save then reopen draft preserves edits and clears stale filters',async t=>{
  const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương từ Thống kê')
  await f.change(document.querySelector('[aria-label="Trách nhiệm Nhân Viên A"]'),'123.000');await f.click('Lưu bảng nháp')

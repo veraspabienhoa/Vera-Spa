@@ -318,11 +318,11 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
         <label>Chọn nhân viên<select value={pendingEmployee[group]} onChange={(event) => setPendingEmployee((value) => ({ ...value, [group]: event.target.value }))}><option value="">-- Chọn nhân viên --</option>{candidates.map((item) => <option key={item.employee_username} value={item.employee_username}>{item.employee_name} · {item.employee_username}</option>)}</select></label>
         <button data-ui-key="u-42941a1c0373" data-ui-label-default="Thêm dòng" className="secondary-button" type="button" disabled={Boolean(busy) || !pendingEmployee[group]} onClick={() => addEmployeeRow(group)}><Plus size={16} /><UiCustomText uiKey="u-42941a1c0373"> Thêm dòng</UiCustomText></button>
       </div>
-      <div className="responsive-data-table department-config-table"><table data-ui-key="u-ee5aa400105c">
-        <thead><tr><th data-ui-key="u-014a14092a84" data-ui-label-default="TT"><UiCustomText uiKey="u-014a14092a84">TT</UiCustomText></th><th data-ui-key="u-11eb1864484f" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-11eb1864484f">Nhân viên</UiCustomText></th><th data-ui-key="u-fe55a3a13f53" data-ui-label-default="Bộ phận"><UiCustomText uiKey="u-fe55a3a13f53">Bộ phận</UiCustomText></th>{fields.map(([, label]) => <th data-ui-key="u-c406e1406f17" key={label}>{label}</th>)}<th data-ui-key="u-2e364e25a4c3" /></tr></thead>
+      <div className="responsive-data-table department-config-table" tabIndex={0} role="region" aria-label={`${title} · cấu hình lương`}><table data-ui-key="u-ee5aa400105c">
+        <thead><tr><th className="department-config-index-column" data-ui-key="u-014a14092a84" data-ui-label-default="TT"><UiCustomText uiKey="u-014a14092a84">TT</UiCustomText></th><th className="department-config-name-column" data-ui-key="u-11eb1864484f" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-11eb1864484f">Nhân viên</UiCustomText></th><th data-ui-key="u-fe55a3a13f53" data-ui-label-default="Bộ phận"><UiCustomText uiKey="u-fe55a3a13f53">Bộ phận</UiCustomText></th>{fields.map(([, label]) => <th data-ui-key="u-c406e1406f17" key={label}>{label}</th>)}<th data-ui-key="u-2e364e25a4c3" /></tr></thead>
         <tbody>{items.map((row, index) => <tr key={row.employee_username}>
-          <td>{index + 1}</td>
-          <td><strong>{row.employee_name}</strong><small>{row.employee_username}</small></td>
+          <td className="department-config-index-column">{index + 1}</td>
+          <td className="department-config-name-column"><div className="department-config-identity"><strong>{row.employee_name}</strong><small>{row.employee_username}</small></div></td>
           <td><strong>{row.department_label}</strong></td>
           {fields.map(([key]) => <td key={key}><VeraMoneyInput className="payroll-money-input" disabled={Boolean(busy)} value={row[key]} onChange={(event) => editEmployeeConfig(group, row.employee_username, key, event.target.value)} /></td>)}
           <td><button data-ui-key="u-e63c7076f12d" className="icon-button danger" type="button" title="Xóa dòng cấu hình" disabled={Boolean(busy)} onClick={() => removeEmployeeRow(group, row.employee_username)}><Trash2 size={15} /></button></td>
@@ -354,7 +354,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
         <button data-ui-key="u-d8739a388253" data-ui-label-default="Tính từ chấm công" className="secondary-button" disabled={Boolean(busy)} onClick={() => calculate('attendance')}><RefreshCw size={16} className={busy === 'calculate-attendance' ? 'spin' : ''} /><UiCustomText uiKey="u-d8739a388253"> Tính từ chấm công</UiCustomText></button>
         <button data-ui-key="u-00757540fcc5" data-ui-label-default="Mở bảng nháp" className="secondary-button" disabled={Boolean(busy)} onClick={loadDraft}>{busy === 'draft-load' ? 'Đang mở…' : <UiCustomText uiKey="u-00757540fcc5">Mở bảng nháp</UiCustomText>}</button>
         <button type="button" className="secondary-button" disabled={Boolean(busy) || !rows.length} onClick={recalculatePayroll}><RefreshCw size={16} />Tính lại lương</button>
-        {canSave && <button type="button" className="danger-button" disabled={Boolean(busy)} onClick={deleteDraft}><Trash2 size={16} />{busy === 'draft-delete' ? 'Đang xóa…' : 'Xóa bảng lương nháp'}</button>}
+        {canSave && <button type="button" className="danger-button department-payroll-delete-draft" disabled={Boolean(busy)} onClick={deleteDraft}><Trash2 size={16} />{busy === 'draft-delete' ? 'Đang xóa…' : 'Xóa bảng lương nháp'}</button>}
       </UiToolbar>
 
       {!!rows.length && <>
