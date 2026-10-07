@@ -358,3 +358,24 @@ def test_report_unpaid_collection_respects_both_read_grants(monkeypatch, pending
     response = client.get('/v2/live-tour/reports')
     assert response.status_code == 200
     assert [item['id'] for item in response.json()['pending']] == ([pending['id']] if visible else [])
+
+@pytest.mark.parametrize('note', ['Khách yêu cầu phòng yên tĩnh\nGiảm theo chương trình', '=SUM(A1:A3)', ''])
+def test_report_export_note_follows_discount_and_keeps_invoice_money(note):
+    state, invoice = paid_state()
+    invoice['note'] = note
+    content, filename = live._excel_bytes(state, 'reports', NOW)
+    workbook = load_workbook(BytesIO(content))
+    sheet = workbook.active
+    headers = list(next(sheet.values))
+    assert headers[headers.index('Giảm giá') + 1] == 'Ghi chú'
+    assert headers[headers.index('Ghi chú') + 1] == 'Tip'
+    note_column = headers.index('Ghi chú') + 1
+    expected_note = "'" + note if note.startswith('=') else note or None
+    assert sheet.cell(2, note_column).value == expected_note
+    assert sheet.cell(2, note_column).data_type != 'f'
+    values = list(sheet.values)[1:]
+    assert sum(row[headers.index('Giảm giá')] for row in values) == invoice['discount']
+    assert sum(row[headers.index('Tip')] for row in values) == invoice['tip']
+    assert sum(row[headers.index('Tổng tiền')] for row in values) == invoice['total']
+    assert workbook.sheetnames == ['Bao_cao']
+    assert 'Bao_cao' in filename

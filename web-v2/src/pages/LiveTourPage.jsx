@@ -1437,7 +1437,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     setActionBusy(`export-${kind}`)
     setError('')
     try {
-      await veraApi.exportLiveTourExcel(kind, query)
+      await veraApi.exportLiveTourExcel(kind === 'revenue' ? 'reports' : kind, query)
     } catch (err) {
       setError(err.message || 'Không xuất được dữ liệu Live Tour.')
     } finally {
