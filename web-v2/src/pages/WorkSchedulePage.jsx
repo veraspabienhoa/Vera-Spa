@@ -1,3 +1,4 @@
+import DateSearchField from '../components/DateSearchField'
 import ScheduleViolations from '../components/ScheduleViolations'
 import ComboCustomerFields from '../components/ComboCustomerFields'
 import StableDataRegion from '../components/StableDataRegion'
@@ -316,6 +317,7 @@ export default function WorkSchedulePage({ user }) {
     if (rangeMode === 'last_month') return monthDays(moveMonth(currentMonthValue(), -1))
     if (rangeMode === 'next_month') return monthDays(moveMonth(currentMonthValue(), 1))
     if (rangeMode === 'selected_month') return monthDays(month)
+    if (rangeMode === 'day') return [parseIsoDate(customStart) || base]
     if (rangeMode === 'custom') {
       const custom = daysBetween(customStart, customEnd)
       return custom.length ? custom : [base]
@@ -1128,7 +1130,7 @@ export default function WorkSchedulePage({ user }) {
 
     <UiToolbar data-ui-key="u-8e8fa302b3e3" className="schedule-department-tabs">{availableDepartments.map((item) => <button data-ui-key="u-c72ddb608d35" type="button" key={item} className={department === item ? 'active' : ''} onClick={() => { setDepartment(item) }}>{DEPARTMENT_INFO[item].label}</button>)}</UiToolbar>
 
-    {['admin', 'quanly'].includes(role) && availableDepartments.includes(department) && <div className="schedule-violation-launch"><button type="button" className="primary-button" onClick={() => setViolationOpenSequence(value => value + 1)}>+ Nhập phạt vi phạm</button></div>}
+    <div className="schedule-violation-launch date-search-toolbar">{['admin', 'quanly'].includes(role) && availableDepartments.includes(department) && <button type="button" className="primary-button" onClick={() => setViolationOpenSequence(value => value + 1)}>+ Nhập phạt vi phạm</button>}<DateSearchField ariaLabel="Ngày lịch làm việc" value={rangeMode === 'day' ? customStart : ''} onChange={date => { if (!date) { selectRange('week'); return }; setCustomStart(date); setCustomEnd(date); selectRange('day') }} /></div>
 
     {pastePanelOpen && selectedCell && <div data-ui-key="u-f7b70375a55b" className="paste-range-panel">
       <label>Nhân viên<input value={systemName(employees.find((item) => item.username === selectedCell.username)) || selectedCell.username} readOnly /></label>

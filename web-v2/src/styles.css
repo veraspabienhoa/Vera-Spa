@@ -1294,3 +1294,12 @@ body .department-payroll-page .department-payroll-table :is(th, td).payroll-hour
   width: 6ch; min-width: 6ch; max-width: 6ch;
   white-space: normal !important; overflow-wrap: anywhere; text-align: center;
 }
+
+/* Date search and shortcuts stay on one contained row, including narrow screens. */
+body .date-search-toolbar{display:flex!important;flex-wrap:nowrap!important;align-items:center;gap:8px;min-width:0;width:100%;max-width:100%;box-sizing:border-box;overflow-x:auto;overscroll-behavior-x:contain}
+body .date-search-toolbar>button{flex:0 0 auto;white-space:nowrap;grid-column:auto!important}
+body .date-search-toolbar>.date-search-field{display:flex;flex:0 0 190px;align-items:center;gap:6px;min-width:0;margin:0;font-weight:700;white-space:nowrap}
+body .date-search-field>.vera-date-input{min-width:0;flex:1}
+body .date-search-field input[type="text"]{height:40px;min-width:0;width:100%;box-sizing:border-box;margin:0;font-size:14px;padding:6px 38px 6px 8px!important}
+body .date-search-field .vera-date-picker-button{padding:0}
+@media(max-width:680px){body .date-search-toolbar{gap:5px}body .date-search-toolbar>button{font-size:12px;padding:7px 9px}body .date-search-toolbar>.date-search-field{flex-basis:170px}}

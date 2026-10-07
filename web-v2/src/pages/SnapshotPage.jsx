@@ -1,3 +1,4 @@
+import DateSearchField from '../components/DateSearchField'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -22,15 +23,15 @@ const addDays = (value, days) => { const next = new Date(value); next.setDate(ne
 const rangeFor = (filter) => {
   const now = new Date()
   const monday = addDays(now, -((now.getDay() + 6) % 7))
-  if (filter === 'Hôm Qua') { const d = addDays(now, -1); return [dateText(d), dateText(d)] }
+  if (filter === 'Hôm qua') { const d = addDays(now, -1); return [dateText(d), dateText(d)] }
   if (filter === 'Hôm nay') return [today(), today()]
-  if (filter === 'Tuần Trước') { const start = addDays(monday, -7); return [dateText(start), dateText(addDays(start, 6))] }
+  if (filter === 'Tuần trước') { const start = addDays(monday, -7); return [dateText(start), dateText(addDays(start, 6))] }
   if (filter === 'Tuần này') return [dateText(monday), dateText(addDays(monday, 6))]
   if (filter === 'Tháng trước') return [dateText(new Date(now.getFullYear(), now.getMonth() - 1, 1)), dateText(new Date(now.getFullYear(), now.getMonth(), 0))]
   if (filter === 'Tháng này') return [dateText(new Date(now.getFullYear(), now.getMonth(), 1)), dateText(new Date(now.getFullYear(), now.getMonth() + 1, 0))]
   return [today(), today()]
 }
-const FILTERS = ['Hôm Qua', 'Hôm nay', 'Tuần Trước', 'Tuần này', 'Tháng trước', 'Tháng này', 'Tùy chỉnh']
+const FILTERS = ['Hôm nay', 'Hôm qua', 'Tuần này', 'Tuần trước', 'Tháng này', 'Tháng trước', 'Tùy chỉnh']
 const emptyFilters = { employee: '', department: '', shift: '' }
 const normalizedFilters = (values) => ({
   employee: values.employee.trim(),
@@ -303,7 +304,7 @@ export default function SnapshotPage({ user, embedded = false }) {
 
     <section data-ui-key="u-35e8ac56af0a" className="panel data-toolbar attendance-toolbar">
       <div className="attendance-filter-content">
-        <div className="attendance-filter-buttons" role="group" aria-label="Lọc thời gian chấm công">
+        <div className="attendance-filter-buttons date-search-toolbar" role="group" aria-label="Lọc thời gian chấm công"><DateSearchField ariaLabel="Ngày chấm công" value={period === 'Ngày' ? start : ''} onChange={date => { if (!date) { choosePeriod('Hôm nay'); return }; setStart(date); setEnd(date); setPeriod('Ngày') } } />
           {FILTERS.map((item) => <button data-ui-key="u-b391abd4f6dd" type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}
         </div>
         {period === 'Tùy chỉnh' && <div className="attendance-date-custom"><label><CalendarDays size={15} /> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }} /></label><label><CalendarDays size={15} /> Đến ngày<VeraDateInput aria-label="Đến ngày" value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></label></div>}
