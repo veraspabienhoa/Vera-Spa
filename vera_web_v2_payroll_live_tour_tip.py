@@ -93,6 +93,12 @@ def install_payroll_live_tour_tip_routes(
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_calculate")
             rows = _live_tour_tip_rows(conn, start, end)
+            actual_tip_count = len(rows)
+            if not rows:
+                from vera_web_v2_commission import payroll_commissions
+                earnings = payroll_commissions(conn, start, end, lambda value: str(value or "").strip().casefold())
+                if any(sum(row.values()) > 0 for row in earnings.values()):
+                    rows = [{"time": start.strftime("%d/%m/%Y"), "item": "TIP", "amount": 0, "employee": name} for name in earnings]
         if not rows:
             raise HTTPException(409, f"Không có dữ liệu TIP nhân viên trong {label}.")
         result = await calculate(
@@ -105,7 +111,7 @@ def install_payroll_live_tour_tip_routes(
         summary = dict(output.get("source_summary") or {})
         summary.update({
             "source": "TIP nhân viên từ Live Tour",
-            "tip_rows": len(rows),
+            "tip_rows": actual_tip_count,
             "period_start": start.isoformat(),
             "period_end": end.isoformat(),
         })

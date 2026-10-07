@@ -19,6 +19,8 @@ DEFAULT_DEPARTMENTS = {
         ('leader', 'Leader', 'tip'), ('nhanvien', 'Nhân viên', 'tip'),
     ]
 }
+DEFAULT_COMMISSION = {'enabled': False, 'rates': {code: {'service': 0, 'product': 0} for code in ('leader', 'nhanvien')}}
+
 # Constant SQL only; names/values supplied by users are never interpolated.
 REGISTRY_SQL = "(SELECT value_json FROM vera_app_setting WHERE category='payroll' AND setting_key='hr_registry' LIMIT 1)"
 DEPARTMENT_SQL = f"COALESCE({REGISTRY_SQL}->'assignments'->>username, lower(COALESCE(role,'')))"
@@ -39,6 +41,7 @@ def registry(conn):
         'departments': {**deepcopy(DEFAULT_DEPARTMENTS), **saved.get('departments', {})},
         'assignments': dict(saved.get('assignments', {})),
         'revision': int(saved.get('revision', 0)),
+        'commission': deepcopy(saved.get('commission', DEFAULT_COMMISSION)),
     }
 
 
@@ -66,6 +69,18 @@ class DepartmentWrite(BaseModel):
 
 class EmployeeDepartmentWrite(BaseModel):
     department: str = Field(min_length=1, max_length=50)
+    revision: int = Field(ge=0)
+
+
+class CommissionRate(BaseModel):
+    service: float = Field(ge=0, le=100, allow_inf_nan=False)
+    product: float = Field(ge=0, le=100, allow_inf_nan=False)
+
+
+class CommissionWrite(BaseModel):
+    enabled: bool
+    leader: CommissionRate
+    nhanvien: CommissionRate
     revision: int = Field(ge=0)
 
 
@@ -119,6 +134,18 @@ def install_hr_routes(app, *, engine_instance, current_identity, identity_type):
             for person in people:
                 person['department'] = department_code(person, state)
             return {'ok': True, **state, 'employees': people}
+
+    @app.put('/v2/hr/commission')
+    def save_commission(body: CommissionWrite, ident: identity_type = Depends(current_identity)):
+        admin(ident)
+        with engine_instance().begin() as conn:
+            lock(conn)
+            state = registry(conn)
+            checked_revision(state, body.revision)
+            state['commission'] = {'enabled': body.enabled, 'ever_enabled': body.enabled or state['commission'].get('ever_enabled', False), 'rates': {
+                'leader': body.leader.model_dump(), 'nhanvien': body.nhanvien.model_dump()}}
+            persist(conn, state, ident)
+        return {'ok': True, 'revision': state['revision']}
 
     @app.put('/v2/hr/departments')
     def save_department(body: DepartmentWrite, ident: identity_type = Depends(current_identity)):

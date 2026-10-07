@@ -54,6 +54,10 @@ def catalog_details(kind, incoming, current, services):
         raise HTTPException(400, "Cần ngày áp dụng và ngày hết hạn; ngày hết hạn không được trước ngày áp dụng.")
     result["loyalty_points"] = _integer(merged.get("loyalty_points", 0), "Điểm tích lũy", maximum=1000000000)
     if kind == "services":
+        revenue_kind = merged.get("revenue_kind", "service")
+        if revenue_kind not in {"service", "product"}:
+            raise HTTPException(400, "Loại doanh thu phải là dịch vụ hoặc sản phẩm.")
+        result["revenue_kind"] = revenue_kind
         result["sessions"] = _integer(merged.get("sessions", 1), "Số lượt", minimum=1)
         steps = merged.get("steps", [])
         if not isinstance(steps, list) or len(steps) > 50:

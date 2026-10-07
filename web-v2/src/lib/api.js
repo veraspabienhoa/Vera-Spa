@@ -214,6 +214,7 @@ export const veraApi = {
   uiLayoutHistory: () => request('/v2/ui-layout/history'),
   restoreUiLayout: (revision, body) => request(`/v2/ui-layout/restore/${revision}`, { method: 'POST', body: JSON.stringify(body) }),
   leaveQuotaCheck: (start, end) => request(`/v2/leave/quota-check?${new URLSearchParams({ start, end })}`),
+  saveHrCommission: body => request('/v2/hr/commission', { method: 'PUT', body: JSON.stringify(body) }),
   hr: () => request('/v2/hr'),
   saveHrDepartment: body => request('/v2/hr/departments', { method: 'PUT', body: JSON.stringify(body) }),
   deleteHrDepartment: (code, revision) => request(`/v2/hr/departments/${encodeURIComponent(code)}`, { method: 'DELETE', body: JSON.stringify({ revision }) }),

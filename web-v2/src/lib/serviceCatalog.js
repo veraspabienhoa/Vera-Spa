@@ -12,7 +12,7 @@ export function catalogTransactionDate(value, backdated = false) {
 
 export function newCatalogForm(kind, item) {
   return structuredClone({
-    name: '', group: '', price: '0', duration: '60', sessions: '1', steps: [],
+    revenue_kind: 'service', name: '', group: '', price: '0', duration: '60', sessions: '1', steps: [],
     ticket_units: '1', request_duration: '', private: false, request_eligible: true, non_request_eligible: true,
     active: true, starts_on: item ? '' : vietnamDate(), unlimited: true, expires_on: '', loyalty_points: '0', description: '',
     tickets: '1', requires_admin_approval: false, ...item,
@@ -34,7 +34,7 @@ export function catalogPayload(kind, form, existing) {
     }),
   }
   return {
-    ...common, sessions: Number(form.sessions), steps: form.steps.map((row) => ({ name: row.name, duration: Number(row.duration || 0) })),
+    ...common, revenue_kind: form.revenue_kind || 'service', sessions: Number(form.sessions), steps: form.steps.map((row) => ({ name: row.name, duration: Number(row.duration || 0) })),
     duration: form.duration === '' || form.duration == null ? null : Number(form.duration), ticket_units: Number(form.ticket_units),
     request_duration: form.request_duration === '' || form.request_duration == null ? null : Number(form.request_duration),
     private: form.private, request_eligible: form.request_eligible, non_request_eligible: form.non_request_eligible,

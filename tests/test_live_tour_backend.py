@@ -65,6 +65,11 @@ class RouteConnection:
                 return None
 
             @staticmethod
+            def scalar_one_or_none():
+                # Generic fixtures have no saved HR commission configuration.
+                return None
+
+            @staticmethod
             def scalar():
                 return True
 
