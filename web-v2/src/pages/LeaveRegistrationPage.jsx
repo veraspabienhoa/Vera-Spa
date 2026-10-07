@@ -840,7 +840,6 @@ export default function LeaveRegistrationPage({ user }) {
               riêng Loại nghỉ Không phép trước ít nhất {employeeSelfServicePolicy.unpaid_notice_days} ngày.
             </div>
           )}
-          <div className="info-box">Đăng ký nghỉ chỉ áp dụng cho bộ phận Leader và nhân viên. Các bộ phận khác theo dõi nghỉ và vi phạm tại Lịch làm việc.</div>
           <form ref={leaveFormRef} className="leave-form" onSubmit={submit}>
             <fieldset disabled={saving || managing} className="autosave-fields">
             <label>Tên nhân viên</label>
