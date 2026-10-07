@@ -20,6 +20,7 @@ import { checkAttendanceBreakAlerts, deleteAttendanceBreakAlertForAll, getAttend
 
 const items = [
   { id: 'live-tour', label: 'Live Tour', icon: RadioTower, ready: true },
+  { id: 'milk-tea', label: 'Trà sữa', icon: CircleDollarSign, ready: true, roles: ['leader', 'nhanvien'] },
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan', 'leader', 'nhanvien'] },
   { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_tapvu'] },
   { id: 'online-bookings', label: 'Booking online', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan'] },
