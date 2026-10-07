@@ -140,9 +140,9 @@ class _Identity(BaseModel):
 class _Connection:
     def execute(self, *_args, **_kwargs):
         class _Result:
-    def scalar_one_or_none(self):
-        # No HR commission configuration in this generic financial fixture.
-        return None
+            def scalar_one_or_none(self):
+                # No HR commission configuration in this generic financial fixture.
+                return None
 
             rowcount = 1
 
