@@ -13,6 +13,9 @@ MONTH_ROWS = text('''
            leave_type,detail,penalty,updated_by,updated_at
     FROM leave_records
     WHERE leave_date >= :start AND leave_date < :stop
+      AND EXISTS (SELECT 1 FROM employees e
+          WHERE lower(btrim(e.username))=lower(btrim(leave_records.employee_name))
+            AND lower(btrim(COALESCE(e.role,''))) IN ('leader','nhanvien'))
     ORDER BY leave_date,employee_name,record_uid
 ''')
 

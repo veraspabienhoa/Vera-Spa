@@ -87,3 +87,21 @@ def test_leave_queries_hide_hc_records_without_deleting_their_financial_source(f
         assert {row['employee_name'] for row in rows}=={'leader','nhanvien'}
         assert conn.execute('SELECT COUNT(*) FROM leave_records').fetchone()[0]==len(roles)
         assert conn.execute("SELECT penalty FROM leave_records WHERE employee_name='locker'").fetchone()[0]==50000
+
+
+def test_month_query_applies_the_same_ktv_scope():
+    import sqlite3
+    from vera_web_v2_leave_month import MONTH_ROWS
+    with sqlite3.connect(':memory:') as conn:
+        conn.create_function('btrim',1,lambda value:value.strip() if value else value)
+        conn.executescript("""CREATE TABLE employees(username TEXT,role TEXT);
+            CREATE TABLE leave_records(record_uid TEXT,leave_date TEXT,weekday_label TEXT,
+              employee_name TEXT,leave_reason TEXT,leave_type TEXT,detail TEXT,penalty REAL,
+              updated_by TEXT,updated_at TEXT);
+            INSERT INTO employees VALUES('KTV','nhanvien'),('HC','locker');
+            INSERT INTO leave_records(record_uid,leave_date,employee_name,penalty)
+              VALUES('ktv','2026-10-07','KTV',10000),('hc','2026-10-07','HC',50000);""")
+        conn.row_factory=sqlite3.Row
+        rows=conn.execute(str(MONTH_ROWS),dict(start='2026-10-01',stop='2026-11-01')).fetchall()
+        assert [row['record_uid'] for row in rows]==['ktv']
+        assert conn.execute('SELECT COUNT(*) FROM leave_records').fetchone()[0]==2
