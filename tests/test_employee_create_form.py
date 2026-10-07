@@ -60,5 +60,5 @@ def test_employee_summary_cards_filter_status_and_actions_are_ordered():
     assert "['Tổng nhân viên', data?.summary?.total || 0, UsersRound, '']" in source
     assert "['Đang làm việc', data?.summary?.active || 0, UserCheck, 'Đang làm việc']" in source
     assert "['Tạm thời nghỉ', data?.summary?.temporary || 0, BriefcaseBusiness, 'Tạm thời nghỉ việc']" in source
-    assert "['Đã nghỉ việc', data?.summary?.left || 0, LockKeyhole, 'Đã nghỉ việc']" in source
+    assert "data?.summary?.left" not in source
     assert source.index('Xuất đồng loạt PDF') < source.index('Lưu thay đổi')
