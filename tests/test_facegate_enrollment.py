@@ -230,12 +230,54 @@ def type3_upload_result():
                    'UPLOAD.dwfiletype': 3, 'UPLOAD.dwfileindex': 0, 'UPLOAD.dwfilepos': 0})
 
 
+def upload_result_with_list_metadata(newline='\n'):
+    # Same wire shape as the operator capture; identity values are synthetic.
+    return newline.join([
+        '<html>', 'root.UPLOAD.state=100', 'root.UPLOAD.sessionid=12345678',
+        'root.UPLOAD.number=1', 'root.UPLOAD.dwfiletype=3',
+        'root.UPLOAD.dwfileindex=0', 'root.UPLOAD.dwfilepos=524288',
+        'LIST.uname=Test Staff', 'LIST.ubirth=2000-01-01', 'LIST.usex=0',
+        'root.ERR.no=0', 'root.ERR.des=ok', '</html>',
+    ])
+
+
+@pytest.mark.parametrize('newline', ['\n', '\r\n'])
+def test_upload_separates_unprefixed_list_metadata_from_numeric_reference(monkeypatch, newline):
+    c, s = client(monkeypatch, ['', upload_result_with_list_metadata(newline), ImageResponse()])
+    ref = c.upload(b'jpeg', '12345678', profile_id=123)
+    assert {key: ref[key] for key in ('file_type', 'file_index', 'file_position')} == {
+        'file_type': 3, 'file_index': 0, 'file_position': 524288,
+    }
+    assert len(ref['image_sha256']) == 64
+    assert [call[0] for call in s.calls] == ['POST', 'GET', 'GET']
+    assert s.calls[-1][2]['params']['dwfilepos'] == '524288'
+
+
+@pytest.mark.parametrize('old,new,code', [
+    ('root.UPLOAD.sessionid=12345678', 'root.UPLOAD.sessionid=99999999', 'wrong_session'),
+    ('root.UPLOAD.dwfilepos=524288', 'root.UPLOAD.dwfilepos=invalid', 'invalid_reference'),
+    ('root.UPLOAD.dwfiletype=3', 'root.UPLOAD.dwfiletype=4', 'invalid_reference'),
+    ('root.ERR.no=0', 'ERR.no=0', 'device_error'),
+    ('root.ERR.no=0', 'root.ERR.no=1', 'device_error'),
+    ('root.ERR.no=0', 'root.UPLOAD.dwfilepos=1\nroot.ERR.no=0', 'invalid_response'),
+])
+def test_upload_metadata_does_not_relax_result_validation(monkeypatch, old, new, code):
+    response = upload_result_with_list_metadata().replace(old, new)
+    c, s = client(monkeypatch, ['', response])
+    with pytest.raises(fg.EnrollmentError) as exc:
+        c.upload(b'jpeg', '12345678', profile_id=123)
+    assert exc.value.code == code
+    assert [call[0] for call in s.calls] == ['POST', 'GET']
+
+
+@pytest.mark.parametrize('with_metadata', [False, True])
 @pytest.mark.parametrize('replacement', [False, True])
-def test_type3_upload_is_committed_unchanged_and_verified_by_persistent_image(monkeypatch, replacement):
+def test_type3_upload_is_committed_unchanged_and_verified_by_persistent_image(monkeypatch, replacement, with_metadata):
     p = profile()
     uploaded = ImageResponse()
     stored = ImageResponse(png_text='container metadata may change')
-    c, s = client(monkeypatch, ['', type3_upload_result(), uploaded, body(),
+    response = upload_result_with_list_metadata() if with_metadata else type3_upload_result()
+    c, s = client(monkeypatch, ['', response, uploaded, body(),
                                roster([p]), body(**{'LIST.'+k:v for k,v in p.items()}), stored])
     ref = c.upload(b'jpeg', '12345678', profile_id=123 if replacement else None)
     assert ref['file_type'] == 3 and len(ref['image_sha256']) == 64
@@ -251,7 +293,7 @@ def test_type3_upload_is_committed_unchanged_and_verified_by_persistent_image(mo
     posts = [call for call in s.calls if call[0] == 'POST']
     assert len(posts) == 2
     assert posts[1][2]['params']['LIST.dwfiletype'] == '3'
-    assert posts[1][2]['params']['LIST.dwfilepos'] == '0'
+    assert posts[1][2]['params']['LIST.dwfilepos'] == ('524288' if with_metadata else '0')
     assert not any('sha256' in key for key in posts[1][2]['params'])
     images = [call for call in s.calls if call[1].endswith('/webs/getImage')]
     assert [call[2]['params']['dwfiletype'] for call in images] == ['3', '0']
