@@ -9,12 +9,12 @@ from test_live_tour_backend import NOW, state_with
 EXPECTED_REPORT_HEADERS = [
     "Ngày", "Ngày giờ hóa đơn", "Nhân viên", "Dịch vụ", "Phòng", "Yêu cầu",
     "Thời gian bắt đầu thực hiện", "Thời gian bắt đầu thực hiện YC", "Số bill",
-    "Khách hàng", "Điện thoại", "Tiền dịch vụ", "Giảm giá", "Tip", "Tổng tiền",
+    "Khách hàng", "Điện thoại", "Tiền dịch vụ", "Giảm giá", "Ghi chú", "Tip", "Tổng tiền",
     "Thanh toán", "Người tạo",
 ]
 
 
-def test_revenue_report_export_matches_attached_17_column_template():
+def test_revenue_report_export_matches_template_with_note_column():
     state = state_with()
     state["invoices"] = [{
         "id": "i1", "discount": 20_000,
@@ -34,10 +34,10 @@ def test_revenue_report_export_matches_attached_17_column_template():
     sheet, headers, rows = live._export_rows(state, "reports", NOW)
 
     assert sheet == "Bao_cao"
-    assert headers == EXPECTED_REPORT_HEADERS and len(headers) == 17
-    assert len(rows[0]) == 17
+    assert headers == EXPECTED_REPORT_HEADERS and len(headers) == 18
+    assert len(rows[0]) == 18
     assert rows[0][6] == "" and rows[0][7] == NOW.isoformat()
-    assert rows[0][11:15] == [500_000, 20_000, 30_000, 510_000]
+    assert rows[0][11:16] == [500_000, 20_000, "", 30_000, 510_000]
 
 
 def test_support_is_registered_as_employee_like_department():

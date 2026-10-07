@@ -384,7 +384,7 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
     assert "FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery" in export_flow
     assert "...listFilters, preset: ''" in export_flow
     assert "...listFilters" in export_flow
-    assert "veraApi.exportLiveTourExcel(kind, query)" in export_flow
+    assert "veraApi.exportLiveTourExcel(kind === 'revenue' ? 'reports' : kind, query)" in export_flow
     assert "veraApi.readLiveTourPng()" in source
     assert "query.date_from && query.date_to && query.date_from > query.date_to" in export_flow
     assert "query.time_from > query.time_to" not in export_flow
