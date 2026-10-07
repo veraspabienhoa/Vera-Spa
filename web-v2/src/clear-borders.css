@@ -642,3 +642,50 @@ body .leave-registration-tabs > button:focus-visible { outline: 3px solid #b7872
 .staff-page .staff-primary-actions .staff-face-switch input {  flex-shrink: 0; width: 16px; height: 16px; }
 .staff-page .staff-primary-actions {  margin-block: 10px; }
 .staff-page .staff-list-action-rows { box-sizing: border-box; }
+
+/* Manual booking keeps its actions outside the scrollable form fields. */
+.employee-profile-modal.manual-online-booking-modal {
+  box-sizing:border-box; display:flex; flex-direction:column; overflow:hidden;
+  max-width:calc(100vw - 24px); padding:16px; gap:12px;
+}
+.manual-online-booking-modal > header { flex:0 0 auto; }
+.manual-online-booking-modal .manual-booking-form {
+  display:flex; flex-direction:column; flex:1 1 auto; min-height:0; gap:12px; margin:0;
+}
+.manual-online-booking-modal .manual-booking-fields {
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;
+  min-width:0; min-height:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain;
+}
+.manual-online-booking-modal .manual-booking-fields > label { display:grid; gap:4px; min-width:0; }
+.manual-online-booking-modal .manual-booking-fields > * { min-width:0; max-width:100%; }
+.manual-online-booking-modal .manual-booking-fields > p { margin:0; overflow-wrap:anywhere; }
+.manual-online-booking-modal .manual-booking-fields :is(input,select,textarea) {
+  display:block; box-sizing:border-box; width:100%; max-width:100%; min-width:0;
+  font-size:16px; line-height:1.25; padding:8px; min-height:44px;
+}
+.manual-online-booking-modal input[type="time"] { appearance:none; -webkit-appearance:none; overflow:hidden; text-align:left; }
+.manual-online-booking-modal input[type="time"]::-webkit-date-and-time-value { min-width:0; text-align:left; }
+.manual-online-booking-modal .manual-booking-fields textarea { height:64px; min-height:64px; resize:vertical; }
+.manual-online-booking-modal .manual-booking-actions {
+  display:flex; flex:0 0 auto; align-items:center; justify-content:space-between;
+  gap:8px; min-width:0; padding-top:10px; border-top:1px solid #638775;
+}
+.manual-online-booking-modal .manual-booking-actions > button { font-size:14px; padding:8px 12px; min-height:44px; }
+.manual-online-booking-modal .manual-booking-actions > button[type="submit"] { margin-left:auto; }
+@media(max-width:640px) {
+  .employee-profile-modal.manual-online-booking-modal {
+    width:calc(100vw - 16px); height:auto; max-height:calc(100dvh - 16px);
+    max-width:calc(100vw - 16px); border-radius:12px;
+    padding:max(10px,env(safe-area-inset-top)) 10px max(10px,env(safe-area-inset-bottom)); gap:8px;
+  }
+  .manual-online-booking-modal h2 { font-size:18px; line-height:1.2; }
+  .manual-online-booking-modal > header { gap:8px; }
+  .manual-online-booking-modal > header > button { font-size:14px; padding:8px 10px; }
+  .manual-online-booking-modal .manual-booking-form { gap:8px; }
+  .manual-online-booking-modal .manual-booking-fields { gap:8px; }
+  .manual-online-booking-modal .manual-booking-fields > label,
+  .manual-online-booking-modal .live-tour-search-select > label { font-size:13px; line-height:1.2; margin:0 0 4px; }
+  .manual-online-booking-modal .manual-booking-fields > label { margin:0; gap:4px; }
+  .manual-online-booking-modal .clearable-search-input .search-clear-button { min-height:32px; font-size:12px; padding:4px 6px; }
+  .manual-online-booking-modal .manual-booking-actions { padding-top:8px; }
+}
