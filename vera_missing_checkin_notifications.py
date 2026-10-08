@@ -150,9 +150,8 @@ def _staff_scheduled_rows(conn, work_day, employee_username=''):
 def current_missing_checkins(conn, ident, now, *, include_expiry=False):
     """Read current absence from fresh attendance data, without worker/push state.
 
-    Uses only the caller connection and today's cache keys. This also covers
-    live TimeSoft refreshes which update attendance but do not run the full
-    invoice/notification worker. Never contact TimeSoft in the notification feed.
+    FaceGate uses its verified archive directly; legacy TimeSoft uses today's
+    cache. Both reuse the caller connection without contacting a device.
     """
     viewer_role = str(getattr(ident, 'role', '')).strip().lower()
     view_team = viewer_role in {'admin', 'letan', 'quanly'}
@@ -163,18 +162,29 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
     current = now.replace(tzinfo=zone) if now.tzinfo is None else now.astimezone(zone)
     day = current.date()
     from vera_attendance_source import cache_key, source_for
-    datasets = conn.execute(text("""
+    facegate = source_for(day) == 'facegate'
+    eligible_users = None
+    if facegate:
+        from vera_facegate_runtime import missing_checkin_snapshot
+        dataset = missing_checkin_snapshot(conn, day, now=current)
+        if dataset is None:
+            return []
+        eligible_users = dataset['eligible_users']
+        if not eligible_users:
+            return []
+    else:
+        datasets = conn.execute(text("""
         SELECT payload,updated_at FROM vera_dataset_cache
         WHERE dataset_key IN (:today_key,:dated_key) AND source_version=:day
           AND updated_at BETWEEN :cutoff AND :current AND expires_at>:current
         ORDER BY updated_at DESC LIMIT 1
-    """), {'today_key': cache_key(day, today_alias=True),
-            'dated_key': cache_key(day),
-            'day': day.isoformat(), 'cutoff': current-timedelta(minutes=10),
-            'current': current}).mappings().all()
-    if not datasets or not isinstance(datasets[0].get('payload'), list) or not datasets[0]['payload']:
-        return []
-    dataset = datasets[0]
+        """), {'today_key': cache_key(day, today_alias=True),
+                'dated_key': cache_key(day),
+                'day': day.isoformat(), 'cutoff': current-timedelta(minutes=10),
+                'current': current}).mappings().all()
+        if not datasets or not isinstance(datasets[0].get('payload'), list) or not datasets[0]['payload']:
+            return []
+        dataset = datasets[0]
     from vera_web_v2_attendance_v42 import _explicit_work_day, _generic_raw_punch, _parse_datetime, _work_day_for_row
     checked = set()
     for raw in dataset['payload']:
@@ -203,12 +213,8 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
     updated = dataset['updated_at']
     if updated.tzinfo is None:
         updated = updated.replace(tzinfo=timezone.utc)
-    expires = min(updated.astimezone(zone)+timedelta(minutes=10),
+    expires = min(dataset.get('expires_at', updated.astimezone(zone)+timedelta(minutes=10)),
                   datetime.combine(day+timedelta(days=1), time.min, tzinfo=zone))
-    eligible_users = None
-    if source_for(day) == 'facegate':
-        from vera_facegate_runtime import alert_eligible_users
-        eligible_users = alert_eligible_users(conn, day)
     result = []
     for row in schedules:
         employee_role = str(row.get('employee_role') or '').strip().lower()
@@ -236,6 +242,11 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
             start = datetime.combine(day, time(cutoff_hour))
         elif not _alert_ready(has_leave=bool(aliases & leave), has_faceid=bool(aliases & checked),
                               current=current.replace(tzinfo=None), shift_start=start):
+            continue
+        # A pre-cutoff archive cannot prove absence at the cutoff. Wait for a
+        # completed sync past 15:00/17:00 (or the ordinary 15-minute threshold).
+        decision_at = start if registered_late else start + timedelta(minutes=THRESHOLD_MINUTES)
+        if facegate and updated.astimezone(zone) < decision_at.replace(tzinfo=zone):
             continue
         key = _event_key(day, username, str(row.get('shift_code') or ''))
         alert = {'key': key, 'tag': f'vera-missing-checkin-{day.isoformat()}-{key}',

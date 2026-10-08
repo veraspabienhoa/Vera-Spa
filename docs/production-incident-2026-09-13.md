@@ -2526,3 +2526,32 @@ mode restrictions. No financial history, permissions or production data changed.
 Main #499 CI and frontend deployment succeeded at 84ce651c; the latest observed
 VPS production workflow #37653051322 used e734dd90. Runtime and business operation
 verification remain outstanding. See docs/revenue-mutation-performance-2026-10-08.md.
+
+## 09-10-2026 — Missing-checkin popup uses committed FaceGate evidence
+
+A reported 08-10 case shows mapped scans just before 15:00 and a registered-late
+popup at 15:00. Source review and a synthetic replay reproduce the mechanism:
+the feed checks identities against the archive but reads punches from a separate
+cache, and a pre-15:00 cache is allowed to assert absence at 15:00. The historical
+production cache at the screenshot time has not been recovered; sync lag remains
+a plausible explanation rather than a proven reconstruction of that incident.
+
+For FaceGate, reuse one verified archive projection for identity eligibility and
+punches. Only a complete sync at most five minutes old can support missing-checkin
+alerts; require its completion timestamp to reach the applicable decision time
+(15:00/17:00 for registered late arrivals, shift start + 15 minutes otherwise).
+Keep source selection, current-day/entry filtering, confirmed mapping, unresolved
+evidence suppression, employee participation, audience and leave checks. Use the
+caller's connection and no device/network calls from the notification feed.
+
+The shared browser feed refreshes every 15 seconds while it has unexpired
+missing-checkin alerts, returning to 60 seconds otherwise. It remains one poller
+per visible tab, waits for the previous request, and stops while hidden. This is
+not instantaneous device push: ingestion still follows the existing minute
+schedule, and delayed/failed device reads can take longer. No attendance, penalty,
+financial history, shift rules or device configuration is changed by this patch.
+
+Validation: 111 focused Python checks and 22 Node checks pass locally; the added
+PostgreSQL test verifies a read-only transaction, one connection and clearing
+from committed raw scans while the attendance cache is empty. PostgreSQL CI and
+production deployment verification remain pending at the time of this note.
