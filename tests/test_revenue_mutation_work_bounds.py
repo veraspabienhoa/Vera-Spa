@@ -144,6 +144,9 @@ def test_tip_uses_whole_ledger_totals_and_preserves_period(monkeypatch, report_d
 
 def test_postgres_aggregate_matches_history_and_excludes_deleted(database):
     with database.begin() as conn:
+        # Base schema registry precedes revenue migration on deployed databases.
+        conn.execute(text('CREATE TABLE vera_schema_version '
+                          '(component text PRIMARY KEY, version int, updated_at timestamptz)'))
         store.ensure_schema(conn)
         rows = [dict(kind='Thu', amount='100.10', day='2026-09-01', stamp='2026-10-07T18:00:00Z', deleted=False),
                 dict(kind='Chi', amount='20.03', day=None, stamp='2026-10-07T18:00:00Z', deleted=False),
