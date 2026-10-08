@@ -143,9 +143,37 @@ def worker_frames(conn, dates):
     return output
 
 
-def alert_eligible_users(conn, day):
-    data = fg.project_evidence(conn, day, day)
+def _alert_eligible_users(data, day):
     if any(i.get('reason') != 'no_vera_shift' for i in data['issues']):
         return set()
     return {m['username'] for m in data['index'].values()
             if not participation.suspended(m['username'], day)}
+
+
+def alert_eligible_users(conn, day):
+    return _alert_eligible_users(fg.project_evidence(conn, day, day), day)
+
+
+def missing_checkin_snapshot(conn, day, *, now):
+    """Read popup identities and punches from one verified archive projection.
+
+    Missing punches require a complete, recent archive. Already committed scans
+    are visible before a separate attendance-cache publication. Reuse the caller
+    connection; never perform device I/O here.
+    """
+    data = fg.project_evidence(conn, day, day)
+    if not archive_complete(data, day):
+        return None
+    saved = next(s for s in data['syncs'] if str(s['work_date']) == day.isoformat())
+    try:
+        synced = datetime.fromisoformat(str(saved['last_synced_at']))
+        if synced.tzinfo is None:
+            return None
+        synced = synced.astimezone(VN_TZ)
+        if not 0 <= (now - synced).total_seconds() <= 300:
+            return None
+    except (TypeError, ValueError):
+        return None
+    return {'payload': data['rows'], 'updated_at': synced,
+            'expires_at': synced + timedelta(minutes=5),
+            'eligible_users': _alert_eligible_users(data, day)}

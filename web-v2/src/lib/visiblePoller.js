@@ -8,7 +8,7 @@ export function createVisiblePoller(load, { interval, document: doc = document, 
     try { await load() } catch { /* Next visible poll may recover. */ }
     finally {
       inFlight = false
-      if (!stopped && !doc.hidden) timer = later(refresh, interval)
+      if (!stopped && !doc.hidden) timer = later(refresh, typeof interval === 'function' ? interval() : interval)
     }
   }
   const visibility = () => { clear(); if (!doc.hidden) void refresh() }

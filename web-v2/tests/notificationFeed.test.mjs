@@ -13,7 +13,7 @@ test('inbox and popup share one poller; sign-out drops late responses and cached
   let starts=0, stops=0
   const requests=[], valuesA=[], valuesB=[]
   const feed=createNotificationFeed(()=>new Promise(resolve=>requests.push(resolve)),(load,options)=>{
-    starts++;assert.equal(options.interval,60000);void load()
+    starts++;assert.equal(options.interval(),60000);void load()
     return {refresh:load,stop(){stops++}}
   })
   const leaveA=feed.subscribe(value=>valuesA.push(value))
@@ -27,4 +27,21 @@ test('inbox and popup share one poller; sign-out drops late responses and cached
   assert.deepEqual(newAccount,[])
   requests[2]({inbox:[{id:2}]});await tick()
   assert.deepEqual(newAccount,[{inbox:[{id:2}]}]);leaveNew()
+})
+
+test('only a live missing-checkin alert accelerates the shared feed',async()=>{
+  let load, interval, result={missing_checkins:[]}
+  const feed=createNotificationFeed(async()=>result,(work,options)=>{
+    load=work;interval=options.interval
+    return {refresh:work,stop(){}}
+  })
+  const leave=feed.subscribe(()=>{})
+  await load();assert.equal(interval(),60000)
+  result={missing_checkins:[{expires_at:new Date(Date.now()+60000).toISOString()}]}
+  await load();assert.equal(interval(),15000)
+  result={missing_checkins:[{expires_at:'2000-01-01T00:00:00Z'}]}
+  await load();assert.equal(interval(),60000)
+  result={missing_checkins:[]}
+  await load();assert.equal(interval(),60000)
+  leave()
 })

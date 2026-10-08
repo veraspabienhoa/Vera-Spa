@@ -17,7 +17,7 @@ export function createNotificationFeed(load, makePoller = createVisiblePoller) {
           if (current !== generation) return
           cached = result
           for (const receive of listeners) receive(result)
-        }, { interval: 60000 })
+        }, { interval: () => (cached?.missing_checkins || []).some(row => Date.parse(row.expires_at) > Date.now()) ? 15000 : 60000 })
       }
       return () => {
         listeners.delete(listener)
