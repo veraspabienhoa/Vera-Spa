@@ -1,0 +1,70 @@
+name: Diagnose retired employee name reuse (read only)
+
+on:
+  push:
+    branches: [codex/diagnose-new-name-20261009]
+    paths: [.github/workflows/diagnose-staff-name-reuse.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect reference locations without personal data or database writes
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); release_dir=$(readlink -f "/proc/${pid}/cwd"); cd "$release_dir"; git rev-parse HEAD; /opt/vera-spa/.venv/bin/python -' <<'PY'
+          import json, os, time
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.pool import NullPool
+          from vera_vps_data_check import _database_url, _running_api_environment
+          from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS, load_managed_runtime_environment
+          env = {k: os.environ.get(k, '') for k in RUNTIME_ENV_KEYS} if load_managed_runtime_environment() else _running_api_environment()
+          engine = create_engine(_database_url(env), poolclass=NullPool, connect_args={'connect_timeout':5, 'sslmode':env.get('DB_SSLMODE','require'), 'options':'-c default_transaction_read_only=on -c statement_timeout=2500 -c lock_timeout=500'})
+          started = time.monotonic()
+          try:
+              with engine.begin() as conn:
+                  quote = conn.dialect.identifier_preparer.quote
+                  directory = conn.execute(text("SELECT COALESCE(payload->>'__deleted','false') AS deleted, COALESCE(payload->>'Trạng thái làm việc',payload->>'employment_status','') AS status FROM employees WHERE lower(btrim(username))='new'")).mappings().all()
+                  print('DIRECTORY_STATE='+json.dumps([dict(r) for r in directory], ensure_ascii=True))
+                  columns = conn.execute(text("SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema=current_schema() AND (data_type IN ('json','jsonb') OR (data_type IN ('text','character varying') AND column_name IN ('username','employee_username','employee_name','trainer_username','evaluator_username','recipient_username'))) ORDER BY table_name,column_name")).mappings().all()
+                  for col in columns:
+                      if time.monotonic()-started > 45:
+                          print('REFERENCE_SCAN_TIME_LIMIT'); break
+                      table, field = col['table_name'], col['column_name']
+                      predicate = f"jsonb_path_exists(CAST({quote(field)} AS jsonb), '$.** ? (@ == $name)', CAST(:vars AS jsonb))" if col['data_type'] in ('json','jsonb') else f"lower(btrim({quote(field)}))=lower(:name)"
+                      try:
+                          with conn.begin_nested():
+                              found = conn.execute(text(f'SELECT 1 FROM {quote(table)} WHERE {predicate} LIMIT 1'), {'name':'New','vars':json.dumps({'name':'New'})}).first() is not None
+                              if found:
+                                  print('REFERENCE_LOCATION='+json.dumps({'table':table,'column':field}))
+                                  if table in {'vera_app_setting','vera_dataset_cache','vera_primary_dataset','vera_source_row'}:
+                                      keys = 'category,setting_key' if table=='vera_app_setting' else 'dataset_key'
+                                      locations = conn.execute(text(f'SELECT DISTINCT {keys} FROM {quote(table)} WHERE {predicate} LIMIT 30'), {'name':'New','vars':json.dumps({'name':'New'})}).mappings().all()
+                                      print('REFERENCE_KEYS='+json.dumps([dict(r) for r in locations], ensure_ascii=True))
+                      except Exception as exc:
+                          print('REFERENCE_ERROR='+json.dumps({'table':table,'column':field,'error_type':type(exc).__name__}))
+                  print('DATABASE_WRITES=false')
+          except Exception as exc:
+              print('INSPECTION_ERROR='+type(exc).__name__)
+              raise SystemExit(1)
+          finally:
+              engine.dispose()
+          PY
