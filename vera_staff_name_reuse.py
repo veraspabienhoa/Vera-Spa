@@ -1,7 +1,8 @@
 """Separate a retired directory identity before a new person reuses its name.
 
-Reuse never revives the old auth profile. Unknown business references fail
-closed; this path is for retired identities with only auth/device remnants.
+Reuse never revives the old auth profile. Legacy credentials mirrors are not
+identity owners: Phase 3 explicitly refuses to import them into employees.
+Unknown business references still fail closed instead of joining two people.
 """
 import json
 from uuid import uuid4
@@ -14,6 +15,20 @@ AUTH_TABLES = {'vera_v2_user_profile', 'vera_v2_active_device',
                'vera_v2_active_device_session', 'vera_v2_push_subscription'}
 IDENTITY_COLUMNS = ('username', 'employee_username', 'employee_name', 'trainer_username',
                     'evaluator_username', 'recipient_username')
+LEGACY_DIRECTORY_JSON = frozenset({
+    ('vera_dataset_cache', 'payload'),
+    ('vera_primary_dataset', 'payload'),
+    ('vera_source_row', 'payload'),
+})
+
+
+def json_history_scope(table, field):
+    # Only the retired credentials mirror is non-authoritative. Other datasets
+    # in these same tables can hold live payroll/leave/debt and must still block.
+    # Keep the old snapshot bytes/checksums unchanged for historical inspection.
+    if (table, field) in LEGACY_DIRECTORY_JSON:
+        return "COALESCE(dataset_key, '') <> 'credentials' AND "
+    return ''
 
 
 def retired(row, norm):
@@ -50,6 +65,9 @@ def prepare_reuse(conn, directory, username, norm, actor):
         {'columns': list(IDENTITY_COLUMNS)}).mappings().all()
     for row in matches:
         old = row['username']
+        from vera_staff_retired_history import archive_history
+        archived = 'retired-' + str(uuid4())
+        archive_history(conn, old, archived, norm, actor)
         for column in columns:
             table, field = column['table_name'], column['column_name']
             if table == 'employees' or table in AUTH_TABLES:
@@ -64,7 +82,7 @@ def prepare_reuse(conn, directory, username, norm, actor):
             table, field = column['table_name'], column['column_name']
             if table in AUTH_TABLES or table in {'employees', 'vera_app_setting'}:
                 continue
-            linked = conn.execute(text(f"SELECT 1 FROM {quote(table)} WHERE jsonb_path_exists(CAST({quote(field)} AS jsonb), '$.** ? (@ == $name)', CAST(:vars AS jsonb)) LIMIT 1"),
+            linked = conn.execute(text(f"SELECT 1 FROM {quote(table)} WHERE {json_history_scope(table, field)}jsonb_path_exists(CAST({quote(field)} AS jsonb), '$.** ? (@ == $name)', CAST(:vars AS jsonb)) LIMIT 1"),
                                   {'vars': json.dumps({'name': old})}).first()
             if linked:
                 raise HTTPException(409, 'Hồ sơ cũ còn dữ liệu lịch sử dạng JSON. Chưa tái sử dụng tên để tránh gán nhầm dữ liệu.')
@@ -78,7 +96,6 @@ def prepare_reuse(conn, directory, username, norm, actor):
                 continue  # Moved explicitly below under its existing write lock.
             if contains_name(setting['value_json'], wanted, norm):
                 raise HTTPException(409, 'Hồ sơ cũ còn liên kết cấu hình/Face ID hoặc lịch sử. Cần tách liên kết trước khi tái sử dụng tên.')
-        archived = 'retired-' + str(uuid4())
         revoke_local_sessions(conn, old, 'employee_name_reused')
         payload = dict(row.get('payload') or {})
         payload.update(__deleted=True, __retired_username=old,

@@ -1,3 +1,43 @@
+## 09-10-2026 — Retired-name mirror collision and booking catalog order
+
+Source change: separate retired identities when a newly registered employee
+reuses an available account name. Support the known payroll and accumulation
+snapshot schemas and leave audit subject field; keep unknown references blocked.
+
+Ignore only frozen credentials mirrors, which Phase 3 refuses to import into
+employees. Before reusing the name, archive recognized payroll/TichLuy owner
+fields and audit subjects to the retired identity in the same directory
+transaction. Keep amounts, source rows, event IDs and before/after audit JSON;
+retain original affected records/checksums in staff_retired_identity settings.
+Keep sheet raw name cells consistent with their canonical field. Recompute
+changed snapshot checksums/revisions. Unknown business references, unsupported
+JSON, FaceGate settings, active accounts and rename aliases still fail closed;
+any failure rolls back the archive, session revocation and new account together.
+The new account receives a fresh auth UUID, no old sessions/devices/grants and no
+old contribution balance, including when the two people share their full name.
+
+Legacy snapshot writers share a caller-owned history lock with retirement and
+V2 payroll saves. Reject ambiguous payroll/TichLuy imports using reused names;
+the old source must explicitly use the archived identity before importing again.
+Audit reimports retain old ownership by stable event ID, allowing new events for
+the newly assigned name. Period replacement retains archived saved money.
+No new pooled connection, network request or notification occurs in these locks.
+
+Booking menus must follow the service order saved in settings.
+Settings reorder wrote display_order without reordering service arrays; booking
+consumed insertion order. Honor display_order on state reads, response aliases
+and reorders, and use the same stable ordering in settings and single/multiple/
+quick/manual booking pickers. Missing/invalid ranks keep source order at the end.
+Existing saved order works without another drag or changing IDs, prices, private
+room flags, availability or existing financial records. No extra DB connection.
+
+Regression coverage includes PostgreSQL archival of the supported snapshot
+shapes, original financial/audit preservation, zero inherited balance, fresh
+auth identity, import protection and full rollback for unknown references.
+Catalog tests cover persisted rank reload, DTO parity and rendered single/multi/
+manual booking menus. Production deployment and actual account creation remain
+unverified until the operator deploys and submits the new employee form.
+
 ## 05-10-2026 — Explicit permission for creation-day leave corrections
 
 Add leave_created_today_edit_delete, default ungranted for non-Admin accounts,

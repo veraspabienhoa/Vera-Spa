@@ -11,7 +11,7 @@ import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import { Download, GripVertical, History, Plus, RefreshCw, Save, Settings2, Trash2, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
-import { catalogPayload, newCatalogForm } from '../lib/serviceCatalog'
+import { catalogPayload, newCatalogForm, orderedCatalog } from '../lib/serviceCatalog'
 import ServiceCatalogForm, { ServiceTypePicker } from '../components/ServiceCatalogForm'
 import './SpaManagementPage.css'
 
@@ -218,16 +218,7 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
 
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
   const services = data?.services || []
-  const catalogItems = [...services.map((item) => ({ ...item, catalog_kind: 'service' })), ...(data?.combos || []).map((item) => ({ ...item, catalog_kind: 'combo' }))]
-    .map((item, sourceIndex) => ({ ...item, sourceIndex }))
-    .sort((left, right) => {
-      const leftOrder = Number(left.display_order)
-      const rightOrder = Number(right.display_order)
-      if (Number.isFinite(leftOrder) && Number.isFinite(rightOrder)) return leftOrder - rightOrder
-      if (Number.isFinite(leftOrder)) return -1
-      if (Number.isFinite(rightOrder)) return 1
-      return left.sourceIndex - right.sourceIndex
-    })
+  const catalogItems = orderedCatalog([...services.map((item) => ({ ...item, catalog_kind: 'service' })), ...(data?.combos || []).map((item) => ({ ...item, catalog_kind: 'combo' }))])
   const groups = [...new Set(catalogItems.map((item) => item.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'))
   const rows = (customersPage ? data?.customers : tab === 'services' ? catalogItems : data?.service_areas) || []
   const filtered = rows.filter((item) => (customersPage ? customerMatches(item, search) : searchTextMatches([item.name, item.group], search)) && (customersPage || tab !== 'services' || serviceFilter === 'all' || item.catalog_kind === serviceFilter))

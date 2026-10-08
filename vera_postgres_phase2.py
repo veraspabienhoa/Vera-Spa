@@ -141,6 +141,9 @@ def _write_primary_conn(
     if df is None:
         df = pd.DataFrame()
     payload, row_count, checksum = _frame_to_payload(vpg, df)
+    import json
+    from vera_staff_retired_history import guard_legacy_snapshot
+    guard_legacy_snapshot(conn, dataset_key, json.loads(payload))
     conn.execute(
         text(
             f"""
