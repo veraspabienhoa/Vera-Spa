@@ -4,16 +4,16 @@ import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
 import { MessageChannel } from 'node:worker_threads'
 
-const built = await build({ stdin: { contents: `import React,{act} from 'react';import{createRoot}from'react-dom/client';import Page from './src/pages/CheckinHistoryPage';window.act=act;window.mount=role=>{window.root=createRoot(document.getElementById('root'));window.root.render(<Page user={{role,permissions:{device_facegate_mapping_manage:true}}}/>)};`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', loader: { '.css': 'empty' }, plugins: [{ name: 'api', setup(b) {
+const built = await build({ stdin: { contents: `import React,{act} from 'react';import{createRoot}from'react-dom/client';import Page from './src/pages/CheckinHistoryPage';import Preview from './src/components/FacegateAttendancePreview';window.act=act;window.mount=(role,history)=>{window.root=createRoot(document.getElementById('root'));window.root.render(history?<Page user={{role,permissions:{device_facegate_mapping_manage:true}}}/>:<Preview/>)};`, resolveDir: process.cwd(), loader: 'jsx' }, bundle: true, write: false, format: 'iife', jsx: 'automatic', loader: { '.css': 'empty' }, plugins: [{ name: 'api', setup(b) {
   b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'mock' }))
   b.onLoad({ filter: /.*/, namespace: 'mock' }, () => ({ contents: 'export const veraApi=window.api;', loader: 'js' }))
 } }] })
-async function page(ctx, role, api = {}) {
+async function page(ctx, role, api = {}, history = false) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://test.invalid', runScripts: 'dangerously', pretendToBeVisual: true })
   const w = dom.window, channels = []
   w.MessageChannel = class extends MessageChannel { constructor() { super(); channels.push(this) } }
   w.IS_REACT_ACT_ENVIRONMENT = true; w.api = api; w.eval(built.outputFiles[0].text)
-  await w.act(async () => w.mount(role))
+  await w.act(async () => w.mount(role, history))
   ctx.after(async () => { await w.act(async () => w.root.unmount()); channels.forEach(c => { c.port1.close(); c.port2.close() }); w.close() })
   return { w, panel: () => w.document.querySelector('.facegate-attendance-preview'),
     async input(node, value) { await w.act(async () => { Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(node, value); node.dispatchEvent(new w.Event('input', { bubbles: true })) }) },
@@ -35,10 +35,16 @@ test('admin preview is lazy, applies edited ISO dates and retains Vietnamese nam
   assert.equal(p.panel().querySelector('table'), null)
 })
 
-test('non-admin has no cutover preview even with mapping permission', async ctx => {
-  const p = await page(ctx, 'letan')
-  assert.equal(p.panel(), null)
-})
+for (const role of ['admin', 'letan', 'quanly', 'nhanvien']) {
+  test(`check-in history omits both maintenance panels for ${role}`, async ctx => {
+    const p = await page(ctx, role, {}, true)
+    assert.equal(p.panel(), null)
+    assert.doesNotMatch(p.w.document.body.textContent, /Ánh xạ hồ sơ FaceGate với nhân viên|Đối chiếu FaceGate → Chấm công VERA/)
+    assert.match(p.w.document.body.textContent, /LỊCH SỬ CHECK IN/)
+    assert.match(p.w.document.body.textContent, /Xem lịch sử/)
+    assert.match(p.w.document.body.textContent, /Xuất excel/)
+  })
+}
 
 test('range is bounded and network failure leaves retry available', async ctx => {
   let calls = 0
