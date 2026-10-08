@@ -2512,3 +2512,17 @@ Synthetic single-caller schedule CPU p50 improves 22.48x for 60 employees and
 The JavaScript entry is about 49% smaller. Production latency, deployment and
 business readback have not been verified for this source change. They must be
 measured on the deployed runtime before claiming a system-wide speed multiplier.
+
+## 08-10-2026 — Revenue mutation work bounds (source changes)
+
+Delete previously loaded the entire active revenue ledger before locking its
+single target row, solely to build notification detail. Return that detail from
+the row already locked by soft_delete_entry, matching the immutable audit version;
+keep feature/day checks and queue notification only after commit. TIP saving now
+uses SQL SUM/MAX instead of transferring/formatting all active history. Preserve
+whole-ledger balance, Vietnam fallback dates, explicit/default periods and source
+mode restrictions. No financial history, permissions or production data changed.
+
+Main #499 CI and frontend deployment succeeded at 84ce651c; the latest observed
+VPS production workflow #37653051322 used e734dd90. Runtime and business operation
+verification remain outstanding. See docs/revenue-mutation-performance-2026-10-08.md.

@@ -886,14 +886,12 @@ def install_revenue_leave_list_routes(
             require_feature(conn, ident, REVENUE_ENTRY_DELETE_FEATURE)
             revenue_auto.require_manual(conn)
             try:
-                current = next((row for row in revenue_store.list_entries(conn) if row.get("id") == entry_id), None)
-                if current:
-                    notification_detail.update({"type": current.get("type"), "amount": current.get("amount"), "note": current.get("note")})
-                revenue_store.soft_delete_entry(
+                deleted_detail = revenue_store.soft_delete_entry(
                     conn, entry_id=entry_id,
                     actor=str(getattr(ident, "employee_username", "") or ""),
                     required_entered_date=None if admin_unrestricted else datetime.now(VN_TZ).date(),
                 )
+                notification_detail.update(deleted_detail)
             except KeyError:
                 raise HTTPException(404, "Không tìm thấy bản ghi doanh thu.")
             except PermissionError:
@@ -969,17 +967,16 @@ def install_revenue_leave_list_routes(
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_TIP_FEATURE)
             revenue_auto.require_manual(conn)
-            entries = revenue_store.list_entries(conn)
-            report_date = max((_parse_date(row["date"]) for row in entries if _parse_date(row["date"])),
-                              default=datetime.now(VN_TZ).date())
+            totals = revenue_store.ledger_totals(conn)
+            report_date = totals["report_date"] or datetime.now(VN_TZ).date()
             tip_start = body.start_date or report_date.replace(day=1 if report_date.day <= 15 else 16)
             tip_end = body.end_date or report_date
             if tip_start > tip_end:
                 raise HTTPException(400, "Ngày bắt đầu Tiền TIP không được sau Đến ngày.")
             _save_period_tip(conn, tip_start.isoformat(), tip_end.isoformat(), body.amount,
                              getattr(ident, "employee_username", ""))
-            total_income = sum(row["amount"] for row in entries if row["type"] == "Thu")
-            total_expense = sum(row["amount"] for row in entries if row["type"] == "Chi")
+            total_income = totals["total_income"]
+            total_expense = totals["total_expense"]
         tip = round(float(body.amount), 2)
         return {"ok": True, "release": RELEASE, "period_tip": tip,
                 "balance": round(total_income - total_expense - tip, 2),

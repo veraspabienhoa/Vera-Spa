@@ -488,7 +488,7 @@ def update_entry(conn, *, entry_id: int, transaction_type: str, amount: float, t
     return {"id": entry_id, "revision": int(after["edit_revision"])}
 
 
-def soft_delete_entry(conn, *, entry_id: int, actor: str, required_entered_date: date | None = None) -> None:
+def soft_delete_entry(conn, *, entry_id: int, actor: str, required_entered_date: date | None = None) -> dict[str, Any]:
     import json
     ensure_schema(conn)
     before = conn.execute(text(f"SELECT * FROM {TABLE} WHERE id=:id AND is_deleted=false FOR UPDATE"), {"id": entry_id}).mappings().first()
@@ -504,6 +504,24 @@ def soft_delete_entry(conn, *, entry_id: int, actor: str, required_entered_date:
         INSERT INTO vera_revenue_entry_audit(revenue_entry_id,action,before_payload,after_payload,actor)
         VALUES(:id,'delete',CAST(:before AS jsonb),NULL,:actor)
     """), {"id": entry_id, "before": json.dumps(_audit_payload(before), ensure_ascii=False, default=str), "actor": actor})
+    # Reuse the locked row: notifications must describe the same version as audit.
+    return {"type": str(before["transaction_type"]), "amount": float(before["amount"]),
+            "note": str(before["note"] or "")}
+
+
+def ledger_totals(conn) -> dict[str, Any]:
+    """Aggregate the whole active ledger without transferring its history."""
+    ensure_schema(conn)
+    row = conn.execute(text(f"""
+        SELECT COALESCE(SUM(amount) FILTER (WHERE transaction_type='Thu'), 0) AS total_income,
+               COALESCE(SUM(amount) FILTER (WHERE transaction_type='Chi'), 0) AS total_expense,
+               MAX(COALESCE(transaction_date,
+                   (entered_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date)) AS report_date
+        FROM {TABLE}
+        WHERE is_deleted=false
+    """)).mappings().one()
+    return {"total_income": float(row["total_income"]),
+            "total_expense": float(row["total_expense"]), "report_date": row["report_date"]}
 
 
 def list_audit_entries(conn, *, start_date: date | None = None, end_date: date | None = None) -> list[dict[str, Any]]:
