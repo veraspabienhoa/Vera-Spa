@@ -2555,3 +2555,24 @@ Validation: 111 focused Python checks and 22 Node checks pass locally; the added
 PostgreSQL test verifies a read-only transaction, one connection and clearing
 from committed raw scans while the attendance cache is empty. PostgreSQL CI and
 production deployment verification remain pending at the time of this note.
+
+
+## 09-10-2026 — Separate overnight booking permission (source change)
+
+The operator screenshot at 00:29 shows Admin booking rejected because the employee
+is not checked in or is on leave. Source inspection confirms the existing
+start_outside_shift exception applies only to start/start_room; booking retains
+unconditional shift/check-in/working checks. Production state was not inspected.
+
+Add live_tour_booking_outside_shift to the Live Tour permission page, dependent
+on view and booking. Admin can use it; quanly/letan need an explicit grant. It
+applies only from 00:00 inclusive to 02:00 exclusive Vietnam time, checked again
+on the server after acquiring the mutation lock. Client time and top-level or
+nested flags cannot grant access. Single and multi booking share the exception.
+Break, roster eligibility, outstanding service, room/collision and payment checks
+remain enforced. Keep normal start permissions separate; booking with start_now
+does not acquire an extra start bypass. No attendance, leave or shift is changed.
+
+The frontend uses the corresponding capability and time window for opening
+booking and employee suggestions. Non-admin grants default off. This is a source
+change pending CI, deployment and verification on the actual overnight runtime.

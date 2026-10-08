@@ -1,8 +1,16 @@
+// Display hint only; booking authorization uses the server clock and grants.
+export function canBookOutsideShift(role, granted, nowMs) {
+  role = String(role || '').trim().toLowerCase()
+  if (!['admin', 'quanly', 'letan'].includes(role) || (role !== 'admin' && granted !== true) || !Number.isFinite(nowMs)) return false
+  const hour = new Date(nowMs + 7 * 60 * 60 * 1000).getUTCHours()
+  return hour >= 0 && hour < 2
+}
+
 import { employeeTourStart, tourStartOrder } from './liveTourOrder.js'
 
 export const tourNameKey = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').trim().toLowerCase().replace(/\s+/g, ' ')
 
-export function bookingEmployees(employees, now = Date.now(), configuredMinutes = 30, boardRecords = []) {
+export function bookingEmployees(employees, now = Date.now(), configuredMinutes = 30, boardRecords = [], outsideShift = false) {
   const minutes = Number.isInteger(configuredMinutes) && configuredMinutes >= 1 && configuredMinutes <= 180 ? configuredMinutes : 30
   const ranking = (worker) => tourStartOrder(employeeTourStart(worker))
   // The server numbers the full board after applying tour order. Imported stt,
@@ -15,7 +23,7 @@ export function bookingEmployees(employees, now = Date.now(), configuredMinutes 
   const manualOrder = employees.some(worker => worker.manual_order)
   const idlePosition = worker => boardPositions.get(String(worker.id)) ?? Number.MAX_SAFE_INTEGER
   const isIdle = worker => !worker.service && !['dang thuc hien', 'dang su dung'].includes(tourNameKey(worker.status))
-  return employees.filter((worker) => worker.roster_eligible !== false && !worker.hidden && tourNameKey(worker.work_status) === 'di lam' && ['ca 1', 'ca 2'].includes(tourNameKey(worker.shift)) && !worker.break_started_at && tourNameKey(worker.status) !== 'cho thanh toan')
+  return employees.filter((worker) => worker.roster_eligible !== false && !worker.hidden && (outsideShift || (tourNameKey(worker.work_status) === 'di lam' && ['ca 1', 'ca 2'].includes(tourNameKey(worker.shift)))) && !worker.break_started_at && tourNameKey(worker.status) !== 'cho thanh toan')
     .filter(worker => {
       const status = tourNameKey(worker.status)
       if (status === 'dang cho') return false

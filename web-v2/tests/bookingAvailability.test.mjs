@@ -56,3 +56,24 @@ test('missing/invalid board STT uses stable state order after numbered idle empl
   assert.deepEqual(bookingEmployees(rows, now, 30, records).map(row => row.id), [3, 1, 2])
   assert.deepEqual(bookingEmployees(rows, now).map(row => row.id), [1, 2, 3])
 })
+
+test('overnight booking grant is limited to three roles and Vietnam midnight window', async () => {
+  const { canBookOutsideShift } = await import('../src/lib/liveTourBooking.js')
+  const at = value => Date.parse(value)
+  for (const role of ['admin', 'quanly', 'letan']) {
+    assert.equal(canBookOutsideShift(role, true, at('2026-10-08T17:00:00Z')), true)
+    assert.equal(canBookOutsideShift(role, true, at('2026-10-08T18:59:59Z')), true)
+    assert.equal(canBookOutsideShift(role, true, at('2026-10-08T19:00:00Z')), false)
+    assert.equal(canBookOutsideShift(role, true, at('2026-10-08T16:59:59Z')), false)
+  }
+  assert.equal(canBookOutsideShift('letan', false, at('2026-10-08T18:00:00Z')), false)
+  assert.equal(canBookOutsideShift('nhanvien', true, at('2026-10-08T18:00:00Z')), false)
+  const rows = [
+    { id: 'a', work_status: 'Nghỉ phép', shift: '', status: '' },
+    { id: 'b', work_status: 'Đi làm', shift: '', break_started_at: '2026-10-09T00:30:00+07:00' },
+    { id: 'c', work_status: 'Nghỉ phép', shift: '', roster_eligible: false },
+    { id: 'd', work_status: 'Nghỉ phép', shift: '', status: 'CHO THANH TOÁN' },
+  ]
+  assert.deepEqual(bookingEmployees(rows, at('2026-10-08T18:00:00Z')).map(x => x.id), [])
+  assert.deepEqual(bookingEmployees(rows, at('2026-10-08T18:00:00Z'), 30, [], true).map(x => x.id), ['a'])
+})

@@ -1,3 +1,4 @@
+import { canBookOutsideShift } from '../lib/liveTourBooking'
 import UpcomingOnlineBookings from '../components/UpcomingOnlineBookings'
 import { canViewOnlineBookings } from '../lib/onlineBookings'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -646,6 +647,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canSetShift = ['admin', 'quanly', 'letan'].includes(String(user?.role || '').trim().toLowerCase())
   const canReorder = capability('reorder', isAdmin || user?.permissions?.live_tour_reorder === true)
   const canOperate = capability('operate', isAdmin || user?.permissions?.live_tour_operate === true)
+  const allowBookingOutsideShift = canBookOutsideShift(normalizedRole, capability('booking_outside_shift', false), clockMs)
   const allowStartOutsideShift = canStartOutsideShift(isAdmin, capability('start_outside_shift', false), clockMs)
   const canQuickBackdate = capability('quick_checkout_backdate', isAdmin || user?.permissions?.live_tour_quick_checkout_backdate === true)
   const quickYesterday = vietnamDate(clockMs - 86400000)
@@ -1054,10 +1056,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const requestColumn = findColumn(columns, ['YEU CAU'])
   const openEmployeeBooking = (record) => {
     setError('')
-    if (!['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA']))))) {
+    if (!allowBookingOutsideShift && !['CA 1', 'CA 2'].includes(normalizedColumn(cellValue(record, findColumn(columns, ['VAO CA']))))) {
       return
     }
-    if (hasGroup(record, 'leave')) {
+    if (!allowBookingOutsideShift && hasGroup(record, 'leave')) {
       return
     }
     if (isCurrentlyOnBreak(record)) {
@@ -1885,7 +1887,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       </form>
     </LiveTourModal>}
 
-{bookingContext && <LiveTourBookingDialog onSelectedCustomersChange={setBookingCustomerIds} onCustomerSearch={setLookupSearch} key={bookingContext.employeeId || bookingContext.roomGroup} data={data} context={bookingContext} canAdmin={canAdmin} canSharePrivateRoom={['admin', 'quanly', 'letan'].includes(normalizedRole)} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
+{bookingContext && <LiveTourBookingDialog allowBookingOutsideShift={allowBookingOutsideShift} onSelectedCustomersChange={setBookingCustomerIds} onCustomerSearch={setLookupSearch} key={bookingContext.employeeId || bookingContext.roomGroup} data={data} context={bookingContext} canAdmin={canAdmin} canSharePrivateRoom={['admin', 'quanly', 'letan'].includes(normalizedRole)} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
     {pendingContext && !pendingContext.paid && canPending && canInvoiceView && <LiveTourPendingDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} catalog={data.services || []} customers={data.customers || []} canChangeCustomer={canCustomers} onCustomerSearch={setLookupSearch} onCustomerSelect={id => setPendingContext(current => ({...current,lookupCustomerId:id}))} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
     {customerContext && <LiveTourCustomerDialog context={customerContext} comboCatalog={combos} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setCustomerContext(null)}/>}
     {pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
