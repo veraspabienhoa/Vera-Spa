@@ -1,7 +1,5 @@
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import { checkinLookupOptions } from '../lib/checkinHistory'
-import AttendanceCodePicker from '../components/AttendanceCodePicker'
-import FacegateAttendancePreview from '../components/FacegateAttendancePreview'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
@@ -26,62 +24,6 @@ function MappingCheck({ record }) {
   }
   return <div><button type="button" className="secondary-button" disabled={busy || !record.registration_ref} onClick={check}>{busy ? 'Đang kiểm tra…' : 'Đối chiếu'}</button>
     {result && <p role="status">{result.status === 'reference_match' && <strong>{result.username} · {result.employee_code}<br /></strong>}{result.message}</p>}</div>
-}
-
-function FacegateMappings() {
-  const [data, setData] = useState(null)
-  const [candidates, setCandidates] = useState(null)
-  const [profileId, setProfileId] = useState('')
-  const [profile, setProfile] = useState(null)
-  const [username, setUsername] = useState('')
-  const [code, setCode] = useState('')
-  const [confirmed, setConfirmed] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
-  const run = async (action) => {
-    setBusy(true); setMessage('')
-    try { await action() } catch (error) { setMessage(error.message || 'Không thực hiện được yêu cầu.') }
-    finally { setBusy(false) }
-  }
-  return <details><summary>Ánh xạ hồ sơ FaceGate với nhân viên</summary>
-    <p>Admin chọn nhân viên VERA và nhập mã TimeSoft đã kiểm tra. Kết quả đối chiếu ảnh chỉ dùng tra cứu; ảnh đăng ký thay đổi cần xác nhận lại.</p>
-    <div className="device-actions">
-      <button type="button" className="secondary-button" disabled={busy} onClick={() => run(async () => setData(await veraApi.facegateMappings()))}>Tải danh sách ánh xạ</button>
-      <button type="button" className="primary-button" disabled={busy} onClick={() => run(async () => setCandidates(await veraApi.facegateMappingCandidates()))}>{busy ? 'Đang đối chiếu…' : 'Tự đối chiếu FaceGate'}</button>
-    </div>
-    {candidates && <div className="employee-identity-notice">
-      <p role="status"><strong>Khớp chính xác: {candidates.candidate_count}</strong> · Cần kiểm tra: {candidates.ambiguous_count}. Chưa có ánh xạ nào được tự động xác nhận.</p>
-      {!!candidates.candidates?.length && <div className="device-actions"><button type="button" className="primary-button" disabled={busy} onClick={() => run(async () => {
-        const result = await veraApi.confirmFacegateMappingCandidates({ include_exact: true, overrides: { '142': 'An An', '198': 'Gia Anh', '190': 'Linh Đan' } })
-        setMessage(`Đã xác nhận ${result.confirmed_count} ánh xạ. ${result.skipped?.length ? `Tạm bỏ qua ${result.skipped.length} hồ sơ theo điều kiện mapping hiện tại.` : ''}`)
-        setData(await veraApi.facegateMappings())
-        setCandidates(await veraApi.facegateMappingCandidates())
-      })}>Xác nhận tất cả khớp chính xác + An An + Anh Nguyen → Gia Anh + Cam Tu → Linh Đan</button></div>}
-      {!!candidates.candidates?.length && <details open><summary>Khớp chính xác duy nhất</summary><div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên FaceGate</th><th>Nhân viên VERA</th><th>Thao tác</th></tr></thead><tbody>{candidates.candidates.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.username}</td><td><button type="button" className="secondary-button compact" onClick={() => { setProfileId(String(item.profile_id)); setProfile({ profile_id: item.profile_id, device_name: item.device_name, registration_ref: item.registration_ref }); setUsername(item.username); setConfirmed(false) }}>Chọn để xác nhận</button></td></tr>)}</tbody></table></div></details>}
-      {!!candidates.ambiguous?.length && <details><summary>Không khớp / mơ hồ ({candidates.ambiguous.length})</summary><div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên FaceGate</th><th>Lý do</th></tr></thead><tbody>{candidates.ambiguous.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.reason === 'ambiguous_name' ? 'Tên trùng nhiều nhân viên' : 'Không có tên khớp chính xác duy nhất'}</td></tr>)}</tbody></table></div></details>}
-    </div>}
-    {data && <>
-      <p role="status">Đã xác nhận trên IP hiện tại: <strong>{data.confirmed_count} / {data.total_count}</strong> nhân viên. {data.unmapped_employees?.length ? `Còn ${data.unmapped_employees.length} nhân viên cần đối chiếu từng hồ sơ thiết bị và mã TimeSoft.` : 'Tất cả nhân viên đã có ánh xạ xác nhận.'} Ánh xạ chưa tự bật tính công.</p>
-      {!!data.unmapped_employees?.length && <details><summary>Nhân viên chưa được xác nhận trên IP hiện tại</summary><div className="device-unmapped-list">{data.unmapped_employees.map(item => <button type="button" className="secondary-button compact" key={item.username} onClick={() => { setUsername(item.username); setConfirmed(false) }}>{item.username}{item.full_name ? ` · ${item.full_name}` : ''}</button>)}</div></details>}
-      <AttendanceCodePicker onChoose={(employee, attendanceCode) => { setUsername(employee); setCode(attendanceCode); setConfirmed(false) }}/>
-      <form onSubmit={event => { event.preventDefault(); if (!profile) return; run(async () => {
-        await veraApi.saveFacegateMapping({ profile_id: profile.profile_id, device_name: profile.device_name, registration_ref: profile.registration_ref, username, employee_code: code.trim(), confirmed })
-        setData(await veraApi.facegateMappings()); setConfirmed(false); setMessage('Đã lưu ánh xạ để đối chiếu.')
-      }) }}>
-        <fieldset disabled={busy}>
-          <label>ID hồ sơ FaceGate<input type="number" min="1" max="2147483647" required value={profileId} onChange={event => { setProfileId(event.target.value); setProfile(null); setConfirmed(false) }} /></label>
-          <button type="button" className="secondary-button" disabled={!/^[1-9][0-9]*$/.test(profileId)} onClick={() => run(async () => { setProfile(null); setConfirmed(false); setProfile(await veraApi.facegateProfile(profileId)) })}>Đọc hồ sơ thiết bị</button>
-          {profile && <p>Hồ sơ {profile.profile_id}: <strong>{profile.device_name || 'Chưa có tên'}</strong></p>}
-          <label>Nhân viên VERA<select required value={username} onChange={event => { setUsername(event.target.value); setConfirmed(false) }}><option value="">Chọn nhân viên</option>{data.employees.map(item => <option key={item.username} value={item.username}>{item.username}{item.full_name ? ` · ${item.full_name}` : ''}</option>)}</select></label>
-          <label>Mã chấm công TimeSoft đã đối chiếu<input required maxLength={64} pattern="[A-Za-z0-9_-]+" value={code} onChange={event => { setCode(event.target.value); setConfirmed(false) }} /></label>
-          <label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />Tôi đã kiểm tra hồ sơ thiết bị và mã TimeSoft thuộc nhân viên đã chọn.</label>
-          <button className="secondary-button" type="submit" disabled={!profile || !confirmed || !username || !code.trim()}>Lưu / xác nhận lại ánh xạ</button>
-        </fieldset>
-      </form>
-      <div className="responsive-data-table"><table><thead><tr><th>ID hồ sơ</th><th>Tên trên máy</th><th>Nhân viên VERA</th><th>Mã TimeSoft</th><th>Xác nhận lúc</th><th>IP hiện tại</th><th>Thao tác</th></tr></thead><tbody>{data.mappings.map(item => <tr key={item.profile_id}><td>{item.profile_id}</td><td>{item.device_name}</td><td>{item.username}</td><td>{item.employee_code}</td><td>{formatVeraDateTime(item.confirmed_at, '—')}</td><td>{item.valid_for_current_ip ? 'Đã xác nhận' : 'Cần xác nhận lại'}</td><td>{!item.valid_for_current_ip && <button type="button" className="secondary-button compact" onClick={() => { setProfileId(String(item.profile_id)); setUsername(item.username); setCode(item.employee_code); setProfile(null); setConfirmed(false) }}>Đối chiếu lại</button>}</td></tr>)}</tbody></table></div>
-    </>}
-    {message && <p role="status">{message}</p>}
-  </details>
 }
 
 function CaptureImageButton({ record, onChoose }) {
@@ -229,7 +171,7 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
       {visible.length === 0 && <p role="status">Không có bản ghi phù hợp bộ lọc.</p>}
       {(source === 'facegate' || source === 'facegate_saved') ? <>
         <p>{visible.length} sự kiện FaceGate {source === 'facegate_saved' ? 'đã lưu trong VERA' : 'đọc trực tiếp từ máy'} trong kỳ. {source === 'facegate_saved' ? 'Ánh xạ hiển thị theo hồ sơ Admin đã xác nhận.' : 'Bấm Đối chiếu để kiểm tra hồ sơ đã ánh xạ.'} {attendancePolicy?.source === 'facegate' ? `FaceGate là nguồn chấm công từ ${formatVeraDate(attendancePolicy.effective_date)}. Chỉ dữ liệu đã đồng bộ, xác minh và đủ điều kiện mới được dùng tính công/lương; số sự kiện ở đây không phải số ngày công.` : attendancePolicy?.source === 'timesoft' ? 'Nguồn tính công hiện tại là TimeSoft; nhật ký FaceGate ở đây dùng để tra cứu.' : 'Xem nguồn tính công hiện tại tại Quản lý thiết bị. Nhật ký sự kiện không phải bảng công đã xác nhận.'}</p>
-        {source === 'facegate_saved' && <p role="status">Đã khớp: {visible.filter(item => item.mapping_status === 'reference_match').length} · Chưa ánh xạ: {visible.filter(item => item.mapping_status !== 'reference_match').length}. Mở “Ánh xạ hồ sơ FaceGate với nhân viên” bên dưới để xác nhận từng hồ sơ còn thiếu.</p>}
+        {source === 'facegate_saved' && <p role="status">Đã khớp: {visible.filter(item => item.mapping_status === 'reference_match').length} · Chưa ánh xạ: {visible.filter(item => item.mapping_status !== 'reference_match').length}.</p>}
         {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn. Hãy thu hẹp khoảng ngày để xem và xuất đầy đủ dữ liệu.</p>}
         <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Tên hiển thị trên máy</th><th>Mã trạng thái</th><th>Mã loại trên máy</th><th>Đối chiếu nhân viên</th></tr></thead><tbody>
           {visible.map(item => <tr key={`${item.event_id}-${item.occurred_at}`}>
@@ -265,7 +207,5 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
         setAssignmentNotice(`Đã lưu ẢNH FACE ID cho ${username} trong VERA SPA. Chưa đăng ký ảnh lên máy FaceGate.`)
         setSelectedCapture(null)
       }}/></Suspense>}
-    {user?.permissions?.device_facegate_mapping_manage && <FacegateMappings />}
-    {user?.role === 'admin' && <FacegateAttendancePreview />}
   </section>
 }
