@@ -1329,14 +1329,15 @@ def _require_checked_in(employee, now):
         raise HTTPException(409, "Nhân viên chưa vào ca hoặc đang nghỉ phép, không thể đặt Booking.")
 
 
-def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, actor: str = "") -> dict[str, Any]:
+def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, actor: str = "", *, outside_shift: bool = False) -> dict[str, Any]:
     employee = _employee(state, payload.get("employee_id"))
-    _require_checked_in(employee, now)
+    if not outside_shift:
+        _require_checked_in(employee, now)
     if employee.get("roster_eligible") is False:
         raise HTTPException(409, "Chỉ xếp tua cho Leader/Nhân viên đang làm việc trong danh sách nhân viên.")
-    if _norm(employee.get("work_status")) != "di lam":
+    if not outside_shift and _norm(employee.get("work_status")) != "di lam":
         raise HTTPException(409, "Chỉ có thể xếp tua cho nhân viên đang Đi làm.")
-    if _shift_bucket(employee) not in {"ca1", "ca2"}:
+    if not outside_shift and _shift_bucket(employee) not in {"ca1", "ca2"}:
         raise HTTPException(409, "Nhân viên phải được xếp Ca 1 hoặc Ca 2.")
     if employee.get("break_started_at"):
         raise HTTPException(409, "Nhân viên đang nghỉ giữa ca nên chưa thể xếp tua.")
@@ -1414,6 +1415,13 @@ def _employee_change_allowed(employee: dict[str, Any], now: datetime) -> bool:
         return False
     seconds_left = ((started + timedelta(minutes=float(duration))) - now.astimezone(VN_TZ)).total_seconds()
     return 0 <= seconds_left <= limit * 60
+
+
+def _can_book_outside_shift(role: str, granted: bool, now: datetime) -> bool:
+    role = str(role or "").strip().lower()
+    return (role in {"admin", "quanly", "letan"}
+            and (role == "admin" or granted is True)
+            and 0 <= now.astimezone(VN_TZ).hour < 2)
 
 
 def _can_start_outside_shift(role: str, granted: bool, now: datetime) -> bool:
@@ -2122,7 +2130,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         result = _sync_daily(state, payload["directory"], payload["leaves"], today=payload.get("today", ""))
         payload = {"updated": result["updated"]}
     elif action == "booking":
-        result["employee"] = _booking(state, payload, now, actor)
+        result["employee"] = _booking(state, payload, now, actor, outside_shift=payload.get("_booking_outside_shift") is True)
     elif action == "update_appointment":
         if len(employee_ids) > 1 or (employee_ids and employee_ids[0] != str(payload.get("employee_id") or "")):
             raise HTTPException(400, "Hãy chọn đúng một nhân viên để lưu lịch hẹn.")
@@ -2326,7 +2334,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         for row in rows:
             row_payload = dict(row)
             row_payload.setdefault("auto_yc_ca1", bool(payload.get("auto_yc_ca1")))
-            booked.append(_booking(working, row_payload, now, actor))
+            booked.append(_booking(working, row_payload, now, actor, outside_shift=payload.get("_booking_outside_shift") is True))
         state.clear()
         state.update(working)
         result["employees"] = booked
@@ -3396,6 +3404,7 @@ def _state_response(
     can_backup: bool | None = None,
     can_reorder: bool = False,
     can_start_outside_shift: bool = False,
+    can_booking_outside_shift: bool = False,
     viewer_bank: dict | None = None,
     can_invoice_date_edit: bool = False,
     can_quick_checkout_backdate: bool = False,
@@ -3564,6 +3573,7 @@ def _state_response(
         "capabilities": {
             "appointment_edit": can_appointment_edit, "reorder": can_reorder,
             "start_outside_shift": can_start_outside_shift,
+            "booking_outside_shift": can_booking_outside_shift,
             "admin": can_admin, "catalog_admin": can_admin, "manage_catalog": can_admin,
             "operate": can_operate, "payment": can_payment, "export": can_export,
             "booking": can_booking, "invoice_view": can_invoice_view,
@@ -5218,6 +5228,12 @@ def install_live_tour_routes(
             working = deepcopy(state)
             payload.pop("_manual_break_allowed", None)
             payload.pop("_admin_start", None)
+            payload.pop("_booking_outside_shift", None)
+            if action in {"booking", "multi_booking"} and _can_book_outside_shift(
+                getattr(ident, "role", ""), grants.get("can_booking_outside_shift", False),
+                datetime.now(timezone),
+            ):
+                payload["_booking_outside_shift"] = True
             if action in {"start", "start_room"} and _can_start_outside_shift(
                 getattr(ident, "role", ""), grants.get("can_start_outside_shift", False),
                 datetime.now(timezone),
