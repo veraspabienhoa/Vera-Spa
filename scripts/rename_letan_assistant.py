@@ -1,6 +1,8 @@
 """Operator-authorized, exact account rename using the deployed business route."""
 import hashlib
 import json
+import os
+import traceback
 from types import SimpleNamespace
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
@@ -35,6 +37,14 @@ def auth_ids(conn, username):
 def main():
     verify_runtime(EXPECTED_RELEASE)
     engine = runtime_engine()
+    from vera_vps_data_check import _running_api_environment
+    runtime = _running_api_environment()
+    mode = runtime.get('VERA_LIVE_TOUR_RELATIONAL_MODE')
+    if mode in {'off', 'shadow', 'verify', 'active'}:
+        os.environ['VERA_LIVE_TOUR_RELATIONAL_MODE'] = mode
+    from vera_web_v2_runtime_env import load_live_tour_mode_override
+    load_live_tour_mode_override()
+    print(json.dumps({'storage_mode': os.environ.get('VERA_LIVE_TOUR_RELATIONAL_MODE', 'shadow')}))
     client = None
     try:
         with engine.begin() as conn:
@@ -102,5 +112,7 @@ if __name__ == '__main__':
         print(json.dumps({'ok': False, 'http_status': exc.status_code, 'detail': exc.detail}, ensure_ascii=False))
         raise SystemExit(1)
     except Exception as exc:
-        print(json.dumps({'ok': False, 'error_type': type(exc).__name__}))
+        print(json.dumps({'ok': False, 'error_type': type(exc).__name__,
+                          'frames': [{'file': frame.filename.rsplit('/', 1)[-1], 'function': frame.name, 'line': frame.lineno}
+                                     for frame in traceback.extract_tb(exc.__traceback__)[-5:]]}))
         raise SystemExit(1)
