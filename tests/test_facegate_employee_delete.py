@@ -69,6 +69,7 @@ def setup(database, monkeypatch):
                'confirmed_by': 'admin', 'device_address': '192.168.1.34', 'registration_ref': REF}
     with database.begin() as conn:
         schema = conn.execute(text('SELECT current_schema()')).scalar()
+        conn.execute(text("INSERT INTO employees(username,full_name) VALUES('An','Original person')"))
         conn.execute(text("INSERT INTO vera_app_setting VALUES('facegate','mapping_test-device',CAST(:mapping AS jsonb),1,NOW())"), {'mapping': json.dumps([mapping])})
     return schema
 
