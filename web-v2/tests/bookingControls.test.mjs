@@ -330,6 +330,52 @@ async function choose(scope, label, text) {
   await act(() => option.click())
 }
 
+for (const mode of ['single', 'multi']) test(`${mode} before-shift booking defaults to YC but saves an explicit blank after refresh`, async t => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-10-09T03:00:00Z'))
+  const initial = comboRoomFixture()
+  initial.state.employees.forEach(worker => Object.assign(worker, { shift: 'Ca 2', assigned_shift: 'Ca 2', shift_checkin_date: '2026-10-09' }))
+  initial.payment_settings = { shift_ready_times: { shift2: '13:00' } }
+  const calls = []; let refresh
+  function Screen() {
+    const [data, setData] = useState(initial)
+    refresh = () => setData(structuredClone(initial))
+    return React.createElement(BookingDialog, { data,
+      context: mode === 'multi' ? { roomGroup: '2', roomLabel: 'Phòng 2' } : { employeeId: 'e1' },
+      canBook: true, canOperate: true, onClose() {}, onAction: async (...args) => { calls.push(args); return {} } })
+  }
+  const dispose = await render(Screen)
+  const request = () => [...document.querySelectorAll('label')].find(label => label.querySelector('span')?.textContent === 'Yêu cầu').querySelector('select')
+  try {
+    if (mode === 'multi') await choose(document, 'Nhân viên *', 'Test Worker 1')
+    assert.equal(request().value, 'YC')
+    assert.equal(request().disabled, false)
+    await act(() => { request().value = ''; request().dispatchEvent(new dom.window.Event('change', { bubbles: true })) })
+    await choose(document, mode === 'multi' ? 'Dịch vụ *' : 'Dịch vụ', 'Test Body 90')
+    if (mode === 'single') await choose(document, 'Phòng / giường *', '2.1')
+    await act(refresh)
+    assert.equal(request().value, '')
+    await act(async () => document.querySelector('form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })))
+    assert.equal(calls.length, 1)
+    assert.equal((mode === 'multi' ? calls[0][1].bookings[0] : calls[0][1]).request, '')
+  } finally { await dispose() }
+})
+
+test('reopening a saved blank request before shift preserves it; started services still lock the choice', async t => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-10-09T03:00:00Z'))
+  for (const started of [false, true]) {
+    const data = comboRoomFixture()
+    Object.assign(data.state.employees[0], { shift: 'Ca 2', shift_checkin_date: '2026-10-09',
+      service: 'Test Body 90', room: '2.1', request: '', request_source: 'auto_shift_ready',
+      status: started ? 'Đang thực hiện' : 'Đang chờ' })
+    const dispose = await render(() => React.createElement(BookingDialog, { data, context: { employeeId: 'e1' }, canOperate: true, onClose() {} }))
+    try {
+      const select = [...document.querySelectorAll('label')].find(label => label.querySelector('span')?.textContent === 'Yêu cầu').querySelector('select')
+      assert.equal(select.value, '')
+      assert.equal(select.disabled, started)
+    } finally { await dispose() }
+  }
+})
+
 test('room booking autofills combo services, aggregates guests and blocks shortage before sending', async () => {
   const BookingDialog = await component('LiveTourBookingDialog')
   const calls = []; let updateData, selectedIds

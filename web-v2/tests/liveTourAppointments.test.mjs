@@ -41,10 +41,11 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
   setup?.(data)
   const writes = []
   const exports = []
+  const collections = []
   let fail = conflict
   globalThis.__tourTestApi = {
     liveTour: async () => structuredClone(data),
-    liveTourCollection: async () => ({data:structuredClone(data),page:1,pages:1,total:0,revision:data.revision}),
+    liveTourCollection: async (panel, query) => { collections.push({ panel, query }); return {data:structuredClone(data),page:1,pages:1,total:0,revision:data.revision} },
     liveTourCustomerHistory: async (customerId) => ({ customer: structuredClone(data.customers.find((customer) => customer.id === customerId)), summary: { combo_remaining: 7 }, combo_purchases: structuredClone(data.customers.find((customer) => customer.id === customerId)?.combo_purchases || []), combo_usage: [{ id: 'u1', service: 'Body 90', business_date: TODAY_VN }], invoices: [], reports: [], pending: [] }),
     exportLiveTourExcel: async (kind, query) => { exports.push({ kind, query }) },
     liveTourAction: async (body) => {
@@ -69,8 +70,36 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
   const search = () => document.querySelector('.tour-employee-search input')
   const quick = () => document.querySelector('.live-tour-appointment-editor.quick')
   const save = async (form) => act(async () => form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true })))
-  return { data, writes, exports, type, search, quick, save, dispose: async () => { await act(() => root.unmount()) } }
+  return { data, writes, exports, collections, type, search, quick, save, dispose: async () => { await act(() => root.unmount()) } }
 }
+
+test('opening paid invoices resets to today and sends today bounds on the first request', async () => {
+  const f = await fixture({ role: 'admin', setup(data) {
+    data.capabilities.paid_invoice_view = true
+    data.capabilities.reports_view = true
+  } })
+  const open = async label => act(async () => [...document.querySelectorAll('.tour-heading-actions button')].find(button => button.textContent === label).click())
+  const shortcut = async label => act(async () => [...document.querySelectorAll('.report-date-buttons button')].find(button => button.textContent === label).click())
+  const latestInvoiceQuery = () => f.collections.filter(row => row.panel === 'invoices').at(-1).query
+  const loaded = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 230)) })
+  try {
+    await open('Hóa đơn đã thanh toán')
+    await loaded()
+    assert.equal(document.querySelector('.report-date-preset input').value, 'Hôm nay')
+    assert.equal(latestInvoiceQuery().date_from, TODAY_VN)
+    assert.equal(latestInvoiceQuery().date_to, TODAY_VN)
+    assert.equal(f.collections.filter(row => row.panel === 'invoices').length, 1)
+    await shortcut('Tất cả')
+    assert.equal(document.querySelector('.report-date-preset input').value, 'Tất cả')
+    await open('Báo cáo')
+    assert.equal(document.querySelector('.report-date-preset input').value, 'Hôm qua')
+    await open('Hóa đơn đã thanh toán')
+    await loaded()
+    assert.equal(document.querySelector('.report-date-preset input').value, 'Hôm nay')
+    assert.equal(latestInvoiceQuery().date_from, TODAY_VN)
+    assert.equal(latestInvoiceQuery().date_to, TODAY_VN)
+  } finally { await f.dispose() }
+})
 
 test('saving and failed saves do not insert board notices or reserve empty space', async () => {
   let finish

@@ -1486,6 +1486,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
   const openWorkspacePanel = (panel) => {
     if (panel === 'pending') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'all' })
+    if (panel === 'invoices') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'today', ...tourDateRange('today') })
     if (panel === 'reports') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'yesterday', ...tourDateRange('yesterday') })
     setActivePanel(panel)
     window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))

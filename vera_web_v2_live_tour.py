@@ -1358,7 +1358,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
     if room_item.get("active") is False:
         raise HTTPException(400, "Vị trí phục vụ đã ngừng sử dụng.")
     request, auto_request = _auto_yc_ca1(now, employee, payload.get("request"), bool(payload.get("auto_yc_ca1")))
-    before_shift = _before_shift_ready(state, employee, now)
+    before_shift = "request" not in payload and _before_shift_ready(state, employee, now)
     if before_shift:
         request = "YC"
     service, duration, price, service_items = _service_selection(state, {**payload, "request": request}, now)
@@ -2269,9 +2269,6 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         if _norm(employee.get("status")) not in {"dang cho", "dang thuc hien", "dang su dung"}:
             raise HTTPException(409, "Chỉ sửa booking đang chờ hoặc đang thực hiện.")
         request = str(payload.get("request", employee.get("request", "")))
-        if not employee.get("started_at") and (employee.get("request_source") == "auto_shift_ready" or _before_shift_ready(state, employee, now)):
-            request = "YC"
-            employee["request_source"] = "auto_shift_ready"
         if request not in {"", "YC"}:
             raise HTTPException(400, "Yêu cầu chỉ nhận trống hoặc YC.")
         if request != employee.get("request", "") and employee.get("started_at"):
@@ -2291,6 +2288,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         combo = _booking_combo(state, customer, payload, {"service": name, "service_items": items}, now, employee)
         employee.update(service=name, duration=duration, service_price=price, service_price_source="catalog", service_items=items,
                         room=room_item["name"], request=request, note=str(payload.get("note") or ""), **combo)
+        if "request" in payload and not employee.get("started_at"):
+            employee["request_source"] = "manual"
         if customer:
             employee.update(customer_id=customer["id"], customer_name=customer.get("name", ""), customer_phone=customer.get("phone", ""))
         if payload.get("start_now") and _norm(employee["status"]) == "dang cho":
