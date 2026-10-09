@@ -140,6 +140,8 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "column_config": "Xem giao diện tùy chỉnh", "column_config_edit": "Lưu cấu hình giao diện",
         "profile": "Xem hồ sơ cá nhân", "profile_edit": "Tự cập nhật hồ sơ / mật khẩu",
         "birthday": "Xem sinh nhật", "birthday_check": "Chạy kiểm tra sinh nhật",
+        "holiday_leave_register": "Đăng ký nghỉ lễ cho nhân viên",
+        "holiday_leave_cancel": "Huỷ lịch nghỉ lễ đã đăng ký",
         "guide_manage": "Quản lý tài liệu hướng dẫn",
         "audit_admin_view": "Xem nhật ký thay đổi hệ thống", "permission_admin": "Quản trị phân quyền",
         "storage_admin_view": "Xem quản lý bộ nhớ", "storage_export": "Export dữ liệu lưu trữ",
@@ -236,7 +238,7 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
         "profile", "profile_edit",
     ]},
     {"id": "birthday", "label": "Sinh nhật", "view_feature": "birthday", "features": [
-        "birthday", "birthday_check",
+        "birthday", "birthday_check", "holiday_leave_register", "holiday_leave_cancel",
     ]},
     {"id": "permissions", "label": "Phân quyền", "view_feature": "permission_admin", "features": [
         "permission_admin",
@@ -431,6 +433,8 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     "column_config_edit": {"column_config"},
     "profile_edit": {"profile"},
     "birthday_check": {"birthday"},
+    "holiday_leave_register": {"birthday"},
+    "holiday_leave_cancel": {"birthday", "holiday_leave_register"},
     "storage_export": {"storage_admin_view"},
     "storage_delete": {"storage_admin_view"},
 

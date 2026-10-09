@@ -344,6 +344,7 @@ def _apply_restrictions_and_penalties(
                     detail=detail,
                     source="AUTO UPDATE 24/7 - QUY TẮC RA NGOÀI",
                     minutes=minutes,
+                    approved_window=(break_out, break_out + timedelta(minutes=max(1, minutes))),
                 )
             if message == "SKIP_ROLE_NOT_ELIGIBLE":
                 item["break_auto_penalty_status"] = message

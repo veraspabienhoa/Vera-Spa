@@ -258,12 +258,15 @@ def decision_penalty(config, row, day, decision, rule=None):
         shift = row['overtime_shift'].replace('TC ', '') if row['overtime_shift'].startswith('TC ') else 'Giờ làm'
         periods.append((ot, shift))
     left, right = decision['start'], decision['end']
-    edges = sorted({left, right, *(max(left, min(right, t)) for period, _ in periods for t in period)})
+    from vera_holiday_leave import local as holiday_local, uncovered
+    holiday_periods = decision.get('holiday_periods', [])
+    holiday_edges = [holiday_local(p[key]) for p in holiday_periods for key in ('starts_at','ends_at')]
+    edges = sorted({left, right, *(max(left, min(right, t)) for period, _ in periods for t in period), *(max(left,min(right,t)) for t in holiday_edges)})
     total = Decimal(0)
     segments = []
     for a, b in zip(edges, edges[1:]):
         shift = next((shift for period, shift in periods if period[0] <= a and b <= period[1]), None)
-        if not shift or b <= a:
+        if not shift or b <= a or not uncovered(a, b, holiday_periods):
             continue
         total += wage(config, a, b, shift, work_day=day)
         segments.append({'start': a.isoformat(), 'end': b.isoformat(), 'shift': shift})
@@ -430,6 +433,14 @@ def process(conn, *, now=None):
             decision = candidate(row, day, latest, current, now, leaves)
             if not decision:
                 continue
+            from vera_holiday_leave import intervals as holiday_intervals, uncovered
+            holiday_periods = holiday_intervals(conn, decision['start'], decision['end'], [username]).get(username, [])
+            if holiday_periods:
+                remaining = uncovered(decision['start'], decision['end'], holiday_periods)
+                if not remaining:
+                    continue
+                decision['minutes'] = sum((b-a).total_seconds() for a,b in remaining)/60
+                decision['holiday_periods'] = [{'starts_at':p['starts_at'].isoformat(), 'ends_at':p['ends_at'].isoformat()} for p in holiday_periods]
             rule = active_rule(current, row['hc_department'], decision)
             if not rule:
                 continue

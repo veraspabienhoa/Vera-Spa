@@ -21,6 +21,7 @@ def test_phuong_vy_vera_ca1_beats_timesoft_ca2_in_actual_attendance_reader(monke
     day = date(2026, 9, 22)
     profile = staff(username='Phương Vy', full_name='Phương Vy', work_shift='Ca 1', rotation_cycle='Cố định (Không đổi)')
     class Result:
+        def scalar(self): return None  # No holiday table in this attendance fixture.
         def mappings(self): return self
         def all(self): return [profile]
     class Connection:

@@ -53,6 +53,7 @@ class RouteConnection:
         return self
 
     def execute(self, *_args, **_kwargs):
+        sql = str(_args[0]) if _args else ''
         class Result:
             rowcount = 1
 
@@ -71,6 +72,8 @@ class RouteConnection:
 
             @staticmethod
             def scalar():
+                if sql == "SELECT to_regclass('vera_holiday_leave_period')":
+                    return None  # Generic route fixture has no holiday registrations.
                 return True
 
         return Result()

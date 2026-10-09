@@ -1,3 +1,4 @@
+import HolidayLeaveSection from './HolidayLeaveSection'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiCustomText from '../components/UiCustomText'
@@ -23,5 +24,6 @@ export default function BirthdayPage() {
     <section data-ui-key="u-f673b62f8b64" className="panel data-toolbar"><label>Tháng<select value={month} onChange={(event) => setMonth(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select></label><div className="audit-total">{data.birthdays.length} sinh nhật</div></section>
     <section data-ui-key="u-6a73f127e80e" className="birthday-grid">{data.birthdays.map((item) => <article className={`panel birthday-card ${item.is_today ? 'today' : ''}`} key={item.username}><div className="birthday-day">{String(item.day).padStart(2, '0')}</div><div><strong>{item.full_name}</strong><span>{item.username} · {item.birth_date}</span>{item.is_today && <em>Hôm nay</em>}</div></article>)}</section>
     {!data.birthdays.length && <div data-ui-key="u-127e12a8a760" className="panel setup-note">Tháng {month} chưa có sinh nhật nhân viên.</div>}
+    <HolidayLeaveSection />
   </div>
 }

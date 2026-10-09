@@ -1295,6 +1295,10 @@ jobs:
       - name: Verify shared notification modals and confirmation safety
         run: node --test tests/systemDialogs.test.mjs tests/hrDepartmentModal.test.mjs
 
+      - name: Verify holiday leave forms, scopes and Vietnam intervals
+        working-directory: web-v2
+        run: node --test tests/holidayLeave.test.mjs tests/holidayLeaveForm.test.mjs
+
       - name: Lint
         run: npm run lint
 

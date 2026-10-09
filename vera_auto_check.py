@@ -377,12 +377,16 @@ def automatic_penalty_employee_eligible(conn, employee: str, work_date: date) ->
     return not department or department in AUTO_PENALTY_ROLES
 
 
-def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, detail: str, source: str, minutes=0) -> tuple[bool, str]:
+def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, detail: str, source: str, minutes=0, approved_window=None) -> tuple[bool, str]:
     reason = str(reason_item.get("name") or "").strip()
     if not automatic_late_penalty_eligible(reason, minutes):
         return True, "SKIP_GRACE_PERIOD"
     if not automatic_penalty_employee_eligible(conn, employee, work_date):
         return True, "SKIP_ROLE_NOT_ELIGIBLE"
+    from vera_holiday_leave import approved_day as holiday_approved_day, intervals as holiday_intervals
+    if ((approved_window and holiday_intervals(conn, *approved_window, [employee]).get(employee))
+            or (_norm(reason).startswith('nghi ') and holiday_approved_day(conn, employee, work_date))):
+        return True, "SKIP_APPROVED_HOLIDAY"
     ensure_schema(conn)
     event_key = f"{work_date.isoformat()}|{_norm(employee)}|{_norm(reason)}"
     inserted = conn.execute(text("""

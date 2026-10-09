@@ -1325,6 +1325,8 @@ def _resolved_service_price(state: dict[str, Any], entry: dict[str, Any]) -> int
 
 
 def _require_checked_in(employee, now):
+    if employee.get("holiday_leave_active"):
+        raise HTTPException(409, "Nhân viên đang nghỉ lễ trong khoảng đã đăng ký.")
     if employee.get("break_started_at"):
         raise HTTPException(409, "Nhân viên đang nghỉ giữa ca, chưa có giờ vào lại nên không thể đặt Booking.")
     if (_shift_bucket(employee) not in {"ca1", "ca2"}
@@ -1337,6 +1339,8 @@ def _require_checked_in(employee, now):
 
 def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, actor: str = "", *, outside_shift: bool = False) -> dict[str, Any]:
     employee = _employee(state, payload.get("employee_id"))
+    if employee.get("holiday_leave_active"):
+        raise HTTPException(409, "Nhân viên đang nghỉ lễ; chưa thể đặt Booking.")
     if not outside_shift:
         _require_checked_in(employee, now)
     if employee.get("roster_eligible") is False:
@@ -1438,6 +1442,11 @@ def _can_start_outside_shift(role: str, granted: bool, now: datetime) -> bool:
 
 
 def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: datetime, *, admin_start=False) -> None:
+    from vera_holiday_leave import local as holiday_local
+    if employee.get("holiday_leave_active") or any(
+            holiday_local(period['starts_at']) <= now.astimezone(VN_TZ) < holiday_local(period['ends_at'])
+            for period in employee.get('holiday_leave_periods', [])):
+        raise HTTPException(409, "Nhân viên đang nghỉ lễ; chưa thể bắt đầu dịch vụ.")
     if not admin_start and (_norm(employee.get("work_status")) != "di lam" or _shift_bucket(employee) not in {"ca1", "ca2"}):
         raise HTTPException(409, "Nhân viên phải đang Đi làm và được xếp Ca 1/Ca 2.")
     if employee.get("break_started_at"):
@@ -2159,7 +2168,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             raise HTTPException(400, "Hãy chọn nhân viên thay thế khác.")
         if not _employee_change_allowed(source, now):
             raise HTTPException(409, f"Chỉ đổi nhân viên khi thời gian dịch vụ còn từ 0 đến {source.get('employee_change_minutes', 10)} phút.")
-        if (target.get("roster_eligible") is False or _norm(target.get("work_status")) != "di lam"
+        if (target.get("holiday_leave_active") or target.get("roster_eligible") is False or _norm(target.get("work_status")) != "di lam"
                 or _shift_bucket(target) not in {"ca1", "ca2"} or target.get("break_started_at")
                 or _has_unsettled_work(target)):
             raise HTTPException(409, "Nhân viên thay thế phải đang đi làm, có ca và đang rảnh.")
@@ -3126,7 +3135,7 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "Kết quả hoàn thành": employee.get("completion_note", ""),
         "SL tua": int(employee.get("tour_count") or 0), "SL yêu cầu": int(employee.get("request_count") or 0),
         "Tổng SL": int(employee.get("tour_count") or 0) + int(employee.get("request_count") or 0),
-        "Đi làm": employee.get("work_status", ""), "Vào ca": "" if _norm(employee.get("work_status")) == "nghi phep" else employee.get("shift", ""),
+        "Đi làm": "Nghỉ lễ" if employee.get("holiday_leave_active") else employee.get("work_status", ""), "Vào ca": "" if _norm(employee.get("work_status")) == "nghi phep" else employee.get("shift", ""),
         "Breaktime": _display_datetime(attendance_break.get("out") or employee.get("break_started_at")),
         "TG nghỉ còn lại": break_remaining,
         "Giờ ra": employee.get("clock_out", ""), "Giờ vào": employee.get("clock_in", ""),
@@ -3143,6 +3152,8 @@ def _employee_record(employee: dict[str, Any], now: datetime) -> dict[str, Any]:
         "_return_queue_ordinal": leave_return.queue_order(employee)[2],
         "_shift_checkin_date": employee.get("shift_checkin_date", ""),
         "_daily_support_reason": employee.get("synced_leave_reason", ""),
+        "_holiday_leave_active": employee.get("holiday_leave_active", False),
+        "_holiday_leave_note": employee.get("holiday_leave_note", ""),
         "_scheduled_week_shift": employee.get("scheduled_week_shift", ""),
         "_scheduled_next_shift": employee.get("scheduled_next_shift", ""),
         "_rotation_cycle": employee.get("rotation_cycle", ""),
@@ -3680,6 +3691,8 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
             leave_return.sync_returns(state, directory, return_leaves, local_now,
                                       local_now.date() - timedelta(days=1),
                                       _ordered_employees, _employee_time_key, policy=load_leave_queue_policy(conn))
+        from vera_holiday_leave import intervals as holiday_intervals, project_live as project_holidays
+        project_holidays(state, holiday_intervals(conn, now.astimezone(VN_TZ).replace(hour=0,minute=0,second=0,microsecond=0), now + timedelta(seconds=1)), now)
         _auto_start_waiting(state, now)
         if state != before:
             revision = _write_state_compat(
@@ -3687,6 +3700,8 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
             )
         return state, revision
     state = _bootstrap_state(conn, now)
+    from vera_holiday_leave import intervals as holiday_intervals, project_live as project_holidays
+    project_holidays(state, holiday_intervals(conn, now.astimezone(VN_TZ).replace(hour=0, minute=0, second=0, microsecond=0), now + timedelta(seconds=1)), now)
     conn.execute(text("""
         INSERT INTO vera_app_setting(
           category,setting_key,value_json,source,updated_by,revision,created_at,updated_at
@@ -3703,7 +3718,7 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
     """), {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
     if not row:
         raise HTTPException(500, "Không khởi tạo được trạng thái Live Tour.")
-    return _normalize_state(row.get("value_json"), now), int(row.get("revision") or 1)
+    return _normalize_state(row.get("value_json"), now), int(row.get("revision") or 0)
 
 
 def _write_state(
@@ -5172,6 +5187,9 @@ def install_live_tour_routes(
                 require_feature(conn, ident, "live_tour_payment")
             if action in {"checkout", "quick_checkout"} and _contains_customer_pii(payload):
                 require_feature(conn, ident, "live_tour_customers_view")
+            from vera_holiday_leave import HOLIDAY_ACTIONS, refresh_action_holidays
+            if action in HOLIDAY_ACTIONS:
+                conn.execute(text("SELECT pg_advisory_xact_lock_shared(hashtext('vera:holiday_leave'))"))
             # Build response capabilities before entering the global state
             # critical section. Some grants read employee/payment metadata.
             grants = permissions(conn, ident)
@@ -5233,6 +5251,8 @@ def install_live_tour_routes(
             # A defensive copy guarantees multi-step actions never leak a partial
             # mutation into the value written after an exception.
             working = deepcopy(state)
+            if action in HOLIDAY_ACTIONS:
+                refresh_action_holidays(conn, working, action, payload, now)
             payload.pop("_manual_break_allowed", None)
             payload.pop("_admin_start", None)
             payload.pop("_booking_outside_shift", None)

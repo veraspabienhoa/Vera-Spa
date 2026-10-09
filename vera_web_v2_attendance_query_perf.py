@@ -526,6 +526,9 @@ def _records_v42_fast(conn, start: date, end: date, *, datasets=None) -> list[di
     _append_missing_active_employees(
         conn, output, start, end, definitions, break_config, department_controls,
     )
+    from vera_holiday_leave import intervals as holiday_intervals, apply_attendance
+    from datetime import time
+    apply_attendance(output, holiday_intervals(conn, datetime.combine(start, time.min), datetime.combine(end + timedelta(days=2), time.min)))
     return sorted(
         output,
         key=lambda item: (

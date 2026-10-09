@@ -2960,3 +2960,7 @@ install_board_history_cleanup(app, engine_instance=_engine_instance, current_ide
 from vera_hc_rules import install_routes as install_hc_rules
 install_hc_rules(app, engine_instance=_engine_instance, current_identity=current_identity,
                  require_feature=_require_feature, identity_type=Identity)
+
+from vera_holiday_leave import install_routes as install_holiday_leave_routes
+install_holiday_leave_routes(app, engine_instance=_engine_instance, current_identity=current_identity,
+    require_feature=_require_feature, feature_allowed=_feature_allowed, identity_type=Identity)

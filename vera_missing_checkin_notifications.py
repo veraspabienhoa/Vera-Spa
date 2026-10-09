@@ -297,6 +297,9 @@ def _merge_schedules(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _has_leave_schedule(conn, work_day: date, employee: str, employee_name: str = "") -> bool:
     """Any non-Auto-Check leave registration suppresses the absence alert."""
+    from vera_holiday_leave import approved_day as holiday_approved_day
+    if holiday_approved_day(conn, employee, work_day):
+        return True
     rows = conn.execute(text("""
         SELECT employee_name,source_sheet_id
         FROM leave_records
