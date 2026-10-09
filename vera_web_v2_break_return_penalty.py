@@ -133,6 +133,7 @@ def install_break_return_penalty(
                         detail=detail,
                         source="AUTO UPDATE 24/7 - NGHỈ GIỮA CA",
                         minutes=late_minutes,
+                        approved_window=(deadline, break_in),
                     )
                 if message == "SKIP_ROLE_NOT_ELIGIBLE":
                     item["break_return_penalty_status"] = message

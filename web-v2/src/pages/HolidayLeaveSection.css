@@ -1,0 +1,11 @@
+.holiday-leave-section { margin-top: 1rem; }
+.holiday-leave-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.holiday-leave-heading h2 { display: flex; align-items: center; gap: .5rem; }
+.holiday-leave-fields { border: 0; padding: 0; margin: 1rem 0; min-width: 0; }
+.holiday-leave-selector { border: 1px solid var(--border, #73847a); padding: .75rem; margin: .75rem 0; display: flex; flex-wrap: wrap; gap: .75rem; }
+.holiday-leave-selector label, .holiday-leave-people label { display: flex; align-items: center; gap: .4rem; }
+.holiday-leave-selector input[type=checkbox] { width: auto; }
+.holiday-leave-people { width: 100%; max-height: 18rem; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .5rem; }
+.holiday-date-list { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+.holiday-leave-section .table-scroll { margin-top: .75rem; }
+.holiday-leave-section td { vertical-align: top; }

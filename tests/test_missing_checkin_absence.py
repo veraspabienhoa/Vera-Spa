@@ -102,6 +102,8 @@ def scenario(monkeypatch):
         def one(self): return {'id': 7, 'leave_record_uid': 'uid', 'penalty': state.saved[-1]['reason_item']['penalty']}
     class Conn:
         def execute(self, query, params=None):
+            if "to_regclass('vera_holiday_leave_period')" in str(query):
+                return SimpleNamespace(scalar=lambda: None)
             if 'SELECT id FROM vera_auto_check_event' in str(query):
                 return Result([{'id': 7}] if state.saved else [])
             return Result(state.leaves)
@@ -309,3 +311,10 @@ def test_non_ktv_schedule_never_creates_absence(scenario, monkeypatch, role):
         overtime_shift='TC Ca 1', overtime_start_time='09:30')])
     assert rule.process(s.conn, now=s.now)['added'] == 0
     assert not s.saved and not s.notices
+
+
+def test_registered_holiday_suppresses_unpaid_absence_and_notification(scenario, monkeypatch):
+    import vera_holiday_leave as holiday
+    monkeypatch.setattr(holiday, 'approved_day', lambda conn, username, day: True)
+    assert rule.process(scenario.conn, now=scenario.now)['added'] == 0
+    assert scenario.saved == [] and scenario.notices == []

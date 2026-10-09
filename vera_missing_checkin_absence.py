@@ -159,6 +159,10 @@ def process(conn, *, now=None):
         if prior:
             result['skipped'] += 1
             continue
+        from vera_holiday_leave import approved_day as holiday_approved_day
+        if holiday_approved_day(conn, username, day):
+            result['skipped'] += 1
+            continue
         leaves = conn.execute(text('SELECT * FROM leave_records WHERE leave_date=:day AND employee_name=:name FOR UPDATE'), {'day': day, 'name': username}).mappings().all()
         leave_names = {auto_check._norm(r['employee_name']) for r in leaves
                        if 'di tre' not in auto_check._norm(r['leave_reason']) and 'khong phep' not in auto_check._norm(r['leave_reason'])}
