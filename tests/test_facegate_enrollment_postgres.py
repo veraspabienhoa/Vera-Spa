@@ -125,6 +125,7 @@ def test_success_atomic_mapping_and_idempotent_replay(setup):
     with s.engine.connect() as conn:
         rows=routes.mappings(conn,'test-device')
         assert len(rows)==1 and rows[0]['username']=='worker' and rows[0]['registration_ref']==REF
+        assert rows[0]['device_name']=='worker'  # full_name is Test Staff.
         assert rows[0]['employee_code']==''
     assert send(s).json()['operation_id']==response.json()['operation_id']
     assert s.calls.count('upload')==s.calls.count('add')==1

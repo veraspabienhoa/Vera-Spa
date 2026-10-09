@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
 from vera_facegate_control_log import facegate_endpoint, mapping_device_id, registration_ref
-from vera_facegate_enrollment import FaceGateEnrollmentClient, EnrollmentError, UploadRejected, jpeg_photo
+from vera_facegate_enrollment import FaceGateEnrollmentClient, EnrollmentError, UploadRejected, jpeg_photo, validate_device_name
 from vera_web_v2_devices import read_registry, norm
 
 
@@ -266,9 +266,11 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
             if not photo or photo['sha256'] != body.photo_sha256:
                 raise HTTPException(409, 'Ảnh đã thay đổi hoặc chưa lưu. Hãy tải lại ảnh trước khi đăng ký.')
             name = str((old_profile or {}).get('device_name') if operation_type == 'replace'
-                       else (person['full_name'] or username)).strip()
-            if not name or len(name.encode('utf-8')) >= 48 or sum(ord(c) > 127 for c in name) >= 16 or re.search(r'[\x00-\x1f\x7f]', name):
-                raise HTTPException(400, 'Tên nhân viên vượt giới hạn tên của máy FaceGate.')
+                       else username).strip()
+            try:
+                name = validate_device_name(name)
+            except EnrollmentError as exc:
+                raise HTTPException(400, str(exc)) from None
             original = bytes(photo['content'])
             row = {'operation_id': uuid.uuid4().hex, 'device_id': device_id, 'device_address': address,
                    'employee_username': username, 'photo_sha256': photo['sha256'], 'device_name': name,
@@ -298,7 +300,8 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
                             or registration_ref(device_profile) != old_ref):
                         raise UploadRejected('profile_changed', 'Chi tiết hồ sơ trên máy không khớp ánh xạ; chưa thay ảnh.')
                 else:
-                    if any(norm(p.get('uname')) in {norm(username), norm(name)} for p in profiles):
+                    known_names = {norm(username), norm(name), norm(person.get('full_name'))} - {''}
+                    if any(norm(p.get('uname')) in known_names for p in profiles):
                         raise UploadRejected('existing_profile', 'Máy đã có tên tương ứng. Hãy đối chiếu hồ sơ hiện có trước khi tạo mới.')
                     defaults = client.door_defaults()
                 with engine_instance().begin() as conn:

@@ -1,10 +1,5 @@
 name: Rename authorized letan account to Assistant
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/rename-letan-assistant.yml'
-      - 'scripts/rename_letan_assistant.py'
   workflow_dispatch:
 permissions:
   contents: read
