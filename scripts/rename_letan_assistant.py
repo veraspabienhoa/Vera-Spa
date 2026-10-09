@@ -88,6 +88,23 @@ def main():
         if len(entries) != 1 or not entries[0].get('confirmed_by'):
             raise HTTPException(409, 'Ánh xạ máy cần được kiểm tra.')
         entry = entries[0]
+        if entry.get('device_name') != 'Assistant':
+            from vera_employee_rename_sync import queue_device_rename, sync_device_names
+            with engine.begin() as conn:
+                conn.execute(text('SELECT pg_advisory_xact_lock(723491, 1)'))
+                conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
+                owners = directory(conn, 'Assistant')
+                if len(owners) != 1:
+                    raise HTTPException(409, 'Tài khoản đã thay đổi trước khi đồng bộ máy.')
+                pending = conn.execute(text("SELECT 1 FROM vera_facegate_rename_job WHERE employee_username='Assistant' AND status='pending' LIMIT 1")).scalar()
+                if not pending:
+                    queue_device_rename(conn, 'Assistant', 'Assistant')
+            sync_device_names(engine, 'Assistant')
+            with engine.begin() as conn:
+                entries = [r for r in mappings(conn, device_id) if r.get('username') == 'Assistant']
+                if len(entries) != 1 or entries[0].get('profile_id') != entry.get('profile_id'):
+                    raise HTTPException(409, 'Ánh xạ thay đổi trong lúc đồng bộ tên máy.')
+                entry = entries[0]
         with facegate_endpoint('http://' + address):
             client = FaceGateEnrollmentClient()
             client.login()
