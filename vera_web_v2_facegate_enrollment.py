@@ -300,7 +300,8 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
                             or registration_ref(device_profile) != old_ref):
                         raise UploadRejected('profile_changed', 'Chi tiết hồ sơ trên máy không khớp ánh xạ; chưa thay ảnh.')
                 else:
-                    if any(norm(p.get('uname')) in {norm(username), norm(name)} for p in profiles):
+                    known_names = {norm(username), norm(name), norm(person.get('full_name'))} - {''}
+                    if any(norm(p.get('uname')) in known_names for p in profiles):
                         raise UploadRejected('existing_profile', 'Máy đã có tên tương ứng. Hãy đối chiếu hồ sơ hiện có trước khi tạo mới.')
                     defaults = client.door_defaults()
                 with engine_instance().begin() as conn:
