@@ -183,6 +183,7 @@ def project_live(state, values, now):
 def registrations(conn, username=None, start=None, end=None):
     if not ready(conn): return []
     rows = conn.execute(text('''SELECT r.id,r.scope,r.mode,r.note,r.created_by,r.created_at,r.revision,r.cancelled_at,
+        0::integer AS calculated_days,
         (SELECT jsonb_agg(jsonb_build_object('starts_at',p.starts_at,'ends_at',p.ends_at) ORDER BY p.starts_at)
           FROM vera_holiday_leave_period p WHERE p.registration_id=r.id) AS periods,
         (SELECT jsonb_agg(jsonb_build_object('username',m.employee_username,'department',m.department_code) ORDER BY m.employee_username)
@@ -222,7 +223,7 @@ def install_routes(app, *, engine_instance, current_identity, require_feature, f
             if prior:
                 if prior['input_hash'] != digest or prior['created_by'] != ident.employee_username:
                     raise HTTPException(409, 'Mã đăng ký đã được dùng cho nội dung khác.')
-                return {'ok':True, 'id':body.request_id, 'duplicate':True, 'message':'Lịch nghỉ lễ đã được lưu trước đó.'}
+                return {'ok':True, 'id':body.request_id, 'duplicate':True, 'calculated_days':0, 'message':'Lịch nghỉ lễ đã được lưu trước đó.'}
             employees, departments = roster(conn)
             targets = select_members(body, employees, departments)
             names = [e['username'] for e in targets]
@@ -237,7 +238,7 @@ def install_routes(app, *, engine_instance, current_identity, require_feature, f
                 [{'id':body.request_id,'name':e['username'],'department':e['department']} for e in targets])
             conn.execute(text('INSERT INTO vera_holiday_leave_period(registration_id,starts_at,ends_at) VALUES(:id,:start,:end)'),
                 [{'id':body.request_id,'start':start,'end':end} for start,end in periods])
-            return {'ok':True,'id':body.request_id,'employee_count':len(targets),'message':f'Đã đăng ký nghỉ lễ cho {len(targets)} nhân viên.'}
+            return {'ok':True,'id':body.request_id,'employee_count':len(targets),'calculated_days':0,'message':f'Đã đăng ký nghỉ lễ cho {len(targets)} nhân viên.'}
 
     @app.post('/v2/holiday-leave/{registration_id}/cancel')
     def cancel(registration_id: UUID, body: HolidayCancel, ident: identity_type = Depends(current_identity)):

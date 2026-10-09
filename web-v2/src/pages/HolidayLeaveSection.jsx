@@ -117,10 +117,11 @@ export default function HolidayLeaveSection() {
       </fieldset>
     </form>}
     {!loading && !data.can_register && <p>Bạn chưa được cấp quyền đăng ký nghỉ lễ. Lịch bên dưới hiển thị các kỳ nghỉ áp dụng cho bạn.</p>}
+    <p>Nghỉ lễ có số ngày tính = 0, không trừ hạn mức nghỉ của nhân viên, kể cả nghỉ nhiều ngày hoặc theo giờ.</p>
     <h3>LỊCH NGHỈ LỄ ĐÃ ĐĂNG KÝ</h3>
     <div className="form-grid"><label>Xem từ ngày<VeraDateInput value={filter.start} aria-label="Lọc nghỉ lễ từ ngày" onChange={event => setFilter(current => ({ ...current, start: event.target.value }))} /></label><label>Đến ngày<VeraDateInput value={filter.end} min={filter.start} aria-label="Lọc nghỉ lễ đến ngày" onChange={event => setFilter(current => ({ ...current, end: event.target.value }))} /></label></div>
-    <div className="table-scroll"><table><thead><tr><th>Tên lễ / ghi chú</th><th>Phạm vi</th><th>Thời gian</th><th>Nhân viên</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
-      <tbody>{data.registrations.map(row => <tr key={row.id}><td>{row.note}</td><td>{scopeLabels[row.scope]}</td><td>{holidayPeriodsLabel(row)}</td><td><details><summary>{row.employees?.length || 0} nhân viên</summary>{(row.employees || []).map(employee => <div key={employee.username}>{employee.username}</div>)}</details></td><td>{row.cancelled_at ? 'Đã huỷ' : 'Đã đăng ký'}</td><td>{data.can_cancel && !row.cancelled_at && <button type="button" className="danger-button" disabled={busy || loading} onClick={() => cancel(row)}>Huỷ đăng ký</button>}</td></tr>)}</tbody></table></div>
+    <div className="table-scroll"><table><thead><tr><th>Tên lễ / ghi chú</th><th>Phạm vi</th><th>Thời gian</th><th>Nhân viên</th><th>Số ngày tính</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+      <tbody>{data.registrations.map(row => <tr key={row.id}><td>{row.note}</td><td>{scopeLabels[row.scope]}</td><td>{holidayPeriodsLabel(row)}</td><td><details><summary>{row.employees?.length || 0} nhân viên</summary>{(row.employees || []).map(employee => <div key={employee.username}>{employee.username}</div>)}</details></td><td>{row.calculated_days ?? 0}</td><td>{row.cancelled_at ? 'Đã huỷ' : 'Đã đăng ký'}</td><td>{data.can_cancel && !row.cancelled_at && <button type="button" className="danger-button" disabled={busy || loading} onClick={() => cancel(row)}>Huỷ đăng ký</button>}</td></tr>)}</tbody></table></div>
     {!loading && !data.registrations.length && <p>Chưa có lịch nghỉ lễ trong khoảng ngày đang xem.</p>}
   </section>
 }

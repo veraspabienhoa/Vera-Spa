@@ -119,9 +119,14 @@ def send(api, **changes):
 
 def test_postgres_cohort_idempotence_overlap_and_cancellation(database):
     api,allowed,identity=prepare(database)
+    with database.begin() as conn:
+        conn.execute(text('CREATE TABLE leave_records(calculated_days numeric); INSERT INTO leave_records VALUES(1),(0.5)'))
     result,payload=send(api,scope='departments',departments=['locker'])
     assert result.status_code==200,result.text
     assert result.json()['employee_count']==1
+    assert result.json()['calculated_days']==0
+    listed=api.get('/v2/holiday-leave?start=2026-10-01&end=2026-10-31').json()
+    assert listed['registrations'][0]['calculated_days']==0
     assert api.post('/v2/holiday-leave',json=payload).json()['duplicate']
     assert api.post('/v2/holiday-leave',json={**payload,'note':'Different'}).status_code==409
     with database.begin() as conn:
@@ -136,6 +141,9 @@ def test_postgres_cohort_idempotence_overlap_and_cancellation(database):
     with database.begin() as conn:
         assert holiday.intervals(conn,at('10:00'),at('11:00'))=={}
     assert send(api,scope='employees',employees=['An'])[0].status_code==200
+    with database.begin() as conn:
+        assert float(conn.execute(text('SELECT sum(calculated_days) FROM leave_records')).scalar())==1.5
+        assert conn.execute(text('SELECT count(*) FROM leave_records')).scalar()==2
 
 
 def test_postgres_permissions_personal_privacy_and_no_inherited_holiday(database):

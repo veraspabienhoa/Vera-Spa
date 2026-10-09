@@ -46,6 +46,9 @@ and check-in alerts use the existing conservative approved-leave policy: any
 holiday registration that day defers an automatic absence decision for manual
 review. Outside/break-return catalog penalties overlapping an approved interval
 are also deferred, while unaffected intervals retain their existing rules.
+Every holiday registration returns calculated_days=0 and displays Số ngày tính
+as 0, for all scopes and day/hour modes. Registration/cancellation never writes
+ordinary leave_records, so existing employee leave limits remain unchanged.
 No holiday entry consumes ordinary/annual leave quotas, invents check-ins or
 paid hours, recalculates stored payroll, or deletes prior violations. Holiday
 wage entitlements are outside this registration change.
