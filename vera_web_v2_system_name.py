@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 import vera_web_v2_work_schedule as work_schedule
 from vera_employee_names import HISTORY_KEY, previous_names
+from vera_employee_rename_sync import migrate_references, queue_device_rename, sync_device_names
 
 
 RELEASE = "system-login-name-2026-09-30-v3"
@@ -116,6 +117,7 @@ def install_system_name_routes(
         renamed_counts: dict[str, int] = {}
 
         with engine_instance().begin() as conn:
+            conn.execute(text('SELECT pg_advisory_xact_lock(723491, 1)'))
             # Same directory lock as account creation/import: old names may not
             # be reused by a new employee while this rename is committing.
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
@@ -147,7 +149,8 @@ def install_system_name_routes(
 
             if system_name != target:
                 # Keep the complete rename chain for historical VERA readers.
-                # No password/login alias is created. Raw device names are not edited.
+                # No password/login alias is created; raw punch evidence stays intact.
+                queue_device_rename(conn, target, system_name)
                 aliases = list(dict.fromkeys([*previous_names(row), target]))
                 conn.execute(text('''UPDATE employees
                     SET payload=jsonb_set(COALESCE(payload, '{}'::jsonb),
@@ -211,6 +214,7 @@ def install_system_name_routes(
                     count = _rename_reference(conn, table, "employee_name", target, system_name)
                     if count:
                         renamed_counts[f"{table}.employee_name"] = count
+                renamed_counts.update(migrate_references(conn, target, system_name, actor))
             else:
                 conn.execute(text("""
                     UPDATE employees
@@ -228,6 +232,20 @@ def install_system_name_routes(
                     WHERE username=:username
                 """), {"username": target, "system_name": system_name})
 
+        try:
+            face_id = sync_device_names(engine_instance(), system_name)
+        except Exception:
+            # The rename already committed. Never tell the UI to retry the old
+            # account name because a post-commit device/status check failed.
+            face_id = {'status': 'pending'}
+        message = (
+            f"Đã đổi tên nhân viên và tên đăng nhập từ “{target}” thành “{system_name}”, đồng bộ dữ liệu liên quan."
+            if system_name != target else f"Tên hệ thống hiện là “{system_name}”."
+        )
+        if face_id['status'] == 'pending':
+            message += ' Máy Face ID đang chờ đồng bộ; hệ thống sẽ tự thử lại khi kết nối được máy.'
+        elif face_id['status'] == 'verified':
+            message += ' Đã kiểm tra đồng bộ tên trên máy Face ID.'
         return {
             "ok": True,
             "release": RELEASE,
@@ -237,11 +255,8 @@ def install_system_name_routes(
             "updated_by": actor,
             "login_username_changed": system_name != target,
             "references_updated": renamed_counts,
-            "message": (
-                f"Đã đổi Tên hệ thống và Tên đăng nhập từ “{target}” thành “{system_name}”."
-                if system_name != target
-                else f"Tên hệ thống hiện là “{system_name}”."
-            ),
+            "face_id_sync": face_id,
+            "message": message,
         }
 
     @app.get("/v2/staff/system-name/health")
