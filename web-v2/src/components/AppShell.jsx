@@ -495,7 +495,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       </main>
       <PageErrorBoundary page={currentPage} onRetry={() => LayoutDesigner.reset()}><Suspense fallback={null}><LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/></Suspense></PageErrorBoundary>
       <BackToTop/>
-      {showPageNotifications && !user?.must_change_password && <PopupNotifications key={user?.id || user?.employee_username} user={user}/>}
+      {showPageNotifications && !user?.must_change_password && <PopupNotifications key={`system-notifications:${user?.id || user?.employee_username}`} user={user}/>}
       {currentPage === 'live-tour' && <OnlineBookingPopup key={`online-booking:${user?.id || user?.employee_username}`} user={user} onOpen={() => choose('online-bookings', true)}/>}
       <BookingNotificationPopup key={user?.id || user?.username || user?.employee_username || ''} user={user} onOpen={() => choose('live-tour', true)}/>
       <MissingCheckinPopup key={`${user?.username || user?.employee_username || user?.id || ''}:${role}`} user={user}/>
