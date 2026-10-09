@@ -68,7 +68,7 @@ from vera_employee_rename_sync import migrate_references
 def test_postgres_atomic_reference_migration_preserves_employee_id_and_money(database):
     with database.begin() as conn:
         conn.execute(text('CREATE TABLE rename_business(id integer PRIMARY KEY, employee_name text, payload jsonb, checksum text, revision bigint, updated_at timestamptz)'))
-        conn.execute(text('''INSERT INTO rename_business VALUES(1,'An','{"employee_name":"An","amount":123,"customer_name":"An"}', 'original',1,NOW())'''))
+        conn.execute(text("INSERT INTO rename_business VALUES(1,'An',CAST(:payload AS jsonb),'original',1,NOW())"), {'payload': '{"employee_name":"An","amount":123,"customer_name":"An"}'})
         conn.execute(text('CREATE VIEW rename_business_view AS SELECT * FROM rename_business'))
         migrate_references(conn, 'An', 'Gia An', 'admin')
     with database.begin() as conn:

@@ -50,10 +50,12 @@ def migrate_references(conn, old, new, actor):
     if tour.resource_store.enabled():
         tour.resource_store.lock(conn)
         before, revision, _ = tour.resource_store.read(conn)
-    else:
+    elif conn.execute(text("SELECT to_regclass('vera_app_setting')")).scalar():
         tour.acquire_state_lock(conn, tour.STATE_LOCK)
         row = conn.execute(text("SELECT value_json,revision FROM vera_app_setting WHERE category='live_tour' AND setting_key='state' FOR UPDATE")).mappings().first()
         before, revision = (row['value_json'], row['revision']) if row else ({}, 0)
+    else:
+        before, revision = {}, 0
     after = rename_json(deepcopy(before), old, new)
     if after != before:
         tour._write_state(conn, after, revision, actor, previous_state=before)
@@ -106,6 +108,13 @@ def queue_device_rename(conn, old, new):
     from vera_web_v2_facegate_enrollment import mappings, target
     from vera_facegate_control_log import mapping_device_id
     ensure_jobs(conn)
+    # A VERA-only employee can be renamed without hardware configuration.
+    # Existing mappings still require the configured device and confirmation.
+    if not conn.execute(text("SELECT to_regclass('vera_app_setting')")).scalar():
+        return
+    mapping_values = conn.execute(text("SELECT value_json FROM vera_app_setting WHERE category='facegate' AND setting_key LIKE 'mapping_%'")).scalars().all()
+    if not any(isinstance(rows, list) and any(isinstance(entry, dict) and entry.get('username') == old for entry in rows) for rows in mapping_values):
+        return
     if conn.execute(text("SELECT 1 FROM vera_facegate_rename_job WHERE employee_username=:old AND status='pending'"), {'old': old}).scalar():
         raise HTTPException(409, 'Tên trên máy Face ID đang chờ đồng bộ. Hãy hoàn tất đồng bộ trước khi đổi tên lần nữa.')
     if conn.execute(text("SELECT to_regclass('vera_facegate_enrollment')")).scalar() and conn.execute(text("SELECT 1 FROM vera_facegate_enrollment WHERE status IN ('running','unverified') LIMIT 1")).scalar():
