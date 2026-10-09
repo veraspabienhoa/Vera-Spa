@@ -1,3 +1,4 @@
+import { startSystemFeedback } from './lib/systemFeedback'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
@@ -24,6 +25,9 @@ import './visibility-cleanup.css'
 import './clear-borders.css'
 import './live-tour-mobile-overrides.css'
 import './mobile-system.css'
+import './system-dialogs.css'
+
+startSystemFeedback()
 
 void registerVeraServiceWorker().catch(() => {})
 startPurchaseReconcileAlertWatcher()

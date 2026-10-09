@@ -33,7 +33,7 @@ export default function MissingCheckinAbsenceRules({ policy, canEdit }) {
     <p>Thông báo cho đúng nhân viên, lễ tân, quản lý và Admin qua hệ thống, popup và thông báo đẩy. Điều chỉnh kênh/người nhận trong Cài đặt thông báo → Tự động nghỉ không phép · Ca 1 / Ca 2. Tắt thông báo không tắt quy tắc ghi nghỉ.</p>
     {!canEdit && <p>Chỉ Admin được thay đổi nội quy này.</p>}
     {busy && <p role="status">Đang lưu…</p>}
-    {message && <p role="status">{message}</p>}
+    {message && <p role="status" data-system-feedback>{message}</p>}
     {error && <p role="alert">{error}</p>}
   </section>
 }

@@ -1,3 +1,4 @@
+import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import ActionSuccessDialog from '../components/ActionSuccessDialog'
 import usePageRefresh from '../lib/usePageRefresh'
 import useFilterScrollAnchor from '../lib/useFilterScrollAnchor'
@@ -526,7 +527,7 @@ export default function LeaveRegistrationPage({ user }) {
         if (!nextReason) throw new Error(`Lý do nghỉ đã chọn không còn được phép cho ${shortEmployeeName(item.employee_name)} ngày ${formatDateDisplay(item.leave_date)}. Hãy tải lại danh sách.`)
         const payload = { leave_reason: reasonDrafts[item.record_uid] }
         if (nextReason?.requires_manual_penalty) {
-          const amount = window.prompt(`Nhập mức phạt cho "${nextReason.name}" (VNĐ):`, '')
+          const amount = (await promptDialog(`Nhập mức phạt cho "${nextReason.name}" (VNĐ):`, ''))
           if (amount === null) throw new Error('Đã hủy thao tác sửa vì chưa nhập mức phạt.')
           const parsed = Number(String(amount).replace(/[^0-9.-]/g, ''))
           if (!Number.isFinite(parsed) || parsed < 0) throw new Error('Mức phạt phải là số không âm.')
@@ -561,7 +562,7 @@ export default function LeaveRegistrationPage({ user }) {
 
   const deleteSelected = async () => {
     if (deletableSelectedUids.length === 0) return
-    if (!window.confirm(`Xóa ${deletableSelectedUids.length} lịch nghỉ đã chọn?`)) return
+    if (!(await confirmDialog(`Xóa ${deletableSelectedUids.length} lịch nghỉ đã chọn?`))) return
     const deletedCount = deletableSelectedUids.length
     setManaging(true)
     setListActionNotice(null)

@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from './StableFeedback'
 import UiCustomText from './UiCustomText'
@@ -92,7 +93,7 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
       return
     }
     const actionText = approving ? 'duyệt' : 'không duyệt'
-    if (!window.confirm(`${actionText === 'duyệt' ? 'Duyệt' : 'Không duyệt'} ${item.request_type} của ${item.employee_name}?`)) return
+    if (!(await confirmDialog(`${actionText === 'duyệt' ? 'Duyệt' : 'Không duyệt'} ${item.request_type} của ${item.employee_name}?`))) return
     setBusyId(item.id)
     setNotice(null)
     try {

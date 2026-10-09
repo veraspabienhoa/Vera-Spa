@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import DateSearchField from '../components/DateSearchField'
 import ManualOnlineBooking from '../components/ManualOnlineBooking'
 import { useEffect, useState } from 'react'
@@ -14,7 +15,7 @@ const statuses = { new: 'Mới nhận', confirmed: 'Đã xác nhận', handled: 
 export function RequestCard({ row, reload, onClose, services = [] }) {
   const [editing, setEditing] = useState(false)
   const remove = async () => {
-    if (!window.confirm('Xóa lịch hẹn online này?')) return
+    if (!(await confirmDialog('Xóa lịch hẹn online này?'))) return
     setBusy(true); setError('')
     try { await veraApi.deleteOnlineBooking(row.id, row.revision); window.dispatchEvent(new Event('vera-online-bookings-changed')); onClose(); reload() }
     catch (err) { setError(err.message) } finally { setBusy(false) }

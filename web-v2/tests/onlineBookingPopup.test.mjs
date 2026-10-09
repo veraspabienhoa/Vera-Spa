@@ -3,7 +3,9 @@ import './bookingDateRange.test.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { JSDOM } from 'jsdom'
+import { JSDOM as BaseJSDOM } from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 
 const built = await build({
   stdin: { contents: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Popup from './src/components/OnlineBookingPopup';import Manual from './src/components/ManualOnlineBooking';import Upcoming from './src/components/UpcomingOnlineBookings';import Page from './src/pages/OnlineBookingPage';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=user=>act(async()=>root.render(<Popup user={user} onOpen={()=>window.opens++}/>));window.mountUpcoming=user=>act(async()=>root.render(<Upcoming user={user} onClose={()=>window.opens++}/>));window.mountManual=()=>act(async()=>root.render(<Manual services={[{id:'low',name:'Basic',display_order:0,duration:60,price:200000,starts_on:'2020-01-01'},{id:'svc',name:'VIP',display_order:2,duration:90,price:350000,starts_on:'2020-01-01'},{id:'high',name:'Premium',display_order:1,duration:90,price:500000,starts_on:'2020-01-01'}]} onClose={()=>window.opens++} onSaved={()=>window.saved++}/>));window.mountPage=user=>act(async()=>root.render(<Page user={user}/>));window.unmount=()=>act(async()=>root.unmount());`, resolveDir: process.cwd(), loader:'jsx' },

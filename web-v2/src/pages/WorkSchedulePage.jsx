@@ -1,3 +1,4 @@
+import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import { apiRequest as sharedRequest } from '../lib/api'
 import DateSearchField from '../components/DateSearchField'
 import ScheduleViolations from '../components/ScheduleViolations'
@@ -505,7 +506,7 @@ export default function WorkSchedulePage({ user }) {
   const renameSystemName = async (employee) => {
     if (!isAdmin) return
     const current = systemName(employee)
-    const next = window.prompt('Tên hệ thống của nhân viên:', current)
+    const next = (await promptDialog('Tên hệ thống của nhân viên:', current))
     if (next === null) return
     const clean = next.trim().replace(/\s+/g, ' ')
     if (!clean || clean === current) return
@@ -1050,7 +1051,7 @@ export default function WorkSchedulePage({ user }) {
   }
 
   const deleteComboSale = async (sale) => {
-    if (!window.confirm(`Xóa lượt bán combo của ${sale.employee_name} ngày ${sale.sale_date}?`)) return
+    if (!(await confirmDialog(`Xóa lượt bán combo của ${sale.employee_name} ngày ${sale.sale_date}?`))) return
     setBusy(true)
     try { await scheduleRequest(`/v2/work-schedule/combo-sales/${encodeURIComponent(sale.id)}`, { method: 'DELETE' }); await load(); setNotice('Đã xóa lượt bán combo.') }
     catch (error) { setNotice(error.message || 'Không xóa được dữ liệu bán combo.') } finally { setBusy(false) }

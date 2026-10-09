@@ -1,3 +1,4 @@
+import { alertDialog } from './systemDialogs'
 const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim()
 
 const actionText = (button) => normalizeText(button?.textContent)
@@ -108,7 +109,7 @@ async function openBothSides(panel) {
     'popup=yes,width=1280,height=900,left=80,top=60,resizable=yes,scrollbars=yes',
   )
   if (!popup) {
-    window.alert('Trình duyệt đang chặn Window mới. Hãy cho phép pop-up cho app.veraspa.vn rồi thử lại.')
+    (await alertDialog('Trình duyệt đang chặn Window mới. Hãy cho phép pop-up cho app.veraspa.vn rồi thử lại.'))
     return
   }
   popup.document.write('<!doctype html><meta charset="utf-8"><title>VERA SPA - CCCD</title><p style="font-family:Arial;padding:20px">Đang tải CCCD...</p>')

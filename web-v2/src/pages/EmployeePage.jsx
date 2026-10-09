@@ -1,3 +1,4 @@
+import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import StableFeedback from '../components/StableFeedback'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -333,14 +334,14 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
 
   const renameSystemName = (employee) => run(`rename-${employee.username}`, async () => {
     if (!isAdmin) return
-    const next = window.prompt(
+    const next = (await promptDialog(
       `Tên hệ thống mới cho ${employee.username}:\nTên đăng nhập cũng sẽ đổi theo tên này.`,
       employee.username,
-    )
+    ))
     if (next === null) return
     const clean = next.trim().replace(/\s+/g, ' ')
     if (!clean || clean === employee.username) return
-    if (!window.confirm(`Đổi Tên hệ thống và Tên đăng nhập:\n${employee.username} → ${clean}\n\nDữ liệu lịch nghỉ, chấm công, lịch làm việc và thông báo sẽ được chuyển theo tài khoản mới.`)) return
+    if (!(await confirmDialog(`Đổi Tên hệ thống và Tên đăng nhập:\n${employee.username} → ${clean}\n\nDữ liệu lịch nghỉ, chấm công, lịch làm việc và thông báo sẽ được chuyển theo tài khoản mới.`))) return
     const result = await renameSystemNameRequest(employee.username, clean)
     if (profileUser === employee.username) setProfileUser('')
     await load(true)
@@ -377,14 +378,14 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
 
   const deleteSelected = () => run('delete', async () => {
     if (!selected.length) throw new Error('Chưa chọn nhân viên cần xóa.')
-    if (!window.confirm(`Xóa ${selected.length} nhân viên đã chọn? Lịch sử nghỉ vẫn được giữ nguyên.`)) return
+    if (!(await confirmDialog(`Xóa ${selected.length} nhân viên đã chọn? Lịch sử nghỉ vẫn được giữ nguyên.`))) return
     const result = await veraApi.deleteStaff(selected)
     await load(true)
     setNotice({ type: 'success', message: result.message })
   })
 
   const deleteOne = (employee) => run(`delete-${employee.username}`, async () => {
-    if (!window.confirm(`Xóa nhân viên ${employee.full_name || employee.username}? Lịch sử nghỉ vẫn được giữ nguyên.`)) return
+    if (!(await confirmDialog(`Xóa nhân viên ${employee.full_name || employee.username}? Lịch sử nghỉ vẫn được giữ nguyên.`))) return
     const result = await veraApi.deleteStaff([employee.username])
     await load(true)
     setNotice({ type: 'success', message: result.message })

@@ -1,3 +1,4 @@
+import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import ActionSuccessDialog from './ActionSuccessDialog'
 import StableFeedback from './StableFeedback'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -171,7 +172,7 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
       setNotice({ status: 'error', message: 'Vui lòng nhập ngày quay lại và ghi chú.' })
       return
     }
-    if (!window.confirm(`Xác nhận ${shortEmployeeName(item.employee_name)} đã quay lại làm việc và kết thúc kỳ nghỉ?`)) return
+    if (!(await confirmDialog(`Xác nhận ${shortEmployeeName(item.employee_name)} đã quay lại làm việc và kết thúc kỳ nghỉ?`))) return
     setReturnBusyId(item.id); setNotice(null)
     try {
       const result = await veraApi.markLongLeaveReturned(item.id, draft)
@@ -197,7 +198,7 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
     finally { setApprovedBusy(false) }
   }
   const cancelApproved = async item => {
-    const note = window.prompt(`Hủy đơn ${item.id} của ${shortEmployeeName(item.employee_name)}. Nhập lý do hủy:`)
+    const note = (await promptDialog(`Hủy đơn ${item.id} của ${shortEmployeeName(item.employee_name)}. Nhập lý do hủy:`))
     if (!note?.trim()) return
     setApprovedBusy(true)
     try {

@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import EmployeeProfileModal from '../components/EmployeeProfileModal'
 import PurchasePage from './PurchasePage'
 import ReportDatePreset from '../components/ReportDatePreset'
@@ -506,7 +507,7 @@ export default function RevenuePage({ user }) {
         result = await saveRevenueEntry(entryPayload)
       } catch (saveError) {
         if (saveError?.status !== 409 || saveError?.code !== 'duplicate_revenue_entry') throw saveError
-        if (!window.confirm(saveError.message)) return
+        if (!(await confirmDialog(saveError.message))) return
         result = await saveRevenueEntry({ ...entryPayload, confirmDuplicate: true })
       }
       setEntryIncomeAmount('')
@@ -531,7 +532,7 @@ export default function RevenuePage({ user }) {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file || autoMode || !sourceReady) return
-    if (mode === 'replace' && !window.confirm('THAY THẾ TOÀN BỘ dữ liệu Doanh thu-Chi phí hiện tại bằng file Excel này? Dữ liệu hiện tại sẽ không còn hiển thị sau khi import.')) return
+    if (mode === 'replace' && !(await confirmDialog('THAY THẾ TOÀN BỘ dữ liệu Doanh thu-Chi phí hiện tại bằng file Excel này? Dữ liệu hiện tại sẽ không còn hiển thị sau khi import.'))) return
     setImportingRevenue(mode)
     setError('')
     setNotice('')

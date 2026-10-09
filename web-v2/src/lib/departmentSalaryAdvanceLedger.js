@@ -1,3 +1,4 @@
+import { confirmDialog } from './systemDialogs'
 import { violationMonthRange } from './businessMonthRange'
 import { createElement, useState } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -318,7 +319,7 @@ function ensurePanel() {
     }
     const button = event.target.closest('[data-advance-delete]')
     if (!button) return
-    if (!window.confirm('Xóa khoản ứng lương này?')) return
+    if (!(await confirmDialog('Xóa khoản ứng lương này?'))) return
     button.disabled = true
     try {
       await apiRequest(`/v2/department-payroll/advances/${encodeURIComponent(button.dataset.advanceDelete)}`, { method: 'DELETE' })

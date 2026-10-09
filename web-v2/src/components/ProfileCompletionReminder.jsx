@@ -1,3 +1,4 @@
+import NotificationModal from './NotificationModal'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
 import { AlertTriangle, UserRoundPen, X } from 'lucide-react'
@@ -78,7 +79,7 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
   const text = useMemo(() => missing.join(', '), [missing])
   if (!missing.length || dismissed || EXEMPT_ROLES.has(role)) return null
 
-  return <div className="profile-completion-reminder" role="status">
+  return <NotificationModal title="Hồ sơ chưa đầy đủ" onClose={() => setDismissed(true)}><div className="profile-completion-reminder" role="status">
     <style>{`
       .profile-completion-reminder{display:flex;align-items:flex-start;gap:10px;margin:0 0 14px;padding:12px 14px;border:1px solid #ead39c;border-radius:13px;background:#fff8e8;color:#614815}
       .profile-completion-reminder>svg{flex:0 0 auto;margin-top:1px}.profile-completion-reminder-content{flex:1;min-width:0}.profile-completion-reminder strong{display:block;font-size:13px}.profile-completion-reminder p{margin:3px 0 0;font-size:12px;line-height:1.45;overflow-wrap:anywhere}.profile-completion-reminder-actions{display:flex;gap:7px;flex-wrap:wrap}
@@ -87,8 +88,8 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
     <AlertTriangle size={18} />
     <div className="profile-completion-reminder-content"><strong>HỒ SƠ CHƯA ĐẦY ĐỦ</strong><p>Còn thiếu: {text}.</p></div>
     <UiToolbar data-ui-key="u-0b55aee6f19a" className="profile-completion-reminder-actions">
-      <button data-ui-key="u-cb964d3cd078" data-ui-label-default="Cập nhật hồ sơ" type="button" className="primary-button compact" onClick={onOpenProfile}><UserRoundPen size={14}/><UiCustomText uiKey="u-cb964d3cd078"> Cập nhật hồ sơ</UiCustomText></button>
+      <button data-ui-key="u-cb964d3cd078" data-ui-label-default="Cập nhật hồ sơ" type="button" className="primary-button compact" onClick={() => { setDismissed(true); onOpenProfile() }}><UserRoundPen size={14}/><UiCustomText uiKey="u-cb964d3cd078"> Cập nhật hồ sơ</UiCustomText></button>
       <button data-ui-key="u-6dd538dc5ee1" data-ui-label-default="Đóng" type="button" className="secondary-button compact" onClick={() => setDismissed(true)}><X size={14}/><UiCustomText uiKey="u-6dd538dc5ee1"> Đóng</UiCustomText></button>
     </UiToolbar>
-  </div>
+  </div></NotificationModal>
 }

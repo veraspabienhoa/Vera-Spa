@@ -2,7 +2,9 @@ import './mobileStationCamera.test.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { JSDOM } from 'jsdom'
+import { JSDOM as BaseJSDOM } from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 import { MessageChannel } from 'node:worker_threads'
 import { customerComboRows, latestCustomerPurchase } from '../src/lib/customerComboRows.js'
 const customers=[{id:'c',name:'Khách thử',phone:'0901000001',combo_purchases:[{id:'new',combo_name:'Combo mới',remaining:12,purchased_at:'2026-09-26T10:00:00+07:00'},{id:'old',combo_name:'Combo cũ',remaining:2,purchased_at:'2026-09-01T10:00:00+07:00'},{id:'used',remaining:0},{id:'deleted',remaining:10,deleted_at:'2026-09-27'}]}]

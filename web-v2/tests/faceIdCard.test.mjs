@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { JSDOM } from 'jsdom'
+import { JSDOM as BaseJSDOM } from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 const built = await build({stdin:{contents:"import React, {act} from 'react'; import {createRoot} from 'react-dom/client'; import {FaceIdCard} from './src/pages/EmployeeIdentityPanel'; const root=createRoot(document.getElementById('root')); window.act=act; window.mount=()=>act(async()=>root.render(<FaceIdCard username='worker' compact={window.compact}/>)); window.unmount=()=>act(async()=>root.unmount());",resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'api',setup(b){
  b.onResolve({filter:/\/lib\/staffSecurityApi$/},()=>({path:'api',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const faceIdApi=window.api; export const staffSecurityApi={};',loader:'js'}))
 }}]})

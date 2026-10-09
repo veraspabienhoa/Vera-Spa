@@ -1,3 +1,4 @@
+import { alertDialog } from './systemDialogs'
 import { veraApi } from './api'
 import { refreshProfileReferenceData } from './profileReferenceRefresh'
 
@@ -169,7 +170,7 @@ async function enhanceIssuerRoot(root, force = false) {
       try {
         await enhanceIssuerRoot(root, true)
       } catch (error) {
-        window.alert(`Không cập nhật được danh mục Nơi cấp: ${error?.message || 'lỗi không xác định'}`)
+        (await alertDialog(`Không cập nhật được danh mục Nơi cấp: ${error?.message || 'lỗi không xác định'}`))
       } finally {
         button.disabled = false
         button.textContent = original

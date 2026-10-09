@@ -1,3 +1,4 @@
+import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import { canBookOutsideShift } from '../lib/liveTourBooking'
 import UpcomingOnlineBookings from '../components/UpcomingOnlineBookings'
 import { canViewOnlineBookings } from '../lib/onlineBookings'
@@ -835,13 +836,13 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     return executeAction(action, payload)
   }
 
-  const cancelSelectedBooking = () => {
+  const cancelSelectedBooking = async () => {
     const chosen = validRecords.filter((item) => selectedIds.has(stableEmployeeId(item)))
     if (!chosen.length || chosen.length !== selectedIds.size || chosen.some((item) => !hasGroup(item, 'waiting'))) {
       setError('Chỉ hủy Booking đang chờ. Hãy chọn nhân viên có Booking chưa thực hiện.')
       return
     }
-    if (window.confirm(`Hủy Booking của ${chosen.map((item) => cellValue(item, employeeColumn)).join(', ')}?`)) {
+    if ((await confirmDialog(`Hủy Booking của ${chosen.map((item) => cellValue(item, employeeColumn)).join(', ')}?`))) {
       void runSelected('cancel_booking')
     }
   }
@@ -1492,8 +1493,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
-  const removeCatalogItem = (action, item) => {
-    if (window.confirm(`Xóa “${itemLabel(item)}” khỏi danh mục?`)) void executeAction(action, { id: item?.id, code: item?.code }, [])
+  const removeCatalogItem = async (action, item) => {
+    if ((await confirmDialog(`Xóa “${itemLabel(item)}” khỏi danh mục?`))) void executeAction(action, { id: item?.id, code: item?.code }, [])
   }
 
   const panelActions = usePanelActions({exportData, openModal, openCustomerHistory, copyBoardImage, executeAction, confirmExpired, previewExpired, removeCatalogItem})
@@ -1648,7 +1649,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <button data-ui-key="u-2acb2fc50ca7" data-ui-label-default="Đi làm" type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Đi làm' })}><UiCustomText uiKey="u-2acb2fc50ca7">Đi làm</UiCustomText></button>
               <button data-ui-key="u-73463df1c94c" data-ui-label-default="Nghỉ phép" type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('set_work_status', { status: 'Nghỉ phép' })}><UiCustomText uiKey="u-73463df1c94c">Nghỉ phép</UiCustomText></button>
               <button data-ui-key="u-6c5e0477915b" data-ui-label-default="Hủy Booking" type="button" className="secondary-button danger-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={cancelSelectedBooking}><UiCustomText uiKey="u-6c5e0477915b">Hủy Booking</UiCustomText></button>
-              {isAdmin && <button data-ui-key="u-41e9cb451151" data-ui-label-default="Hủy Thực hiện" type="button" className="secondary-button danger-button" disabled={selectedIds.size !== 1 || !hasGroup(selectedRecords[0], 'doing') || Boolean(actionBusy)} onClick={() => { if (window.confirm('Hủy lệnh Thực hiện và đưa booking về trạng thái Đang chờ để tính giờ lại?')) void runSingleSelected('restart_booking') }}><UiCustomText uiKey="u-41e9cb451151">Hủy Thực hiện</UiCustomText></button>}
+              {isAdmin && <button data-ui-key="u-41e9cb451151" data-ui-label-default="Hủy Thực hiện" type="button" className="secondary-button danger-button" disabled={selectedIds.size !== 1 || !hasGroup(selectedRecords[0], 'doing') || Boolean(actionBusy)} onClick={async () => { if ((await confirmDialog('Hủy lệnh Thực hiện và đưa booking về trạng thái Đang chờ để tính giờ lại?'))) void runSingleSelected('restart_booking') }}><UiCustomText uiKey="u-41e9cb451151">Hủy Thực hiện</UiCustomText></button>}
               {data.payment_settings?.employee_change_enabled !== false && <button data-ui-key="u-0d5c922fb38c" data-ui-label-default="Đổi nhân viên" type="button" className="secondary-button" disabled={!canOperate || selectedIds.size !== 1 || !canChangeEmployee(selectedRecords[0], clockMs) || Boolean(actionBusy)} onClick={() => openModal('change_employee', { rowIds: [...selectedIds], revision: data.revision })}><UiCustomText uiKey="u-0d5c922fb38c">Đổi nhân viên</UiCustomText></button>}
               <button data-ui-key="u-efe4ccaa9ecc" data-ui-label-default="Nghỉ giữa ca" type="button" className="secondary-button" disabled={!canOperate || !selectedIds.size || Boolean(actionBusy)} onClick={() => runSelected('start_break')}><PauseCircle size={13}/><UiCustomText uiKey="u-efe4ccaa9ecc"> Nghỉ giữa ca</UiCustomText></button>
               <button data-ui-key="u-43d8b63bda4a" data-ui-label-default="Kết thúc nghỉ" type="button" className="secondary-button" disabled={!(canEndBreak || canOperate) || !selectedIds.size || (!canEndBreak && selectedRecords.some(row => row._break_from_attendance && row._attendance_break_active)) || Boolean(actionBusy)} onClick={() => runSelected('end_break')}><Play size={13}/><UiCustomText uiKey="u-43d8b63bda4a"> Kết thúc nghỉ</UiCustomText></button>
@@ -1848,7 +1849,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
               <small>Người gửi: {request.requested_by || '—'} · {formatVeraDateTime(request.requested_at)}</small>
               <UiToolbar data-ui-key="u-61ede12cfdbe" className="live-tour-card-actions">
                 <button data-ui-key="u-4d4241e126de" data-ui-label-default="Duyệt bán" type="button" className="primary-button" disabled={Boolean(actionBusy)} onClick={() => executeAction('combo_sale_decide', { request_id: request.id, decision: 'approve' }, [])}><UiCustomText uiKey="u-4d4241e126de">Duyệt bán</UiCustomText></button>
-                <button data-ui-key="u-d227edba5ce3" data-ui-label-default="Không duyệt" type="button" className="secondary-button danger-button" disabled={Boolean(actionBusy)} onClick={() => { const reason = window.prompt('Lý do từ chối (không bắt buộc):', ''); if (reason !== null) void executeAction('combo_sale_decide', { request_id: request.id, decision: 'reject', reason }, []) }}><UiCustomText uiKey="u-d227edba5ce3">Không duyệt</UiCustomText></button>
+                <button data-ui-key="u-d227edba5ce3" data-ui-label-default="Không duyệt" type="button" className="secondary-button danger-button" disabled={Boolean(actionBusy)} onClick={async () => { const reason = (await promptDialog('Lý do từ chối (không bắt buộc):', '')); if (reason !== null) void executeAction('combo_sale_decide', { request_id: request.id, decision: 'reject', reason }, []) }}><UiCustomText uiKey="u-d227edba5ce3">Không duyệt</UiCustomText></button>
               </UiToolbar>
             </article>) : <div className="live-tour-empty">Không có yêu cầu bán combo đang chờ duyệt.</div>}
           </div>}

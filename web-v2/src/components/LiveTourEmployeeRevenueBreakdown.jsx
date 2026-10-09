@@ -127,7 +127,7 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
       hideValuesInSnapshot
       captureLabel="Chụp toàn bảng"
     />
-    {notice && <p data-snapshot-ignore className="employee-revenue-copy-status">{notice}</p>}
+    {notice && <p data-snapshot-ignore data-system-feedback className="employee-revenue-copy-status">{notice}</p>}
     <div className="employee-revenue-head">
       <div><h3>THỐNG KÊ THEO NHÂN VIÊN</h3><p>Tiền dịch vụ và tiền TIP theo đúng bộ lọc Báo cáo hiện tại.</p></div>
     </div>

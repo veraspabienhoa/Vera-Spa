@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import useTablePage from '../lib/useTablePage'
 import TablePager from '../components/TablePager'
 import CustomerCountShareDialog from '../components/CustomerCountShareDialog'
@@ -78,7 +79,7 @@ export default function LiveTourReportsPage({ user }) {
       const preview = await veraApi.previewBoardHistoryCleanup(scope)
       if (!preview.count) { setHistoryNotice('Không có lịch sử khớp bộ lọc.'); return }
       const dates = `${scope.date_from ? formatVeraDate(scope.date_from) : 'Tất cả'} → ${scope.date_to ? formatVeraDate(scope.date_to) : 'Tất cả'}`
-      if (!window.confirm(`Xóa vĩnh viễn ${preview.count} bản ghi lịch sử bảng tua?\n${dates}\nNhân viên: ${scope.employee || 'Tất cả'}\nKhông thể hoàn tác. Dữ liệu bảng tua hiện tại và hóa đơn vẫn được giữ nguyên.`)) return
+      if (!(await confirmDialog(`Xóa vĩnh viễn ${preview.count} bản ghi lịch sử bảng tua?\n${dates}\nNhân viên: ${scope.employee || 'Tất cả'}\nKhông thể hoàn tác. Dữ liệu bảng tua hiện tại và hóa đơn vẫn được giữ nguyên.`))) return
       const result = await veraApi.deleteBoardHistory({ ...scope, cutoff_id: preview.cutoff_id, confirm: true })
       setHistoryNotice(`Đã xóa ${result.deleted} bản ghi lịch sử.`)
       setHistoryRefresh(value => value + 1)

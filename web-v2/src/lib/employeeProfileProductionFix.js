@@ -1,3 +1,4 @@
+import { alertDialog } from './systemDialogs'
 import { veraApi } from './api'
 import { refreshProfileReferenceData } from './profileReferenceRefresh'
 
@@ -158,7 +159,7 @@ function ensureRefreshButton(row, kind, handler) {
     const previous = button.textContent
     button.textContent = 'Đang cập nhật…'
     try { await handler() }
-    catch (error) { window.alert(`Không cập nhật được danh mục: ${error?.message || 'lỗi không xác định'}`) }
+    catch (error) { (await alertDialog(`Không cập nhật được danh mục: ${error?.message || 'lỗi không xác định'}`)) }
     finally { button.disabled = false; button.textContent = previous }
   })
   row.appendChild(button)

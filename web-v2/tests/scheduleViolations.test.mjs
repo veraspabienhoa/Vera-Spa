@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { build } from 'esbuild'
 import React, { act } from 'react'
-import { JSDOM } from 'jsdom'
+import { JSDOM as BaseJSDOM } from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 const boot = new JSDOM('<body/>'); globalThis.window=boot.window; globalThis.document=boot.window.document
 const built = await build({entryPoints:['src/components/ScheduleViolations.jsx'],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react-dom','react/jsx-runtime']})
 const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),mod,mod.exports)

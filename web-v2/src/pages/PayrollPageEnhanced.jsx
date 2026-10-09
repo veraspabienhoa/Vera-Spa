@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import PayrollHistorySearch from '../components/PayrollHistorySearch'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
@@ -392,7 +393,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
 
   const deleteDraftSnapshot = () => run('delete-draft', async () => {
     if (!draft?.rows?.length) throw new Error('Chưa có bảng lương nháp để xóa.')
-    if (!window.confirm(`Xóa bảng lương nháp ${draft.period_label}?`)) return
+    if (!(await confirmDialog(`Xóa bảng lương nháp ${draft.period_label}?`))) return
     const result = await veraApi.deletePayrollDraft(month, periodNo)
     setDraft(null)
     setSavedDraftAvailable(false)
@@ -403,7 +404,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const completePayroll = () => run('complete', async () => {
     if (!draft?.rows?.length) throw new Error('Chưa có bảng lương để hoàn thành.')
     if (draftSalaryTotal <= 0) throw new Error('Tổng Tiền Lương đang bằng 0. Không thể hoàn thành bảng lương.')
-    if (!window.confirm(`Hoàn thành ${draft.period_label}? Bảng lương sẽ được lưu vào LỊCH SỬ BẢNG LƯƠNG.`)) return
+    if (!(await confirmDialog(`Hoàn thành ${draft.period_label}? Bảng lương sẽ được lưu vào LỊCH SỬ BẢNG LƯƠNG.`))) return
     const result = await veraApi.savePayroll({
       start: draft.start,
       end: draft.end,
@@ -423,7 +424,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     if (!draft?.start || !draft?.end) throw new Error('Chưa xác định được kỳ lương hiện tại.')
     const amount = Number(row['Tiền phạt trong tháng'] || 0)
     if (amount <= 0) throw new Error(`${row['Tên Hệ thống']} không có Vi phạm kỳ này để chuyển.`)
-    if (!window.confirm(`Chuyển ${money(amount)} Vi phạm kỳ này của ${row['Tên Hệ thống']} sang kỳ lương kế tiếp?`)) return
+    if (!(await confirmDialog(`Chuyển ${money(amount)} Vi phạm kỳ này của ${row['Tên Hệ thống']} sang kỳ lương kế tiếp?`))) return
     const result = await enhancementRequest('/v2/payroll/penalties/defer', {
       method: 'POST',
       body: JSON.stringify({
@@ -457,7 +458,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const emailDraft = () => run('email', async () => {
     const rows = (draft?.rows || []).filter((row) => selected.includes(row['Tên Hệ thống']))
     if (!rows.length) throw new Error('Chưa chọn nhân viên cần gửi email.')
-    if (!window.confirm(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`)) return
+    if (!(await confirmDialog(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`))) return
 
     const batchSize = 3
     const sent = []
@@ -516,7 +517,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const emailHistory = () => run('email-history', async () => {
     const rows = visibleHistory.filter(({ rowKey }) => historySelected.includes(rowKey)).map(({ item }) => item)
     if (!rows.length) throw new Error('Chưa chọn nhân viên trong lịch sử để gửi email.')
-    if (!window.confirm(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`)) return
+    if (!(await confirmDialog(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`))) return
     const groups = new Map()
     rows.forEach((row) => {
       const key = `${row['Từ ngày'] || ''}|${row['Đến ngày'] || ''}`
@@ -575,7 +576,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   }
 
   const removeAccumulationRefund = (id) => run(`accumulation-refund-${id}`, async () => {
-    if (!window.confirm('Xóa cài đặt hoàn trả tiền tích lũy này?')) return
+    if (!(await confirmDialog('Xóa cài đặt hoàn trả tiền tích lũy này?'))) return
     const result = await veraApi.deletePayrollAccumulationRefund(id)
     setAccumulationRefunds((current) => current.filter((item) => item.id !== id))
     setNotice({ type: 'success', message: `${result.message} Hãy bấm Tính lại lương nếu bảng nháp đã được tạo.` })
@@ -593,7 +594,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   }
 
   const removeObligation = (id) => run(`obligation-${id}`, async () => {
-    if (!window.confirm('Xóa Nghĩa vụ vi phạm này?')) return
+    if (!(await confirmDialog('Xóa Nghĩa vụ vi phạm này?'))) return
     const result = await veraApi.deletePayrollObligation(id)
     setObligations((current) => current.filter((item) => item.id !== id))
     await loadSupporting()
@@ -615,7 +616,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
 
   const deleteHistoryBatch = (batchId) => run(`delete-history-${batchId}`, async () => {
     if (!batchId) throw new Error('Vui lòng chọn kỳ lương cần xóa.')
-    if (!window.confirm(`Xóa lịch sử bảng lương “${batchId}”? Hành động này chỉ dành cho Admin/quyền quản lý lịch sử.`)) return
+    if (!(await confirmDialog(`Xóa lịch sử bảng lương “${batchId}”? Hành động này chỉ dành cho Admin/quyền quản lý lịch sử.`))) return
     const result = await enhancementRequest(`/v2/payroll/history/${encodeURIComponent(batchId)}`, { method: 'DELETE' })
     const nextBatch = batch === batchId ? '' : batch
     if (batch === batchId) setBatch('')

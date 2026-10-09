@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import { useEffect, useState } from 'react'
 import { RefreshCw, ShieldAlert } from 'lucide-react'
 import { veraApi } from '../lib/api'
@@ -57,7 +58,7 @@ export default function HcRulesPage({ user }) {
           </select></label>
           <label>{rule.mode === 'fixed' ? 'Mức phạt (đ)' : 'Hệ số nhân'}<input type="number" min="0.01" max={rule.mode === 'fixed' ? 1000000000 : 100} step="any" value={rule.value} disabled={Boolean(busy)} onChange={e => changeRule(index, { value: e.target.value })} /></label>
           <label><input type="checkbox" checked={rule.enabled} disabled={Boolean(busy)} onChange={e => changeRule(index, { enabled: e.target.checked })} /> Áp dụng hạng mục</label>
-          <button className="secondary-button" disabled={Boolean(busy)} onClick={() => { if (window.confirm(`Xóa nội quy “${rule.name}”? Các khoản phạt đã ghi giữ nguyên.`)) setDraft(rows => rows.filter((_, i) => i !== index)) }}>Xóa nội quy</button>
+          <button className="secondary-button" disabled={Boolean(busy)} onClick={async () => { if ((await confirmDialog(`Xóa nội quy “${rule.name}”? Các khoản phạt đã ghi giữ nguyên.`))) setDraft(rows => rows.filter((_, i) => i !== index)) }}>Xóa nội quy</button>
         </> : <><h3>{rule.name}</h3><p>{rule.description}</p><p>{rule.mode === 'fixed' ? `${Number(rule.value).toLocaleString('vi-VN')}đ / vi phạm` : `Lương tương ứng × ${rule.value}`} · {rule.enabled ? 'Áp dụng' : 'Đã tắt'} · {rule.kind === 'manual' ? 'Ghi nhận thủ công' : 'Tự động khi bộ phận kích hoạt'}</p></>}
         {!draft && <div className="hc-department-grid">{data?.departments.map(item => {
           const enabled = item.rules?.[rule.id]?.enabled === true

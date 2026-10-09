@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import { memo } from "react";
 import { formatVeraDateTime } from "../lib/veraDate";
 import LiveTourInvoiceChanges from "../components/LiveTourInvoiceChanges";
@@ -34,8 +35,8 @@ function LiveTourHistoryPanel({
         <UiToolbar data-ui-key="u-9f2705675a28" className="live-tour-panel-toolbar"><h2>LỊCH SỬ & SAO LƯU</h2><UiToolbar data-ui-key="u-dde9e54568c0" className="live-tour-panel-toolbar-actions">{canBackup && <button data-ui-key="u-7bc66b66d171" data-ui-label-default="Tạo bản sao lưu" type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => executeAction('backup', {
           name: `Backup ${formatVeraDateTime(Date.now())}`
         }, [])}><History size={13} /><UiCustomText uiKey="u-7bc66b66d171"> Tạo bản sao lưu</UiCustomText></button>}{canHistory && <button data-ui-key="u-24479c9977be" data-ui-label-default="Xuất excel" type="button" className="secondary-button" disabled={!canExportKind('history')} onClick={() => exportData('history')}><Download size={13} /><UiCustomText uiKey="u-24479c9977be"> Xuất excel</UiCustomText></button>}</UiToolbar></UiToolbar>
-        {canBackup && <div className="live-tour-catalog-section"><h3>Bản sao lưu</h3>{backups.length ? <div data-ui-key="u-334b0dee496c" className="live-tour-card-grid">{backups.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item, `Bản sao ${index + 1}`)}</strong><small>{formatVeraDateTime(item?.created_at || item?.timestamp)}</small><UiToolbar data-ui-key="u-e9f0d291335d" className="live-tour-card-actions"><button data-ui-key="u-dacfd97fd33b" data-ui-label-default="Khôi phục" type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={() => {
-              if (window.confirm('Khôi phục bản sao này? Chỉ phục hồi cấu hình/bảng tua khi không còn phiên mở; sổ hóa đơn, vé và lịch sử không bị quay lùi.')) void executeAction('restore', {
+        {canBackup && <div className="live-tour-catalog-section"><h3>Bản sao lưu</h3>{backups.length ? <div data-ui-key="u-334b0dee496c" className="live-tour-card-grid">{backups.map((item, index) => <article className="live-tour-data-card" key={itemId(item, index)}><strong>{itemLabel(item, `Bản sao ${index + 1}`)}</strong><small>{formatVeraDateTime(item?.created_at || item?.timestamp)}</small><UiToolbar data-ui-key="u-e9f0d291335d" className="live-tour-card-actions"><button data-ui-key="u-dacfd97fd33b" data-ui-label-default="Khôi phục" type="button" className="secondary-button" disabled={Boolean(actionBusy)} onClick={async () => {
+              if ((await confirmDialog('Khôi phục bản sao này? Chỉ phục hồi cấu hình/bảng tua khi không còn phiên mở; sổ hóa đơn, vé và lịch sử không bị quay lùi.'))) void executeAction('restore', {
                 backup_id: item?._id ?? item?.id
               }, []);
             }}><UiCustomText uiKey="u-dacfd97fd33b">Khôi phục</UiCustomText></button></UiToolbar></article>)}</div> : <div className="live-tour-empty">Chưa có bản sao lưu.</div>}</div>}

@@ -1,3 +1,4 @@
+import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import PayrollAccumulationTable from '../components/PayrollAccumulationTable'
 import { accumulationRows, filterAccumulationRows } from '../lib/payrollAccumulationRows'
 import StableFeedback from '../components/StableFeedback'
@@ -151,24 +152,24 @@ export default function PayrollPersonalTracking({ user, standalone = false, unif
     }
   }
 
-  const addAccumulation = (item) => {
-    const raw = window.prompt(`Cộng thêm tiền Tích lũy cho ${item.employee_name}:`, '500000')
+  const addAccumulation = async (item) => {
+    const raw = (await promptDialog(`Cộng thêm tiền Tích lũy cho ${item.employee_name}:`, '500000'))
     if (raw === null) return
     const amount = Number(String(raw).replace(/[^0-9.-]/g, ''))
     if (!Number.isFinite(amount) || amount <= 0) { setError('Số tiền cộng thêm phải lớn hơn 0.'); return }
     void runAdjustment(item.employee_name, () => changeAccumulation('POST', '/v2/payroll/accumulation-adjustments/add', { employee_name: item.employee_name, amount }))
   }
 
-  const editAccumulation = (item) => {
-    const raw = window.prompt(`Sửa tổng tiền Tích lũy đã đóng của ${item.employee_name}:`, String(Number(item.paid_total || 0)))
+  const editAccumulation = async (item) => {
+    const raw = (await promptDialog(`Sửa tổng tiền Tích lũy đã đóng của ${item.employee_name}:`, String(Number(item.paid_total || 0))))
     if (raw === null) return
     const paidTotal = Number(String(raw).replace(/[^0-9.-]/g, ''))
     if (!Number.isFinite(paidTotal) || paidTotal < 0) { setError('Tổng tiền Tích lũy không được âm.'); return }
     void runAdjustment(item.employee_name, () => changeAccumulation('PUT', '/v2/payroll/accumulation-adjustments/set', { employee_name: item.employee_name, paid_total: paidTotal }))
   }
 
-  const deleteAccumulation = (item) => {
-    if (!window.confirm(`Xóa số tiền Tích lũy đã đóng của ${item.employee_name} về 0đ?`)) return
+  const deleteAccumulation = async (item) => {
+    if (!(await confirmDialog(`Xóa số tiền Tích lũy đã đóng của ${item.employee_name} về 0đ?`))) return
     const path = `/v2/payroll/accumulation-adjustments?employee_name=${encodeURIComponent(item.employee_name)}`
     void runAdjustment(item.employee_name, () => changeAccumulation('DELETE', path))
   }

@@ -47,6 +47,8 @@ from hypotheses and historical configuration from current configuration.
 
 ## Shared UI requirements
 
+See [09-10-2026 notification modals and HR codes](docs/system-modals-hr-codes-2026-10-09.md). Use the shared asynchronous modal helpers for application feedback, confirmation and input; await confirmation before writes. Deleted department codes may be recreated while active-code collisions remain blocked.
+
 See [09-10-2026 form defaults](docs/live-tour-form-defaults-2026-10-09.md) for the latest booking and invoice list behavior.
 
 - Before-shift booking defaults to YC, but the operator can select YC or blank until service starts. Preserve explicit saved choices during refresh/editing and in single/multiple booking. Opening paid invoices resets filters to Today using the Vietnam calendar date.

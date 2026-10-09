@@ -39,7 +39,7 @@ export default function CustomerCountShareDialog({ filters, onClose }) {
     <p>Báo cáo theo bộ lọc hiện tại, có biểu đồ theo ngày. Mỗi hóa đơn được tính là một lượt khách.</p>
     {!file && !error && <p role="status">Đang tạo PDF…</p>}
     {error && <p className="error-box" role="alert">{error}</p>}
-    {message && <p role="status">{message}</p>}
+    {message && <p role="status" data-system-feedback>{message}</p>}
     {file && <div className="customer-count-share-ready"><strong>PDF đã sẵn sàng</strong><span>A4 ngang · Biểu đồ và bảng số khách · {(file.size / 1024).toFixed(0)} KB</span><p>{supported ? 'Bấm Chia sẻ, sau đó chọn Zalo và người nhận.' : 'Thiết bị này chưa hỗ trợ chia sẻ file trực tiếp. Tải PDF rồi đính kèm trong Zalo.'}</p></div>}
     <footer>
       {!file && error && <button type="button" className="secondary-button" onClick={() => setRetry(value => value + 1)}>Thử tạo lại</button>}

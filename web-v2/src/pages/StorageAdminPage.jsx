@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiCustomText from '../components/UiCustomText'
@@ -61,7 +62,7 @@ export default function StorageAdminPage() {
 
   const remove = async () => {
     if (!canDelete) return
-    if (!window.confirm(`Xóa ${selectedCount} bản ghi ${LABELS[deleteDataset]}? Hành động này không thể hoàn tác.`)) return
+    if (!(await confirmDialog(`Xóa ${selectedCount} bản ghi ${LABELS[deleteDataset]}? Hành động này không thể hoàn tác.`))) return
     setBusy('delete'); setNotice(null)
     try {
       const result = await veraApi.deleteStorageData({ dataset: deleteDataset, start, end, expected_count: selectedCount, confirmation })

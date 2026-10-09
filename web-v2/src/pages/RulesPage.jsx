@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import MissingCheckinAbsenceRules from './MissingCheckinAbsenceRules'
 import LeaveQueuePolicyRules from './LeaveQueuePolicyRules'
 import StableFeedback from '../components/StableFeedback'
@@ -208,12 +209,12 @@ export default function RulesPage() {
     setNotice(null)
   }
 
-  const removeColumn = () => {
+  const removeColumn = async () => {
     if (!deleteColumn) {
       setNotice({ type: 'error', message: 'Chọn cột cần xóa.' })
       return
     }
-    if (!window.confirm(`Xóa cột “${deleteColumn}” khỏi vùng chỉnh sửa?`)) return
+    if (!(await confirmDialog(`Xóa cột “${deleteColumn}” khỏi vùng chỉnh sửa?`))) return
     setColumns((current) => current.filter((column) => column !== deleteColumn))
     setRows((current) => current.map((row) => {
       const values = { ...row.values }
@@ -223,12 +224,12 @@ export default function RulesPage() {
     setDeleteColumn('')
   }
 
-  const removeSelected = () => {
+  const removeSelected = async () => {
     if (!selected.length) {
       setNotice({ type: 'error', message: 'Chưa chọn dòng Nội quy cần xóa.' })
       return
     }
-    if (!window.confirm(`Xóa ${selected.length} dòng khỏi vùng chỉnh sửa? Thay đổi chỉ áp dụng sau khi bấm Ghi thay đổi & áp dụng.`)) return
+    if (!(await confirmDialog(`Xóa ${selected.length} dòng khỏi vùng chỉnh sửa? Thay đổi chỉ áp dụng sau khi bấm Ghi thay đổi & áp dụng.`))) return
     setRows((current) => current.filter((row) => !selected.includes(row.id)))
     setSelected([])
   }
@@ -343,8 +344,8 @@ export default function RulesPage() {
     })
   }
 
-  const discard = () => {
-    if ((dirty || quotaDirty || lateThresholdDirty) && !window.confirm('Bỏ toàn bộ thay đổi chưa ghi?')) return
+  const discard = async () => {
+    if ((dirty || quotaDirty || lateThresholdDirty) && !(await confirmDialog('Bỏ toàn bộ thay đổi chưa ghi?'))) return
     load()
   }
 
