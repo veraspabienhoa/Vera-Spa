@@ -960,7 +960,10 @@ def install_staff_routes(
         conn = engine.connect()
         tx = conn.begin()
         deleted_count = 0
+        device_jobs = 0
         try:
+            from vera_employee_facegate_delete import queue_employee_delete
+            conn.execute(text("SELECT pg_advisory_xact_lock(723491, 1)"))
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:employees'))"))
             if str(ident.role).lower() != "admin":
                 raise HTTPException(403, "Chỉ Admin được xóa nhân viên.")
@@ -972,6 +975,10 @@ def install_staff_routes(
                     raise HTTPException(400, "Không thể xóa tài khoản hệ thống/admin.")
             deleted_count = len(targets)
             for row in targets:
+                device_jobs += bool(queue_employee_delete(conn, str(row["username"])))
+                for table in ("vera_employee_face_id", "vera_face_id_self_update"):
+                    if conn.execute(text("SELECT to_regclass(:table)"), {"table": table}).scalar():
+                        conn.execute(text(f"DELETE FROM {table} WHERE employee_username=:username"), {"username": row["username"]})
                 revoke_local_sessions(conn, str(row["username"]), "employee_deleted")
                 if conn.execute(text("SELECT to_regclass('public.vera_v2_user_profile')")).scalar():
                     conn.execute(text("""
@@ -1008,8 +1015,20 @@ def install_staff_routes(
 
         message = f"Đã xóa vĩnh viễn {deleted_count} nhân viên THÀNH CÔNG. Toàn bộ lịch sử nghiệp vụ được giữ nguyên."
         conn.close()
+        from vera_employee_facegate_delete import sync_employee_deletions
+        try:
+            face_id_sync = sync_employee_deletions(engine) if device_jobs else {'status': 'not_registered'}
+        except Exception:
+            face_id_sync = {'status': 'pending'}
+        if face_id_sync['status'] == 'not_registered':
+            message += " Nhân viên chưa có hồ sơ Face ID được ánh xạ."
+        else:
+            message += (" Hồ sơ trên máy Face ID đã được xoá và đối chiếu."
+                    if face_id_sync['status'] == 'verified'
+                    else " Việc xoá trên máy Face ID đang chờ xác minh; hệ thống sẽ tự thử lại khi máy kết nối.")
         return {
             "ok": True,
+            "face_id_sync": face_id_sync,
             "deleted": deleted_count,
             "mirror_pending": False,
             "message": message,

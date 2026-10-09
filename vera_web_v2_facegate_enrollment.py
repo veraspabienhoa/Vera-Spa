@@ -211,6 +211,9 @@ def install_enrollment_routes(app, *, engine_instance, current_identity, require
             conn.execute(text('SELECT pg_advisory_xact_lock(723491, 1)'))
             if conn.execute(text("SELECT to_regclass('vera_facegate_rename_job')")).scalar() and conn.execute(text("SELECT 1 FROM vera_facegate_rename_job WHERE status='pending' LIMIT 1")).scalar():
                 raise HTTPException(409, 'Máy Face ID đang chờ đồng bộ tên nhân viên; hãy hoàn tất trước khi đăng ký hoặc thay ảnh.')
+            from vera_employee_facegate_delete import deletion_pending
+            if deletion_pending(conn):
+                raise HTTPException(409, 'Máy Face ID đang chờ xoá hồ sơ nhân viên; hãy hoàn tất trước khi đăng ký hoặc thay ảnh.')
             person = employee(conn, username)
             username = person['username']
             address = target(conn)

@@ -331,6 +331,30 @@ class FaceGateEnrollmentClient:
             raise EnrollmentError('unverified', 'Chưa xác minh được tên mới trên máy Face ID.')
         return actual
 
+    def delete_profile(self, profile_id, expected_name, expected_ref):
+        """Firmware bwlist.js funDelList; never delete by name alone."""
+        if not isinstance(profile_id, int) or not 0 < profile_id <= 2**31 - 1:
+            raise EnrollmentError('invalid_profile', 'ID hồ sơ Face ID không hợp lệ.')
+        profiles = self.profiles()
+        matches = [p for p in profiles if p.get('uid') == str(profile_id)]
+        if not matches:
+            if any(device.registration_ref(p) == expected_ref for p in profiles):
+                raise EnrollmentError('profile_changed', 'Ảnh đang gắn với hồ sơ khác; cần đối chiếu lại.')
+            return  # A previous delete may have succeeded with its reply lost.
+        profile = self.profile_details(profile_id)
+        if (len(matches) != 1 or matches[0].get('uname') != expected_name
+                or profile.get('uname') != expected_name
+                or device.registration_ref(matches[0]) != expected_ref
+                or device.registration_ref(profile) != expected_ref
+                or matches[0].get('utext') != profile.get('utext')):
+            raise EnrollmentError('profile_changed', 'Hồ sơ Face ID đã đổi; chưa thể xoá an toàn.')
+        fields(self.request('/webs/setWhitelist', {
+            'action': 'del', 'group': 'LIST', 'LIST.uid': str(profile_id)}))
+        remaining = self.profiles()
+        if any(p.get('uid') == str(profile_id) or device.registration_ref(p) == expected_ref
+               for p in remaining):
+            raise EnrollmentError('unverified', 'Chưa xác minh được việc xoá hồ sơ Face ID.')
+
     def verify_replacement(self, profile_id, name, token, ref):
         matches = [p for p in self.profiles() if p.get('uid') == str(profile_id)]
         if len(matches) != 1 or matches[0].get('uname') != name or matches[0].get('utext') != token:

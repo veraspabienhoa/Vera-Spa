@@ -530,6 +530,10 @@ def install_snapshot_routes(app, *, engine_instance: Callable[[], Any], current_
         if profile['registration_ref'] != body.registration_ref or profile['device_name'] != body.device_name:
             raise HTTPException(409, 'Hồ sơ đăng ký đã thay đổi. Hãy đọc lại hồ sơ và xác nhận.')
         with engine_instance().begin() as conn:
+            conn.execute(text('SELECT pg_advisory_xact_lock(723491, 1)'))
+            from vera_employee_facegate_delete import deletion_pending
+            if deletion_pending(conn):
+                raise HTTPException(409, 'Máy Face ID đang chờ xoá hồ sơ; chưa thể thay đổi ánh xạ.')
             from vera_web_v2_devices import facegate_address
             address = facegate_address(conn)
             if address != observed_address:
