@@ -304,6 +304,23 @@ class FaceGateEnrollmentClient:
         fields(self.request('/webs/setWhitelist', params))
         return profile_id
 
+    def rename_profile(self, profile_id, old_name, new_name, expected_ref):
+        """Keep UID, face reference, token and access settings; verify read-back."""
+        profile = self.profile_details(profile_id)
+        if profile.get('uname') not in {old_name, new_name} or device.registration_ref(profile) != expected_ref:
+            raise EnrollmentError('profile_changed', 'Hồ sơ Face ID không còn khớp ánh xạ; cần đối chiếu lại.')
+        if profile.get('uname') != new_name:
+            params = {'action': 'update', 'group': 'LIST'}
+            params.update({'LIST.' + key: str(value) for key, value in profile.items()
+                           if re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', key)})
+            params['LIST.uname'] = new_name
+            fields(self.request('/webs/setWhitelist', params))
+        actual = self.profile_details(profile_id)
+        if (actual.get('uname') != new_name or actual.get('utext') != profile.get('utext')
+                or device.registration_ref(actual) != expected_ref):
+            raise EnrollmentError('unverified', 'Chưa xác minh được tên mới trên máy Face ID.')
+        return actual
+
     def verify_replacement(self, profile_id, name, token, ref):
         matches = [p for p in self.profiles() if p.get('uid') == str(profile_id)]
         if len(matches) != 1 or matches[0].get('uname') != name or matches[0].get('utext') != token:

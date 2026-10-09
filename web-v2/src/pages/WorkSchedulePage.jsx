@@ -513,12 +513,12 @@ export default function WorkSchedulePage({ user }) {
     setBusy(true)
     setNotice('')
     try {
-      await scheduleRequest(`/v2/staff/${encodeURIComponent(employee.username)}/system-name`, {
+      const result = await scheduleRequest(`/v2/staff/${encodeURIComponent(employee.username)}/system-name`, {
         method: 'PATCH',
         body: JSON.stringify({ system_name: clean }),
       })
       await load()
-      setNotice(`Đã đổi tên hệ thống thành “${clean}”. Tài khoản đăng nhập không thay đổi.`)
+      setNotice(result.message || `Đã đổi tên nhân viên và tên đăng nhập thành “${clean}”.`)
     } catch (error) {
       setNotice(error.message || 'Không đổi được tên hệ thống.')
     } finally {

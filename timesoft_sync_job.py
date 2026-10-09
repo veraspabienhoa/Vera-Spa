@@ -1706,6 +1706,11 @@ def run_sync() -> int:
         return 2
 
     engine = vpg.get_engine()
+    from vera_employee_rename_sync import sync_device_names
+    try:
+        sync_device_names(engine)
+    except Exception:
+        _log('Face ID name synchronization remains pending; continuing attendance sync.')
     lock_conn = engine.connect()
     got_lock = False
     details: list[dict] = []
