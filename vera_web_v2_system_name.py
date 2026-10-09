@@ -21,7 +21,7 @@ from vera_employee_names import HISTORY_KEY, previous_names
 from vera_employee_rename_sync import migrate_references, queue_device_rename, sync_device_names
 
 
-RELEASE = "system-login-name-2026-09-30-v3"
+RELEASE = "system-login-name-2026-10-09-v4"
 _ORIGINAL_EMPLOYEE_CATALOG = work_schedule._employee_catalog
 
 

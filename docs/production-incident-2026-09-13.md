@@ -1,3 +1,21 @@
+## 09-10-2026 — Physical employee name verification and FaceGate retries
+
+Production deployment 37909870265 verified release 3155d04, both health endpoints
+and frontend. Owner explicitly authorized renaming letan to Assistant. Maintenance
+run 37912741514 committed that rename with auth identity/photo preservation; no
+confirmed mapping existed yet. After owner enrolled the face, run 37913475510
+verified the name Assistant directly on the mapped device profile, with its UID
+and face reference preserved. No other employee was selected for a trial rename.
+
+Source review confirmed enrollment still used full_name, and scheduled name
+retries existed only in TimeSoft although the production source policy disables
+TimeSoft networking. Follow-up source uses username for new enrollment, validates
+firmware name limits before a mapped rename, and processes name jobs in the
+existing FaceGate minute worker. Retry failures do not suppress attendance archive.
+A single connection holds the worker session lock with all transactions closed
+during device I/O; lost replies reconcile by read-back. Existing auth, financial
+and attendance rules remain unchanged. Follow-up deployment is not yet verified.
+
 ## 09-10-2026 — Retired-name mirror collision and booking catalog order
 
 Source change: separate retired identities when a newly registered employee

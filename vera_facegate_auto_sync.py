@@ -9,6 +9,23 @@ import sys
 from vera_facegate_control_log import VN_TZ
 
 
+def sync_employee_names():
+    """Use the active minute schedule even after TimeSoft has been retired."""
+    from vera_facegate_cutover import runtime_engine
+    from vera_employee_rename_sync import sync_device_names
+    engine = None
+    try:
+        engine = runtime_engine()
+        result = sync_device_names(engine)
+        print(json.dumps({'employee_name_sync': result['status']}))
+    except Exception as exc:
+        # A name retry failure must not stop archiving attendance evidence.
+        print(json.dumps({'employee_name_sync': 'pending', 'error_type': type(exc).__name__}))
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
 def archive_days():
     today = datetime.now(VN_TZ).date()
     failures = []
@@ -66,6 +83,7 @@ def main():
         except BlockingIOError:
             print(json.dumps({'ok': True, 'skipped': 'sync_running'}))
             return 0
+        sync_employee_names()
         return archive_days()
     finally:
         os.close(fd)

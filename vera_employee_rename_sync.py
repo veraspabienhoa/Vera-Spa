@@ -122,13 +122,19 @@ def queue_device_rename(conn, old, new):
     device_id = mapping_device_id()
     rows = mappings(conn, device_id, lock=True)
     owned = [r for r in rows if r.get('username') in {old, new}]
-    if not owned: return
+    if not owned:
+        raise HTTPException(409, 'Ánh xạ Face ID thuộc máy khác; cần đối chiếu lại trước khi đổi tên.')
     if len(owned) != 1 or not owned[0].get('confirmed_by') or not owned[0].get('registration_ref'):
         raise HTTPException(409, 'Cần xác nhận duy nhất một hồ sơ Face ID trước khi đổi tên.')
     entry = owned[0]
     address = target(conn)
     if entry.get('device_address') != address:
         raise HTTPException(409, 'IP máy Face ID đã thay đổi; cần đối chiếu lại ánh xạ.')
+    from vera_facegate_enrollment import validate_device_name, EnrollmentError
+    try:
+        validate_device_name(new)
+    except EnrollmentError as exc:
+        raise HTTPException(400, str(exc)) from None
     conn.execute(text('''INSERT INTO vera_facegate_rename_job
         (employee_username,device_id,device_address,profile_id,old_name,new_name,registration_ref)
         VALUES (:username,:device,:address,:uid,:old,:new,CAST(:ref AS jsonb))'''),
@@ -137,7 +143,7 @@ def queue_device_rename(conn, old, new):
 
 
 def sync_device_names(engine, username=None):
-    """One serialized worker; no business connection/transaction during device I/O."""
+    """One session lock/connection; no open transaction during device I/O."""
     from vera_facegate_enrollment import FaceGateEnrollmentClient
     from vera_facegate_control_log import facegate_endpoint, mapping_device_id
     from vera_web_v2_facegate_enrollment import mappings, target
@@ -148,14 +154,16 @@ def sync_device_names(engine, username=None):
             return {'status': 'pending'}
         lock_conn.commit()
         try:
-            with engine.begin() as conn:
+            with lock_conn.begin():
+                conn = lock_conn
                 ensure_jobs(conn)
                 jobs = conn.execute(text("SELECT * FROM vera_facegate_rename_job WHERE status='pending' AND (CAST(:username AS text) IS NULL OR employee_username=:username) ORDER BY id LIMIT 10"), {'username': username}).mappings().all()
                 registered = conn.execute(text('SELECT 1 FROM vera_facegate_rename_job WHERE employee_username=:username LIMIT 1'), {'username': username}).scalar() if username else True
             for job in jobs:
                 client = None
                 try:
-                    with engine.begin() as conn:
+                    with lock_conn.begin():
+                        conn = lock_conn
                         if target(conn) != job['device_address'] or mapping_device_id() != job['device_id']:
                             raise ValueError('device_changed')
                         entries = mappings(conn, job['device_id'])
@@ -166,7 +174,8 @@ def sync_device_names(engine, username=None):
                         client = FaceGateEnrollmentClient()
                         client.login()
                         client.rename_profile(int(job['profile_id']), job['old_name'], job['new_name'], job['registration_ref'])
-                    with engine.begin() as conn:
+                    with lock_conn.begin():
+                        conn = lock_conn
                         entries = mappings(conn, job['device_id'], lock=True)
                         owned = [e for e in entries if e.get('profile_id') == job['profile_id'] and e.get('username') == job['employee_username'] and e.get('registration_ref') == job['registration_ref']]
                         if len(owned) != 1 or target(conn) != job['device_address']:
@@ -176,10 +185,13 @@ def sync_device_names(engine, username=None):
                         conn.execute(text("UPDATE vera_facegate_rename_job SET status='verified',updated_at=NOW() WHERE id=:id"), {'id': job['id']})
                 except Exception:
                     pending += 1
-                    with engine.begin() as conn:
+                    with lock_conn.begin():
+                        conn = lock_conn
                         conn.execute(text('UPDATE vera_facegate_rename_job SET attempts=attempts+1,updated_at=NOW() WHERE id=:id'), {'id': job['id']})
                 finally:
                     if client: client.close()
+            with lock_conn.begin():
+                pending = lock_conn.execute(text("SELECT count(*) FROM vera_facegate_rename_job WHERE status='pending' AND (CAST(:username AS text) IS NULL OR employee_username=:username)"), {'username': username}).scalar()
         finally:
             lock_conn.execute(text("SELECT pg_advisory_unlock(hashtext('vera:facegate:rename-worker'))"))
             lock_conn.commit()

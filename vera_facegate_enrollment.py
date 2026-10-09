@@ -28,6 +28,15 @@ class UploadRejected(EnrollmentError):
     pass
 
 
+def validate_device_name(value):
+    name = str(value or '').strip()
+    if (not name or len(name.encode('utf-8')) >= 48
+            or sum(ord(ch) > 127 for ch in name) >= 16
+            or re.search(r'[\x00-\x1f\x7f]', name)):
+        raise EnrollmentError('invalid_name', 'Tên nhân viên vượt giới hạn tên của máy FaceGate.')
+    return name
+
+
 def fields(body, *, only=None, ignore=(), upload_metadata=False):
     if len(body.encode('utf-8')) > device.MAX_RESPONSE_BYTES:
         raise EnrollmentError('invalid_response', 'Phản hồi máy vượt giới hạn.')
@@ -306,6 +315,7 @@ class FaceGateEnrollmentClient:
 
     def rename_profile(self, profile_id, old_name, new_name, expected_ref):
         """Keep UID, face reference, token and access settings; verify read-back."""
+        new_name = validate_device_name(new_name)
         profile = self.profile_details(profile_id)
         if profile.get('uname') not in {old_name, new_name} or device.registration_ref(profile) != expected_ref:
             raise EnrollmentError('profile_changed', 'Hồ sơ Face ID không còn khớp ánh xạ; cần đối chiếu lại.')
