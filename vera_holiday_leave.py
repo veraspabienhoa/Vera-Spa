@@ -171,6 +171,8 @@ def project_live(state, values, now):
     now = local(now)
     for employee in state['employees']:
         periods = values.get(employee.get('username') or employee.get('name'), [])
+        if not periods and 'holiday_leave_active' not in employee:
+            continue
         active = [p for p in periods if local(p['starts_at']) <= now < local(p['ends_at'])]
         employee['holiday_leave_periods'] = [{'starts_at':local(p['starts_at']).isoformat(), 'ends_at':local(p['ends_at']).isoformat()} for p in periods]
         employee['holiday_leave_active'] = bool(active)

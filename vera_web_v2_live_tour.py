@@ -3700,6 +3700,8 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
             )
         return state, revision
     state = _bootstrap_state(conn, now)
+    from vera_holiday_leave import intervals as holiday_intervals, project_live as project_holidays
+    project_holidays(state, holiday_intervals(conn, now.astimezone(VN_TZ).replace(hour=0, minute=0, second=0, microsecond=0), now + timedelta(seconds=1)), now)
     conn.execute(text("""
         INSERT INTO vera_app_setting(
           category,setting_key,value_json,source,updated_by,revision,created_at,updated_at
@@ -3716,7 +3718,7 @@ def _read_state(conn, now: datetime, *, for_update: bool = False, attendance_rec
     """), {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
     if not row:
         raise HTTPException(500, "Không khởi tạo được trạng thái Live Tour.")
-    return _read_state(conn, now, for_update=for_update, attendance_records=attendance_records, directory_records=directory_records, leave_records=leave_records)
+    return _normalize_state(row.get("value_json"), now), int(row.get("revision") or 0)
 
 
 def _write_state(

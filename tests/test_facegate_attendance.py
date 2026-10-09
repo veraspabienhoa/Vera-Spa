@@ -163,6 +163,7 @@ def calculator(monkeypatch, rows, shift=('Ca 1', '10:00', '23:00')):
     definitions = [{'Tên ca': shift[0], 'Giờ bắt đầu': shift[1], 'Giờ kết thúc': shift[2], 'Bộ phận': 'Nhân viên + Leader'}]
     profile = {**STAFF[0], 'work_shift': f'{shift[0]} ({shift[1]}-{shift[2]})'}
     class Result:
+        def scalar(self): return None  # No holiday table in this attendance fixture.
         def mappings(self): return self
         def all(self): return [profile]
     class Connection:

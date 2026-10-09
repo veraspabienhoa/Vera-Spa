@@ -43,7 +43,7 @@ class SettingsDatabase:
         count = 1
         if "SELECT to_regclass" in sql:
             # This fixture models aggregate storage before relational migration.
-            assert params["table_name"] == "vera_live_tour_meta"
+            assert params.get("table_name") == "vera_live_tour_meta" or sql == "SELECT to_regclass('vera_holiday_leave_period')"
         elif "SELECT full_name, bank_name, bank_account" in sql:
             rows = [row for row in self.directory if row.get('username') == params.get('username')]
         elif "FROM employees" in sql:
@@ -67,7 +67,7 @@ class SettingsDatabase:
             else:
                 self.stored, self.revision = json.loads(params["value"]), self.revision + 1
         else:
-            assert "pg_try_advisory_xact_lock" in sql, sql
+            assert "pg_try_advisory_xact_lock" in sql or "pg_advisory_xact_lock_shared(hashtext('vera:holiday_leave'))" in sql, sql
 
         class Result:
             rowcount = count
