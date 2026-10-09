@@ -1,3 +1,14 @@
+export function orderedCatalog(items) {
+  const rank = item => {
+    const value = item.display_order
+    if (value == null || typeof value === 'boolean' || String(value).trim() === '') return Infinity
+    const number = Number(value)
+    return Number.isFinite(number) ? number : Infinity
+  }
+  // Copy before sorting: API/cache arrays and selected service IDs stay intact.
+  return [...items].sort((left, right) => rank(left) - rank(right))
+}
+
 export function vietnamDate(value = Date.now()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value)).map((part) => [part.type, part.value]))
   return `${parts.year}-${parts.month}-${parts.day}`

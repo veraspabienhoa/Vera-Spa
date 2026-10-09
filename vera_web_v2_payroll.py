@@ -424,6 +424,8 @@ def _legacy_sheet_datasets(spreadsheet) -> tuple[list[dict[str, Any]], list[dict
 
 
 def _write_dataset_cache(conn, dataset_key: str, records: list[dict[str, Any]], source_version: str) -> str:
+    from vera_staff_retired_history import guard_legacy_snapshot
+    guard_legacy_snapshot(conn, dataset_key, records)
     serialized = json.dumps(records, ensure_ascii=False, separators=(",", ":"), default=str)
     checksum = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
     conn.execute(text("""
@@ -442,7 +444,8 @@ def _visible(records, ident, norm):
     if str(ident.role or "").lower() in {"admin", "quanly", "letan"}:
         return records
     keys = {norm(ident.employee_username), norm(ident.full_name)} - {""}
-    return [item for item in records if norm(item.get("Tên Hệ thống")) in keys or norm(item.get("Họ và tên")) in keys]
+    return [item for item in records if not item.get('__retired_identity')
+            and (norm(item.get("Tên Hệ thống")) in keys or norm(item.get("Họ và tên")) in keys)]
 
 
 def _filter_rows(records, batch: str, search: str, norm):
@@ -1472,6 +1475,8 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         engine = engine_instance(); conn = engine.connect(); tx = conn.begin()
         try:
             require_feature(conn, ident, "payroll_save")
+            from vera_staff_retired_history import history_lock
+            history_lock(conn)
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:payroll:' || :label))"), {"label": label})
             prepared_rows = _clean_draft_rows(conn, body.rows, norm, period=(body.start, body.end), refresh_financial=True)
             if sum(_number(row.get("Tiền Lương")) for row in prepared_rows) <= 0:

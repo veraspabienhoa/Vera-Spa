@@ -58,7 +58,7 @@ import { copyPngToClipboard } from '../lib/clipboardImage'
 import './LiveTourControls.css'
 import { availableBookingPurchase, comboBookingItems, preferredBookingCombo } from '../lib/liveTourComboBooking'
 import { customerMatches } from '../lib/customerSearch'
-import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, comboExtraSubtotal, vietnamDate } from '../lib/serviceCatalog'
+import { catalogIsAvailable, catalogTransactionDate, comboUsagePreview, comboExtraSubtotal, orderedCatalog, vietnamDate } from '../lib/serviceCatalog'
 import { buildLiveTourAppearanceCss, buildLiveTourTableLayout, mergeLiveTourAppearance } from '../lib/liveTourAppearance'
 import { startLiveTourClock, startLiveTourPolling } from '../lib/liveTourPerformance'
 
@@ -1174,7 +1174,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const allPendingPayments = asArray(boardData.pending_payments).length ? asArray(boardData.pending_payments) : asArray(boardData.pending).length ? asArray(boardData.pending) : asArray(boardData.state?.pending)
   const pagedPendingPayments = data.pending_payments ?? data.pending ?? data.state?.pending ?? allPendingPayments
   const customers = asArray(data.customers).length ? asArray(data.customers) : asArray(data.state?.customers)
-  const services = asArray(data.services).length ? asArray(data.services) : asArray(data.catalogs?.services).length ? asArray(data.catalogs?.services) : asArray(data.state?.services)
+  const services = orderedCatalog(asArray(data.services).length ? asArray(data.services) : asArray(data.catalogs?.services).length ? asArray(data.catalogs?.services) : asArray(data.state?.services))
   const quickCustomer = customers.find(item => String(item.id) === form.customer_id)
   const quickPurchase = customerComboPurchases(quickCustomer || {}).map(item => availableBookingPurchase(item)).find(item => String(item.id) === form.combo_purchase_id)
   const quickBaseServiceItems = form.service_id ? [{ service_id: form.service_id, quantity: 1 }]

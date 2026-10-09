@@ -117,6 +117,8 @@ def _period_rows(records: list[dict[str, Any]], employee_keys: set[str], norm: C
     for item in records:
         name_key = norm(item.get("Tên Hệ thống"))
         full_key = norm(item.get("Họ và tên"))
+        if item.get('__retired_identity') and name_key not in employee_keys:
+            continue
         if not ({name_key, full_key} & employee_keys):
             continue
         batch = str(item.get("Mã bản lưu") or "").strip()

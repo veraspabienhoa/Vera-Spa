@@ -54,7 +54,8 @@ def require_payroll_participants(rows, start, end, *, key, administrative_payrol
 def preserved_payroll(rows, start, end, *, key, administrative_payroll=False):
     """Retain saved money for omitted accounts when updating the same period."""
     return [dict(row) for row in rows if isinstance(row, dict)
-            and suspended(row.get(key), start, end, administrative_payroll=administrative_payroll)]
+            and (row.get('__retired_identity')
+                 or suspended(row.get(key), start, end, administrative_payroll=administrative_payroll))]
 
 
 def status(day):

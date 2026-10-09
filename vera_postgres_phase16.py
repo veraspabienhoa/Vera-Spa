@@ -201,6 +201,8 @@ def _replace(vpg, dataset, records, *, updated_by="", source="postgres_primary")
             "updated_by": str(updated_by or ""), "source": str(source or ""),
         })
     with vpg.get_engine().begin() as conn:
+        from vera_staff_retired_history import preserve_retired_audit
+        preserve_retired_audit(conn, dataset, normalized)
         conn.execute(text(f"DELETE FROM {RECORD_TABLE} WHERE dataset=:d"), {"d": dataset})
         if normalized:
             conn.execute(text(f"""

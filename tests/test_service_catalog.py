@@ -303,3 +303,16 @@ assert.equal(comboUsagePreview({remaining:10},[{service:'Unknown legacy'}],servi
 """.replace("MODULE", repr(module))
     result = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_catalog_order_keeps_unranked_and_tied_items_stable_without_mutating():
+    from copy import deepcopy
+    from vera_web_v2_service_catalog import ordered_catalog
+    items = [dict(id=str(index), **fields) for index, fields in enumerate([
+        {}, {'display_order': 3}, {'display_order': '0'}, {'display_order': None},
+        {'display_order': ''}, {'display_order': True}, {'display_order': 'bad'},
+        {'display_order': float('inf')}, {'display_order': 3},
+    ])]
+    before = deepcopy(items)
+    assert [row['id'] for row in ordered_catalog(items)] == ['2', '1', '8', '0', '3', '4', '5', '6', '7']
+    assert items == before

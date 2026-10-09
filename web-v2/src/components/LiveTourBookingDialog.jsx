@@ -7,7 +7,7 @@ import { advanceBookingField } from '../lib/advanceBookingField'
 import { bookingRoomGroup, bookingRoomState, roomOptionMatches } from '../lib/liveTourRooms'
 import { Plus, Trash2 } from 'lucide-react'
 import { bookingEmployees, bookingServiceItems, bookingTotal, tourNameKey } from '../lib/liveTourBooking'
-import { catalogIsAvailable, comboExtraSubtotal } from '../lib/serviceCatalog'
+import { catalogIsAvailable, comboExtraSubtotal, orderedCatalog } from '../lib/serviceCatalog'
 import { customerOptionMatches } from '../lib/customerSearch'
 import { availableBookingPurchase, comboBookingError, comboBookingItems, customerPurchases, customerTicketLabel, preferredBookingCombo, multiBookingCombos } from '../lib/liveTourComboBooking'
 import { createVisiblePoller } from '../lib/visiblePoller'
@@ -37,7 +37,7 @@ function LiveTourMultiBookingDialog({ data, context, allowBookingOutsideShift = 
   const [sharePrivateRoom, setSharePrivateRoom] = useState(false)
   const [shareCombo, setShareCombo] = useState(false)
   const employees = data.state?.employees || []
-  const catalog = data.services || []
+  const catalog = orderedCatalog(data.services || [])
   const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
   const bookingClock = useBookingClock()
   const eligibleEmployees = bookingEmployees(employees, bookingClock, data.booking_settings?.employee_available_minutes, data.records, allowBookingOutsideShift)
@@ -139,7 +139,7 @@ function LiveTourSingleBookingDialog({ data, context, allowBookingOutsideShift =
   const [sharePrivateRoom, setSharePrivateRoom] = useState(false)
   const employees = [...(data.state?.employees || []), ...(data.retained_assignments || [])]
   const initial = employees.find((row) => row.id === context.employeeId)
-  const catalog = data.services || []
+  const catalog = orderedCatalog(data.services || [])
   const [employeeId, setEmployeeId] = useState(initial?.id || '')
   const [items, setItems] = useState(() => bookingServiceItems(initial, catalog))
   const [room, setRoom] = useState(initial?.service ? initial.room : '')

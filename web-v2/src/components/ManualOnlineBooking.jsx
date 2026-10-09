@@ -4,7 +4,7 @@ import LiveTourSearchSelect from './LiveTourSearchSelect'
 import VeraDateInput from './VeraDateInput'
 import { veraApi } from '../lib/api'
 import { bookingDateRange } from '../lib/bookingDateRange'
-import { catalogIsAvailable } from '../lib/serviceCatalog'
+import { catalogIsAvailable, orderedCatalog } from '../lib/serviceCatalog'
 
 export default function ManualOnlineBooking({ services = [], booking, onClose, onSaved }) {
   const [draft, setDraft] = useState({ service: '', guests: 1, appointment_date: bookingDateRange('today').date_from, appointment_time: '', customer_name: '', phone: '', requested_staff: '', message: '', ...(booking ? Object.fromEntries(['service', 'guests', 'appointment_date', 'appointment_time', 'customer_name', 'phone', 'requested_staff', 'message'].map(key => [key, booking[key] ?? ''])) : {}) })
@@ -53,7 +53,7 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
     } catch (err) { setError(err.message) }
     finally { submitting.current = false; setBusy(false) }
   }
-  const catalog = services.filter(row => catalogIsAvailable(row)).sort((a, b) => Number(b.price || 0) - Number(a.price || 0))
+  const catalog = orderedCatalog(services).filter(row => catalogIsAvailable(row))
   const serviceOptions = catalog.map(row => {
     const label = `${row.name}${row.duration ? ` · ${row.duration} phút` : ''}${row.price != null ? ` · ${Number(row.price).toLocaleString('vi-VN')}đ` : ''}`
     return { value: label, label }

@@ -51,7 +51,7 @@ from vera_web_v2_live_tour_checkin import with_checkin as _directory_with_checki
 from vera_web_v2_combo_import import import_terms as _combo_import_terms
 from vera_web_v2_live_tour_roster import shift_label as _directory_shift
 from vera_web_v2_live_tour_roster import eligible as _roster_eligible, reconcile as _reconcile_roster
-from vera_web_v2_service_catalog import catalog_details, component_debits, purchase_terms, require_available
+from vera_web_v2_service_catalog import catalog_details, component_debits, ordered_catalog, purchase_terms, require_available
 from vera_web_v2_live_tour_permissions import CAPABILITY_FEATURES, EXPORT_FEATURES
 from vera_web_v2_live_tour_changes import change_customer
 from vera_web_v2_live_tour_invoice import change_paid_invoice
@@ -667,6 +667,8 @@ def _settings_reorder(state: dict[str, Any], payload: dict[str, Any]) -> dict[st
         positions = {key: index for index, key in enumerate(ordered_ids)}
         for kind, item in items:
             item["display_order"] = positions[f"{kind}:{item['id']}"]
+        for collection in ('services', 'combos'):
+            state[collection] = ordered_catalog(state[collection])
         return {"ordered_ids": ordered_ids}
     if scope == "service_areas":
         current_ids = [str(area["id"]) for area in _service_areas(state)]
@@ -810,6 +812,10 @@ def _normalize_state(raw: Any, now: datetime) -> dict[str, Any]:
     for key in ("employees", "rooms", "services", "combos", "customers", "pending", "invoices", "reports", "combo_usage", "combo_sale_requests", "break_events", "audit", "backups", "pending_changes"):
         if not isinstance(state.get(key), list):
             state[key] = deepcopy(defaults[key])
+    # Existing settings already persist display_order, even when relational
+    # ordinals still reflect insertion order. Honor it on every state read.
+    for collection in ('services', 'combos'):
+        state[collection] = ordered_catalog(state[collection])
     if state.get("manual_order_active") is False:
         for row in state.get("employees", []):
             row.pop("manual_order", None)
@@ -3513,6 +3519,8 @@ def _state_response(
         for change in invoice_changes:
             change.pop("purchase_before", None)
             change.pop("purchase_after", None)
+    services = ordered_catalog(state['services'])
+    combos = ordered_catalog(state['combos'])
     return {
         "storage_mode": "server", "columns": BOARD_COLUMNS, "records": records, "count": len(records), "employee_count": len(records),
         "available": groups("available"), "working_count": groups("working"), "leave_count": groups("leave"),
@@ -3536,7 +3544,7 @@ def _state_response(
         "source_updated_at": state.get("updated_at", ""), "revision": revision,
         # Root aliases keep the API convenient for both the copied Tour UI and
         # the richer Live Tour operator drawers.
-        "services": state["services"], "combo_catalog": state["combos"],
+        "services": services, "combo_catalog": combos,
         "appearance_settings": deepcopy(state.get("appearance_settings") or {}),
         "payment_settings": {**deepcopy(state.get("payment_settings") or _default_payment_settings()), **({"user_bank": deepcopy(viewer_bank)} if viewer_bank else {})} if can_payment or can_admin or can_paid_invoice_view else {},
         # Booking visibility is public to Live Tour viewers, independent of payment permissions.
@@ -3556,12 +3564,12 @@ def _state_response(
         "report_rows": public_reports,
         "audit": public_audit, "history": public_audit, "backups": public_backups,
         "break_events": public_break_events,
-        "catalogs": {"rooms": state["rooms"], "services": state["services"], "combos": state["combos"]},
+        "catalogs": {"rooms": state["rooms"], "services": services, "combos": combos},
         "state": {
             "version": state.get("version"), "business_date": state.get("business_date"),
             "updated_at": state.get("updated_at"), "storage_mode": "server",
             "employees": public_employees, "hidden_count": sum(bool(item.get("hidden")) for item in ordered),
-            "rooms": state["rooms"], "services": state["services"], "combos": state["combos"],
+            "rooms": state["rooms"], "services": services, "combos": combos,
             "customers": customers,
             "pending": state["pending"] if pending_access else [],
             "invoices": state["invoices"] if can_paid_invoice_view else [],

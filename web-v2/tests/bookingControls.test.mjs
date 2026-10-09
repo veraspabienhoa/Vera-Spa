@@ -8,6 +8,7 @@ import { JSDOM } from 'jsdom'
 import { startSearchableDropdowns } from '../src/lib/searchableDropdowns.js'
 import { formatVeraDate, parseVeraDate, formatVeraDateTime } from '../src/lib/veraDate.js'
 import { multiBookingCombos } from '../src/lib/liveTourComboBooking.js'
+import { orderedCatalog } from '../src/lib/serviceCatalog.js'
 const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true })
 Object.defineProperties(globalThis, {
   window: { value: dom.window, configurable: true }, document: { value: dom.window.document, configurable: true },
@@ -26,6 +27,7 @@ async function component(name) {
 const SearchSelect = await component('LiveTourSearchSelect'), Clearable = await component('ClearableSearchInput')
 const DateInput = await component('VeraDateInput'), DateTimeInput = await component('VeraDateTimeInput')
 const PaymentSettings = await component('LiveTourPaymentSettings')
+const BookingDialog = await component('LiveTourBookingDialog')
 const type = (input, value) => act(() => {
   Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(input, value)
   input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
@@ -35,6 +37,41 @@ async function render(Component) {
   await act(() => root.render(React.createElement(Component)))
   return async () => act(() => root.unmount())
 }
+
+test('catalog order is stable for legacy/unranked rows and does not mutate cache data', () => {
+  const catalog = [{ id: 'legacy' }, { id: 'third', display_order: 3 }, { id: 'first', display_order: '0' },
+    { id: 'null', display_order: null }, { id: 'blank', display_order: '' }, { id: 'bool', display_order: false },
+    { id: 'invalid', display_order: 'x' }, { id: 'tie', display_order: 3 }]
+  const before = structuredClone(catalog)
+  assert.deepEqual(orderedCatalog(catalog).map(item => item.id), ['first', 'third', 'tie', 'legacy', 'null', 'blank', 'bool', 'invalid'])
+  assert.deepEqual(catalog, before)
+})
+
+for (const mode of ['single', 'multi']) test(`${mode} booking places 70 PR third according to settings`, async () => {
+  const services = [
+    { id: '90-pr', name: '90 PR Tiêu chuẩn', price: 300000, duration: 90, display_order: 0 },
+    { id: '90', name: '90 Tiêu chuẩn', price: 250000, duration: 90, display_order: 1 },
+    { id: '70', name: '70 Tiêu chuẩn', price: 200000, duration: 70, display_order: 3 },
+    { id: 'room', name: 'Phòng riêng', price: 50000, duration: null, display_order: 4 },
+    { id: '70-pr', name: '70 PR Tiêu chuẩn', price: 250000, duration: 70, private: true, display_order: 2 },
+    { id: 'inactive', name: 'Ngừng bán', active: false, display_order: -1 },
+  ]
+  const before = structuredClone(services)
+  const dispose = await render(() => React.createElement(BookingDialog, {
+    data: { services, state: { employees: [], rooms: [] } }, context: mode === 'multi' ? { roomGroup: '1', roomLabel: '1' } : {},
+    canBook: true, onClose() {}, onAction() {},
+  }))
+  try {
+    const label = [...document.querySelectorAll('label')].find(node => node.textContent === (mode === 'multi' ? 'Dịch vụ *' : 'Dịch vụ'))
+    const input = document.getElementById(label.htmlFor)
+    await act(() => input.focus())
+    const names = [...document.querySelectorAll('[role="listbox"] [role="option"] strong')].map(node => node.textContent)
+    assert.deepEqual(names, ['90 PR Tiêu chuẩn', '90 Tiêu chuẩn', '70 PR Tiêu chuẩn', '70 Tiêu chuẩn', 'Phòng riêng'])
+    await act(() => [...document.querySelectorAll('[role="option"]')].find(node => node.textContent.includes('70 PR Tiêu chuẩn')).click())
+    assert.ok(document.body.textContent.includes('250.000 đ'))
+    assert.deepEqual(services, before)
+  } finally { await dispose() }
+})
 
 test('booking Clear closes, retains focus and allows intentional reopening by mouse or keyboard', async () => {
   let selected

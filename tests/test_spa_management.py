@@ -177,6 +177,8 @@ def test_settings_reorder_persists_service_combo_and_area_display_order():
         key=lambda value: value[1],
     )
     assert [value[0] for value in actual_catalog] == reversed_catalog
+    assert [f"service:{item['id']}" for item in state['services']] == [key for key in reversed_catalog if key.startswith('service:')]
+    assert [f"combo:{item['id']}" for item in state['combos']] == [key for key in reversed_catalog if key.startswith('combo:')]
 
     first = area(state, "Sen A")
     second = area(state, "Sen B")
@@ -185,6 +187,27 @@ def test_settings_reorder_persists_service_combo_and_area_display_order():
     action(state, "settings_reorder", {"scope": "service_areas", "ordered_ids": reordered_areas})
     reopened = live._normalize_state(state, NOW)
     assert [item["id"] for item in live._service_areas(reopened)] == reordered_areas
+
+
+def test_existing_settings_order_reaches_all_booking_response_aliases_without_repricing():
+    state = state_with()
+    state['services'] = [
+        {'id': '90-pr', 'name': '90 PR Tiêu chuẩn', 'display_order': 0, 'price': 300000, 'duration': 90},
+        {'id': '90', 'name': '90 Tiêu chuẩn', 'display_order': 1, 'price': 250000, 'duration': 90},
+        {'id': '70', 'name': '70 Tiêu chuẩn', 'display_order': 3, 'price': 200000, 'duration': 70},
+        {'id': 'room', 'name': 'Phòng riêng', 'display_order': 4, 'price': 50000, 'duration': None},
+        {'id': '70-pr', 'name': '70 PR Tiêu chuẩn', 'display_order': 2, 'price': 250000, 'duration': 70, 'private': True},
+    ]
+    before = deepcopy(state)
+    expected = ['90-pr', '90', '70-pr', '70', 'room']
+    normalized = live._normalize_state(state, NOW)
+    assert [s['id'] for s in normalized['services']] == expected
+    # Cover unnormalized action responses too, including older stored ordinals.
+    dto = live._state_response(state, 7, NOW)
+    for catalog in (dto['services'], dto['catalogs']['services'], dto['state']['services']):
+        assert [s['id'] for s in catalog] == expected
+        assert {s['id']: s for s in catalog} == {s['id']: s for s in before['services']}
+    assert state == before
 
 
 def test_settings_reorder_rejects_missing_or_duplicate_items_without_changing_state():

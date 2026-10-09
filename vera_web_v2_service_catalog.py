@@ -9,6 +9,20 @@ import unicodedata
 from fastapi import HTTPException
 
 
+def ordered_catalog(items):
+    """Stable settings order; unranked legacy/new items retain source order."""
+    def position(item):
+        value = item.get('display_order')
+        if isinstance(value, bool) or value is None or str(value).strip() == '':
+            return (1, 0)
+        try:
+            number = float(value)
+        except (ValueError, TypeError):
+            return (1, 0)
+        return (0, number) if math.isfinite(number) else (1, 0)
+    return sorted(items, key=position)
+
+
 def _key(value):
     text = unicodedata.normalize("NFD", str(value or "").strip().lower())
     return " ".join("".join(c for c in text if unicodedata.category(c) != "Mn").replace("đ", "d").split())

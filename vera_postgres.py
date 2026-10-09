@@ -437,6 +437,8 @@ def read_dataset(dataset_key: str, allow_stale: bool = True) -> Optional[pd.Data
 
 def _write_dataset_conn(conn, dataset_key: str, df: pd.DataFrame, ttl_seconds: int, source_version: str = "") -> pd.DataFrame:
     payload, row_count, checksum = _frame_to_payload(df)
+    from vera_staff_retired_history import guard_legacy_snapshot
+    guard_legacy_snapshot(conn, dataset_key, json.loads(payload))
     ttl_seconds = max(5, int(ttl_seconds))
     conn.execute(
         text(
