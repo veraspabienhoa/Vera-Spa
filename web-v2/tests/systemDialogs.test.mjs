@@ -130,3 +130,24 @@ test('required form fields use one modal, retain native validity and focus the f
     assert.equal(source.hasAttribute('data-feedback-presented'), false, 'React can reuse the node for ordinary page content')
   } finally { stop(); w.close() }
 })
+
+
+test('CCCD and salary advance feedback share the modal and legacy banner timers cannot dismiss it', async () => {
+  const dom = setup('<p class="vera-cccd-target-status">Đang nhận dạng thông tin từ ảnh CCCD…</p><p class="advance-ledger-message"></p>'), w = dom.window
+  const stop = w.startSystemFeedback()
+  try {
+    assert.equal(top(w), undefined)
+    const source = w.document.querySelector('.advance-ledger-message')
+    source.className = 'advance-ledger-message show success'; source.textContent = 'Đã lưu khoản ứng lương.'
+    await settle(w); assert.match(top(w).className, /system-dialog-success/)
+    source.className = 'advance-ledger-message'; await settle(w)
+    assert.match(top(w).textContent, /Đã lưu khoản ứng lương/, 'the old banner timeout does not close the modal')
+    choose(w, true)
+    const cccd = w.document.querySelector('.vera-cccd-target-status')
+    cccd.className = 'vera-cccd-target-status error'; cccd.textContent = 'Không nhận dạng được thông tin CCCD.'
+    await settle(w); assert.match(top(w).className, /system-dialog-error/)
+    choose(w, true)
+    cccd.className = 'vera-cccd-target-status ok'; cccd.textContent = 'Đã gắn thông tin.'
+    await settle(w); assert.match(top(w).className, /system-dialog-success/)
+  } finally { stop(); w.close() }
+})

@@ -1,6 +1,6 @@
 import { showSystemDialog } from './systemDialogs'
 
-const SELECTOR = '[role="alert"],.error-box,.success-box,.warning-box,.stable-feedback .setup-note,.stable-feedback [role="status"],.schedule-notice,.shift-break-error,.shift-break-message,.device-error,.employee-identity-notice,.leave-list-personal-summary-error,.payroll-timesoft-auto-notice,.past-violation-submit-notice,.live-penalty-preview.error,[data-system-feedback]'
+const SELECTOR = '[role="alert"],.error-box,.success-box,.warning-box,.stable-feedback .setup-note,.stable-feedback [role="status"],.schedule-notice,.shift-break-error,.shift-break-message,.device-error,.employee-identity-notice,.leave-list-personal-summary-error,.payroll-timesoft-auto-notice,.past-violation-submit-notice,.live-penalty-preview.error,.vera-cccd-text-status,.vera-cccd-target-status,.advance-ledger-message,[data-system-feedback]'
 const GUIDANCE = /(?:hãy|vui lòng|chưa chọn|chọn .*nhân viên|bộ lọc|không tìm thấy .*phù hợp)/i
 export function feedbackCategory(kind, message) {
   return GUIDANCE.test(message) ? 'ui_guidance' : kind === 'success' ? 'ui_success' : kind === 'warning' ? 'ui_warning' : 'ui_error'
@@ -18,14 +18,14 @@ export function startSystemFeedback(doc = document) {
     // Ignore loading indicators and table data, which are not operation feedback.
     const message = String(element.textContent || '').replace(/\s+/g, ' ').trim()
     if (!message) { seen.get(element)?.notice.close(); seen.delete(element); element.removeAttribute('data-feedback-presented'); return }
-    if (/^Đang (?:tải|lưu|xử lý|mở|tạo|cập nhật|xác minh)/i.test(message)) {
+    if (/^Đang (?:tải|lưu|xử lý|mở|tạo|cập nhật|xác minh|nhận dạng|đọc|trích xuất)/i.test(message)) {
       seen.get(element)?.notice.close(); seen.delete(element); element.removeAttribute('data-feedback-presented'); return
     }
     if (element.closest('[hidden]')) return
     if (seen.get(element)?.message === message) return
     seen.get(element)?.notice.close()
     const kind = /(?:error|danger)/.test(element.className) || element.getAttribute('role') === 'alert' ? 'error'
-      : /success/.test(element.className) ? 'success' : /warning|setup-note/.test(element.className) ? 'warning' : 'info'
+      : /success|(?:^|\s)ok(?:\s|$)/.test(element.className) ? 'success' : /warning|setup-note|(?:^|\s)warn(?:\s|$)/.test(element.className) ? 'warning' : 'info'
     const buttons = [...element.querySelectorAll('button,a[href]')]
     const actions = buttons.map(node => ({ disabled: Boolean(node.disabled), label: node.textContent.trim() || node.getAttribute('aria-label') || 'Mở', run: () => { if (node.isConnected && !node.disabled) node.click() } }))
     const copy = element.cloneNode(true)
