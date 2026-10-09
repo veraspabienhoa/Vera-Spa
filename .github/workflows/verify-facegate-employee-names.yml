@@ -1,0 +1,41 @@
+name: Verify production FaceGate employee names
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-facegate-employee-names.yml'
+      - 'scripts/verify_facegate_employee_names.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vera-facegate-name-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Verify release and health then synchronize and read back existing rename jobs
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); test -n "$pid"; release_dir=$(readlink -f "/proc/${pid}/cwd"); cd "$release_dir"; export VERA_EXPECTED_RELEASE=3155d04cd77fb219a0dc1877e2f1930219a459c9; export PYTHONPATH="$release_dir"; timeout 240 /opt/vera-spa/.venv/bin/python -' \
+            < scripts/verify_facegate_employee_names.py
