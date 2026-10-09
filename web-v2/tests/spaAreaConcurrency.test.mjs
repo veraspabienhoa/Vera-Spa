@@ -4,7 +4,9 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import React, { act } from 'react'
-import { JSDOM } from 'jsdom'
+import { JSDOM as BaseJSDOM } from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 
 const require = createRequire(import.meta.url)
 const built = await build({

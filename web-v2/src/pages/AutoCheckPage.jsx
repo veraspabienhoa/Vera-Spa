@@ -1,3 +1,4 @@
+import { alertDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -106,7 +107,7 @@ export default function AutoCheckPage({ user }) {
 
   const run = async () => {
     setBusy(true); setError('')
-    try { const result = await veraApi.runAutoCheck(); await load(); window.alert(result.message) } catch (err) { setError(err.message) } finally { setBusy(false) }
+    try { const result = await veraApi.runAutoCheck(); await load(); (await alertDialog(result.message)) } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
 
   const cfg = data?.config || {}

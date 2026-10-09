@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import React, { act } from 'react'
-import { JSDOM } from 'jsdom'
+import { JSDOM as BaseJSDOM } from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 import { fitTransaction } from '../src/lib/transactionViewport.js'
 
 const dom = new JSDOM('<body><div id="root"></div></body>', { url: 'https://example.test', pretendToBeVisual: true })

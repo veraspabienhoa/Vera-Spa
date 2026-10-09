@@ -417,7 +417,8 @@ def test_tip_menu_reports_popups_and_mobile_controls_are_wired():
     assert 'data-label="Tiền dịch vụ"' not in milk_tea and "liveTourMyTips" in milk_tea
     assert "['tip', 'Tiền Tip']" in reports and "['performance', 'Thời gian dịch vụ']" in reports
     assert "TG bắt đầu thực hiện YC" in reports and "TG Xông Hơi" in reports
-    assert "PopupNotifications" in shell and "MutationObserver" in popup
+    assert "PopupNotifications" in shell and "NotificationModal" in popup
+    assert "MutationObserver" in (root / "lib/systemFeedback.js").read_text(encoding="utf-8")
     assert ".live-tour-mobile-sync-hidden{display:none" in controls
 
 

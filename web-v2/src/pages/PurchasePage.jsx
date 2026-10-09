@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
@@ -73,14 +74,14 @@ export default function PurchasePage({ user, embedded = false, initialPreset = '
     try { await action() } catch(e) { setError(e.message) } finally { setBusy(false) }
   }
   async function remove() {
-    if (!window.confirm(`Xóa ${picked.length} dòng đã chọn?`)) return
+    if (!(await confirmDialog(`Xóa ${picked.length} dòng đã chọn?`))) return
     await run(async () => {
       try { for (const row of picked) await veraApi.deletePurchase(row.id,row.revision) }
       finally { setReload(n => n+1) }
     })
   }
-  function chooseImport(mode) {
-    if (mode === 'replace' && !window.confirm('Thay toàn bộ dữ liệu Nhập mua bằng file được chọn? Dữ liệu cũ được lưu trong lịch sử.')) return
+  async function chooseImport(mode) {
+    if (mode === 'replace' && !(await confirmDialog('Thay toàn bộ dữ liệu Nhập mua bằng file được chọn? Dữ liệu cũ được lưu trong lịch sử.'))) return
     importMode.current = mode; importInput.current.click()
   }
   async function importFile(event) {

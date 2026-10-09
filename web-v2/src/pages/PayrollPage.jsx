@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -166,7 +167,7 @@ export default function PayrollPage({ user }) {
   const savePayrollPeriod = () => run('save', async () => {
     if (!draft?.rows?.length) throw new Error('Chưa có bảng lương để lưu.')
     if (draftSalaryTotal <= 0) throw new Error('Tổng Tiền Lương đang bằng 0. Không thể lưu chính thức; hãy kiểm tra file TimeSoft và số dòng Tip.')
-    if (!window.confirm(`Lưu ${draft.period_label}? Bản lưu cũ của đúng kỳ này (nếu có) sẽ được thay thế.`)) return
+    if (!(await confirmDialog(`Lưu ${draft.period_label}? Bản lưu cũ của đúng kỳ này (nếu có) sẽ được thay thế.`))) return
     const result = await veraApi.savePayroll({ start: draft.start, end: draft.end, source_name: file?.name || draft.source_name || 'Excel upload', rows: draft.rows })
     await loadHistory()
     setNotice({ type: 'success', message: result.message })
@@ -187,7 +188,7 @@ export default function PayrollPage({ user }) {
 
   const deleteDraftSnapshot = () => run('delete-draft', async () => {
     if (!draft?.rows?.length) throw new Error('Chưa có bảng lương nháp để xóa.')
-    if (!window.confirm(`Xóa bảng lương nháp ${draft.period_label}?`)) return
+    if (!(await confirmDialog(`Xóa bảng lương nháp ${draft.period_label}?`))) return
     const result = await veraApi.deletePayrollDraft(month, periodNo)
     setDraft(null)
     setSelected([])
@@ -211,7 +212,7 @@ export default function PayrollPage({ user }) {
   const emailDraft = () => run('email', async () => {
     const rows = (draft?.rows || []).filter((row) => selected.includes(row['Tên Hệ thống']))
     if (!rows.length) throw new Error('Chưa chọn nhân viên cần gửi email.')
-    if (!window.confirm(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`)) return
+    if (!(await confirmDialog(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`))) return
 
     const batchSize = 3
     const sent = []
@@ -269,13 +270,13 @@ export default function PayrollPage({ user }) {
     })
   }
   const removeObligation = (id) => run(`obligation-${id}`, async () => {
-    if (!window.confirm('Xóa Nghĩa vụ vi phạm này?')) return
+    if (!(await confirmDialog('Xóa Nghĩa vụ vi phạm này?'))) return
     const result = await veraApi.deletePayrollObligation(id)
     setObligations((current) => current.filter((item) => item.id !== id))
     setNotice({ type: 'success', message: result.message })
   })
   const syncLegacy = () => run('sync-legacy', async () => {
-    if (!window.confirm('Tải lại lịch sử bảng lương và Nghĩa vụ vi phạm từ hệ thống cũ? Dữ liệu Web V2 đã lưu vẫn được ưu tiên hiển thị.')) return
+    if (!(await confirmDialog('Tải lại lịch sử bảng lương và Nghĩa vụ vi phạm từ hệ thống cũ? Dữ liệu Web V2 đã lưu vẫn được ưu tiên hiển thị.'))) return
     const result = await veraApi.syncLegacyPayroll()
     await loadHistory()
     await loadSupporting()

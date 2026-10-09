@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import {createRequire} from 'node:module'
 import {build} from 'esbuild'
 import React,{act} from 'react'
-import {JSDOM} from 'jsdom'
+import {JSDOM as BaseJSDOM} from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 const bootstrap=new JSDOM('<body/>');globalThis.window=bootstrap.window;globalThis.document=bootstrap.window.document;after(()=>bootstrap.window.close())
 const built=await build({stdin:{contents:`export {fitPayrollTable} from './src/lib/useFitPayrollTables';export {default as Panel} from './src/pages/DepartmentPayrollPanel';export {default as Settings} from './src/pages/DepartmentPayrollSettingsPage';export {default as Tabs} from './src/components/PayrollTabs';export {recoverablePage} from './src/lib/recoverablePage'`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react-dom','react/jsx-runtime'],loader:{'.css':'empty'},define:{'import.meta.env':'{"VITE_VERA_API_BASE_URL":"https://api.invalid"}'},plugins:[{name:'auth',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const getCurrentSession=async()=>({access_token:"synthetic",refresh_token:"refresh"});export const refreshCurrentSession=async()=>({access_token:"renewed"});export const isSupabaseConfigured=false;export const supabase=null'}))}}]})
 const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),mod,mod.exports)

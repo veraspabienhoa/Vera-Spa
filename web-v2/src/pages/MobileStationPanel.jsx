@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import StableFeedback from '../components/StableFeedback'
 import { Camera, ScanLine, Smartphone, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -117,7 +118,7 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
   }
 
   const confirm = async id => {
-    if (!window.confirm('Đã đối chiếu ảnh và tên nhân viên? Xác nhận sẽ ghi chấm công và có thể cập nhật thời gian kết thúc kỳ nghỉ.')) return
+    if (!(await confirmDialog('Đã đối chiếu ảnh và tên nhân viên? Xác nhận sẽ ghi chấm công và có thể cập nhật thời gian kết thúc kỳ nghỉ.'))) return
     setBusy(true)
     try { await veraApi.confirmMobileCheckin(id); await refreshRecords(); setMessage('Đã xác nhận chấm công.') }
     catch (cause) { setMessage(cause.message || 'Không xác nhận được.') }
@@ -125,7 +126,7 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
   }
 
   const deletePhoto = async id => {
-    if (mutation.current || !window.confirm('Xóa ảnh đã lưu? Sự kiện và chấm công đã xác nhận được giữ lại.')) return
+    if (mutation.current || !(await confirmDialog('Xóa ảnh đã lưu? Sự kiện và chấm công đã xác nhận được giữ lại.'))) return
     mutation.current = true; galleryEpoch.current += 1; setBusy(true)
     try {
       await veraApi.deleteMobileStationImage(id)

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import {createRequire} from 'node:module'
 import {build} from 'esbuild'
 import React,{act} from 'react'
-import {JSDOM} from 'jsdom'
+import {JSDOM as BaseJSDOM} from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 test('history has twelve columns, full mobile details, filtered totals and safe email/export',async t=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',pretendToBeVisual:true}),requests=[],NativeDate=Date
  const records=[{ 'Tên Hệ thống':'An Nhiên','Họ và tên':'Tên A',Email:'a@example.test','Mã bản lưu':'Kỳ 2 tháng 9','Từ ngày':'2026-09-16','Đến ngày':'2026-09-30','Tiền Lương':1000,'Tiền Hỗ Trợ Hoàn Lại':200,'Hoàn trả tiền tích lũy':300,'Tích lũy':400,'Chi Phí Sinh Hoạt':500,'Tiền phạt trong tháng':600,'Vi phạm kỳ trước':700,'Tiền ứng lương':800,'Tiền hỗ trợ Locker':900,'Số tiền thực nhận':-1500,__employment_status:'Đã nghỉ việc'},{'Tên Hệ thống':'B','Tiền Lương':2000,'Số tiền thực nhận':1000,__employment_status:'Đang làm việc'},{'Tên Hệ thống':'C','Tiền Lương':3000,'Số tiền thực nhận':-500,__employment_status:'Đang làm việc'}]

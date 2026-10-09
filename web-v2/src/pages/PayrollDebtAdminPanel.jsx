@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiCustomText from '../components/UiCustomText'
@@ -121,7 +122,7 @@ export default function PayrollDebtAdminPanel({ user, portalVersion = 0, onChang
   }
 
   const deleteDebt = async (item) => {
-    if (!window.confirm(`Xóa khoản ${money(item.amount)} của ${item.employee_name}? Khoản này sẽ không tự xuất hiện lại sau khi đồng bộ hệ thống cũ.`)) return
+    if (!(await confirmDialog(`Xóa khoản ${money(item.amount)} của ${item.employee_name}? Khoản này sẽ không tự xuất hiện lại sau khi đồng bộ hệ thống cũ.`))) return
     setBusy(`delete-${item.debt_key}`); setNotice(null)
     try {
       const result = await debtAdminRequest(`/v2/payroll-debt-sync/admin-debts/${encodeURIComponent(item.debt_key)}`, { method: 'DELETE' })

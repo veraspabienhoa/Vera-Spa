@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -38,10 +39,10 @@ export default function DepartmentShiftSettingsPanel() {
   }
   return <section data-ui-key="u-4f517c915cf7" className="panel ktv-shift-settings">
     <h2>Cài đặt ca · Lễ tân / Locker / Quản lý / Tạp vụ</h2>
-    <UiToolbar data-ui-key="u-af74537d90cb" className="ktv-shift-toolbar">{(data?.allowed_departments || []).map(key => <button data-ui-key="u-e3c7e72e1b15" className="secondary-button" type="button" key={key} disabled={busy} aria-pressed={department === key} onClick={() => {
-      if (drafts && !window.confirm('Bỏ các thay đổi ca chưa lưu?')) return
+    <UiToolbar data-ui-key="u-af74537d90cb" className="ktv-shift-toolbar">{(data?.allowed_departments || []).map(key => <button data-ui-key="u-e3c7e72e1b15" className="secondary-button" type="button" key={key} disabled={busy} aria-pressed={department === key} onClick={async () => {
+      if (drafts && !(await confirmDialog('Bỏ các thay đổi ca chưa lưu?'))) return
       setDepartment(key); setDrafts(null); setError(''); setNotice('')
-    }}>{labels[key]}</button>)}<button data-ui-key="u-8f161594a3de" data-ui-label-default="Làm mới" className="secondary-button" type="button" disabled={busy} onClick={() => { if (!drafts || window.confirm('Bỏ các thay đổi ca chưa lưu?')) void load() }}><UiCustomText uiKey="u-8f161594a3de">Làm mới</UiCustomText></button></UiToolbar>
+    }}>{labels[key]}</button>)}<button data-ui-key="u-8f161594a3de" data-ui-label-default="Làm mới" className="secondary-button" type="button" disabled={busy} onClick={async () => { if (!drafts || (await confirmDialog('Bỏ các thay đổi ca chưa lưu?'))) void load() }}><UiCustomText uiKey="u-8f161594a3de">Làm mới</UiCustomText></button></UiToolbar>
     <StableFeedback>{error && <p className="error-box" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}</StableFeedback>
     {busy && <p role="status">Đang xử lý…</p>}

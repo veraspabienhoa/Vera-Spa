@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { JSDOM } from 'jsdom'
+import { JSDOM as BaseJSDOM } from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 import { LETAN_REASON_GROUPS, canEditLeaveRecord, canDeleteLeaveRecord, canChangeLeaveReason } from '../src/lib/leaveRecordPermissions.js'
 import { requestPageRefresh } from '../src/lib/usePageRefresh.js'
 

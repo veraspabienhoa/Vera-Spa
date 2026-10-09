@@ -1,3 +1,4 @@
+import NotificationModal from './NotificationModal'
 import { useEffect, useRef, useState } from 'react'
 import { clampPopupPosition } from '../lib/popupPosition'
 import { veraApi } from '../lib/api'
@@ -97,7 +98,7 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     finally { setBusy(false) }
   }
   return <>{showUpcomingReminder && <UpcomingOnlineBookings user={user} onClose={() => setShowUpcomingReminder(false)}/>}
-  {!rows.length || showUpcomingReminder ? null : <aside ref={panel} className={`online-booking-popup${hidden ? ' is-minimized' : ''}`} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} role="region" aria-label="Yêu cầu từ website">
+  {!rows.length || showUpcomingReminder ? null : <NotificationModal key={row.id} title="Yêu cầu từ website" onClose={() => { if (!busy) void dismiss() }}><aside ref={panel} className={`online-booking-popup${hidden ? ' is-minimized' : ''}`} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} role="region" aria-label="Yêu cầu từ website">
     <div className="online-booking-popup-header">
       <button type="button" className="online-booking-drag-handle" aria-label="Di chuyển thông báo bằng kéo hoặc phím mũi tên" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }} onLostPointerCapture={() => { drag.current = null }} onKeyDown={keyboardMove}>
         <strong aria-live="polite">{row.kind === 'booking' ? 'Booking online mới' : 'Lời nhắn mới'}{rows.length > 1 ? ` · ${rows.length}` : ''}</strong>
@@ -110,6 +111,6 @@ export default function OnlineBookingPopup({ user, onOpen }) {
       <div className="online-booking-actions"><button disabled={busy} onClick={() => dismiss()}>Đã xem</button><button disabled={busy} onClick={() => dismiss(true)}>Mở Booking online</button></div>
     </>}
     {error && <p role="alert">{error}</p>}
-  </aside>}
+  </aside></NotificationModal>}
   </>
 }

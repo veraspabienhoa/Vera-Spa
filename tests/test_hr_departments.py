@@ -91,7 +91,10 @@ def test_cannot_delete_occupied_department_and_stale_writes_are_rejected(setup):
     assert saved[hr.KEY]['departments']['warehouse']['salary_mode'] == 'monthly'
     assert client.request('DELETE', '/v2/hr/departments/warehouse', json={'revision':1}).status_code == 200
     assert not client.get('/v2/hr').json()['departments']['warehouse']['active']
-    assert save(client, 'warehouse', 'hourly', 2).status_code == 409
+    assert save(client, 'warehouse', 'hourly', 1, creating=True).status_code == 409
+    assert save(client, 'warehouse', 'hourly', 2, creating=True).status_code == 200
+    assert client.get('/v2/hr').json()['departments']['warehouse']['active']
+    assert save(client, 'warehouse', 'tip', 3, creating=True).status_code == 409
 
 
 @pytest.mark.parametrize('mode', ['hourly', 'monthly', 'tip'])
@@ -163,3 +166,31 @@ def test_director_department_is_included_with_configured_wages(setup, mode):
     saved[hr.KEY] = {'departments': {'giamdoc': {'name': 'Giám đốc', 'salary_mode': mode, 'active': True}}}
     assert 'giamdoc' in hr.admin_departments(conn)
     assert department_payroll._settings(conn, 'giamdoc')['config']['calculation_mode'] == mode
+
+
+@pytest.mark.parametrize('code', ['warehouse', 'support'])
+def test_recreate_deleted_department_keeps_history_assignments_and_configuration(setup, code):
+    client, saved, people, _, conn = setup
+    # Both a custom code and a built-in default may be deleted and recreated.
+    if code == 'warehouse':
+        assert save(client, code, 'monthly', creating=True).status_code == 200
+    revision = client.get('/v2/hr').json()['revision']
+    saved['department_payroll_combined_history'] = [{'department': code, 'net_salary': 7800000}]
+    saved['department_shift_settings'] = {code: {'Ca 1': {'start': '09:00', 'end': '18:00'}}}
+    saved['department_payroll_config'] = {code: {'base_salary': 7800000}}
+    saved['hc_rule_settings'] = {'rules': [{'id': 'late', 'amount': 100000}]}
+    original = deepcopy(saved)
+    original_people = deepcopy(people)
+    assert client.request('DELETE', f'/v2/hr/departments/{code}', json={'revision': revision}).status_code == 200
+    assert code not in hr.departments(conn)
+    assert save(client, code, 'hourly', revision + 1, name='Lễ tân', creating=True).status_code == 409
+    assert code not in hr.departments(conn)
+    assert save(client, code, 'hourly', revision + 1, name='Bộ phận mới', creating=True).status_code == 200
+    state = client.get('/v2/hr').json()
+    assert state['departments'][code] == {'name': 'Bộ phận mới', 'salary_mode': 'hourly', 'active': True}
+    assert state['revision'] == revision + 2
+    assert state['employees'][0]['department'] == 'letan'
+    assert people == original_people
+    for key, value in original.items():
+        if key != hr.KEY:
+            assert saved[key] == value

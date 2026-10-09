@@ -1,3 +1,5 @@
+import NotificationModal from './NotificationModal'
+import { alertDialog, confirmDialog } from '../lib/systemDialogs'
 import { createVisiblePoller } from '../lib/visiblePoller'
 import PageContent from './PageContent'
 import StableFeedback from './StableFeedback'
@@ -102,7 +104,7 @@ const liveAlertTiming = (alert, nowMs) => {
 }
 
 export default function AppShell({ user, currentPage, standalone = false, onPageChange, onPageIntent, onRefreshCurrentPage, onSignOut, children }) {
-  const showPageNotifications = currentPage !== 'live-tour'
+  const showPageNotifications = true
   const [refreshMessage, setRefreshMessage] = useState('')
   useEffect(() => {
     setRefreshMessage('')
@@ -246,7 +248,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
 
   const deleteBreakAlertForAll = async (alert) => {
     if (!isAdmin || !alert?.key || !alert?.tag || deletingBreakAlertTag) return
-    const accepted = window.confirm(`Xóa hoàn toàn cảnh báo của ${alert.employee} cho tất cả tài khoản? Cảnh báo này sẽ không xuất hiện lại.`)
+    const accepted = (await confirmDialog(`Xóa hoàn toàn cảnh báo của ${alert.employee} cho tất cả tài khoản? Cảnh báo này sẽ không xuất hiện lại.`))
     if (!accepted) return
     setDeletingBreakAlertTag(alert.tag)
     try {
@@ -257,7 +259,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       setBreakAlerts(next)
       await syncPersistentBreakNotifications(next)
     } catch (error) {
-      window.alert(error?.message || 'Không xóa được cảnh báo cho tất cả tài khoản.')
+      (await alertDialog(error?.message || 'Không xóa được cảnh báo cho tất cả tài khoản.'))
     } finally {
       setDeletingBreakAlertTag('')
     }
@@ -461,14 +463,14 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           {user?.must_change_password && <div className="warning-box first-login-warning">Đây là lần đăng nhập Web V2 đầu tiên. Bạn cần đổi mật khẩu mạnh trước khi sử dụng các chức năng khác.</div>}
 
           {isAdmin && breakAlertControl.disabled && <div className="break-alert-global-off"><span>Thông báo nghỉ giữa ca đang TẮT cho mọi tài khoản.</span><button data-ui-key="u-c49a507e2857" type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(false)}>{breakAlertControl.busy ? 'Đang bật…' : 'Bật lại'}</button></div>}
-          {birthdayNotice && <div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button data-ui-key="u-b80e8fd10ec1" data-ui-label-default="Xem" type="button" onClick={() => choose('birthday', true)}><UiCustomText uiKey="u-b80e8fd10ec1">Xem</UiCustomText></button><button data-ui-key="u-8bb4598c579b" data-ui-label-default="×" type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng"><UiCustomText uiKey="u-8bb4598c579b">×</UiCustomText></button></div>}
+          {birthdayNotice && <NotificationModal title="Sinh nhật" onClose={dismissBirthday}><div className="birthday-notice"><Cake size={19} /><div><strong>Sinh nhật tháng {birthdayNotice.month}</strong><span>{birthdayNotice.today_count ? `Hôm nay có ${birthdayNotice.today_count} sinh nhật. ` : ''}{birthdayNotice.birthdays.map((item) => `${String(item.day).padStart(2, '0')}/${String(birthdayNotice.month).padStart(2, '0')} · ${item.full_name}`).join(' · ')}</span></div><button data-ui-key="u-b80e8fd10ec1" data-ui-label-default="Xem" type="button" onClick={() => { dismissBirthday(); choose('birthday', true) }}><UiCustomText uiKey="u-b80e8fd10ec1">Xem</UiCustomText></button><button data-ui-key="u-8bb4598c579b" data-ui-label-default="×" type="button" className="birthday-dismiss" onClick={dismissBirthday} aria-label="Đóng"><UiCustomText uiKey="u-8bb4598c579b">×</UiCustomText></button></div></NotificationModal>}
           </StableFeedback>}
 
           {showPageNotifications && !breakAlertControl.disabled && breakAlerts.length > 0 && breakAlertsHidden && <div className="break-alert-hidden-chip" style={alertPositionStyle}><BellRing size={15} /><span>{breakAlerts.length} cảnh báo đang tạm ẩn</span><button data-ui-key="u-b92d7cc74167" data-ui-label-default="Hiện" type="button" onClick={() => setBreakAlertsHidden(false)}><UiCustomText uiKey="u-b92d7cc74167">Hiện</UiCustomText></button></div>}
 
-          {showPageNotifications && !breakAlertControl.disabled && breakAlerts.length > 0 && !breakAlertsHidden && <div ref={breakAlertStackRef} className="break-alert-stack" style={alertPositionStyle} aria-live="assertive">
+          {showPageNotifications && !breakAlertControl.disabled && breakAlerts.length > 0 && !breakAlertsHidden && <NotificationModal title="Cảnh báo chấm công" onClose={() => setBreakAlertsHidden(true)}><div ref={breakAlertStackRef} className="break-alert-stack" style={alertPositionStyle} aria-live="assertive">
             <UiToolbar data-ui-key="u-1b670af1a7f7" className="break-alert-toolbar" onPointerDown={beginAlertDrag} onPointerMove={moveAlertDrag} onPointerUp={endAlertDrag} onPointerCancel={endAlertDrag}>
-              <strong>🔔 {breakAlerts.length} cảnh báo · kéo để di chuyển</strong>
+              <strong>🔔 {breakAlerts.length} cảnh báo</strong>
               <UiToolbar data-ui-key="u-65c033d3e44a" className="break-alert-toolbar-actions">
                 <button data-ui-key="u-4e999c8465ec" data-ui-label-default="Ẩn tạm" type="button" onClick={() => setBreakAlertsHidden(true)}><UiCustomText uiKey="u-4e999c8465ec">Ẩn tạm</UiCustomText></button>
                 {isAdmin && <button data-ui-key="u-7dbf5823d6e9" type="button" disabled={breakAlertControl.busy} onClick={() => toggleGlobalBreakAlerts(true)}>{breakAlertControl.busy ? 'Đang tắt…' : 'Tắt tất cả'}</button>}
@@ -485,7 +487,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
                 </UiToolbar>}
               </div>
             </div>)}
-          </div>}
+          </div></NotificationModal>}
 
 
           <PageContent navigationToggle={navigationToggle}>{children}</PageContent>
@@ -493,7 +495,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       </main>
       <PageErrorBoundary page={currentPage} onRetry={() => LayoutDesigner.reset()}><Suspense fallback={null}><LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/></Suspense></PageErrorBoundary>
       <BackToTop/>
-      {showPageNotifications && <PopupNotifications user={user}/>}
+      {showPageNotifications && !user?.must_change_password && <PopupNotifications key={`system-notifications:${user?.id || user?.employee_username}`} user={user}/>}
       {currentPage === 'live-tour' && <OnlineBookingPopup key={`online-booking:${user?.id || user?.employee_username}`} user={user} onOpen={() => choose('online-bookings', true)}/>}
       <BookingNotificationPopup key={user?.id || user?.username || user?.employee_username || ''} user={user} onOpen={() => choose('live-tour', true)}/>
       <MissingCheckinPopup key={`${user?.username || user?.employee_username || user?.id || ''}:${role}`} user={user}/>

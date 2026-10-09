@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiCustomText from '../components/UiCustomText'
@@ -16,7 +17,7 @@ export default function ProductSettings() {
     setProducts(current=>[...current.filter(p=>p.id!==result.product.id),result.product].sort((a,b)=>a.name.localeCompare(b.name,'vi')))
     setForm(null);setNotice('Đã lưu sản phẩm cho toàn hệ thống.')
   }catch(e){setError(e.message)}finally{setBusy(false)}}
-  const choose=value=>{if(form && !window.confirm('Bỏ thay đổi chưa lưu?'))return;setError('');setNotice('');setForm(value)}
+  const choose=async value=>{if(form && !(await confirmDialog('Bỏ thay đổi chưa lưu?')))return;setError('');setNotice('');setForm(value)}
   const rows=products.filter(p=>`${p.sku} ${p.name} ${p.category}`.toLocaleLowerCase('vi').includes(query.toLocaleLowerCase('vi')))
   return <section data-ui-key="u-3e112a1e7a5d" className="panel product-settings"><h2>Cài đặt sản phẩm</h2>
     <div data-ui-key="u-ea49f9ad90b8" className="product-actions"><input aria-label="Tìm sản phẩm" placeholder="Tìm mã, tên, nhóm sản phẩm…" value={query} onChange={e=>setQuery(e.target.value)}/><button data-ui-key="u-8e840b29d46e" className="secondary-button" disabled={busy} onClick={load}><UiCustomText uiKey="u-8e840b29d46e">Làm mới</UiCustomText></button><button data-ui-key="u-55ebe91a50b7" className="primary-button" disabled={busy} onClick={()=>choose({...empty})}><UiCustomText uiKey="u-55ebe91a50b7">Thêm sản phẩm</UiCustomText></button></div>

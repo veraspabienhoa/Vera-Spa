@@ -51,4 +51,4 @@ def test_revenue_entry_can_save_thu_and_chi_together():
     assert "Có thể xóa để nhập nội dung Thu mới." not in page
     assert "Có thể xóa để nhập nội dung Chi mới." not in page
     assert "auto-note-empty" in page
-    assert "window.confirm(saveError.message)" in page
+    assert "await confirmDialog(saveError.message)" in page

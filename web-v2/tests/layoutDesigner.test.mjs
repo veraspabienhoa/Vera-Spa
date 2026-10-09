@@ -7,7 +7,9 @@ import { build } from 'esbuild'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import React, { act } from 'react'
-import { JSDOM } from 'jsdom'
+import { JSDOM as BaseJSDOM } from 'jsdom'
+import { answerDialogs } from './dialogAnswers.mjs'
+class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 import { startSearchableDropdowns } from '../src/lib/searchableDropdowns.js'
 
 const built = await build({ entryPoints: [fileURLToPath(new URL('../src/components/LayoutDesigner.jsx', import.meta.url))], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime'], loader: { '.css': 'empty' }, plugins: [{ name: 'api', setup(b) {

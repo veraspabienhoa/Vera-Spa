@@ -1,3 +1,4 @@
+import { alertDialog } from '../lib/systemDialogs'
 import { useEffect } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 
@@ -143,7 +144,7 @@ function makeSelectForLabel(label, kind, catalogs, onProvinceChanged) {
         render(wardData.wards || [])
       }
     } catch (error) {
-      window.alert(`Không cập nhật được danh mục: ${error.message}`)
+      (await alertDialog(`Không cập nhật được danh mục: ${error.message}`))
     } finally {
       refresh.disabled = false
       refresh.textContent = oldText

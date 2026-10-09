@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import StableFeedback from './StableFeedback'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
@@ -204,7 +205,7 @@ function LiveTourSingleBookingDialog({ data, context, allowBookingOutsideShift =
   }
   const clearOrphanPending = async () => {
     if (!awaitingPayment || hasPayableService || !canAdmin || busy) return
-    if (!window.confirm(`Xóa phiên Chờ thanh toán bị lỗi của ${employee?.name}? Thao tác này chỉ xóa trạng thái treo không có hóa đơn.`)) return
+    if (!(await confirmDialog(`Xóa phiên Chờ thanh toán bị lỗi của ${employee?.name}? Thao tác này chỉ xóa trạng thái treo không có hóa đơn.`))) return
     const result = await onAction('clear_orphan_pending', {
       employee_id: employeeId,
       reason: 'Xóa phiên Chờ thanh toán mồ côi, không có dữ liệu dịch vụ và không có hóa đơn chờ.',

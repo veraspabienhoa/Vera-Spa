@@ -72,9 +72,9 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
           const required = field === 'customer_name'
           return <LiveTourSearchSelect key={field} label={required ? `${label} *` : label} placeholder={`Nhập ${label.toLowerCase()}`} required={required} disabled={busy} value="" searchValue={draft[field]} onSearch={value => { set(field, value); setQuery(value) }} onChange={choose} filterOption={() => true} options={customers.map(row => ({ value: row.id, label: field === 'phone' ? row.phone : row.name, detail: field === 'phone' ? row.name : row.phone }))}/>
         })}
-        {lookupError && <p className="wide" role="status">Chưa tra cứu được khách hàng: {lookupError}. Bạn vẫn có thể nhập thông tin khách.</p>}
+        {lookupError && <p className="wide" role="status" data-system-feedback>Chưa tra cứu được khách hàng: {lookupError}. Bạn vẫn có thể nhập thông tin khách.</p>}
         <LiveTourSearchSelect className="wide" label="YC nhân viên" placeholder={staffLoading ? 'Đang tải nhân viên…' : 'Tìm và chọn nhân viên đi làm hôm nay'} disabled={busy || staffLoading || Boolean(staffError)} value={draft.requested_staff} onChange={value => set('requested_staff', value)} options={staff}/>
-        {staffError && <p className="wide" role="status">Chưa tải được nhân viên: {staffError}</p>}
+        {staffError && <p className="wide" role="status" data-system-feedback>Chưa tải được nhân viên: {staffError}</p>}
         <label className="wide">Lời nhắn<textarea rows="2" aria-label="Lời nhắn" maxLength={4000} disabled={busy} value={draft.message} onChange={event => set('message', event.target.value)}/></label>
         {error && <p className="wide" role="alert">{error}</p>}
       </div>

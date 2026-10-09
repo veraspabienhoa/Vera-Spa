@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import PayrollHistorySearch from '../components/PayrollHistorySearch'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -184,8 +185,8 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
     const result = await request('/v2/department-payroll/combined/draft', { method: 'PUT', body: JSON.stringify(payload()) })
     setRows(result.rows); setNotice({ type: 'success', message: result.message })
   })
-  const deleteDraft = () => {
-    if (!window.confirm(`Xóa bảng lương nháp tháng ${month.split('-').reverse().join('/')}? Lịch sử bảng lương đã hoàn thành được giữ nguyên.`)) return
+  const deleteDraft = async () => {
+    if (!(await confirmDialog(`Xóa bảng lương nháp tháng ${month.split('-').reverse().join('/')}? Lịch sử bảng lương đã hoàn thành được giữ nguyên.`))) return
     return run('draft-delete', async () => {
       const result = await request(`/v2/department-payroll/combined/draft?month=${month}`, { method: 'DELETE' })
       setRows([]); setSelected([]); setEditingHistoryId(''); setCalculationPeriod(null)
@@ -193,13 +194,13 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
       setNotice({ type: 'success', message: result.message })
     })
   }
-  const recalculatePayroll = () => {
-    if (!window.confirm('Tính lại lương từ dữ liệu mới nhất? Các chỉnh sửa chưa lưu trên bảng hiện tại sẽ được thay thế.')) return
+  const recalculatePayroll = async () => {
+    if (!(await confirmDialog('Tính lại lương từ dữ liệu mới nhất? Các chỉnh sửa chưa lưu trên bảng hiện tại sẽ được thay thế.'))) return
     const source = rows[0]?.calculation_source === 'attendance' ? 'attendance' : 'schedule'
     return calculate(source)
   }
   const completePayroll = () => run('complete', async () => {
-    if (!window.confirm(`Hoàn thành bảng Lương hành chánh tháng ${month.split('-').reverse().join('/')} và lưu vào lịch sử?`)) return
+    if (!(await confirmDialog(`Hoàn thành bảng Lương hành chánh tháng ${month.split('-').reverse().join('/')} và lưu vào lịch sử?`))) return
     const result = await request('/v2/department-payroll/combined/complete', { method: 'POST', body: JSON.stringify(payload()) })
     setRows(result.rows); setEditingHistoryId(result.history_id || '')
     const historyResult = await request('/v2/department-payroll/combined/history')
@@ -244,7 +245,7 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
   }
   const sendEmail = () => run('email', async () => {
     if (!selected.length) throw new Error('Vui lòng chọn nhân viên cần gửi email.')
-    if (!window.confirm(`Gửi ${selected.length} email bảng Lương hành chánh?`)) return
+    if (!(await confirmDialog(`Gửi ${selected.length} email bảng Lương hành chánh?`))) return
     const results = []
     for (const department of Object.keys(settings)) {
       const departmentRows = rows.filter((row) => row.department === department && selected.includes(row.employee_username))

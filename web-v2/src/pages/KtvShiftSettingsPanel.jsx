@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -34,7 +35,7 @@ export default function KtvShiftSettingsPanel({ onChanged }) {
     finally { setBusy(false) }
   }
   const remove = async (row) => {
-    if (!window.confirm(`Xóa ca “${row.name}”?`)) return
+    if (!(await confirmDialog(`Xóa ca “${row.name}”?`))) return
     setBusy(true); setError(''); setNotice('')
     try {
       setData(await veraApi.deleteKtvShift(row.id, data.revision))
@@ -49,7 +50,7 @@ export default function KtvShiftSettingsPanel({ onChanged }) {
     catch (err) { setError(err.message || 'Không lưu được chu kỳ.') } finally { setBusy(false) }
   }
   const removeCycle = async (row) => {
-    if (row.system || !window.confirm(`Xóa chu kỳ “${row.label}”?`)) return
+    if (row.system || !(await confirmDialog(`Xóa chu kỳ “${row.label}”?`))) return
     setBusy(true); setError(''); try { setCycles(await veraApi.deleteKtvCycle(row.id, cycles.revision)); setNotice('Đã xóa chu kỳ.'); await onChanged?.() }
     catch (err) { setError(err.message || 'Không xóa được chu kỳ.') } finally { setBusy(false) }
   }

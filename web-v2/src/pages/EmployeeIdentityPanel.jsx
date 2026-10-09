@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import UiToolbar from '../components/UiToolbar'
 import FaceIdCapturePicker from '../components/FaceIdCapturePicker'
 import './FaceIdCard.css'
@@ -459,7 +460,7 @@ function IdentitySide({ username, side, title, metadata, busy, onChanged, setNot
   })
 
   const remove = () => onChanged(`delete-${side}`, async () => {
-    if (!window.confirm(`Xóa ảnh ${title.toLowerCase()} CCCD của ${username}?`)) return false
+    if (!(await confirmDialog(`Xóa ảnh ${title.toLowerCase()} CCCD của ${username}?`))) return false
     const result = await staffSecurityApi.deleteIdentity(username, side)
     if (previewUrl) URL.revokeObjectURL(previewUrl)
     setPreviewUrl('')
@@ -554,7 +555,7 @@ function PortraitSide({ username, metadata, busy, onChanged, setNotice, allowAdm
     return false
   })
   const remove = () => onChanged('delete-portrait', async () => {
-    if (!window.confirm(`Xóa ${title} của ${username}?`)) return false
+    if (!(await confirmDialog(`Xóa ${title} của ${username}?`))) return false
     const result = await mediaApi.deleteIdentity(username, side)
     if (previewUrl) URL.revokeObjectURL(previewUrl)
     setPreviewUrl('')
@@ -642,7 +643,7 @@ function FaceIdEnrollment({ username, photo, photoBusy, inline = false }) {
   }, [username])
   const act = async (verify, owner = username, replace = false) => {
     if (activeOperation.current) return
-    if (!verify && !replace && !window.confirm(`Đăng ký ảnh Face ID đã lưu cho ${username} lên máy chấm công? Hãy kiểm tra đúng người trong ảnh trước khi xác nhận.`)) return
+    if (!verify && !replace && !(await confirmDialog(`Đăng ký ảnh Face ID đã lưu cho ${username} lên máy chấm công? Hãy kiểm tra đúng người trong ảnh trước khi xác nhận.`))) return
     activeOperation.current = true
     setBusy(true); setMessage('')
     try {
@@ -839,7 +840,7 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
   }
 
   const resetPassword = () => run('password', async () => {
-    if (!window.confirm(`Reset mật khẩu cho ${username} về ${DEFAULT_RESET_PASSWORD}?`)) return false
+    if (!(await confirmDialog(`Reset mật khẩu cho ${username} về ${DEFAULT_RESET_PASSWORD}?`))) return false
     const result = await staffSecurityApi.resetPassword(username, DEFAULT_RESET_PASSWORD)
     setNotice({ type: 'success', message: `${result.message} Mật khẩu mặc định: ${DEFAULT_RESET_PASSWORD}.` }); return false
   })

@@ -1,3 +1,4 @@
+import { clearSystemDialogs } from './lib/systemDialogs'
 import { invalidateSharedReads } from './lib/sharedRead'
 import { recoverablePage as lazyPage } from './lib/recoverablePage'
 import PageErrorBoundary from './components/PageErrorBoundary'
@@ -203,6 +204,8 @@ export default function App() {
     }
   }, [loading, profile?.employee_username, profile?.must_change_password, session?.access_token, session?.user?.id])
 
+  useEffect(() => () => clearSystemDialogs(), [session?.user?.id, profile?.employee_username])
+
   if (loading) return <div className="boot-screen">Đang mở VERA SPA…</div>
   const user = session?.user
   if (!user && !sessionRecoveryError) return <LoginPage externalError={authError} />
@@ -258,7 +261,7 @@ export default function App() {
     user_metadata: { ...(user.user_metadata || {}), full_name: profile.full_name || profile.employee_username },
   } : null
 
-  if (!shellUser) return <div className="boot-screen"><div><p role="alert">{authError || 'Đang xác minh hồ sơ VERA SPA…'}</p><button type="button" className="primary-button" onClick={() => setAuthRetry(value => value + 1)}>Thử xác minh lại</button><button type="button" className="secondary-button" onClick={signOut}>Đăng xuất</button></div></div>
+  if (!shellUser) return <div className="boot-screen"><div><p role={authError ? "alert" : "status"}>{authError || 'Đang xác minh hồ sơ VERA SPA…'}</p><button type="button" className="primary-button" onClick={() => setAuthRetry(value => value + 1)}>Thử xác minh lại</button><button type="button" className="secondary-button" onClick={signOut}>Đăng xuất</button></div></div>
 
   return (
     <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onPageIntent={preloadPage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>

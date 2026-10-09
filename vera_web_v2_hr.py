@@ -155,10 +155,10 @@ def install_hr_routes(app, *, engine_instance, current_identity, identity_type):
             state = registry(conn)
             checked_revision(state, body.revision)
             old = state['departments'].get(body.code)
-            if body.creating and old:
+            if body.creating and old and old.get('active', True):
                 raise HTTPException(409, 'Mã bộ phận đã tồn tại. Hãy chọn Sửa hoặc dùng mã mới.')
-            if old and not old.get('active', True):
-                raise HTTPException(409, 'Mã bộ phận đã xóa không được tái sử dụng. Hãy chọn mã mới.')
+            # Recreating an inactive code restores its registry entry. Historical
+            # payroll and department settings remain keyed to the same code.
             state['departments'][body.code] = validate_definition(state, body)
             # Freeze legacy assignments before changing payroll classification.
             for person in employees(conn):

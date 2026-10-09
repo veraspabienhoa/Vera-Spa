@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import { customerComboRows } from '../lib/customerComboRows'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
@@ -180,8 +181,8 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
     if (['service', 'combo'].includes(editor.kind)) void mutate(editor.kind === 'combo' ? 'combo_upsert' : 'service_upsert', catalogPayload(editor.kind, form, editor.existing))
   }
 
-  const remove = (kind, item) => {
-    if (window.confirm(`Xóa ${kind === 'area' ? 'khu vực' : 'dịch vụ'} “${item.name}”${kind === 'area' && item.kind === 'room' ? ' cùng các giường bên trong' : ''}?`)) void mutate(kind === 'area' ? 'service_area_delete' : kind === 'combo' ? 'combo_delete' : 'service_delete', { id: item.id, ...(kind === 'area' && item.version ? { expected_area_version: item.version } : {}) })
+  const remove = async (kind, item) => {
+    if ((await confirmDialog(`Xóa ${kind === 'area' ? 'khu vực' : 'dịch vụ'} “${item.name}”${kind === 'area' && item.kind === 'room' ? ' cùng các giường bên trong' : ''}?`))) void mutate(kind === 'area' ? 'service_area_delete' : kind === 'combo' ? 'combo_delete' : 'service_delete', { id: item.id, ...(kind === 'area' && item.version ? { expected_area_version: item.version } : {}) })
   }
 
   const reopenLatestArea = async () => {
@@ -192,7 +193,7 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
       setData(latest)
       const area = latest.service_areas?.find(item => item.id === form.id)
       if (!area) { setError('Khu vực đã bị xóa. Nội dung chưa lưu vẫn được giữ; hãy đóng khung khi đã kiểm tra.'); return }
-      if (window.confirm('Mở bản mới nhất sẽ thay nội dung chưa lưu trong khung này. Bạn muốn tiếp tục?')) openEditor('area', area)
+      if ((await confirmDialog('Mở bản mới nhất sẽ thay nội dung chưa lưu trong khung này. Bạn muốn tiếp tục?'))) openEditor('area', area)
     } catch (err) { setError(err.message || 'Không tải được khu vực mới nhất.') }
     finally { setBusy(false) }
   }

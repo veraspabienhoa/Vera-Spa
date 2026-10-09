@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import { violationMonthRange } from '../lib/businessMonthRange'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import VeraDateInput from './VeraDateInput'
@@ -64,7 +65,7 @@ export default function ScheduleViolations({ department, departmentLabel, employ
     dialog.current.showModal()
   }
   const remove = async row => {
-    if (submitting.current || !window.confirm(`Xóa vi phạm của ${row.employee_name} ngày ${formatVeraDate(row.violation_date)}?`)) return
+    if (submitting.current || !(await confirmDialog(`Xóa vi phạm của ${row.employee_name} ngày ${formatVeraDate(row.violation_date)}?`))) return
     submitting.current = true; setBusy(true); setNotice('')
     try {
       const result = await requestRef.current(`/v2/work-schedule/violations/${encodeURIComponent(row.id)}`, { method: 'DELETE', body: JSON.stringify({ department, expected_updated_at: row.updated_at }) })

@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import { Camera, Monitor, Plus, Printer, RefreshCw, ScanLine, Server, Settings2 } from 'lucide-react'
@@ -82,7 +83,7 @@ export default function DevicePage({ user }) {
     finally { setBusy(false) }
   }
   const removeDevice = async item => {
-    if (busy || editing || !window.confirm(`Xóa thiết bị “${item.name}” khỏi danh sách? ${item.id === 'facegate-current' ? 'Kết nối FaceGate sẽ dừng cho tới khi khôi phục hồ sơ. ' : ''}Lịch sử chấm công đã lưu được giữ lại.`)) return
+    if (busy || editing || !(await confirmDialog(`Xóa thiết bị “${item.name}” khỏi danh sách? ${item.id === 'facegate-current' ? 'Kết nối FaceGate sẽ dừng cho tới khi khôi phục hồ sơ. ' : ''}Lịch sử chấm công đã lưu được giữ lại.`))) return
     setBusy(true); setError(''); setMessage('')
     try {
       setData(await veraApi.deleteDevice(item.id, data.revision))

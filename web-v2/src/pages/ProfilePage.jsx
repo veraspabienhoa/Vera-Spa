@@ -1,3 +1,4 @@
+import { confirmDialog } from '../lib/systemDialogs'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiCustomText from '../components/UiCustomText'
@@ -122,7 +123,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
       setNotice({ status: 'error', message: 'Tên đăng nhập mới phải khác tên hiện tại.' })
       return
     }
-    if (!window.confirm(`Đổi tên đăng nhập Admin:\n${currentUsername} → ${nextUsername}\n\nSau khi đổi, hệ thống sẽ đăng xuất. Hãy đăng nhập lại bằng tên mới.`)) return
+    if (!(await confirmDialog(`Đổi tên đăng nhập Admin:\n${currentUsername} → ${nextUsername}\n\nSau khi đổi, hệ thống sẽ đăng xuất. Hãy đăng nhập lại bằng tên mới.`))) return
     setRenamingUsername(true)
     try {
       const result = await veraApi.renameSystemName(currentUsername, nextUsername)
