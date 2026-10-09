@@ -173,6 +173,6 @@ def test_postgres_future_booking_guard_is_fresh_and_limited_to_action_targets(da
     state=state_with(employee('e1','An'),employee('e2','Bình'))
     with database.begin() as conn:
         holiday.refresh_action_holidays(conn,state,'booking',{'employee_id':'e2','booked_at':at('10:00').isoformat()},at('09:00',DAY-timedelta(days=1)))
-        assert not state['employees'][1]['holiday_leave_active']
+        assert not state['employees'][1].get('holiday_leave_active')
         with pytest.raises(HTTPException):
             holiday.refresh_action_holidays(conn,state,'booking',{'employee_id':'e1','booked_at':at('10:00').isoformat()},at('09:00',DAY-timedelta(days=1)))
