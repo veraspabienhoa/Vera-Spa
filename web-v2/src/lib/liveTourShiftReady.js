@@ -11,3 +11,12 @@ export function isBeforeShiftReady(record, settings, clockMs) {
   const cutoff = settings?.[key] || { shift2: '13:00', support1: '12:00', support2: '14:00' }[key]
   return `${parts.hour}:${parts.minute}` < cutoff
 }
+
+export function defaultBookingRequest(employee, settings, clockMs = Date.now()) {
+  if (employee?.service) return employee.request || ''
+  return isBeforeShiftReady({
+    _shift_checkin_date: employee?.shift_checkin_date,
+    'Vào ca': employee?.shift,
+    _daily_support_reason: employee?.synced_leave_reason,
+  }, settings, clockMs) ? 'YC' : ''
+}

@@ -138,6 +138,47 @@ def test_auto_yc_uses_custom_cutoff_and_ignores_yesterday_checkin():
     assert not live._before_shift_ready(state, worker, NOW)
 
 
+@pytest.mark.parametrize('request_kind', ['', 'YC'])
+@pytest.mark.parametrize('shift,reason', [('Ca 2', ''), ('Ca 1', 'Hỗ trợ Ca 1'), ('Ca 1', 'Hỗ trợ Ca 2')])
+def test_before_shift_booking_honors_explicit_request(shift, reason, request_kind):
+    state, skin, _, customer, owned = setup()
+    worker = state['employees'][0]
+    worker.update(shift=shift, assigned_shift=shift, shift_checkin_date=NOW.date().isoformat(), synced_leave_reason=reason)
+    action(state, 'booking', {**booking(customer, owned, skin), 'request': request_kind}, NOW.replace(hour=10))
+    assert worker['request'] == request_kind
+    assert worker['request_source'] == 'manual'
+
+
+def test_waiting_auto_yc_can_be_cleared_and_stays_clear_until_started():
+    state, skin, _, customer, owned = setup()
+    worker = state['employees'][0]
+    worker.update(shift='Ca 2', assigned_shift='Ca 2', shift_checkin_date=NOW.date().isoformat())
+    payload = booking(customer, owned, skin)
+    before_shift = NOW.replace(hour=12)
+    action(state, 'booking', payload, before_shift)
+    assert worker['request'] == 'YC' and worker['request_source'] == 'auto_shift_ready'
+    action(state, 'update_booking', {**payload, 'request': ''}, before_shift)
+    assert worker['request'] == '' and worker['request_source'] == 'manual'
+    action(state, 'update_booking', {**payload, 'note': 'Giữ lựa chọn đã lưu'}, before_shift)
+    assert worker['request'] == ''
+    action(state, 'start', {'employee_id': 'e1'}, NOW)
+    assert worker['tour_count'] == 1 and worker['request_count'] == 0
+    with pytest.raises(HTTPException, match='Dịch vụ đã bắt đầu'):
+        action(state, 'update_booking', {**payload, 'request': 'YC'}, NOW)
+    assert worker['request'] == '' and worker['tour_count'] == 1
+
+
+def test_multi_booking_before_shift_keeps_each_selected_request():
+    state, skin, body, customer, owned = setup()
+    for worker in state['employees']:
+        worker.update(shift='Ca 2', assigned_shift='Ca 2', shift_checkin_date=NOW.date().isoformat())
+    action(state, 'multi_booking', {'bookings': [
+        {**booking(customer, owned, skin), 'request': ''},
+        {**booking(customer, owned, body, 'e2'), 'request': 'YC'},
+    ]}, NOW.replace(hour=12))
+    assert [worker['request'] for worker in state['employees']] == ['', 'YC']
+
+
 @pytest.mark.parametrize("pending", [False, True])
 def test_reservation_survives_completion_and_checkout_debits_once(pending):
     state, skin, body, customer, owned = setup()
