@@ -378,14 +378,14 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
 
   const deleteSelected = () => run('delete', async () => {
     if (!selected.length) throw new Error('Chưa chọn nhân viên cần xóa.')
-    if (!(await confirmDialog(`Xóa ${selected.length} nhân viên đã chọn? Lịch sử nghỉ vẫn được giữ nguyên.`))) return
+    if (!(await confirmDialog(`Xóa ${selected.length} nhân viên đã chọn? Hồ sơ đăng ký trên máy Face ID cũng sẽ được xoá. Lịch sử nghiệp vụ trên VERA vẫn được giữ nguyên.`))) return
     const result = await veraApi.deleteStaff(selected)
     await load(true)
     setNotice({ type: 'success', message: result.message })
   })
 
   const deleteOne = (employee) => run(`delete-${employee.username}`, async () => {
-    if (!(await confirmDialog(`Xóa nhân viên ${employee.full_name || employee.username}? Lịch sử nghỉ vẫn được giữ nguyên.`))) return
+    if (!(await confirmDialog(`Xóa nhân viên ${employee.full_name || employee.username}? Hồ sơ đăng ký trên máy Face ID cũng sẽ được xoá. Lịch sử nghiệp vụ trên VERA vẫn được giữ nguyên.`))) return
     const result = await veraApi.deleteStaff([employee.username])
     await load(true)
     setNotice({ type: 'success', message: result.message })

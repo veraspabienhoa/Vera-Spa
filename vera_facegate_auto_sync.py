@@ -26,6 +26,21 @@ def sync_employee_names():
             engine.dispose()
 
 
+def sync_employee_deletions():
+    from vera_facegate_cutover import runtime_engine
+    from vera_employee_facegate_delete import sync_employee_deletions as sync
+    engine = None
+    try:
+        engine = runtime_engine()
+        result = sync(engine)
+        print(json.dumps({'employee_delete_sync': result['status']}))
+    except Exception as exc:
+        print(json.dumps({'employee_delete_sync': 'pending', 'error_type': type(exc).__name__}))
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
 def archive_days():
     today = datetime.now(VN_TZ).date()
     failures = []
@@ -83,6 +98,7 @@ def main():
         except BlockingIOError:
             print(json.dumps({'ok': True, 'skipped': 'sync_running'}))
             return 0
+        sync_employee_deletions()
         sync_employee_names()
         return archive_days()
     finally:

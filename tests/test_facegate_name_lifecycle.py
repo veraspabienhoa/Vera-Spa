@@ -25,11 +25,12 @@ def test_active_facegate_schedule_retries_names_before_archive_even_if_archive_f
     monkeypatch.setattr(cutover, 'runtime_engine', lambda: engine)
     outcomes = iter([{'status': 'pending'}, {'status': 'verified'}])
     monkeypatch.setattr(rename, 'sync_device_names', lambda e: events.append('names') or next(outcomes))
+    monkeypatch.setattr(auto_sync, 'sync_employee_deletions', lambda: events.append('deletions'))
     monkeypatch.setattr(auto_sync, 'archive_days', lambda: events.append('archive') or 1)
     original_open = auto_sync.os.open
     monkeypatch.setattr(auto_sync.os, 'open', lambda path, flags, mode: original_open(str(tmp_path / 'lock'), flags, mode))
     assert auto_sync.main() == auto_sync.main() == 1
-    assert events == ['names', 'dispose', 'archive'] * 2
+    assert events == ['deletions', 'names', 'dispose', 'archive'] * 2
 
 
 def test_name_retry_failure_does_not_stop_attendance_or_expose_exception_message(monkeypatch, capsys):

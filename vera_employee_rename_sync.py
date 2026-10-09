@@ -68,7 +68,7 @@ def migrate_references(conn, old, new, actor):
     for col in columns:
         table, field, kind = col['table_name'], col['column_name'], col['data_type']
         # Device/raw evidence remains immutable; serving aliases resolve it.
-        if (table.startswith('vera_live_tour_') and kind in {'json', 'jsonb'}) or table in {'employees', 'vera_facegate_rename_job'}:
+        if (table.startswith('vera_live_tour_') and kind in {'json', 'jsonb'}) or table in {'employees', 'vera_facegate_rename_job', 'vera_facegate_delete_job'}:
             continue
         if kind not in {'json', 'jsonb'}:
             if kind not in {'text', 'character varying'}:
@@ -107,6 +107,9 @@ def ensure_jobs(conn):
 def queue_device_rename(conn, old, new):
     from vera_web_v2_facegate_enrollment import mappings, target
     from vera_facegate_control_log import mapping_device_id
+    from vera_employee_facegate_delete import deletion_pending
+    if deletion_pending(conn):
+        raise HTTPException(409, 'Máy Face ID đang chờ xoá hồ sơ; hãy hoàn tất trước khi đổi tên.')
     ensure_jobs(conn)
     # A VERA-only employee can be renamed without hardware configuration.
     # Existing mappings still require the configured device and confirmation.
