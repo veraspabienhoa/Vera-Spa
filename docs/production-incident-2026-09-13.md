@@ -1,3 +1,23 @@
+## 10-10-2026 — Schedule CAS, bounded OCR and Live Tour catch-up (source only)
+
+Source audit at 590806e confirms daily schedule writes lacked a caller revision,
+copy-only image OCR ran synchronous work on the ASGI loop, and detail revisions
+could be dropped while a Live Tour read was pending. These are source findings;
+no new production incident or load measurement is asserted.
+
+Phase-one changes add per-cell revisions with atomic save/delete batches and
+explicit conflict review, isolate OCR in a bounded worker with a total deadline,
+and coalesce trailing detail/lookup reads. Keep caller-owned DB transactions,
+authentication, department grants, source-of-shift rules, privacy and financial
+records unchanged. The versioned schedule migration uses the existing deploy
+schema gate; old tabs lacking revisions fail closed and need a reload. See
+[rollout and verification notes](phase-one-concurrency-2026-10-10.md).
+
+Local PostgreSQL execution is unavailable because the task runtime rejects local
+sockets. CI's isolated PostgreSQL service must verify the concurrency regressions.
+Merge, deployment and production business readback remain operator-owned and
+unverified by this source change.
+
 ## 09-10-2026 — Physical employee name verification and FaceGate retries
 
 Production deployment 37909870265 verified release 3155d04, both health endpoints

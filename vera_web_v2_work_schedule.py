@@ -140,8 +140,20 @@ class ScheduleRow(BaseModel):
     combo_note: str = Field(default="", max_length=500)
 
 
+class ScheduleWriteRow(ScheduleRow):
+    # Zero means the caller observed an empty cell, never an unconditional write.
+    expected_revision: int = Field(ge=0, strict=True)
+
+
+class ScheduleDelete(BaseModel):
+    work_date: date
+    employee_username: str = Field(min_length=1, max_length=200)
+    expected_revision: int = Field(ge=1, strict=True)
+
+
 class ScheduleSave(BaseModel):
-    rows: list[ScheduleRow] = Field(default_factory=list, max_length=1000)
+    rows: list[ScheduleWriteRow] = Field(default_factory=list, max_length=1000)
+    deletes: list[ScheduleDelete] = Field(default_factory=list, max_length=1000)
 
 
 class ShiftDefinitionRow(BaseModel):
@@ -301,7 +313,7 @@ def _time_is_next_day(start_time: str, end_time: str) -> bool:
 
 def _ensure_schema(conn) -> None:
     from vera_versioned_schema import ensure
-    ensure(conn, "work_schedule", 1, _migrate_read_schema)
+    ensure(conn, "work_schedule", 2, _migrate_read_schema)
 
 
 def _migrate_read_schema(conn):
@@ -330,6 +342,19 @@ def _migrate_read_schema(conn):
             PRIMARY KEY(work_date, employee_username)
         )
     """))
+    # A global sequence prevents an old editor deleting a newly recreated cell.
+    # The trigger also versions writes by legacy/maintenance SQL callers.
+    conn.execute(text("CREATE SEQUENCE IF NOT EXISTS vera_work_schedule_revision_seq"))
+    conn.execute(text("""ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS
+        revision BIGINT NOT NULL DEFAULT nextval('vera_work_schedule_revision_seq')"""))
+    conn.execute(text("""CREATE OR REPLACE FUNCTION vera_work_schedule_set_revision()
+        RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+          NEW.revision := nextval('vera_work_schedule_revision_seq');
+          RETURN NEW;
+        END $$"""))
+    conn.execute(text("DROP TRIGGER IF EXISTS vera_work_schedule_revision ON vera_work_schedule"))
+    conn.execute(text("""CREATE TRIGGER vera_work_schedule_revision BEFORE UPDATE
+        ON vera_work_schedule FOR EACH ROW EXECUTE FUNCTION vera_work_schedule_set_revision()"""))
     conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS start_time TEXT NOT NULL DEFAULT ''"))
     conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS end_time TEXT NOT NULL DEFAULT ''"))
     conn.execute(text("ALTER TABLE vera_work_schedule ADD COLUMN IF NOT EXISTS overtime_start_time TEXT NOT NULL DEFAULT ''"))
@@ -858,6 +883,38 @@ def _validate_row(row: ScheduleRow, shift_definitions: dict[str, Any]) -> tuple[
     )
 
 
+def _schedule_conflict(row):
+    raise HTTPException(409, {
+        "code": "schedule_conflict",
+        "message": "Ô lịch vừa được thay đổi. Hãy kiểm tra dữ liệu mới trước khi lưu lại.",
+        "conflicts": [{"work_date": row.work_date.isoformat(),
+                       "employee_username": row.employee_username.strip()}],
+    })
+
+
+def _check_schedule_revision(conn, row, ident, feature_allowed):
+    existing = conn.execute(text("""SELECT department, revision FROM vera_work_schedule
+        WHERE work_date=:work_date AND employee_username=:employee_username FOR UPDATE"""),
+        {"work_date": row.work_date, "employee_username": row.employee_username.strip()}).mappings().first()
+    # Check the actual row's permissions before returning any concurrency detail.
+    if existing and (not _can_edit_schedule(ident, existing["department"]) or
+                     not _allowed_department(conn, ident, existing["department"], feature_allowed)):
+        raise HTTPException(403, "Bạn không có quyền sửa/xóa lịch làm việc của bộ phận này.")
+    if int(existing["revision"] if existing else 0) != row.expected_revision:
+        _schedule_conflict(row)
+
+
+def _delete_schedule_row(conn, row, ident, feature_allowed):
+    _check_schedule_revision(conn, row, ident, feature_allowed)
+    result = conn.execute(text("""DELETE FROM vera_work_schedule
+        WHERE work_date=:work_date AND employee_username=:employee_username
+          AND revision=:expected_revision"""),
+        {"work_date": row.work_date, "employee_username": row.employee_username.strip(),
+         "expected_revision": row.expected_revision})
+    if result.rowcount != 1:
+        _schedule_conflict(row)
+
+
 def install_work_schedule_routes(
     app,
     *,
@@ -900,7 +957,7 @@ def install_work_schedule_routes(
                        overtime_start_time, overtime_end_time, note,
                        combo_sold, combo_sale_date, combo_customer_name,
                        combo_customer_phone, combo_ticket, combo_note,
-                       updated_by, updated_at
+                       updated_by, updated_at, revision
                 FROM vera_work_schedule
                 WHERE work_date BETWEEN :start AND :end
             """
@@ -1466,63 +1523,36 @@ def install_work_schedule_routes(
         _require_schedule_editor(ident, "letan")
         for row in body.rows:
             _require_schedule_editor(ident, row.department)
+        if len(body.rows) + len(body.deletes) > 1000:
+            raise HTTPException(400, "Chỉ lưu tối đa 1000 ô lịch mỗi lần.")
         actor = _actor(ident)
-
         unique_keys: set[tuple[date, str]] = set()
-        normalized_rows: list[tuple[ScheduleRow, str, str, str, str, str]] = []
+        changes = [*(('save', row) for row in body.rows),
+                   *(('delete', row) for row in body.deletes)]
+        for _, row in changes:
+            key = (row.work_date, row.employee_username.strip())
+            if not key[1]:
+                raise HTTPException(400, "Tên hệ thống không được để trống.")
+            if key in unique_keys:
+                raise HTTPException(400, f"Trùng lịch {row.employee_username} ngày {row.work_date:%d-%m-%Y}.")
+            unique_keys.add(key)
+        revisions = []
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
             shift_definitions = _load_shift_definitions(conn)
             reception_employees = {str(item["username"]).strip() for item in _employee_catalog(conn, "letan")} if _role(ident) == "letan" else None
-            for row in body.rows:
-                key = (row.work_date, row.employee_username.strip())
-                if key in unique_keys:
-                    raise HTTPException(400, f"Trùng lịch {row.employee_username} ngày {row.work_date:%d/%m/%Y}.")
-                unique_keys.add(key)
+            # Consistent lock order keeps overlapping batches from deadlocking.
+            for action, row in sorted(changes, key=lambda item: (item[1].work_date, item[1].employee_username.strip())):
+                if action == 'delete':
+                    _delete_schedule_row(conn, row, ident, feature_allowed)
+                    continue
                 if not _allowed_department(conn, ident, row.department, feature_allowed):
                     raise HTTPException(403, f"Bạn không có quyền sửa lịch {row.department}.")
                 if reception_employees is not None and row.employee_username.strip() not in reception_employees:
                     raise HTTPException(403, "Chỉ được sắp xếp lịch cho nhân viên thuộc bộ phận Lễ tân.")
+                _check_schedule_revision(conn, row, ident, feature_allowed)
                 start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time = _validate_row(row, shift_definitions)
-                normalized_rows.append((row, start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time))
-
-            for row, start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time in normalized_rows:
-                result = conn.execute(text("""
-                    INSERT INTO vera_work_schedule(
-                        work_date, employee_username, employee_name, department,
-                        shift_code, overtime_shift, start_time, end_time,
-                        overtime_start_time, overtime_end_time, note,
-                        combo_sold, combo_sale_date, combo_customer_name,
-                        combo_customer_phone, combo_ticket, combo_note,
-                        updated_by, created_at, updated_at
-                    ) VALUES (
-                        :work_date, :employee_username, :employee_name, :department,
-                        :shift_code, :overtime_shift, :start_time, :end_time,
-                        :overtime_start_time, :overtime_end_time, :note,
-                        :combo_sold, :combo_sale_date, :combo_customer_name,
-                        :combo_customer_phone, :combo_ticket, :combo_note,
-                        :updated_by, NOW(), NOW()
-                    )
-                    ON CONFLICT(work_date, employee_username) DO UPDATE SET
-                        employee_name=EXCLUDED.employee_name,
-                        department=EXCLUDED.department,
-                        shift_code=EXCLUDED.shift_code,
-                        overtime_shift=EXCLUDED.overtime_shift,
-                        start_time=EXCLUDED.start_time,
-                        end_time=EXCLUDED.end_time,
-                        overtime_start_time=EXCLUDED.overtime_start_time,
-                        overtime_end_time=EXCLUDED.overtime_end_time,
-                        note=EXCLUDED.note,
-                        combo_sold=EXCLUDED.combo_sold,
-                        combo_sale_date=EXCLUDED.combo_sale_date,
-                        combo_customer_name=EXCLUDED.combo_customer_name,
-                        combo_customer_phone=EXCLUDED.combo_customer_phone,
-                        combo_ticket=EXCLUDED.combo_ticket,
-                        combo_note=EXCLUDED.combo_note,
-                        updated_by=EXCLUDED.updated_by,
-                        updated_at=NOW()
-                    WHERE (:reception_only = false OR vera_work_schedule.department = 'letan')
-                """), {
+                params = {
                     "work_date": row.work_date,
                     "employee_username": row.employee_username.strip(),
                     "employee_name": row.employee_name.strip(),
@@ -1541,33 +1571,60 @@ def install_work_schedule_routes(
                     "combo_ticket": row.combo_ticket.strip() if row.combo_sold and row.department in {"quanly", "letan"} else "",
                     "combo_note": row.combo_note.strip() if row.combo_sold and row.department in {"quanly", "letan"} else "",
                     "updated_by": actor,
-                    "reception_only": _role(ident) == "letan",
-                })
-                if result.rowcount == 0:
-                    raise HTTPException(403, "Không thể ghi đè lịch của bộ phận khác.")
-
-        return {"ok": True, "saved": len(normalized_rows), "message": "Đã lưu lịch làm việc theo từng ngày."}
+                    "expected_revision": row.expected_revision,
+                }
+                if row.expected_revision == 0:
+                    revision = conn.execute(text("""
+                        INSERT INTO vera_work_schedule(
+                            work_date, employee_username, employee_name, department,
+                            shift_code, overtime_shift, start_time, end_time,
+                            overtime_start_time, overtime_end_time, note,
+                            combo_sold, combo_sale_date, combo_customer_name,
+                            combo_customer_phone, combo_ticket, combo_note, updated_by
+                        ) VALUES (
+                            :work_date, :employee_username, :employee_name, :department,
+                            :shift_code, :overtime_shift, :start_time, :end_time,
+                            :overtime_start_time, :overtime_end_time, :note,
+                            :combo_sold, :combo_sale_date, :combo_customer_name,
+                            :combo_customer_phone, :combo_ticket, :combo_note, :updated_by
+                        ) ON CONFLICT(work_date, employee_username) DO NOTHING
+                        RETURNING revision
+                    """), params).scalar_one_or_none()
+                else:
+                    revision = conn.execute(text("""
+                        UPDATE vera_work_schedule SET
+                            employee_name=:employee_name, department=:department,
+                            shift_code=:shift_code, overtime_shift=:overtime_shift,
+                            start_time=:start_time, end_time=:end_time,
+                            overtime_start_time=:overtime_start_time, overtime_end_time=:overtime_end_time,
+                            note=:note, combo_sold=:combo_sold, combo_sale_date=:combo_sale_date,
+                            combo_customer_name=:combo_customer_name, combo_customer_phone=:combo_customer_phone,
+                            combo_ticket=:combo_ticket, combo_note=:combo_note,
+                            updated_by=:updated_by, updated_at=NOW()
+                        WHERE work_date=:work_date AND employee_username=:employee_username
+                          AND revision=:expected_revision
+                        RETURNING revision
+                    """), params).scalar_one_or_none()
+                if revision is None:
+                    _schedule_conflict(row)
+                revisions.append({"work_date": row.work_date.isoformat(),
+                                  "employee_username": row.employee_username.strip(), "revision": int(revision)})
+        return {"ok": True, "saved": len(body.rows), "deleted": len(body.deletes),
+                "revisions": revisions, "message": "Đã lưu lịch làm việc theo từng ngày."}
 
     @app.delete("/v2/work-schedule")
     def delete_work_schedule(
         work_date: date = Query(...),
-        employee_username: str = Query(..., min_length=1),
+        employee_username: str = Query(..., min_length=1, max_length=200),
+        expected_revision: int = Query(..., ge=1),
         ident=Depends(current_identity),
     ):
         _require_schedule_editor(ident, "letan")
+        row = ScheduleDelete(work_date=work_date, employee_username=employee_username,
+                             expected_revision=expected_revision)
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
-            existing = conn.execute(text("""
-                SELECT department FROM vera_work_schedule
-                WHERE work_date=:work_date AND employee_username=:employee_username
-            """), {"work_date": work_date, "employee_username": employee_username.strip()}).mappings().first()
-            if existing and (not _can_edit_schedule(ident, str(existing.get("department") or "")) or not _allowed_department(conn, ident, str(existing.get("department") or ""), feature_allowed)):
-                raise HTTPException(403, "Bạn không có quyền xóa lịch làm việc của bộ phận này.")
-            result = conn.execute(text("""
-                DELETE FROM vera_work_schedule
-                WHERE work_date=:work_date AND employee_username=:employee_username
-                  AND (:reception_only = false OR department = 'letan')
-            """), {"work_date": work_date, "employee_username": employee_username.strip(), "reception_only": _role(ident) == "letan"})
-        return {"ok": True, "deleted": int(result.rowcount or 0)}
+            _delete_schedule_row(conn, row, ident, feature_allowed)
+        return {"ok": True, "deleted": 1}
 
     app.state.work_schedule_installed = True

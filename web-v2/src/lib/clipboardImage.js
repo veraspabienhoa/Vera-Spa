@@ -6,26 +6,24 @@ export async function copyPngToClipboard(loadImage) {
     if (blob?.type !== 'image/png' || !blob.size) throw new Error('Không nhận được ảnh PNG hợp lệ. Hãy thử lại.')
     return new Blob([blob], { type: 'image/png' })
   })
+  // Browsers may translate a rejected item-data promise to NotAllowedError.
+  // Retain the real image failure, and consume late rejections after a denial.
+  let imageFailure
+  image.catch(error => { imageFailure = { error } })
   // Start clipboard.write during the original click. Waiting for SVG/image/canvas
   // rendering first loses transient user activation on Chrome/Windows, so the
   // button appears to do nothing and the PNG cannot be pasted into Zalo.
   try {
-    image.catch(() => {})
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })])
-    return
   } catch (error) {
-    // A few Chromium builds reject Promise-backed ClipboardItem values. Retry
-    // with a concrete PNG while activation is still available when possible.
+    if (imageFailure) throw imageFailure.error
+    // Older implementations may reject Promise-backed values with TypeError.
+    // Never retry a permission/security denial or wait for an image after one:
+    // callers use the original error name to show the appropriate recovery UI.
+    if (error?.name !== 'TypeError') throw error
     const png = await image
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
-      return
-    } catch {
-      const permission = globalThis.isSecureContext === false
-        ? ' Trang phải được mở bằng HTTPS.'
-        : ' Hãy cho phép quyền Clipboard trong Chrome rồi thử lại.'
-      throw new Error(`${error?.message || 'Không thể sao chép ảnh vào clipboard.'}${permission}`)
-    }
+    if (navigator.userActivation?.isActive === false) throw error
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
   }
 }
 

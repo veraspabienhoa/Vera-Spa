@@ -34,6 +34,11 @@ test('loads only active panel, discards superseded requests and retains displaye
   assert.equal(latest.data.state.invoices[0].id,'stale')
   assert.equal(latest.data.revision,1)
   assert.equal(requests.length,3)
+  await act(async()=>new Promise(resolve=>setTimeout(resolve,210)))
+  assert.equal(requests.length,4,'the last revision cannot be lost while a page is loading')
+  await act(async()=>requests[3].resolve({revision:2,data:{state:{invoices:[{id:'current'}]}},pages:3,total:120}))
+  assert.equal(latest.data.state.invoices[0].id,'current')
+  assert.equal(latest.data.revision,2)
  }finally{await act(async()=>root.unmount());dom.window.close();delete globalThis.__detailsApi}
 })
 
