@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CalendarDays, RefreshCw } from 'lucide-react'
 import VeraDateInput from '../components/VeraDateInput'
-import VeraDateTimeInput from '../components/VeraDateTimeInput'
 import { alertDialog, confirmDialog } from '../lib/systemDialogs'
 import { veraApi } from '../lib/api'
 import { formatVeraDate } from '../lib/veraDate'
@@ -11,7 +10,7 @@ import './HolidayLeaveSection.css'
 const emptyForm = () => {
   const today = vietnamToday()
   return { scope: 'all', departments: [], employees: [], mode: 'day', day: today,
-    dates: [], dateFrom: today, dateTo: today, startsAt: `${today}T09:00`, endsAt: `${today}T17:00`, note: '' }
+    dates: [], dateFrom: today, dateTo: today, timeMode: 'all_day', timeFrom: '17:00:00', timeTo: '00:00:00', note: '' }
 }
 const toggle = (values, value) => values.includes(value) ? values.filter(item => item !== value) : [...values, value]
 const scopeLabels = { all: 'Toàn bộ nhân viên', departments: 'Theo bộ phận', employees: 'Theo nhân viên' }
@@ -63,8 +62,7 @@ export default function HolidayLeaveSection() {
     try {
       const result = await veraApi.registerHolidayLeave(holidayPayload(form, requestId.current))
       await alertDialog(result.message, { kind: 'success' })
-      const days = form.mode === 'hours' ? [form.startsAt.slice(0,10), form.endsAt.slice(0,10)]
-        : form.mode === 'range' ? [form.dateFrom, form.dateTo] : form.mode === 'day' ? [form.day] : [...form.dates].sort()
+      const days = form.mode === 'range' ? [form.dateFrom, form.dateTo] : form.mode === 'day' ? [form.day] : [...form.dates].sort()
       const range = { start: days[0], end: days[days.length-1] }
       change('note', '')
       setFilter(range)
@@ -90,9 +88,9 @@ export default function HolidayLeaveSection() {
           <label>Phạm vi<select value={form.scope} onChange={event => change('scope', event.target.value)}>
             {Object.entries(scopeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select></label>
-          <label>Thời gian nghỉ<select value={form.mode} onChange={event => change('mode', event.target.value)}>
+          <label>Ngày nghỉ<select value={form.mode} onChange={event => change('mode', event.target.value)}>
             <option value="day">Một ngày</option><option value="dates">Nhiều ngày tự chọn</option>
-            <option value="range">Từ ngày đến ngày</option><option value="hours">Từ giờ đến giờ</option>
+            <option value="range">Từ ngày đến ngày</option>
           </select></label>
           <label>Tên lễ / ghi chú<input value={form.note} required maxLength={1000} onChange={event => change('note', event.target.value)} /></label>
         </div>
@@ -108,10 +106,15 @@ export default function HolidayLeaveSection() {
         <div className="form-grid">
           {form.mode === 'day' && <label>Ngày nghỉ<VeraDateInput value={form.day} required aria-label="Ngày nghỉ lễ" onChange={event => change('day', event.target.value)} /></label>}
           {form.mode === 'range' && <><label>Từ ngày<VeraDateInput value={form.dateFrom} required aria-label="Nghỉ lễ từ ngày" onChange={event => change('dateFrom', event.target.value)} /></label><label>Đến ngày<VeraDateInput value={form.dateTo} min={form.dateFrom} required aria-label="Nghỉ lễ đến ngày" onChange={event => change('dateTo', event.target.value)} /></label></>}
-          {form.mode === 'hours' && <><label>Từ ngày giờ<VeraDateTimeInput value={form.startsAt} required aria-label="Nghỉ lễ bắt đầu" onChange={event => change('startsAt', event.target.value)} /></label><label>Đến ngày giờ<VeraDateTimeInput value={form.endsAt} required aria-label="Nghỉ lễ kết thúc" onChange={event => change('endsAt', event.target.value)} /></label></>}
+
           {form.mode === 'dates' && <div><label>Thêm ngày nghỉ<VeraDateInput value={newDate} aria-label="Ngày nghỉ lễ tự chọn" onDraftValidity={setDateValid} onChange={event => setNewDate(event.target.value)} /></label><button type="button" className="secondary-button" disabled={!newDate || !dateValid} onClick={() => { change('dates', [...new Set([...form.dates, newDate])].sort()); setNewDate('') }}>Thêm ngày</button>
             <div className="holiday-date-list">{form.dates.map(day => <button type="button" className="secondary-button" key={day} aria-label={`Bỏ ngày ${formatVeraDate(day)}`} onClick={() => change('dates', form.dates.filter(value => value !== day))}>{formatVeraDate(day)} ×</button>)}</div></div>}
         </div>
+        <div className="form-grid">
+          <label>Khung giờ nghỉ<select aria-label="Khung giờ nghỉ" value={form.timeMode} onChange={event => change('timeMode', event.target.value)}><option value="all_day">Cả ngày</option><option value="hours">Từ giờ đến giờ</option></select></label>
+          {form.timeMode === 'hours' && <><label>Từ giờ<input type="time" step="1" required aria-label="Nghỉ lễ từ giờ" value={form.timeFrom} onChange={event => change('timeFrom', event.target.value)} /></label><label>Đến giờ<input type="time" step="1" required aria-label="Nghỉ lễ đến giờ" value={form.timeTo} onChange={event => change('timeTo', event.target.value)} /></label></>}
+        </div>
+        {form.timeMode === 'hours' && <p>Khung giờ áp dụng riêng cho từng ngày đã chọn. Giờ kết thúc nhỏ hơn giờ bắt đầu là kết thúc vào ngày kế tiếp, ví dụ 17:00:00 → 00:00:00.</p>}
         <p>Áp dụng cho <strong>{selected.length}</strong> nhân viên đang làm việc hoặc thử việc. Danh sách được chốt khi đăng ký.</p>
         <button className="primary-button" type="submit" disabled={!selected.length}>Đăng ký nghỉ lễ</button>
       </fieldset>

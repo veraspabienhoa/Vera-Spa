@@ -23,6 +23,8 @@ class HolidayCreate(BaseModel):
     dates: list[date] = Field(default_factory=list, max_length=366)
     date_from: date | None = None
     date_to: date | None = None
+    time_from: time | None = None
+    time_to: time | None = None
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     note: str = Field(min_length=1, max_length=1000)
@@ -52,7 +54,7 @@ def periods_for(body):
     if not body.note.strip():
         raise HTTPException(422, 'Cần nhập tên lễ hoặc ghi chú.')
     if body.mode == 'hours':
-        if not body.starts_at or not body.ends_at or body.dates or body.date_from or body.date_to:
+        if not body.starts_at or not body.ends_at or body.dates or body.date_from or body.date_to or body.time_from is not None or body.time_to is not None:
             raise HTTPException(422, 'Chọn đúng ngày giờ bắt đầu và kết thúc.')
         start, end = local(body.starts_at), local(body.ends_at)
         if end <= start or end - start > timedelta(days=366):
@@ -72,6 +74,18 @@ def periods_for(body):
             raise HTTPException(422, 'Các ngày tự chọn phải nằm trong khoảng tối đa 366 ngày.')
         if not days or (body.mode == 'day' and len(days) != 1) or body.date_from or body.date_to:
             raise HTTPException(422, 'Chưa chọn đúng ngày nghỉ.')
+    if days[-1].year >= 9999:
+        raise HTTPException(422, 'Ngày nghỉ vượt phạm vi hỗ trợ.')
+    if body.time_from is not None or body.time_to is not None:
+        if body.time_from is None or body.time_to is None:
+            raise HTTPException(422, 'Cần chọn đủ Từ giờ và Đến giờ.')
+        if any(value.tzinfo is not None or value.microsecond for value in (body.time_from, body.time_to)):
+            raise HTTPException(422, 'Nhập giờ Việt Nam theo giờ:phút:giây.')
+        if body.time_from == body.time_to:
+            raise HTTPException(422, 'Từ giờ và Đến giờ phải khác nhau; chọn Cả ngày nếu nghỉ trọn ngày.')
+        rollover = timedelta(days=1 if body.time_to < body.time_from else 0)
+        return merge_periods([(datetime.combine(day, body.time_from, VN_TZ),
+                               datetime.combine(day + rollover, body.time_to, VN_TZ)) for day in days])
     return merge_periods([(datetime.combine(day, time.min, VN_TZ), datetime.combine(day+timedelta(days=1), time.min, VN_TZ)) for day in days])
 
 
@@ -212,7 +226,9 @@ def install_routes(app, *, engine_instance, current_identity, require_feature, f
     @app.post('/v2/holiday-leave')
     def create(body: HolidayCreate, ident: identity_type = Depends(current_identity)):
         periods = periods_for(body)
-        digest = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+        # Preserve request hashes for retries from clients predating clock fields.
+        excluded = {'time_from', 'time_to'} if body.time_from is None and body.time_to is None else set()
+        digest = hashlib.sha256(body.model_dump_json(exclude=excluded).encode()).hexdigest()
         with engine_instance().begin() as conn:
             require_feature(conn, ident, 'holiday_leave_register')
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:holiday_leave'))"))
@@ -232,7 +248,7 @@ def install_routes(app, *, engine_instance, current_identity, require_feature, f
                 raise HTTPException(409, 'Có nhân viên đã đăng ký nghỉ lễ trong khoảng này. Hãy kiểm tra lịch đã lưu.')
             conn.execute(text('''INSERT INTO vera_holiday_leave(id,scope,mode,note,input_hash,selection,created_by)
                 VALUES(:id,:scope,:mode,:note,:hash,CAST(:selection AS jsonb),:actor)'''),
-                {'id':body.request_id,'scope':body.scope,'mode':body.mode,'note':body.note.strip(),'hash':digest,
+                {'id':body.request_id,'scope':body.scope,'mode':'hours' if body.time_from is not None else body.mode,'note':body.note.strip(),'hash':digest,
                  'selection':json.dumps({'departments':body.departments,'employees':body.employees, 'originals': [{'username':e['username'],'department':e['department']} for e in targets]}),'actor':ident.employee_username})
             conn.execute(text('INSERT INTO vera_holiday_leave_member(registration_id,employee_username,department_code) VALUES(:id,:name,:department)'),
                 [{'id':body.request_id,'name':e['username'],'department':e['department']} for e in targets])

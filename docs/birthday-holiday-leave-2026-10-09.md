@@ -59,3 +59,14 @@ cancellation, stable employee renames/reused names, future booking guards,
 attendance and HC pricing. UI tests exercise confirmation, scope selection and
 shared date/time inputs. Production has not been written or deployed for this
 change; actual registration/cancellation needs read-back after deployment.
+
+## 10-10-2026 — Separate day and clock selection
+
+The form selects one day, several dates or an inclusive date range independently
+from All day / From time to time. Clock windows repeat for each selected date.
+10-10-2026 with 17:00:00 to 00:00:00 ends at midnight starting 11-10-2026.
+An earlier end clock rolls into the next day; equal clocks are rejected (use All
+day for a full day). Gaps between daily windows remain working time. Both clocks
+are required, with second precision and Vietnam local time. Legacy absolute
+hours requests and existing registrations remain readable. Stored timed periods
+use mode hours for exact history display. Calculated leave days remain zero.

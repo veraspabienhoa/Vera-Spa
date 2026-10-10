@@ -184,3 +184,38 @@ def test_postgres_future_booking_guard_is_fresh_and_limited_to_action_targets(da
         assert not state['employees'][1].get('holiday_leave_active')
         with pytest.raises(HTTPException):
             holiday.refresh_action_holidays(conn,state,'booking',{'employee_id':'e1','booked_at':at('10:00').isoformat()},at('09:00',DAY-timedelta(days=1)))
+
+
+@pytest.mark.parametrize('mode', ['day', 'dates', 'range'])
+def test_separate_clock_window_repeats_per_selected_day(mode):
+    from datetime import time
+    day = date(2026, 10, 10)
+    changes = dict(mode=mode, dates=[day], time_from=time(17), time_to=time(0))
+    if mode == 'dates': changes['dates'] = [day, day+timedelta(days=2)]
+    if mode == 'range': changes.update(dates=[], date_from=day, date_to=day+timedelta(days=2))
+    periods = holiday.periods_for(body().model_copy(update=changes))
+    assert periods[0] == (at('17:00',day), at('00:00',day+timedelta(days=1)))
+    assert len(periods) == {'day':1, 'dates':2, 'range':3}[mode]
+    assert all(end-start == timedelta(hours=7) for start,end in periods)
+    assert not any(start <= at('12:00',day+timedelta(days=1)) < end for start,end in periods)
+
+
+@pytest.mark.parametrize('start,end', [('17:00:00',None), (None,'00:00:00'), ('17:00:00','17:00:00')])
+def test_incomplete_or_equal_clock_windows_rejected(start,end):
+    from datetime import time
+    value=body().model_copy(update={'time_from':time.fromisoformat(start) if start else None,
+                                   'time_to':time.fromisoformat(end) if end else None})
+    with pytest.raises(HTTPException): holiday.periods_for(value)
+
+
+def test_postgres_separate_clock_window_keeps_zero_days_and_exact_boundaries(database):
+    api,_,_=prepare(database)
+    result,_=send(api,time_from='17:00:00',time_to='00:00:00')
+    assert result.status_code==200,result.text
+    assert result.json()['calculated_days']==0
+    row=api.get('/v2/holiday-leave?start=2026-10-20&end=2026-10-21').json()['registrations'][0]
+    assert row['mode']=='hours' and row['calculated_days']==0
+    with database.begin() as conn:
+        assert holiday.intervals(conn,at('16:00'),at('17:00'))=={}
+        assert holiday.intervals(conn,at('17:00'),at('18:00'))
+        assert holiday.intervals(conn,at('00:00',DAY+timedelta(days=1)),at('01:00',DAY+timedelta(days=1)))=={}
