@@ -7,6 +7,7 @@ import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
 import { reportInvoiceMetrics } from '../src/lib/liveTourReportMetrics.js'
 import { defaultTourYesterdayFilters } from '../src/lib/liveTourFilters.js'
+import { EMPTY_REPORT_PAGE } from '../src/lib/liveTourReportPage.js'
 
 const dom = new JSDOM('<body><div id="root"></div></body>', { url: 'https://example.test', pretendToBeVisual: true })
 Object.defineProperties(globalThis, {
@@ -44,7 +45,7 @@ for (const role of ['admin', 'letan']) test(`reports page passes ${role} authori
     payment_method: 'TIỀN MẶT', total: 100, entries: [{ employee_name: 'Test', service: 'Body', price: 100 }] }
   const writes = []
   globalThis.__invoiceReportsApi = {
-    liveTourReports: async () => ({ revision: 7, invoices: [item], reports: [{ ...item, id: 'report', invoice_id: item.id }],
+    liveTourReports: async () => ({ ...EMPTY_REPORT_PAGE, revision: 7, total: 1, invoices: [item], rows: [{ ...item, id: 'report', invoice_id: item.id }],
       capabilities: { paid_invoice_view: true, reports_edit: true, reports_delete: true, invoice_date_edit: false } }),
     liveTourAction: async body => { writes.push(body); return { ok: true } },
   }
@@ -149,9 +150,9 @@ test('report editor opens without rescanning history and closes on receipt befor
   const item = { id: 'invoice', bill_no: 'TEST-FAST', business_date: date, effective_at: `${date}T09:00:00+07:00`,
     payment_method: 'TIỀN MẶT', total: 100, entries: [{ employee_name: 'Test', service: 'Body', price: 100 }] }
   let reads = 0, reloads = 0, finishReload
-  const reports = Array.from({ length: 3000 }, (_, i) => ({ id: `r${i}`, invoice_id: item.id,
+  const rows = Array.from({ length: 100 }, (_, i) => ({ id: `r${i}`, invoice_id: item.id,
     get effective_at() { reads++; return item.effective_at }, employee_name: 'Test', total: 100 }))
-  const data = { revision: 7, invoices: [item], reports, capabilities: { paid_invoice_view: true, reports_edit: true } }
+  const data = { ...EMPTY_REPORT_PAGE, revision: 7, total: 300000, pages: 3000, invoices: [item], rows, capabilities: { paid_invoice_view: true, reports_edit: true } }
   const writes = []
   globalThis.__invoiceReportsApi = {
     liveTourReports: () => ++reloads === 1 ? Promise.resolve(data) : new Promise(resolve => { finishReload = resolve }),

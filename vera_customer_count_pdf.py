@@ -22,12 +22,9 @@ FONT_LOCK = Lock()
 
 
 def invoice_day(row):
-    raw = row.get('effective_at') or row.get('business_date')
-    try:
-        value = datetime.fromisoformat(str(raw).replace('Z', '+00:00'))
-        return (value.replace(tzinfo=VN) if value.tzinfo is None else value.astimezone(VN)).date().isoformat()
-    except (ValueError, TypeError):
-        return ''
+    # Share the report screen's Vietnam calendar and legacy date semantics.
+    from vera_live_tour_query import _report_day
+    return _report_day(row.get('effective_at') or row.get('business_date'))
 
 
 def customer_counts(rows, *, date_from='', date_to=''):

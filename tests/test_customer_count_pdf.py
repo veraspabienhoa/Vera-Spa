@@ -63,17 +63,22 @@ def test_endpoint_whole_filtered_snapshot_no_writes(monkeypatch):
     assert shared == before
 
 
-def test_customer_filter_does_not_bypass_report_redaction(monkeypatch):
+@pytest.mark.parametrize('invoice_view', [False, True])
+def test_customer_filter_does_not_bypass_report_redaction(monkeypatch, invoice_view):
     import vera_customer_count_pdf as pdf
     state, invoice = paid_state()
     invoice['customer_name'] = 'Private customer'
     for row in state['reports']:
         row['customer_name'] = 'Private customer'
-    client, _ = scoped_client(monkeypatch, state, ALL - {'live_tour_customers_view', 'live_tour_paid_invoice_view'})
+    grants = ALL - {'live_tour_customers_view', 'live_tour_paid_invoice_view', 'live_tour_invoice_view'}
+    if invoice_view:
+        grants.add('live_tour_invoice_view')
+    client, _ = scoped_client(monkeypatch, state, grants)
     summaries = []
     monkeypatch.setattr(pdf, 'customer_count_pdf', lambda summary, *_a, **_k: summaries.append(summary) or b'%PDF-1.4')
     assert client.get('/v2/live-tour/customer-count.pdf', params={'customer':'Private customer'}).status_code == 200
-    assert summaries[-1]['total'] == 0
+    # Match the report screen: invoice-view alone already reveals its PII.
+    assert summaries[-1]['total'] == (1 if invoice_view else 0)
 
 
 @pytest.mark.parametrize('start,end,pages', [('2026-10-01','2026-10-31',1), ('2024-02-01','2024-02-29',1), ('2025-02-01','2025-02-28',1), ('2026-09-01','2026-10-31',2)])

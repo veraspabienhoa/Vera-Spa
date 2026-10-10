@@ -75,6 +75,8 @@ def _backfill(conn) -> dict:
     vera_purchase_store.ensure_schema(conn)
 
     mirrored = _backfill_live_tour(conn)
+    from vera_live_tour_query import ensure_schema as ensure_query_schema
+    ensure_query_schema(conn)
     conn.execute(text("""
         INSERT INTO vera_schema_version(component,version,updated_at)
         VALUES('system_resource_concurrency',1,NOW())

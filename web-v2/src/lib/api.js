@@ -187,7 +187,7 @@ function liveTourExportParams(kind, query = {}) {
   for (const key of ['columns', 'employee_ids']) {
     if (Array.isArray(query[key])) query[key].forEach((value) => params.append(key, String(value)))
   }
-  for (const key of ['bill_no', 'employee', 'customer', 'service', 'report_kind', 'performance_timing', 'total_amount', 'tip_amount', 'date_from', 'date_to', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
+  for (const key of ['bill_no', 'employee', 'customer', 'service', 'report_kind', 'performance_timing', 'total_amount', 'tip_amount', 'date_from', 'date_to', 'date', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
     const value = String(query?.[key] ?? '').trim()
     if (value) params.set(key, value)
   }
@@ -563,13 +563,16 @@ export const veraApi = {
   saveUiLayout: (body) => request('/v2/ui-layout', { method: 'PUT', body: JSON.stringify(body) }),
   previewBoardHistoryCleanup: (body) => request('/v2/live-tour/board-history/cleanup-preview', { method: 'POST', body: JSON.stringify(body) }),
   deleteBoardHistory: (body) => request('/v2/live-tour/board-history', { method: 'DELETE', body: JSON.stringify(body) }),
-  liveTourReports: () => request('/v2/live-tour/reports'),
-  liveTourBoardHistory: (query = {}) => {
+  liveTourReports: (query = {}, options = {}) => {
+    const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value !== '' && value != null))
+    return request(`/v2/live-tour/reports${params.size ? `?${params}` : ''}`, options)
+  },
+  liveTourBoardHistory: (query = {}, options = {}) => {
     const params = new URLSearchParams()
     if (query.date_from) params.set('date_from', query.date_from)
     if (query.date_to) params.set('date_to', query.date_to)
     if (query.employee?.trim()) params.set('employee', query.employee.trim())
-    return request(`/v2/live-tour/board-history${params.size ? `?${params}` : ''}`)
+    return request(`/v2/live-tour/board-history${params.size ? `?${params}` : ''}`, options)
   },
   exportLiveTourBoardHistory: (query = {}) => {
     const params = new URLSearchParams()

@@ -23,6 +23,7 @@ export default function OnlineBookingPopup({ user, onOpen }) {
   const account = user?.id || user?.username || user?.employee_username
   useEffect(() => {
     setRows([])
+    setShowUpcomingReminder(false)
     seen.current = new Set()
     if (!allowed) return undefined
     let active = true

@@ -15,12 +15,13 @@ const built = await build({
     b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={onlineBookingStaff:async()=>({employees:[{value:'AN AN',label:'An An'}]}),deleteOnlineBooking:async(id,revision)=>{if(window.fail)throw Error('Xung đột xóa');window.deleted={id,revision};window.rows=[];return {ok:true}},liveTourCollection:async(panel,params)=>{window.lookup=params.search;return {data:{customers:[{id:'c1',name:'Khách Mẫu',phone:'0900000001'}]}}},createOnlineBooking:async body=>{window.sent.push(body);if(window.fail)throw Error('Mất kết nối');return {ok:true}},updateOnlineBooking:async(id,body)=>{if(window.fail)throw Error('Xung đột cập nhật');window.updated={id,...body};window.rows=[];return {ok:true}},onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
   }}],
 })
-async function mount(role='letan') {
+async function mount(role='letan', prepare = () => {}) {
   const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true})
   const w=dom.window
   w.MessageChannel=class {constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}}
   w.IS_REACT_ACT_ENVIRONMENT=true;w.opens=0;w.saved=0;w.sent=[];w.reads=0;w.seen=[]
   w.rows=[{id:1,kind:'booking',customer_name:'<script>Test</script>',phone:'0900000000',appointment_date:'2026-09-30',appointment_time:'14:30',service:'VIP',guests:2,message:'Phòng yên tĩnh\nCảm ơn',status:'new',note:'',revision:0}]
+  prepare(w)
   w.eval(built.outputFiles[0].text);await w.mount({id:'a',role});return dom
 }
 test('popup shows all booking fields safely, persists acknowledgement and opens inbox',async()=>{
@@ -209,4 +210,26 @@ for(const role of ['letan','quanly']) test(`${role} edits and deletes booking wi
   assert.equal(w.deleted.id,2);assert.equal(w.deleted.revision,3)
   assert.ok(w.document.body.textContent.includes('Không có lịch hẹn'))
  }finally{await w.unmount();w.close()}
+})
+
+
+test('switching accounts closes a previous account upcoming reminder', async () => {
+  let reminder
+  const dom = await mount('admin', w => {
+    const later = w.setTimeout.bind(w)
+    w.setTimeout = (callback, delay, ...args) => {
+      if (delay > 10000) { reminder = callback; return 987654 }
+      return later(callback, delay, ...args)
+    }
+  })
+  const w = dom.window
+  try {
+    assert.ok(reminder)
+    await w.act(async () => reminder())
+    assert.ok(w.document.body.textContent.includes('1 lịch hẹn'))
+    w.rows = []
+    await w.mount({ id: 'other-account', role: 'admin' })
+    assert.equal(w.document.querySelector('[role="dialog"]'), null)
+    assert.equal(w.document.querySelector('aside'), null)
+  } finally { await w.unmount(); w.close() }
 })

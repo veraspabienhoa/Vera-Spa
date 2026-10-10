@@ -30,5 +30,5 @@ def test_saved_payroll_can_be_reopened_and_history_can_be_emailed():
     assert '@app.post("/v2/payroll/saved-batches/{batch_id:path}/edit")' in saved_edit
     assert "Sửa bảng lương" in page
     assert "emailHistory" in page
-    assert "Chọn tất cả nhân viên đang hiển thị để gửi email" in page
+    assert "Chọn tất cả nhân viên theo bộ lọc (mọi trang) để gửi email" in page
     assert "Gửi email (${historySelected.length})" in page
