@@ -287,7 +287,7 @@ def test_combo_history_note_projection_respects_paid_invoice_permission(monkeypa
     monkeypatch.setattr(live, "_read_state", lambda *_args, **_kwargs: (deepcopy(state), 1))
     grants = {"live_tour_view", "live_tour_customers_view"}
     if paid_view:
-        grants.add("live_tour_paid_invoice_view")
+        grants.update({"live_tour_paid_invoice_view", "live_tour_invoices_date_all"})
     app = FastAPI()
     live.install_live_tour_routes(app, engine_instance=RouteEngine, current_identity=lambda: RouteIdentity(),
         require_feature=lambda *_args: None, feature_allowed=lambda _conn, _identity, feature: feature in grants,

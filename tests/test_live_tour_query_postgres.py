@@ -261,7 +261,8 @@ def test_collection_customer_filter_privacy_matches_fallback(populated, monkeypa
         employee_username: str = 'manager'
         full_name: str = 'Manager'
         role: str = 'quanly'
-    features = {'live_tour_view', 'live_tour_reports_view', 'live_tour_history_view'}
+    features = {'live_tour_view', 'live_tour_reports_view', 'live_tour_history_view',
+                'live_tour_reports_date_all', 'live_tour_history_date_all'}
     if invoice_view:
         features.add('live_tour_invoice_view')
     with populated.begin() as conn:
@@ -279,7 +280,9 @@ def test_collection_customer_filter_privacy_matches_fallback(populated, monkeypa
     client = TestClient(app)
     response = client.get('/v2/live-tour/collections/' + panel, params={'customer':'dang'})
     assert response.status_code == 200, response.text
-    expected_total = (274 if panel == 'reports' else 1) if invoice_view else 0
+    # A pending-invoice PII grant still permits report customer filtering, but
+    # does not reveal a paid checkout audit's hidden source date/customer.
+    expected_total = 274 if panel == 'reports' and invoice_view else 0
     assert response.json()['total'] == expected_total
     monkeypatch.setattr(query, 'schema_ready', lambda conn:False)
     fallback = client.get('/v2/live-tour/collections/' + panel, params={'customer':'dang'})

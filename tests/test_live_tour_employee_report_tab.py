@@ -5,11 +5,18 @@ def test_employee_analytics_has_its_own_report_tab_with_full_filters():
     page = Path("web-v2/src/pages/LiveTourReportsPage.jsx").read_text(encoding="utf-8")
 
     assert "['employee', 'Theo nhân viên']" in page
-    assert "<LiveTourFilters showDate={tab !== 'history'} value={filters} onChange={setFilters}" in page
+    assert "<LiveTourFilters" in page
+    assert "showDate={tab !== 'history'}" in page
+    assert "value={filters}" in page
+    assert "allowedPresets={presets}" in page
+    assert "serverToday={policy.server_today}" in page
+    assert "onChange={setFilters}" in page
     assert "tab === 'employee' && <LiveTourEmployeeRevenueBreakdown summary={data.employee_totals}/>" in page
     assert "reportReadQuery(appliedFilters, tab, performanceTiming, page)" in page
     assert "veraApi.liveTourReports(query, { signal: controller.signal })" in page
-    assert "tab === 'employee' ? 'employee' : 'reports', { ...appliedFilters" in page
+    assert "tab === 'employee' ? 'employee' : 'reports', {" in page
+    assert "...appliedFilters" in page
+    assert "preset: ''" not in page
     assert "<LiveTourEmployeeRevenueBreakdown rows={rows}" not in page
     helper = Path("web-v2/src/lib/liveTourReportPage.js").read_text(encoding="utf-8")
     assert "'date', 'date_from', 'date_to', 'employee', 'customer', 'service', 'bill_no'" in helper

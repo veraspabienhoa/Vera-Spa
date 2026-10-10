@@ -525,6 +525,7 @@ test('pending invoice uses standard payment and has no quick-payment button', as
   try {
     assert.equal(document.querySelector('#live-tour-pending-panel'), null)
     await act(() => [...document.querySelectorAll('.live-tour-panel-tabs [role="tab"]')].find(button => button.textContent.startsWith('Hóa đơn chờ thanh toán')).click())
+    await act(async () => new Promise(resolve => setTimeout(resolve, 210)))
     assert.equal(document.querySelector('#live-tour-pending-panel .live-tour-card-actions').textContent.includes('Thanh toán nhanh'), false)
     await act(() => document.querySelector('#live-tour-pending-panel .live-tour-card-actions .primary-button').click())
     assert.match(document.querySelector('.tour-checkout-context').textContent, /An An.*3\.1/)
@@ -544,6 +545,7 @@ test('pending cards display staff-service-room and both booking and execution ti
   } })
   try {
     await act(() => [...document.querySelectorAll('.live-tour-panel-tabs [role="tab"]')].find(button => button.textContent.startsWith('Hóa đơn chờ thanh toán')).click())
+    await act(async () => new Promise(resolve => setTimeout(resolve, 210)))
     const card = document.querySelector('#live-tour-pending-panel .live-tour-data-card')
     assert.match(card.textContent, /An An – Body 90 – 1\.1/)
     assert.match(card.textContent, /Khách lẻ/)
@@ -902,5 +904,111 @@ test('Live Tour revenue export uses the same detailed report kind and selected f
     assert.equal(f.exports[0].query.date_from, '2026-10-06')
     assert.equal(f.exports[0].query.date_to, '2026-10-06')
     assert.equal(f.exports[0].query.bill_no, 'VERA-20261006-0004')
+  } finally { await f.dispose() }
+})
+
+const dateGrants = invoices => ({ version: 1, server_today: TODAY_VN, sections: { pending: ['all'], invoices, reports: ['today'], history: ['today'] } })
+
+test('paid list shows only authorized presets and falls back safely when Today is denied', async () => {
+  const f = await fixture({ setup(data) {
+    data.capabilities.paid_invoice_view = true
+    data.capabilities.date_filters = dateGrants(['week'])
+  } })
+  try {
+    await clickText('Hóa đơn đã thanh toán', document.querySelector('.live-tour-panel-tabs'))
+    await act(async () => new Promise(resolve => setTimeout(resolve, 220)))
+    assert.equal(f.collections.at(-1).panel, 'invoices')
+    assert.equal(f.collections.at(-1).query.preset, 'week')
+    assert.deepEqual([...document.querySelectorAll('.report-date-buttons button')].map(button => button.textContent), ['Tuần này'])
+    assert.equal(document.querySelector('input[aria-label="Lọc ngày hóa đơn"]'), null)
+    assert.equal([...document.querySelectorAll('.live-tour-filters label')].some(label => label.textContent === 'Từ ngày'), false)
+  } finally { await f.dispose() }
+})
+
+test('paid list with no granted preset stays empty without requesting its collection', async () => {
+  const f = await fixture({ setup(data) {
+    data.capabilities.paid_invoice_view = true
+    data.capabilities.date_filters = dateGrants([])
+    data.state.invoices = [{ id: 'old', bill_no: 'UNSCOPED-OLD-INVOICE', effective_at: TODAY_VN, entries: [] }]
+  } })
+  try {
+    await clickText('Hóa đơn đã thanh toán', document.querySelector('.live-tour-panel-tabs'))
+    await act(async () => new Promise(resolve => setTimeout(resolve, 220)))
+    assert.equal(f.collections.some(item => item.panel === 'invoices'), false)
+    assert.doesNotMatch(document.body.textContent, /UNSCOPED-OLD-INVOICE/)
+    assert.match(document.body.textContent, /chưa được cấp bộ lọc thời gian/)
+  } finally { await f.dispose() }
+})
+
+test('remote date revocation aborts a pending paid read and never reveals its late invoice', async () => {
+  const f = await fixture({ setup(data) {
+    data.capabilities.paid_invoice_view = true
+    data.capabilities.date_filters = dateGrants(['today'])
+  } })
+  const calls = []
+  globalThis.__tourTestApi.liveTourCollection = (panel, query, options) => new Promise(resolve => calls.push({ panel, query, options, resolve }))
+  try {
+    await clickText('Hóa đơn đã thanh toán', document.querySelector('.live-tour-panel-tabs'))
+    await act(async () => new Promise(resolve => setTimeout(resolve, 220)))
+    assert.equal(calls.length, 1)
+    f.data.capabilities.date_filters = dateGrants([])
+    await act(async () => window.dispatchEvent(new window.Event('vera:leave-updated')))
+    assert.equal(calls[0].options.signal.aborted, true)
+    assert.match(document.body.textContent, /chưa được cấp bộ lọc thời gian/)
+    await act(async () => calls[0].resolve({ revision: 1, pages: 1, total: 1, data: { state: { invoices: [{ id: 'late', bill_no: 'REVOKED-INVOICE', effective_at: TODAY_VN, entries: [] }] } } }))
+    assert.doesNotMatch(document.body.textContent, /REVOKED-INVOICE/)
+    await act(async () => new Promise(resolve => setTimeout(resolve, 220)))
+    assert.equal(calls.length, 1)
+  } finally { await f.dispose() }
+})
+
+test('customer history keeps authorized union viewing but disables detailed export when one readable ledger has no date grants', async () => {
+  const f = await fixture({ setup(data) {
+    Object.assign(data.capabilities, { customers_view: true, export: true, invoice_view: true, paid_invoice_view: true, pending_view: true, reports_view: true })
+    data.capabilities.date_filters = { ...dateGrants(['today']), sections: { pending: [], invoices: ['today'], reports: ['today'], history: [] } }
+    data.customers = [{ id: 'c1', name: 'Combo vẫn hợp lệ', combo_purchases: [{ id: 'cp1', combo_name: 'Combo Body', total: 8, remaining: 7, purchased_at: `${TODAY_VN}T13:00:00+07:00` }] }]
+  } })
+  const queries = [], oldHistory = globalThis.__tourTestApi.liveTourCustomerHistory
+  globalThis.__tourTestApi.liveTourCustomerHistory = (id, query, options) => { queries.push({ query, options }); return oldHistory(id) }
+  try {
+    await clickText('Gói Combo')
+    await act(async () => document.querySelector('.live-tour-combo-customer').click())
+    const modal = document.querySelector('[role=dialog][aria-label^="Lịch sử khách hàng"]')
+    assert.ok(modal)
+    assert.match(modal.textContent, /Combo Body/)
+    assert.match(modal.textContent, /giới hạn theo quyền thời gian của từng mục/)
+    assert.deepEqual(queries[0].query, {})
+    assert.equal(modal.querySelector('[aria-label="Lọc thời gian lịch sử Combo"] select'), null)
+    assert.equal([...modal.querySelectorAll('button')].find(button => button.textContent.includes('Xuất excel')).disabled, true)
+    assert.equal(f.exports.length, 0)
+  } finally { await f.dispose() }
+})
+
+for (const change of ['day rollover', 'permission reduction', 'permission increase']) test(`${change} clears and refreshes protected counts even when the business revision is unchanged`, async () => {
+  const f = await fixture({ setup(data) {
+    data.pending_count = change === 'permission increase' ? 0 : 3
+    data.capabilities.date_filters = { ...dateGrants(['today']), sections: { pending: change === 'permission increase' ? [] : ['all', 'today'], invoices: ['today'], reports: ['today'], history: [] } }
+  } })
+  const calls = []
+  const nextDay = new Date(`${TODAY_VN}T12:00:00+07:00`)
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+  const nextDayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(nextDay)
+  const nextCapabilities = { ...f.data.capabilities, date_filters: { ...f.data.capabilities.date_filters,
+    ...(change === 'day rollover' ? { server_today: nextDayIso } : { sections: { ...f.data.capabilities.date_filters.sections, pending: ['today'] } }) } }
+  globalThis.__tourTestApi.liveTour = async (_refresh, _hidden, revision) => {
+    calls.push({ revision })
+    if (calls.length === 1) return { unchanged: true, revision: f.data.revision, capabilities: nextCapabilities }
+    return { ...structuredClone(f.data), pending_count: 2, capabilities: nextCapabilities }
+  }
+  try {
+    if (change === 'permission increase') assert.equal(document.querySelector('.live-tour-payment-reminder'), null)
+    else assert.match(document.querySelector('.live-tour-payment-reminder')?.textContent || '', /3 phiếu/)
+    await act(async () => window.dispatchEvent(new window.Event('vera:leave-updated')))
+    await act(async () => new Promise(resolve => setTimeout(resolve, 220)))
+    assert.equal(calls.length, 2, 'one forced full read follows the capability-only response')
+    assert.equal(calls[1].revision, null)
+    assert.match(document.querySelector('.live-tour-payment-reminder')?.textContent || '', /2 phiếu/)
+    await act(async () => new Promise(resolve => setTimeout(resolve, 220)))
+    assert.equal(calls.length, 2, 'the same policy must not cause a reload loop')
   } finally { await f.dispose() }
 })

@@ -5,12 +5,15 @@ import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
+import VeraDateInput from '../components/VeraDateInput'
+import { TOUR_DATE_PRESETS } from '../lib/liveTourFilters'
+import { allowedTourPresets, normalizeTourDateFilters, resolveTourDatePolicy, tourDateFiltersReady, tourProfileKey } from '../lib/liveTourDatePermissions'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { searchTextMatches } from '../lib/searchText'
 import { customerMatches } from '../lib/customerSearch'
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import { Download, GripVertical, History, Plus, RefreshCw, Save, Settings2, Trash2, Users, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { catalogPayload, newCatalogForm, orderedCatalog } from '../lib/serviceCatalog'
 import ServiceCatalogForm, { ServiceTypePicker } from '../components/ServiceCatalogForm'
@@ -37,33 +40,127 @@ function Field({ label, children }) {
   return <label className="spa-field"><span>{label}</span>{children}</label>
 }
 
-function CustomerHistory({ value, canExport }) {
+function CustomerHistory({ customer, user, canExport }) {
+  const [result, setResult] = useState(null)
+  const [selection, setSelection] = useState(null)
+  const [draftValid, setDraftValid] = useState({ date_from: true, date_to: true })
+  const [reload, setReload] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [historyError, setHistoryError] = useState('')
+  const [historyUnavailable, setHistoryUnavailable] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
-  const exportRunning = useRef(false)
-  // The existing workbook includes invoices/reports as well as combo ledgers.
-  const allowed = canExport === true && ['customers_view', 'invoice_view', 'paid_invoice_view', 'pending_view', 'reports_view']
-    .every((key) => value.capabilities?.[key] === true)
+  const exportRunning = useRef(null)
+  const historyRunning = useRef(null)
+  const policy = resolveTourDatePolicy(user, result?.value.capabilities)
+  // A detailed workbook contains all three ledgers, so its named preset must
+  // be granted in every section. The unselected view uses each server union.
+  const commonPresets = TOUR_DATE_PRESETS.map(([id]) => id).filter(preset =>
+    ['pending', 'invoices', 'reports'].every(section => allowedTourPresets(policy, section).includes(preset)))
+  const selectedAllowed = !selection || commonPresets.includes(selection.preset)
+  const filters = selection && selectedAllowed ? normalizeTourDateFilters(selection, commonPresets, { serverToday: policy.server_today }) : null
+  const ready = selectedAllowed && (!selection || Boolean(filters && tourDateFiltersReady(filters)
+    && (filters.preset !== 'custom' || (draftValid.date_from && draftValid.date_to))))
+  const query = filters ? { preset: filters.preset, date_from: filters.date_from, date_to: filters.date_to, date: filters.date } : {}
+  const queryJson = JSON.stringify(query)
+  const queryKey = JSON.stringify([queryJson, reload, ready])
+  const exportPermissionKey = JSON.stringify([canExport, result?.value.capabilities?.export, policy, historyUnavailable])
+  // A new selection, response policy or invalid date draft masks old rows during
+  // render. Waiting for an effect to clear them permits a stale-data flash.
+  const value = !historyUnavailable && ready && result?.key === queryKey ? result.value : null
+
+  useLayoutEffect(() => () => {
+    historyRunning.current?.abort()
+    exportRunning.current?.abort()
+  }, [queryKey])
+
+  useLayoutEffect(() => {
+    exportRunning.current?.abort()
+    exportRunning.current = null
+    setExporting(false)
+  }, [exportPermissionKey])
+
+  useEffect(() => {
+    if (!selectedAllowed) setSelection(null)
+  }, [selectedAllowed])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    historyRunning.current = controller
+    let active = true
+    exportRunning.current?.abort()
+    exportRunning.current = null
+    setExporting(false); setExportError(''); setHistoryError(''); setHistoryUnavailable(false)
+    if (!ready) { setLoading(false); return () => controller.abort() }
+    setLoading(true)
+    veraApi.liveTourCustomerHistory(customer.id, JSON.parse(queryJson), { signal: controller.signal })
+      .then(value => { if (active && !controller.signal.aborted) setResult({ value, key: queryKey }) })
+      .catch(err => {
+        if (!active || controller.signal.aborted || err.name === 'AbortError') return
+        const capabilities = err.status === 403 ? err.payload?.detail?.capabilities : null
+        // Retain only the policy, never denied rows. A date-policy rejection can
+        // safely retry the server-authorized union; an ordinary read denial
+        // stays unavailable until an explicit retry or a new profile.
+        setResult(current => ({ value: { capabilities: capabilities || current?.value.capabilities }, key: null }))
+        if (capabilities && JSON.parse(queryJson).preset) setSelection(null)
+        else if (err.status === 403) setHistoryUnavailable(true)
+        setHistoryError(err.message || 'Không tải được lịch sử khách hàng.')
+      })
+      .finally(() => { if (active && !controller.signal.aborted) setLoading(false) })
+    return () => {
+      active = false
+      controller.abort()
+      exportRunning.current?.abort()
+      exportRunning.current = null
+    }
+  }, [customer.id, queryJson, queryKey, ready])
+
+  const selectPreset = preset => {
+    setDraftValid({ date_from: true, date_to: true })
+    setSelection(preset ? normalizeTourDateFilters({ preset }, commonPresets, { serverToday: policy.server_today }) : null)
+  }
+  // Read controls do not confer payment, editing or export privileges.
+  const allowed = Boolean(value && canExport === true && value.capabilities?.export === true
+    && ['customers_view', 'invoice_view', 'paid_invoice_view', 'pending_view', 'reports_view']
+      .every(key => value.capabilities?.[key] === true)
+    && filters && ready && commonPresets.includes(filters.preset))
   const exportHistory = async () => {
     if (!allowed || !value.customer?.id || exportRunning.current) return
-    exportRunning.current = true
+    const controller = new AbortController()
+    exportRunning.current = controller
     setExporting(true); setExportError('')
     try {
-      await veraApi.exportLiveTourExcel('customer_detail', { customer_id: value.customer.id })
+      await veraApi.exportLiveTourExcel('customer_detail', { customer_id: value.customer.id, ...query }, { signal: controller.signal })
     } catch (err) {
-      setExportError(err.message || 'Không xuất được Excel. Vui lòng thử lại.')
+      if (!controller.signal.aborted && err.name !== 'AbortError') setExportError(err.message || 'Không xuất được Excel. Vui lòng thử lại.')
     } finally {
-      exportRunning.current = false
-      setExporting(false)
+      if (exportRunning.current === controller) {
+        exportRunning.current = null
+        setExporting(false)
+      }
     }
   }
-  const canPaid = value.capabilities?.paid_invoice_view !== false
-  const canPending = value.capabilities?.pending_view !== false && value.capabilities?.invoice_view !== false
+  const canPaid = allowedTourPresets(policy, 'invoices').length > 0
+  const canPending = allowedTourPresets(policy, 'pending').length > 0
   return <div className="spa-history">
     <UiToolbar data-ui-key="u-1314dc780bc9" className="spa-actions"><button data-ui-key="u-2b1746283627" type="button" className="secondary-button" disabled={!allowed || exporting} onClick={exportHistory}><Download size={16}/>{exporting ? 'Đang xuất…' : 'Xuất excel'}</button></UiToolbar>
-    {!allowed && <p>Cần quyền xuất Excel và xem đầy đủ lịch sử khách hàng, hóa đơn, chờ thanh toán, báo cáo để xuất file chi tiết.</p>}
-    <StableFeedback>{exportError && <p role="alert">{exportError}</p>}</StableFeedback>
-    <div className="spa-summary">{canPaid && <><span>{value.summary.invoice_count} hóa đơn</span><span>Đã thanh toán: <strong>{money(value.summary.total_revenue)}</strong></span></>}<span>Combo còn: <strong>{value.summary.combo_remaining_units} vé</strong></span></div>
+    <div className="spa-actions" aria-label="Lọc ngày lịch sử khách hàng">
+      <Field label="Khoảng ngày"><select aria-label="Khoảng ngày lịch sử khách hàng" value={filters?.preset || ''} disabled={historyUnavailable} onChange={event => selectPreset(event.target.value)}>
+        <option value="">Theo quyền từng mục</option>
+        {TOUR_DATE_PRESETS.filter(([id]) => commonPresets.includes(id)).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+      </select></Field>
+      {filters?.preset === 'custom' && ['date_from', 'date_to'].map((key, index) => <Field key={key} label={index ? 'Đến ngày' : 'Từ ngày'}><VeraDateInput
+        aria-label={index ? 'Đến ngày lịch sử khách hàng' : 'Từ ngày lịch sử khách hàng'} value={filters[key]} disabled={historyUnavailable} required clearOnFocus
+        onDraftValidity={valid => setDraftValid(current => ({ ...current, [key]: valid }))}
+        onChange={event => setSelection(current => ({ ...current, [key]: event.target.value }))}/></Field>)}
+      <button type="button" className="secondary-button" disabled={loading || !ready} onClick={() => setReload(current => current + 1)}>Làm mới lịch sử</button>
+    </div>
+    {!allowed && <p>Cần quyền xuất Excel, xem đầy đủ khách hàng, hóa đơn, chờ thanh toán, báo cáo và chọn khoảng ngày được cấp chung để xuất file chi tiết.</p>}
+    {!commonPresets.length && <p>Không có khoảng ngày được cấp chung. Lịch sử hiển thị theo quyền của từng mục.</p>}
+    <StableFeedback>{historyError && <p role="alert">{historyError}</p>}{exportError && <p role="alert">{exportError}</p>}</StableFeedback>
+    {loading && <p role="status">Đang tải lịch sử…</p>}
+    {!ready && <p>Nhập đầy đủ khoảng ngày hợp lệ.</p>}
+    {value && <><div className="spa-summary">{canPaid && <><span>{value.summary.invoice_count} hóa đơn</span><span>Đã thanh toán: <strong>{money(value.summary.total_revenue)}</strong></span></>}<span>Combo còn: <strong>{value.summary.combo_remaining_units} vé</strong></span></div>
     {canPaid ? <><h3>Dịch vụ đã sử dụng</h3>
     <div className="responsive-data-table"><table data-ui-key="u-1f49db7f27b3"><thead><tr><th data-ui-key="u-cbac5ab16187" data-ui-label-default="Ngày / hóa đơn"><UiCustomText uiKey="u-cbac5ab16187">Ngày / hóa đơn</UiCustomText></th><th data-ui-key="u-51d1a7b8cbff" data-ui-label-default="Dịch vụ"><UiCustomText uiKey="u-51d1a7b8cbff">Dịch vụ</UiCustomText></th><th data-ui-key="u-f3f7e890ee21" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-f3f7e890ee21">Nhân viên</UiCustomText></th><th data-ui-key="u-9b1d384bc7aa" data-ui-label-default="Vị trí"><UiCustomText uiKey="u-9b1d384bc7aa">Vị trí</UiCustomText></th><th data-ui-key="u-82ed5930ab19" data-ui-label-default="Giá dịch vụ"><UiCustomText uiKey="u-82ed5930ab19">Giá dịch vụ</UiCustomText></th></tr></thead><tbody>{value.services.map((item) => <tr key={item.id}><td>{formatVeraDateTime(item.business_date)}<small>{item.bill_no}</small>{item.invoice_note && <small style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú hóa đơn: {item.invoice_note}</small>}</td><td>{item.service}{item.note && <small style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú booking: {item.note}</small>}</td><td>{item.employee_name}</td><td>{item.room}</td><td>{money(item.price)}</td></tr>)}</tbody></table></div>
     {!value.services.length && <p>Chưa có dịch vụ đã thanh toán.</p>}</> : <p>Chưa được cấp quyền xem hóa đơn đã thanh toán.</p>}
@@ -71,11 +168,17 @@ function CustomerHistory({ value, canExport }) {
     <div data-ui-key="u-a9c997db8f43" className="spa-card-grid">{value.combo_purchases.map((item, index) => <article className="spa-card" key={item.id || index}><strong>{item.combo_name}</strong><span>{formatVeraDateTime(item.purchased_at || item.created_at || item.lk)}</span><span>Đã dùng {item.used || 0} / {item.total || 0} {item.component_balances ? 'lượt' : 'vé'} · Còn {item.remaining || 0} {item.component_balances ? 'lượt' : 'vé'}</span>{item.component_balances?.map((part) => <span key={part.service_id}>{part.service_name}: còn {part.remaining} / {part.total} lượt</span>)}{item.unlimited === false && item.expires_on && <small>Hạn dùng: {item.expires_on.split('-').reverse().join('/')}</small>}</article>)}</div>
     {!value.combo_purchases.length && <p>Chưa mua combo.</p>}
     {canPending ? <><h3>Chờ thanh toán ({value.pending.length})</h3>
-    {value.pending.map((item) => <div key={item.id}><p>{formatVeraDateTime(item.created_at)}</p>{(item.entries || []).map((entry, index) => <p key={index}>{[entry.employee_name, entry.service, entry.room].filter(Boolean).join(' · ')}{entry.note && <small style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú booking: {entry.note}</small>}</p>)}{item.note && <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú hóa đơn: {item.note}</p>}</div>)}</> : <p>Chưa được cấp quyền xem hóa đơn chờ thanh toán.</p>}
+    {value.pending.map((item) => <div key={item.id}><p>{formatVeraDateTime(item.created_at)}</p>{(item.entries || []).map((entry, index) => <p key={index}>{[entry.employee_name, entry.service, entry.room].filter(Boolean).join(' · ')}{entry.note && <small style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú booking: {entry.note}</small>}</p>)}{item.note && <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú hóa đơn: {item.note}</p>}</div>)}</> : <p>Chưa được cấp quyền xem hóa đơn chờ thanh toán.</p>}</>}
   </div>
 }
 
-export default function SpaManagementPage({ user, mode, initialTab = 'services', embedded = false }) {
+export default function SpaManagementPage(props) {
+  // Remount before rendering another account or permission profile. Pending
+  // history reads/exports are aborted by their cleanup and cannot reopen it.
+  return <SpaManagementContent key={`${tourProfileKey(props.user)}:${props.mode}`} {...props}/>
+}
+
+function SpaManagementContent({ user, mode, initialTab = 'services', embedded = false }) {
   usePageRefresh(() => refresh(), () => Boolean(busy || editor || customerContext))
   const customersPage = mode === 'customers'
   const allowed = user?.role === 'admin' || user?.permissions?.[customersPage ? 'live_tour_customers_view' : 'live_tour_admin'] === true
@@ -96,6 +199,8 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
   const requests = useRef(new Map())
   const running = useRef(false)
   const pointerDrag = useRef(null)
+  const customerExport = useRef(null)
+  useLayoutEffect(() => () => customerExport.current?.abort(), [])
   const [draggingKey, setDraggingKey] = useState('')
   const [dragOverKey, setDragOverKey] = useState('')
   const read = useCallback(() => customersPage ? veraApi.spaCustomers() : veraApi.spaSettings(), [customersPage])
@@ -203,18 +308,19 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
     void mutate('combo_upsert', catalogPayload('combo', { ...next, requires_admin_approval: checked }, true))
   }
 
-  const history = async (customer) => {
-    setBusy(true); setError('')
-    try { const value = await veraApi.liveTourCustomerHistory(customer.id); setEditor({ kind: 'history', value }) }
-    catch (err) { setError(err.message) }
-    finally { setBusy(false) }
+  const history = (customer) => {
+    setError('')
+    setEditor({ kind: 'history', customer })
   }
 
   const exportCustomers = async () => {
+    if (customerExport.current) return
+    const controller = new AbortController()
+    customerExport.current = controller
     setBusy(true); setError('')
-    try { await veraApi.exportLiveTourExcel('customers') }
-    catch (err) { setError(err.message) }
-    finally { setBusy(false) }
+    try { await veraApi.exportLiveTourExcel('customers', {}, { signal: controller.signal }) }
+    catch (err) { if (!controller.signal.aborted && err.name !== 'AbortError') setError(err.message) }
+    finally { if (customerExport.current === controller) { customerExport.current = null; if (!controller.signal.aborted) setBusy(false) } }
   }
 
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
@@ -225,7 +331,7 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
   const filtered = rows.filter((item) => (customersPage ? customerMatches(item, search) : searchTextMatches([item.name, item.group], search)) && (customersPage || tab !== 'services' || serviceFilter === 'all' || item.catalog_kind === serviceFilter))
   const title = customersPage ? 'Khách hàng' : 'Cài đặt'
   const addKind = customersPage ? 'customer' : tab === 'services' ? 'choose-service' : 'area'
-  const editTitle = editor?.kind === 'choose-service' ? 'Chọn loại dịch vụ' : editor?.kind === 'history' ? `Lịch sử · ${editor.value.customer.name}` : `${editor?.existing ? 'Sửa' : 'Thêm'} ${editor?.kind === 'customer' ? 'khách hàng' : editor?.kind === 'area' ? 'khu vực dịch vụ' : editor?.kind === 'combo' ? 'dịch vụ combo' : 'dịch vụ đơn lẻ'}`
+  const editTitle = editor?.kind === 'choose-service' ? 'Chọn loại dịch vụ' : editor?.kind === 'history' ? `Lịch sử · ${editor.customer.name}` : `${editor?.existing ? 'Sửa' : 'Thêm'} ${editor?.kind === 'customer' ? 'khách hàng' : editor?.kind === 'area' ? 'khu vực dịch vụ' : editor?.kind === 'combo' ? 'dịch vụ combo' : 'dịch vụ đơn lẻ'}`
   const rowKey = (item) => tab === 'services' ? `${item.catalog_kind}:${item.id}` : String(item.id)
   const saveOrder = (sourceKey, targetKey) => {
     if (!sourceKey || !targetKey || sourceKey === targetKey) return
@@ -312,7 +418,7 @@ export default function SpaManagementPage({ user, mode, initialTab = 'services',
     {editor && <Editor title={editTitle} onClose={() => { setEditor(null); setError('') }} busy={busy}>
       {error && <div className="error-box" role="alert">{error}</div>}
       {areaConflict && editor.kind === 'area' && <button className="secondary-button" type="button" disabled={busy} onClick={reopenLatestArea}>Mở bản mới nhất</button>}
-      {editor.kind === 'choose-service' ? <ServiceTypePicker onChoose={(kind) => openEditor(kind)}/> : editor.kind === 'history' ? <CustomerHistory key={editor.value.customer.id} value={editor.value} canExport={data?.can_export}/> : <form onSubmit={submit}><fieldset disabled={busy} className="spa-form">
+      {editor.kind === 'choose-service' ? <ServiceTypePicker onChoose={(kind) => openEditor(kind)}/> : editor.kind === 'history' ? <CustomerHistory key={editor.customer.id} customer={editor.customer} user={user} canExport={data?.can_export}/> : <form onSubmit={submit}><fieldset disabled={busy} className="spa-form">
         {editor.kind === 'customer' && <><Field label="Tên khách hàng"><input required maxLength={150} value={form.customer_name} onChange={(event) => set('customer_name', event.target.value)}/></Field><Field label="Số điện thoại"><input type="tel" maxLength={30} value={form.customer_phone} onChange={(event) => set('customer_phone', event.target.value)}/></Field></>}
         {['service', 'combo'].includes(editor.kind) && <ServiceCatalogForm kind={editor.kind} form={form} setForm={setForm} services={services} groups={groups} existing={editor.existing}/>}
         {editor.kind === 'area' && <>

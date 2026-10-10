@@ -35,7 +35,8 @@ def test_permissions_ui_auto_enables_prerequisites_and_disables_dependents():
 
     assert "const expandDependencies = (features, source = data) =>" in source
     assert "const dependentFeatures = (feature, source = data) =>" in source
-    assert "return expandDependencies([...current, feature])" in source
+    assert "...expandDependencies([feature])" in source
     assert "const blocked = new Set([feature, ...dependentFeatures(feature)])" in source
-    assert "const normalizedAllowed = inherit ? allowed : expandDependencies(allowed)" in source
+    assert "const normalizedAllowed = allowed" in source
+    assert "preserve_unchanged: true" in source
     assert "Quyền phụ thuộc được tự động đồng bộ" not in source

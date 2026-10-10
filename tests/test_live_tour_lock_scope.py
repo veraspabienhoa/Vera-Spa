@@ -15,7 +15,7 @@ def test_background_projection_reschedules_when_operator_holds_lock():
 def test_permissions_are_resolved_before_mutation_lock():
     body = source()
     action = body[body.index('@app.post("/v2/live-tour/action")'):body.index('@app.get("/v2/live-tour/projection-queue/health")')]
-    assert action.index("grants = permissions(conn, ident)") < action.index("acquire_state_lock(conn, STATE_LOCK)")
+    assert action.index("grants = permissions(conn, ident, now)") < action.index("acquire_state_lock(conn, STATE_LOCK)")
 
 def test_request_actions_never_run_attendance_or_leave_projection_under_board_lock():
     body = source()

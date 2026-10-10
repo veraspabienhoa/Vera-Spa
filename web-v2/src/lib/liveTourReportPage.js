@@ -15,7 +15,7 @@ export const EMPTY_REPORT_PAGE = {
 
 export function reportReadQuery(filters, tab, performanceTiming, page = 1) {
   const query = { tab, page, page_size: REPORT_PAGE_SIZE }
-  for (const key of ['date', 'date_from', 'date_to', 'employee', 'customer', 'service', 'bill_no']) {
+  for (const key of ['preset', 'date', 'date_from', 'date_to', 'employee', 'customer', 'service', 'bill_no']) {
     if (filters[key] != null && filters[key] !== '') query[key] = filters[key]
   }
   if (tab === 'revenue' && filters.total_amount != null && filters.total_amount !== '') query.total_amount = filters.total_amount
