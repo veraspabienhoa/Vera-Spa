@@ -60,8 +60,8 @@ function RevenueBars({
   </div>
 }
 
-export default function LiveTourEmployeeRevenueBreakdown({ rows }) {
-  const items = useMemo(() => summarizeEmployeeRevenue(rows), [rows])
+export default function LiveTourEmployeeRevenueBreakdown({ rows, summary }) {
+  const items = useMemo(() => summary || summarizeEmployeeRevenue(rows), [rows, summary])
   const serviceChartRef = useRef(null)
   const tipChartRef = useRef(null)
   const [serviceSort, setServiceSort] = useState('value_desc')

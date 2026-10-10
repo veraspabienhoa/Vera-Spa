@@ -3,7 +3,7 @@ import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { ShoppingCart, RefreshCw, Upload, Download, TrendingDown, Plus, History, ImageDown, Share2 } from 'lucide-react'
 import { veraApi } from '../lib/api'
 import VeraDateInput from '../components/VeraDateInput'
@@ -11,12 +11,17 @@ import VeraMoneyInput from '../components/VeraMoneyInput'
 import UiToolbar from '../components/UiToolbar'
 import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
 import { elementToPngBlob } from '../lib/clipboardImage'
+import TablePager from '../components/TablePager'
+import useTablePage from '../lib/useTablePage'
 import './PurchasePage.css'
 
 const money = value => `${Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}đ`
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const presets = [['all','Tất cả'],['yesterday','Hôm qua'],['today','Hôm nay'],['last_week','Tuần trước'],['this_week','Tuần này'],['last_month','Tháng trước'],['this_month','Tháng này'],['custom','Tùy chỉnh']]
 const blank = () => ({ purchase_date: today(), item: '', quantity: 1, unit_price: '', note: '' })
+const enteredDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
+const enteredDisplayFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' })
+const enteredTimeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 const filtersEmpty = { date: '', item: '', amount: '', note: '', entered: '', user: '' }
 
 function Modal({ title, busy, close, children }) {
@@ -34,7 +39,21 @@ function Modal({ title, busy, close, children }) {
   </dialog>, document.body)
 }
 
-export default function PurchasePage({ user, embedded = false, initialPreset = 'this_month' }) {
+function PurchaseTable({ tableRef, rows, data, total, selectedIds, onSelect }) {
+  return <table ref={tableRef}><caption>VERA SPA · NHẬP MUA · {data.start ? formatVeraDate(data.start) : 'Tất cả'}{data.end ? ` – ${formatVeraDate(data.end)}` : ''} · Tổng mua: {money(total)}</caption><thead><tr>{['Chọn','Ngày mua','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt','Ngày nhập','Giờ nhập','Người nhập'].map(label=><th key={label} data-snapshot-ignore={label==='Chọn' ? true : undefined}>{label}</th>)}</tr></thead><tbody>
+      {rows.map(row=><tr key={row.id} className={selectedIds.has(row.id)?'purchase-selected-row':''}><td data-snapshot-ignore><input type="checkbox" aria-label={`Chọn ${row.item}`} checked={selectedIds.has(row.id)} onChange={e=>onSelect?.(row.id, e.target.checked)} disabled={!onSelect} /></td>
+        <td>{formatVeraDate(row.purchase_date)}</td><td>{row.item}</td><td>{row.quantity}</td><td>{money(row.unit_price)}</td><td>{money(row.amount)}</td><td>{row.note}</td><td>{row.entered_at ? enteredDisplayFormatter.format(new Date(row.entered_at)).replaceAll('/','-') : '—'}</td><td>{row.entered_at ? enteredTimeFormatter.format(new Date(row.entered_at)) : '—'}</td><td>{row.entered_by || '—'}</td></tr>)}
+      {!rows.length && <tr><td colSpan={10}>Không có dữ liệu trong khoảng đang chọn.</td></tr>}
+    </tbody></table>
+}
+
+export default function PurchasePage(props) {
+  const user = props.user
+  const accountScope = JSON.stringify([user?.id || '', user?.employee_username || '', user?.email || ''])
+  return <PurchaseAccountPage key={accountScope} {...props} />
+}
+
+function PurchaseAccountPage({ user, embedded = false, initialPreset = 'this_month' }) {
   usePageRefresh(() => setReload(value => value + 1), () => Boolean(loading || busy || editor))
   const admin = user?.role === 'admin'
   const [data,setData] = useState({ rows: [], permissions: {} }), [error,setError] = useState(''), [message,setMessage] = useState('')
@@ -42,7 +61,8 @@ export default function PurchasePage({ user, embedded = false, initialPreset = '
   const [filters,setFilters] = useState(filtersEmpty), [selected,setSelected] = useState([]), [busy,setBusy] = useState(false)
   const [editor,setEditor] = useState(null), [draft,setDraft] = useState([]), [modalError,setModalError] = useState(''), [history,setHistory] = useState(null)
   const [reload,setReload] = useState(0), [loading,setLoading] = useState(true)
-  const tableRef = useRef(null)
+  const tableRef = useRef(null), captureTableRef = useRef(null)
+  const [pngCapture, setPngCapture] = useState(null)
   const [pngPreview, setPngPreview] = useState(null)
   useEffect(() => () => { if (pngPreview) URL.revokeObjectURL(pngPreview.url) }, [pngPreview])
   const importInput = useRef(null), importMode = useRef('append'), requestId = useRef('')
@@ -53,15 +73,18 @@ export default function PurchasePage({ user, embedded = false, initialPreset = '
     veraApi.purchases(params).then(result => { if (active) setData(result) }).catch(e => { if (active) { setError(e.message); setData({ rows: [], permissions: {} }) } }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [params,reload])
-  const rows = data.rows.filter(row => (!filters.date || row.purchase_date === filters.date)
+  const rows = useMemo(() => data.rows.filter(row => (!filters.date || row.purchase_date === filters.date)
     && row.item.toLocaleLowerCase('vi').includes(filters.item.toLocaleLowerCase('vi'))
     && (!filters.amount || String(row.amount).includes(filters.amount))
     && row.note.toLocaleLowerCase('vi').includes(filters.note.toLocaleLowerCase('vi'))
-    && (!filters.entered || (row.entered_at && new Intl.DateTimeFormat('en-CA',{ timeZone:'Asia/Ho_Chi_Minh' }).format(new Date(row.entered_at)) === filters.entered))
-    && row.entered_by.toLocaleLowerCase('vi').includes(filters.user.toLocaleLowerCase('vi')))
-  const picked = rows.filter(row => selected.includes(row.id))
+    && (!filters.entered || (row.entered_at && enteredDateFormatter.format(new Date(row.entered_at)) === filters.entered))
+    && row.entered_by.toLocaleLowerCase('vi').includes(filters.user.toLocaleLowerCase('vi'))), [data.rows, filters])
+  const total = useMemo(() => rows.reduce((sum, row) => sum + Number(row.amount), 0), [rows])
+  const page = useTablePage(rows, JSON.stringify([params, filters]), 100)
+  const selectedIds = useMemo(() => new Set(selected), [selected])
+  const picked = useMemo(() => rows.filter(row => selectedIds.has(row.id)), [rows, selectedIds])
   const allowed = key => admin || data.permissions[`purchase_${key}`] === true
-  const editable = row => admin || (row.entered_at && new Intl.DateTimeFormat('en-CA',{ timeZone:'Asia/Ho_Chi_Minh' }).format(new Date(row.entered_at)) === today())
+  const editable = row => admin || (row.entered_at && enteredDateFormatter.format(new Date(row.entered_at)) === today())
   function open(row) {
     setEditor(row || {}); setDraft(row ? [{ ...row }] : [blank()]); setModalError(''); requestId.current = crypto.randomUUID()
   }
@@ -104,7 +127,13 @@ export default function PurchasePage({ user, embedded = false, initialPreset = '
   }
   async function exportPng(share = false) {
     await run(async () => {
-      const blob = await elementToPngBlob(tableRef.current)
+      // The ordinary table is paged. Mount the complete filtered snapshot only
+      // for an explicit capture, and always discard it, including failed exports.
+      let blob
+      try {
+        flushSync(() => setPngCapture({ rows, data, total, selectedIds, width: tableRef.current?.getBoundingClientRect().width || 1200 }))
+        blob = await elementToPngBlob(captureTableRef.current)
+      } finally { setPngCapture(null) }
       const file = new File([blob], `nhap-mua-${today()}.png`, { type: 'image/png' })
       if (share) setPngPreview({ file, url: URL.createObjectURL(file) })
       else downloadPng(file)
@@ -142,7 +171,7 @@ export default function PurchasePage({ user, embedded = false, initialPreset = '
     <section className="purchase-controls" data-ui-key="purchases:controls" aria-label="Bộ lọc và thao tác mua hàng">
       <UiToolbar data-ui-key="purchases:periods" className="purchase-periods">{presets.slice(0,-1).map(([key,label])=><button data-ui-key={`purchases:period:${key}`} key={key} className={`secondary-button ${preset===key?'active':''}`} onClick={()=>setPreset(key)}>{label}</button>)}</UiToolbar>
     <div className="purchase-summary-head">
-      <article className="purchase-filter-total"><TrendingDown size={18}/><div><span>Tổng mua</span><strong>{money(rows.reduce((sum,row)=>sum+Number(row.amount),0))}</strong></div></article>
+      <article className="purchase-filter-total"><TrendingDown size={18}/><div><span>Tổng mua</span><strong>{money(total)}</strong></div></article>
       <UiToolbar data-ui-key="purchases:actions" className="purchase-actions">
       {allowed('create') && <button data-ui-key="purchases:create" className="primary-button" disabled={busy || loading} onClick={()=>open()}><Plus size={16} /> Nhập mua hàng</button>}
       <button data-ui-key="purchases:refresh" className="secondary-button" type="button" disabled={busy || loading} onClick={()=>setReload(n=>n+1)}><RefreshCw size={16} className={loading?'spin':''} /> Làm mới</button>
@@ -158,11 +187,11 @@ export default function PurchasePage({ user, embedded = false, initialPreset = '
     </div>
     </section>
     <input ref={importInput} hidden type="file" accept=".xlsb,.xlsx" onChange={importFile} />
-    <StableDataRegion loading={loading}><div className="purchase-table"><table ref={tableRef}><caption>VERA SPA · NHẬP MUA · {data.start ? formatVeraDate(data.start) : 'Tất cả'}{data.end ? ` – ${formatVeraDate(data.end)}` : ''} · Tổng mua: {money(rows.reduce((sum,row)=>sum+Number(row.amount),0))}</caption><thead><tr>{['Chọn','Ngày mua','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt','Ngày nhập','Giờ nhập','Người nhập'].map(label=><th key={label} data-snapshot-ignore={label==='Chọn' ? true : undefined}>{label}</th>)}</tr></thead><tbody>
-      {rows.map(row=><tr key={row.id} className={selected.includes(row.id)?'purchase-selected-row':''}><td data-snapshot-ignore><input type="checkbox" aria-label={`Chọn ${row.item}`} checked={selected.includes(row.id)} onChange={e=>setSelected(old=>e.target.checked?[...old,row.id]:old.filter(id=>id!==row.id))} /></td>
-        <td>{formatVeraDate(row.purchase_date)}</td><td>{row.item}</td><td>{row.quantity}</td><td>{money(row.unit_price)}</td><td>{money(row.amount)}</td><td>{row.note}</td><td>{row.entered_at ? new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(row.entered_at)).replaceAll('/','-') : '—'}</td><td>{row.entered_at ? new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(row.entered_at)) : '—'}</td><td>{row.entered_by || '—'}</td></tr>)}
-      {!rows.length && <tr><td colSpan={10}>Không có dữ liệu trong khoảng đang chọn.</td></tr>}
-    </tbody></table></div></StableDataRegion>
+    <StableDataRegion loading={loading}>
+      <TablePager pagination={page} label="mua hàng" />
+      <div className="purchase-table"><PurchaseTable tableRef={tableRef} rows={page.rows} data={data} total={total} selectedIds={selectedIds} onSelect={(id, checked) => setSelected(old => checked ? [...old, id] : old.filter(value => value !== id))} /></div>
+    </StableDataRegion>
+    {pngCapture && <div className="purchase-png-capture" aria-hidden="true" style={{ width: pngCapture.width }}><div className="purchase-table"><PurchaseTable tableRef={captureTableRef} {...pngCapture} /></div></div>}
     {pngPreview && <Modal title="Chia sẻ PNG Nhập mua" busy={false} close={()=>setPngPreview(null)}>
       <img src={pngPreview.url} alt="Bảng Nhập mua theo bộ lọc hiện tại" style={{maxWidth:'100%',height:'auto'}} />
       <footer><button type="button" onClick={sharePng}><Share2 size={16}/> Chia sẻ ảnh</button><button type="button" onClick={()=>downloadPng(pngPreview.file)}><ImageDown size={16}/> Tải PNG</button></footer>

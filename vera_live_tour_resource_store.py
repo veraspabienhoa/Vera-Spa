@@ -13,6 +13,7 @@ from sqlalchemy import text
 import vera_live_tour_relational as relational
 import vera_resource_concurrency as concurrency
 import vera_live_tour_receipts as receipt_store
+import vera_live_tour_query as query_store
 
 FENCE = 'vera:live-tour:resource-fence:v1'
 INDEPENDENT = frozenset({'start', 'start_room', 'update_appointment', 'set_vip', 'add_minutes', 'booking', 'multi_booking', 'update_booking', 'cancel_booking', 'restart_booking', 'complete', 'set_shift', 'set_work_status', 'start_break', 'end_break', 'replace_service', 'add_service', 'move_pending', 'finish_to_pending', 'checkout', 'quick_checkout', 'pending_update', 'pending_delete', 'paid_invoice_update', 'paid_invoice_delete', 'combo_purchase', 'combo_import'})
@@ -325,6 +326,7 @@ def write(conn, before, after, actor):
            'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
     if row_receipts:
         receipt_store.write_changes(conn, receipts, removed_receipts)
+    query_ready = query_store.schema_ready(conn)
     ordinal_updates = {}
     deleted = {}
     upserts = {}
@@ -358,7 +360,8 @@ def write(conn, before, after, actor):
                     raise RuntimeError('Checkout ledger writes must append')
                 ordinal = append_ordinals[key]
             upserts.setdefault(table, []).append({'resource_id': identifier, 'ordinal': ordinal,
-                'payload': payload, 'payload_hash': relational._digest(payload)})
+                'payload': payload, 'payload_hash': relational._digest(payload),
+                **({'query_data': query_store.project(kind, payload)} if query_ready else {})})
         if kind == 'employees':
             employee_history.append({'position':len(employee_history),'id':identifier,'name':(current or previous)[1].get('name',''),
                  'bo':previous[0] if previous else None,'ao':current[0] if current else None,
@@ -371,14 +374,17 @@ def write(conn, before, after, actor):
             resource_revision=resource_revision+1 WHERE resource_id=ANY(CAST(:ids AS text[]))'''),
             {'ids': ids, 'revision': revision})
     for table, entries in sorted(upserts.items()):
-        conn.execute(text(f'''INSERT INTO {table}(resource_id,ordinal,payload,payload_hash,aggregate_revision)
-            SELECT resource_id,ordinal,payload,payload_hash,:revision
+        query_columns = ',query_data,query_hash' if query_ready else ''
+        query_values = ',query_data,payload_hash' if query_ready else ''
+        query_update = ',query_data=EXCLUDED.query_data,query_hash=EXCLUDED.query_hash' if query_ready else ''
+        conn.execute(text(f'''INSERT INTO {table}(resource_id,ordinal,payload,payload_hash,aggregate_revision{query_columns})
+            SELECT resource_id,ordinal,payload,payload_hash,:revision{query_values}
             FROM jsonb_to_recordset(CAST(:rows AS jsonb))
-                AS batch(resource_id text,ordinal integer,payload jsonb,payload_hash text)
+                AS batch(resource_id text,ordinal integer,payload jsonb,payload_hash text,query_data jsonb)
             WHERE true
             ON CONFLICT(resource_id) DO UPDATE SET ordinal=EXCLUDED.ordinal,payload=EXCLUDED.payload,
                 payload_hash=EXCLUDED.payload_hash,aggregate_revision=EXCLUDED.aggregate_revision,
-                resource_revision={table}.resource_revision+1,deleted_at=NULL,updated_at=NOW()'''),
+                resource_revision={table}.resource_revision+1,deleted_at=NULL,updated_at=NOW(){query_update}'''),
             {'rows': relational._json(entries), 'revision': revision})
     if employee_history:
         conn.execute(text(f'''INSERT INTO {relational.BOARD_HISTORY_TABLE}

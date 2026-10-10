@@ -7,6 +7,8 @@ import PayrollObligationTable from '../components/PayrollObligationTable'
 import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
+import TablePager from '../components/TablePager'
+import useTablePage from '../lib/useTablePage'
 import { formatVeraDate } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
 import { currentPayrollPeriod } from '../lib/payrollPeriod'
@@ -27,6 +29,7 @@ const periodDates = (month, periodNo) => {
   const iso = (day) => `${year}-${String(monthNumber).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   return { start: iso(startDay), end: iso(endDay) }
 }
+const EMPTY_ROWS = []
 const CONFIG_DEFAULT = { default_living_expense: 150000, default_locker_support: 80000, leader_responsibility_allowance: 0 }
 const EDIT_LABELS = {
   'Tiền Hỗ Trợ Hoàn Lại': 'Trách nhiệm-hỗ trợ',
@@ -38,6 +41,8 @@ const EDIT_LABELS = {
   'Tiền ứng lương': 'Tiền ứng',
   'Tiền hỗ trợ Locker': 'Hỗ trợ Locker',
 }
+
+const HISTORY_COLUMNS = { 'Tiền Lương': 'Lương', ...EDIT_LABELS, 'Số tiền thực nhận': 'Thực nhận' }
 
 async function enhancementRequest(path, options = {}) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
@@ -79,8 +84,16 @@ function isNonPositive(row) {
   return Number(row?.['Số tiền thực nhận'] || 0) <= 0
 }
 
-export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onTabChange, configExtra = null, onConfigOpenChange }) {
-  usePageRefresh(() => reload(), () => Boolean(busy || JSON.stringify(config) !== configBaseline))
+export default function PayrollPageEnhanced(props) {
+  const user = props.user
+  // Do not retain private drafts, selections or support data across accounts,
+  // even when a host reuses this component with identical permission grants.
+  const accountScope = JSON.stringify([user?.id || '', user?.employee_username || '', user?.email || ''])
+  return <PayrollAccountPage key={accountScope} {...props} />
+}
+
+function PayrollAccountPage({ user, activeTab = 'calculate', onTabChange, configExtra = null, onConfigOpenChange }) {
+  usePageRefresh(() => reload(), () => Boolean(busy || historyLoading || supportingLoading || JSON.stringify(config) !== configBaseline))
   const permissions = user?.permissions || {}
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const canCalculate = isAdmin || permissions.payroll_calculate
@@ -96,6 +109,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const [employee, setEmployee] = useState('')
   const [history, setHistory] = useState({ records: [], batches: [], employees: [] })
   const [savedBatches, setSavedBatches] = useState([])
+  const savedBatchesPage = useTablePage(savedBatches, 'saved-batches', 50)
   const [historyOpen, setHistoryOpen] = useState(false)
   const historyPanelRef = useRef(null)
   const [initialPeriod] = useState(currentPayrollPeriod)
@@ -122,9 +136,16 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const [obligationForm, setObligationForm] = useState({ employee_name: '', amount: '', content: 'Chưa hoàn thành nghĩa vụ Vi phạm', due_from: '' })
   const [configOpen, setConfigOpen] = useState(false)
   const [busy, setBusy] = useState('')
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [supportingLoading, setSupportingLoading] = useState(true)
   const [notice, setNotice] = useState(null)
   const [emailProgress, setEmailProgress] = useState(null)
   const historyRequest = useRef(0)
+  const activePage = useRef(true)
+  useEffect(() => {
+    activePage.current = true
+    return () => { activePage.current = false }
+  }, [])
   const skipDraftReloadRef = useRef('')
 
   const run = async (key, callback) => {
@@ -135,31 +156,34 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   const loadHistory = async (batchOverride = batch, employeeOverride = employee) => {
     const requestId = ++historyRequest.current
     const result = await veraApi.payrollHistory(batchOverride, employeeOverride)
-    if (requestId === historyRequest.current) {
+    if (activePage.current && requestId === historyRequest.current) {
       setHistory(result)
       setHistorySelected([])
     }
     return result
   }
 
-  const loadSavedBatches = async () => {
+  const loadSavedBatches = async (isActive = () => true) => {
     const result = await enhancementRequest('/v2/payroll/saved-batches')
-    setSavedBatches(result.saved_batches || [])
+    if (activePage.current && isActive()) setSavedBatches(result.saved_batches || [])
     return result
   }
 
-  const loadSupporting = async () => {
+  const loadSupporting = async (isActive = () => true) => {
     if (canCalculate || canEditConfig) {
       const result = await veraApi.payrollConfig()
+      if (!activePage.current || !isActive()) return
       setConfig(result.config || CONFIG_DEFAULT); setConfigBaseline(JSON.stringify(result.config || CONFIG_DEFAULT))
     }
     if (isAdmin && canEditConfig) {
       const result = await veraApi.payrollAccumulationRefunds()
+      if (!activePage.current || !isActive()) return
       setAccumulationRefunds(result.refunds || [])
       setFormerEmployees(result.employees || [])
     }
     if (canManageObligations) {
       const result = await veraApi.payrollObligations()
+      if (!activePage.current || !isActive()) return
       setObligations(result.obligations || [])
       setObligationGroups(result.groups || [])
     }
@@ -169,7 +193,26 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     await Promise.all([loadHistory(), loadSavedBatches(), loadSupporting()])
   })
 
-  useEffect(() => { void reload() }, [batch, employee]) // eslint-disable-line react-hooks/exhaustive-deps
+  // History filters must not reload stable support data or overwrite unsaved
+  // configuration edits. Keep these reads on mount/permission change or an
+  // explicit refresh/mutation instead.
+  useEffect(() => {
+    let active = true
+    setSupportingLoading(true)
+    Promise.all([loadSavedBatches(() => active), loadSupporting(() => active)])
+      .catch(error => { if (active) setNotice({ type: 'error', message: error.message }) })
+      .finally(() => { if (active) setSupportingLoading(false) })
+    return () => { active = false }
+  }, [canCalculate, canEditConfig, isAdmin, canManageObligations]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let active = true
+    setHistoryLoading(true)
+    loadHistory()
+      .catch(error => { if (active) setNotice({ type: 'error', message: error.message }) })
+      .finally(() => { if (active) setHistoryLoading(false) })
+    return () => { active = false; historyRequest.current += 1 }
+  }, [batch, employee]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const reopen = (event) => {
@@ -199,11 +242,15 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     setDraftSearch('')
     setSelected([])
     setSavedDraftAvailable(false)
-    Promise.all([veraApi.payrollDraft(month, periodNo), veraApi.payrollDraft(month, periodNo, true)])
-      .then(([result, available]) => {
+    veraApi.payrollDraft(month, periodNo)
+      .then(async (result) => {
+        if (!active) return
+        const saved = result.draft || null
+        // The fallback scans older periods. Query it only after a confirmed
+        // current-period miss, and never display that older draft implicitly.
+        const available = saved ? result : await veraApi.payrollDraft(month, periodNo, true)
         if (!active) return
         setSavedDraftAvailable(Boolean(available.draft?.rows?.length))
-        const saved = result.draft || null
         setDraft(saved)
         setSelected((saved?.rows || []).map((row) => row['Tên Hệ thống']))
         if (Number(saved?.removed_employee_count || 0) > 0) {
@@ -226,15 +273,18 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     if (historyFormerOnly && String(item.__employment_status || '').trim() !== 'Đã nghỉ việc') return false
     return true
   }), [history.records, historySearch, historyNonPositiveOnly, historyFormerOnly])
-  const historyKeys = visibleHistory.map(({ rowKey }) => rowKey)
-  const allHistorySelected = historyKeys.length > 0 && historyKeys.every((key) => historySelected.includes(key))
-  const historyColumns = { 'Tiền Lương': 'Lương', ...EDIT_LABELS, 'Số tiền thực nhận': 'Thực nhận' }
-  const historySummary = Object.fromEntries(Object.keys(historyColumns).map(field => [field, visibleHistory.reduce((sum, { item }) => sum + Number(item[field] || 0), 0)]))
+  const historyPage = useTablePage(visibleHistory, JSON.stringify([batch, employee, historySearch, historyNonPositiveOnly, historyFormerOnly]), 100)
+  const historyKeys = useMemo(() => visibleHistory.map(({ rowKey }) => rowKey), [visibleHistory])
+  const historySelectedIds = useMemo(() => new Set(historySelected), [historySelected])
+  const selectedNames = useMemo(() => new Set(selected), [selected])
+  const allHistorySelected = historyKeys.length > 0 && historyKeys.every((key) => historySelectedIds.has(key))
+  const historyColumns = HISTORY_COLUMNS
+  const historySummary = useMemo(() => Object.fromEntries(Object.keys(HISTORY_COLUMNS).map(field => [field, visibleHistory.reduce((sum, { item }) => sum + Number(item[field] || 0), 0)])), [visibleHistory])
   const historyTotal = historySummary['Số tiền thực nhận']
   useEffect(() => { setHistorySelected([]) }, [historySearch, historyNonPositiveOnly, historyFormerOnly])
   const draftTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [draft])
   const draftSalaryTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Tiền Lương'] || 0), 0), [draft])
-  const draftRows = draft?.rows || []
+  const draftRows = draft?.rows || EMPTY_ROWS
   const draftNeedle = normalizeSearch(draftSearch)
   const visibleDraftRows = useMemo(() => draftRows.filter((row) => {
     if (draftNeedle && !searchTextMatches([row['Tên Hệ thống'], row['Họ và tên']], draftNeedle)) return false
@@ -242,6 +292,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     if (draftFormerOnly && String(row.__employment_status || '').trim() !== 'Đã nghỉ việc') return false
     return true
   }), [draftRows, draftNeedle, draftNonPositiveOnly, draftFormerOnly])
+  const draftPage = useTablePage(visibleDraftRows, JSON.stringify([month, periodNo, draftNeedle, draftNonPositiveOnly, draftFormerOnly]), 100)
   const visibleDraftSummary = useMemo(() => {
     const fields = [
       'Tiền Lương', 'Tiền Hỗ Trợ Hoàn Lại', 'Hoàn trả tiền tích lũy', 'Tích lũy',
@@ -263,10 +314,10 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     setSelected(names.length === 1 ? names : [])
   }, [draftNeedle, visibleDraftRows])
 
-  const isBusy = Boolean(busy)
+  const isBusy = Boolean(busy || historyLoading || supportingLoading)
   const allVisibleSelected = !searchSelectionMode
     && visibleDraftRows.length > 0
-    && visibleDraftRows.every((row) => selected.includes(row['Tên Hệ thống']))
+    && visibleDraftRows.every((row) => selectedNames.has(row['Tên Hệ thống']))
 
   const toggleAllSelected = () => {
     setSearchSelectionMode(false)
@@ -456,7 +507,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   })
 
   const emailDraft = () => run('email', async () => {
-    const rows = (draft?.rows || []).filter((row) => selected.includes(row['Tên Hệ thống']))
+    const rows = (draft?.rows || []).filter((row) => selectedNames.has(row['Tên Hệ thống']))
     if (!rows.length) throw new Error('Chưa chọn nhân viên cần gửi email.')
     if (!(await confirmDialog(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`))) return
 
@@ -515,7 +566,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
   })
 
   const emailHistory = () => run('email-history', async () => {
-    const rows = visibleHistory.filter(({ rowKey }) => historySelected.includes(rowKey)).map(({ item }) => item)
+    const rows = visibleHistory.filter(({ rowKey }) => historySelectedIds.has(rowKey)).map(({ item }) => item)
     if (!rows.length) throw new Error('Chưa chọn nhân viên trong lịch sử để gửi email.')
     if (!(await confirmDialog(`Gửi bảng lương qua email cho ${rows.length} nhân viên đã chọn?`))) return
     const groups = new Map()
@@ -610,9 +661,9 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
     onTabChange?.('history')
     showHistory()
   }
-  const searchableBatches = savedBatches.map(item => ({ id: item.batch, label: item.batch,
+  const searchableBatches = useMemo(() => savedBatches.map(item => ({ id: item.batch, label: item.batch,
     searchText: `${item.saved_date || ''} ${item.saved_by || ''}`,
-    description: `${item.employee_count} nhân viên · Thực nhận ${money(item.total_net)}` }))
+    description: `${item.employee_count} nhân viên · Thực nhận ${money(item.total_net)}` })), [savedBatches])
 
   const deleteHistoryBatch = (batchId) => run(`delete-history-${batchId}`, async () => {
     if (!batchId) throw new Error('Vui lòng chọn kỳ lương cần xóa.')
@@ -665,7 +716,7 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
         </UiToolbar>
         <div><strong>Hiển thị {visibleDraftRows.length}/{draftRows.length} nhân viên</strong></div>
       </UiToolbar>
-      {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllSelected} disabled={isBusy || !visibleDraftRows.length} /> Chọn tất cả nhân viên đang hiển thị để gửi email</label>}
+      {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllSelected} disabled={isBusy || !visibleDraftRows.length} /> Chọn tất cả nhân viên theo bộ lọc (mọi trang) để gửi email</label>}
       <div className="payroll-column-summary" aria-label="Tổng các cột bảng lương đang hiển thị">
         <div><span>Lương</span><strong>{money(visibleDraftSummary['Tiền Lương'])}</strong></div>
         <div><span>Trách nhiệm-hỗ trợ</span><strong>{money(visibleDraftSummary['Tiền Hỗ Trợ Hoàn Lại'])}</strong></div>
@@ -678,9 +729,10 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
         <div><span>Hỗ trợ Locker</span><strong>{money(visibleDraftSummary['Tiền hỗ trợ Locker'])}</strong></div>
         <div><span>Thực nhận</span><strong>{money(visibleDraftSummary['Số tiền thực nhận'])}</strong></div>
       </div>
-      <div className="responsive-data-table payroll-editor payroll-desktop-table payroll-fit-table"><table data-ui-key="u-b0f2bdeed291"><thead><tr>{canEmail && <th data-ui-key="u-642a2704e611" data-ui-label-default="Gửi"><UiCustomText uiKey="u-642a2704e611">Gửi</UiCustomText></th>}<th data-ui-key="u-207ee9a98e45" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-207ee9a98e45">Nhân viên</UiCustomText></th><th data-ui-key="u-8e2d4fb93173" data-ui-label-default="Lương"><UiCustomText uiKey="u-8e2d4fb93173">Lương</UiCustomText></th>{Object.entries(EDIT_LABELS).map(([field, label]) => <th data-ui-key="u-613edd6b3814" key={field}>{label}</th>)}<th data-ui-key="u-76f0a3456322" data-ui-label-default="Thực nhận"><UiCustomText uiKey="u-76f0a3456322">Thực nhận</UiCustomText></th></tr></thead><tbody>{visibleDraftRows.map((row) => <tr className={isNonPositive(row) ? 'payroll-nonpositive' : ''} key={row['Tên Hệ thống']}>{canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${row['Tên Hệ thống']}`} checked={selected.includes(row['Tên Hệ thống'])} disabled={isBusy} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} /></td>}<td className="payroll-employee-identity"><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']}</small><small>{row.Email || 'Chưa có email'}</small></td><td className="money-cell">{money(row['Tiền Lương'])}{(row.__earnings?.service > 0 || row.__earnings?.product > 0) && <small>TIP: {money(row.__earnings.tip)} · DV: {money(row.__earnings.service)} · SP: {money(row.__earnings.product)}</small>}</td>{Object.keys(EDIT_LABELS).map((field) => <td key={field}><UiToolbar data-ui-key="u-7c214079e7b7" className="payroll-cell-actions"><VeraMoneyInput className="payroll-money-input" disabled={isBusy} value={row[field]} onChange={(event) => editMoney(row['Tên Hệ thống'], field, event.target.value)} />{field === 'Vi phạm kỳ trước' && <small>Đối trừ công nợ khi hoàn thành</small>}{field === 'Tiền phạt trong tháng' && canManageObligations && Number(row[field] || 0) > 0 && <button data-ui-key="u-5f85f55a1ba2" data-ui-label-default="Chuyển kỳ sau" type="button" className="secondary-button compact payroll-defer-button" disabled={isBusy} onClick={() => deferPenalty(row)}><ArrowRightCircle size={13} /><UiCustomText uiKey="u-5f85f55a1ba2"> Chuyển kỳ sau</UiCustomText></button>}</UiToolbar></td>)}<td className="money-cell"><strong>{money(row['Số tiền thực nhận'])}</strong></td></tr>)}</tbody></table></div>
-      <div className="payroll-mobile-list">{visibleDraftRows.map((row) => <article className={`payroll-mobile-card${isNonPositive(row) ? ' payroll-nonpositive' : ''}`} key={row['Tên Hệ thống']}>
-        <header className="payroll-mobile-head"><div className="payroll-mobile-person">{canEmail && <input type="checkbox" checked={selected.includes(row['Tên Hệ thống'])} disabled={isBusy} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} />}<div className="payroll-employee-identity"><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']}</small><small>{row.Email || 'Chưa có email'}</small></div></div><span><small>Thực nhận</small><strong>{money(row['Số tiền thực nhận'])}</strong></span></header>
+      <TablePager pagination={draftPage} label="bảng lương nháp" />
+      <div className="responsive-data-table payroll-editor payroll-desktop-table payroll-fit-table"><table data-ui-key="u-b0f2bdeed291"><thead><tr>{canEmail && <th data-ui-key="u-642a2704e611" data-ui-label-default="Gửi"><UiCustomText uiKey="u-642a2704e611">Gửi</UiCustomText></th>}<th data-ui-key="u-207ee9a98e45" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-207ee9a98e45">Nhân viên</UiCustomText></th><th data-ui-key="u-8e2d4fb93173" data-ui-label-default="Lương"><UiCustomText uiKey="u-8e2d4fb93173">Lương</UiCustomText></th>{Object.entries(EDIT_LABELS).map(([field, label]) => <th data-ui-key="u-613edd6b3814" key={field}>{label}</th>)}<th data-ui-key="u-76f0a3456322" data-ui-label-default="Thực nhận"><UiCustomText uiKey="u-76f0a3456322">Thực nhận</UiCustomText></th></tr></thead><tbody>{draftPage.rows.map((row) => <tr className={isNonPositive(row) ? 'payroll-nonpositive' : ''} key={row['Tên Hệ thống']}>{canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${row['Tên Hệ thống']}`} checked={selectedNames.has(row['Tên Hệ thống'])} disabled={isBusy} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} /></td>}<td className="payroll-employee-identity"><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']}</small><small>{row.Email || 'Chưa có email'}</small></td><td className="money-cell">{money(row['Tiền Lương'])}{(row.__earnings?.service > 0 || row.__earnings?.product > 0) && <small>TIP: {money(row.__earnings.tip)} · DV: {money(row.__earnings.service)} · SP: {money(row.__earnings.product)}</small>}</td>{Object.keys(EDIT_LABELS).map((field) => <td key={field}><UiToolbar data-ui-key="u-7c214079e7b7" className="payroll-cell-actions"><VeraMoneyInput className="payroll-money-input" disabled={isBusy} value={row[field]} onChange={(event) => editMoney(row['Tên Hệ thống'], field, event.target.value)} />{field === 'Vi phạm kỳ trước' && <small>Đối trừ công nợ khi hoàn thành</small>}{field === 'Tiền phạt trong tháng' && canManageObligations && Number(row[field] || 0) > 0 && <button data-ui-key="u-5f85f55a1ba2" data-ui-label-default="Chuyển kỳ sau" type="button" className="secondary-button compact payroll-defer-button" disabled={isBusy} onClick={() => deferPenalty(row)}><ArrowRightCircle size={13} /><UiCustomText uiKey="u-5f85f55a1ba2"> Chuyển kỳ sau</UiCustomText></button>}</UiToolbar></td>)}<td className="money-cell"><strong>{money(row['Số tiền thực nhận'])}</strong></td></tr>)}</tbody></table></div>
+      <div className="payroll-mobile-list">{draftPage.rows.map((row) => <article className={`payroll-mobile-card${isNonPositive(row) ? ' payroll-nonpositive' : ''}`} key={row['Tên Hệ thống']}>
+        <header className="payroll-mobile-head"><div className="payroll-mobile-person">{canEmail && <input type="checkbox" checked={selectedNames.has(row['Tên Hệ thống'])} disabled={isBusy} onChange={() => setSelected((current) => current.includes(row['Tên Hệ thống']) ? current.filter((item) => item !== row['Tên Hệ thống']) : [...current, row['Tên Hệ thống']])} />}<div className="payroll-employee-identity"><strong>{row['Tên Hệ thống']}</strong><small>{row['Họ và tên']}</small><small>{row.Email || 'Chưa có email'}</small></div></div><span><small>Thực nhận</small><strong>{money(row['Số tiền thực nhận'])}</strong></span></header>
         {(row.__earnings?.service > 0 || row.__earnings?.product > 0) && <small>TIP: {money(row.__earnings.tip)} · Hoa hồng dịch vụ: {money(row.__earnings.service)} · sản phẩm: {money(row.__earnings.product)}</small>}
         <div className="payroll-mobile-summary"><span>Lương<strong>{money(row['Tiền Lương'])}</strong></span><span>Tổng khấu trừ<strong>{money(Number(row['Tích lũy'] || 0) + Number(row['Chi Phí Sinh Hoạt'] || 0) + Number(row['Tiền phạt trong tháng'] || 0) + Number(row['Vi phạm kỳ trước'] || 0) + Number(row['Tiền ứng lương'] || 0) + Number(row['Tiền hỗ trợ Locker'] || 0))}</strong></span></div>
         {canManageObligations && Number(row['Tiền phạt trong tháng'] || 0) > 0 && <button data-ui-key="u-23ccd1032581" data-ui-label-default="Chuyển Vi phạm kỳ này sang kỳ sau" type="button" className="secondary-button" disabled={isBusy} onClick={() => deferPenalty(row)}><ArrowRightCircle size={15} /><UiCustomText uiKey="u-23ccd1032581"> Chuyển Vi phạm kỳ này sang kỳ sau</UiCustomText></button>}
@@ -732,18 +784,20 @@ export default function PayrollPageEnhanced({ user, activeTab = 'calculate', onT
         <div className="payroll-history-filter-fields"><label>Kỳ lương<select value={batch} disabled={isBusy} onChange={(event) => setBatch(event.target.value)}><option value="">Tất cả kỳ lương</option>{history.batches.map((item) => <option key={item}>{item}</option>)}</select></label><label>Nhân viên<select value={employee} disabled={isBusy} onChange={(event) => setEmployee(event.target.value)}><option value="">Tất cả nhân viên</option>{history.employees.map((item) => <option key={item}>{item}</option>)}</select></label><label className="payroll-search-box">Tìm tên nhân viên<Search size={16}/><ClearableSearchInput type="search" value={historySearch} disabled={isBusy} placeholder="Tìm trong lịch sử bảng lương" onChange={event => setHistorySearch(event.target.value)} /></label></div>
         <div className="payroll-history-filter-options"><div className="payroll-quick-filters"><button type="button" disabled={isBusy} className={`secondary-button ${historyNonPositiveOnly ? 'active-filter' : ''}`} onClick={() => setHistoryNonPositiveOnly(value => !value)}>Thực nhận ≤ 0</button><button type="button" disabled={isBusy} className={`secondary-button ${historyFormerOnly ? 'active-filter' : ''}`} onClick={() => setHistoryFormerOnly(value => !value)}>Đã nghỉ việc</button>{(historySearch || historyNonPositiveOnly || historyFormerOnly || batch || employee) && <button type="button" disabled={isBusy} className="secondary-button" onClick={() => { setHistorySearch(''); setHistoryNonPositiveOnly(false); setHistoryFormerOnly(false); setBatch(''); setEmployee('') }}>Xóa lọc</button>}</div><strong>Hiển thị {visibleHistory.length}/{history.records.length} dòng lương</strong></div>
         <UiToolbar data-ui-key="u-f20b1fef821b" className="history-delete-actions payroll-history-actions">{canExport && <button data-ui-key="u-e9ca5a611292" className="secondary-button" onClick={exportHistory} disabled={isBusy}><Download size={16} /> {busy === 'export-history' ? 'Đang xuất…' : 'Excel lịch sử'}</button>}{canEmail && <button data-ui-key="u-51881dff155c" className="secondary-button" type="button" onClick={emailHistory} disabled={isBusy || !historySelected.length}><Mail size={16} /> {busy === 'email-history' && emailProgress ? `Đang gửi ${emailProgress.processed}/${emailProgress.total}…` : `Gửi email (${historySelected.length})`}</button>}{canDeleteHistory && <button data-ui-key="u-9839d630c477" data-ui-label-default="Xóa lịch sử kỳ đang chọn" className="danger-button" type="button" disabled={isBusy || !batch} onClick={() => deleteHistoryBatch(batch)}><Trash2 size={16} /><UiCustomText uiKey="u-9839d630c477"> Xóa lịch sử kỳ đang chọn</UiCustomText></button>}</UiToolbar>
-        {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allHistorySelected} onChange={() => setHistorySelected(allHistorySelected ? [] : historyKeys)} disabled={isBusy || !historyKeys.length} /> Chọn tất cả nhân viên đang hiển thị để gửi email</label>}
+        {canEmail && <label className="payroll-select-all"><input type="checkbox" checked={allHistorySelected} onChange={() => setHistorySelected(allHistorySelected ? [] : historyKeys)} disabled={isBusy || !historyKeys.length} /> Chọn tất cả nhân viên theo bộ lọc (mọi trang) để gửi email</label>}
       </div>
       <div className="metric-grid small payroll-history-metrics"><div className="metric-card"><span>Số dòng lương</span><strong>{visibleHistory.length}</strong></div><div className="metric-card"><span>Tổng thực nhận đang xem</span><strong>{money(historyTotal)}</strong></div></div>
       <div className="payroll-column-summary" aria-label="Tổng các cột lịch sử đang hiển thị">{Object.entries(historyColumns).map(([field, label]) => <div key={field}><span>{label}</span><strong>{money(historySummary[field])}</strong></div>)}</div>
-      <div className="responsive-data-table payroll-history-desktop payroll-fit-table"><table aria-label="Lịch sử bảng lương đầy đủ"><thead><tr>{canEmail && <th>Gửi</th>}<th>Nhân viên</th>{Object.entries(historyColumns).map(([field, label]) => <th key={field}>{label}</th>)}</tr></thead><tbody>{visibleHistory.map(({ item, rowKey }) => <tr className={isNonPositive(item) ? 'payroll-nonpositive' : ''} key={rowKey}>
-        {canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${item['Tên Hệ thống']}`} checked={historySelected.includes(rowKey)} disabled={isBusy} onChange={() => setHistorySelected(current => current.includes(rowKey) ? current.filter(key => key !== rowKey) : [...current, rowKey])} /></td>}
+      <TablePager pagination={historyPage} label="lịch sử bảng lương" />
+      <div className="responsive-data-table payroll-history-desktop payroll-fit-table"><table aria-label="Lịch sử bảng lương đầy đủ"><thead><tr>{canEmail && <th>Gửi</th>}<th>Nhân viên</th>{Object.entries(historyColumns).map(([field, label]) => <th key={field}>{label}</th>)}</tr></thead><tbody>{historyPage.rows.map(({ item, rowKey }) => <tr className={isNonPositive(item) ? 'payroll-nonpositive' : ''} key={rowKey}>
+        {canEmail && <td className="center"><input type="checkbox" aria-label={`Chọn gửi email cho ${item['Tên Hệ thống']}`} checked={historySelectedIds.has(rowKey)} disabled={isBusy} onChange={() => setHistorySelected(current => current.includes(rowKey) ? current.filter(key => key !== rowKey) : [...current, rowKey])} /></td>}
         <td><strong>{item['Tên Hệ thống']}</strong><small>{item['Họ và tên']}</small><small>{item.Email || 'Chưa có email'}</small><small>{item.__employment_status}</small><small>{item['Mã bản lưu'] || `${formatVeraDate(item['Từ ngày'], '—')} – ${formatVeraDate(item['Đến ngày'], '—')}`}</small></td>{Object.keys(historyColumns).map(field => <td key={field} className="money-cell">{money(item[field])}</td>)}
       </tr>)}</tbody></table></div>
-      <div className="payroll-mobile-list payroll-history-mobile">{visibleHistory.map(({ item, rowKey }) => <article className={`payroll-mobile-card${isNonPositive(item) ? ' payroll-nonpositive' : ''}`} key={rowKey}><header className="payroll-mobile-head"><div className="payroll-mobile-person">{canEmail && <input type="checkbox" aria-label={`Chọn gửi email cho ${item['Tên Hệ thống']}`} checked={historySelected.includes(rowKey)} disabled={isBusy} onChange={() => setHistorySelected(current => current.includes(rowKey) ? current.filter(key => key !== rowKey) : [...current, rowKey])} />}<div><strong>{item['Tên Hệ thống']}</strong><small>{item['Họ và tên']} · {item.Email || 'Chưa có email'}</small><small>{item.__employment_status}</small></div></div></header><strong className="payroll-mobile-period">{item['Mã bản lưu'] || `${formatVeraDate(item['Từ ngày'], '—')} – ${formatVeraDate(item['Đến ngày'], '—')}`}</strong><div className="payroll-mobile-summary payroll-history-summary">{Object.entries(historyColumns).map(([field, label]) => <span key={field}>{label}<strong>{money(item[field])}</strong></span>)}</div></article>)}</div>
+      <div className="payroll-mobile-list payroll-history-mobile">{historyPage.rows.map(({ item, rowKey }) => <article className={`payroll-mobile-card${isNonPositive(item) ? ' payroll-nonpositive' : ''}`} key={rowKey}><header className="payroll-mobile-head"><div className="payroll-mobile-person">{canEmail && <input type="checkbox" aria-label={`Chọn gửi email cho ${item['Tên Hệ thống']}`} checked={historySelectedIds.has(rowKey)} disabled={isBusy} onChange={() => setHistorySelected(current => current.includes(rowKey) ? current.filter(key => key !== rowKey) : [...current, rowKey])} />}<div><strong>{item['Tên Hệ thống']}</strong><small>{item['Họ và tên']} · {item.Email || 'Chưa có email'}</small><small>{item.__employment_status}</small></div></div></header><strong className="payroll-mobile-period">{item['Mã bản lưu'] || `${formatVeraDate(item['Từ ngày'], '—')} – ${formatVeraDate(item['Đến ngày'], '—')}`}</strong><div className="payroll-mobile-summary payroll-history-summary">{Object.entries(historyColumns).map(([field, label]) => <span key={field}>{label}<strong>{money(item[field])}</strong></span>)}</div></article>)}</div>
       {!visibleHistory.length && <div className="setup-note">Không có bảng lương phù hợp.</div>}
 
-      <div className="saved-payroll-list">{savedBatches.map((item) => <article className="saved-payroll-card" key={item.batch}><header><div><h3>{item.batch}</h3><small>{item.saved_date ? `Lưu ${formatVeraDate(item.saved_date)}${item.saved_time ? ` · ${item.saved_time}` : ''}` : 'Bảng lương đã lưu'}</small></div><UiToolbar data-ui-key="u-22eced718015" className="list-actions">{canSyncLegacy && <button data-ui-key="u-39395c5de662" className="secondary-button compact" type="button" disabled={isBusy} onClick={() => reopenSavedPayroll(item.batch)}><Edit3 size={14} /> {busy === `reopen-${item.batch}` ? 'Đang mở…' : 'Sửa bảng lương'}</button>}{canDeleteHistory && <button data-ui-key="u-f850fb1d74d2" data-ui-label-default="Xóa" className="danger-button compact" type="button" disabled={isBusy} onClick={() => deleteHistoryBatch(item.batch)}><Trash2 size={14} /><UiCustomText uiKey="u-f850fb1d74d2"> Xóa</UiCustomText></button>}</UiToolbar></header><div className="saved-payroll-metrics"><span>Nhân viên<strong>{item.employee_count}</strong></span><span>Tổng thực nhận<strong>{money(item.total_net)}</strong></span></div><button data-ui-key="u-c94c425924b5" data-ui-label-default="Xem chi tiết" className="secondary-button" type="button" disabled={isBusy} onClick={() => viewSavedPayroll(item.batch)}><UiCustomText uiKey="u-c94c425924b5">Xem chi tiết</UiCustomText></button></article>)}</div>
+      <TablePager pagination={savedBatchesPage} label="các kỳ lương đã lưu" />
+      <div className="saved-payroll-list">{savedBatchesPage.rows.map((item) => <article className="saved-payroll-card" key={item.batch}><header><div><h3>{item.batch}</h3><small>{item.saved_date ? `Lưu ${formatVeraDate(item.saved_date)}${item.saved_time ? ` · ${item.saved_time}` : ''}` : 'Bảng lương đã lưu'}</small></div><UiToolbar data-ui-key="u-22eced718015" className="list-actions">{canSyncLegacy && <button data-ui-key="u-39395c5de662" className="secondary-button compact" type="button" disabled={isBusy} onClick={() => reopenSavedPayroll(item.batch)}><Edit3 size={14} /> {busy === `reopen-${item.batch}` ? 'Đang mở…' : 'Sửa bảng lương'}</button>}{canDeleteHistory && <button data-ui-key="u-f850fb1d74d2" data-ui-label-default="Xóa" className="danger-button compact" type="button" disabled={isBusy} onClick={() => deleteHistoryBatch(item.batch)}><Trash2 size={14} /><UiCustomText uiKey="u-f850fb1d74d2"> Xóa</UiCustomText></button>}</UiToolbar></header><div className="saved-payroll-metrics"><span>Nhân viên<strong>{item.employee_count}</strong></span><span>Tổng thực nhận<strong>{money(item.total_net)}</strong></span></div><button data-ui-key="u-c94c425924b5" data-ui-label-default="Xem chi tiết" className="secondary-button" type="button" disabled={isBusy} onClick={() => viewSavedPayroll(item.batch)}><UiCustomText uiKey="u-c94c425924b5">Xem chi tiết</UiCustomText></button></article>)}</div>
       {!savedBatches.length && <div className="setup-note">Chưa có bảng lương đã hoàn thành.</div>}
 
       </div>

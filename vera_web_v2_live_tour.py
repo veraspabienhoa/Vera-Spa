@@ -11,6 +11,7 @@ from vera_web_v2_live_tour_lock import acquire_state_lock, try_state_lock
 import vera_live_tour_relational as relational_store
 import vera_live_tour_resource_store as resource_store
 import vera_live_tour_lists as list_queries
+import vera_live_tour_query as query_store
 import vera_postgres_job_queue as job_queue
 import vera_live_tour_queue_alerts as queue_alerts
 from vera_live_tour_timing import ActionTiming
@@ -30,7 +31,7 @@ from copy import deepcopy
 from functools import lru_cache
 from datetime import date, datetime, time, timedelta
 from io import BytesIO
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid4, uuid5
 from zoneinfo import ZoneInfo
@@ -3810,6 +3811,18 @@ def _parse_export_bounds(
 def _event_in_export_bounds(
     item: dict[str, Any], bounds: dict[str, Any], *, fallback_business_date: Any = None,
 ) -> bool:
+    if bounds.get('report_filter'):
+        if bounds.get('report_kind') == 'combos' and not query_store.is_combo_report(item):
+            return False
+        bounds = {**bounds, 'report_kind': None}
+        filters = {key: bounds.get(key) for key in ('employee', 'customer', 'service', 'bill_no', 'total_amount', 'tip_amount', 'date')}
+        filters.update({key: value.isoformat() if isinstance(value, date) else value or ''
+                        for key in ('date_from', 'date_to') for value in [bounds.get(key)]})
+        if not query_store.matches_report(item, filters, invoice_dates=bool(bounds.get('invoice_dates'))):
+            return False
+        # Continue applying explicit time-of-day and combo filters below, after
+        # the same date/search/money predicate used by the complete report list.
+        bounds = {**bounds, **{key: None for key in filters}}
     if bounds.get('total_amount') not in (None, '') and int(item.get('total') or 0) != int(bounds['total_amount']):
         return False
     if bounds.get('tip_amount') not in (None, '') and int(item.get('tip') or 0) != int(bounds['tip_amount']):
@@ -3889,7 +3902,7 @@ def _export_rows(
         return "Hoa_don_da_thanh_toan" if kind == "paid" else "Doanh_thu", headers, rows
     if kind == "tip":
         headers = ["Ngày", "Nhân viên", "Dịch vụ", "Phòng", "Số bill", "Tip", "Người tạo"]
-        rows = [[item.get("business_date"), item.get("employee_name"), item.get("service"), item.get("room"), item.get("bill_no"), item.get("tip"), item.get("actor")] for item in _report_rows_with_combo_kind(state) if int(item.get('tip') or 0) > 0 and _event_in_export_bounds(item, bounds)]
+        rows = [[item.get("business_date"), item.get("employee_name"), item.get("service"), item.get("room"), item.get("bill_no"), item.get("tip"), item.get("actor")] for item in _report_rows_with_combo_kind(state) if query_store._number(item.get('tip')) > 0 and _event_in_export_bounds(item, bounds)]
         return "Tip", headers, rows
     if kind == "reports":
         headers = [
@@ -4952,7 +4965,14 @@ def install_live_tour_routes(
                 require_feature(conn, ident, features[panel])
             if panel == "pending":
                 require_feature(conn, ident, "live_tour_invoice_view")
-            if resource_store.enabled():
+            grants = permissions(conn, ident)
+            queried = query_store.read_collection(conn, panel, page=page, page_size=page_size,
+                filters=dict(search=search, customer_id=customer_id, customer_ids=selected_customer_ids,
+                             date_from=date_from, date_to=date_to, employee=employee, customer=customer,
+                             service=service, bill_no=bill_no), grants=grants)
+            if queried is not None:
+                state, revision = queried['state'], int(queried['revision'])
+            elif resource_store.enabled():
                 # Read only this panel and its response dependencies in one MVCC
                 # snapshot. In particular, ordinary lists must not fetch backups,
                 # unrelated ledgers or the private idempotency response cache.
@@ -4965,12 +4985,13 @@ def install_live_tour_routes(
                 state, revision, _ = resource_store.read(conn, collections=collections)
             else:
                 state, revision = read_board(conn, now, project=False)
-            grants = permissions(conn, ident)
         # Filter/slice detached rows first; normalize only the requested page.
-        selected = {**state, **{key: [] for key in _DETAIL_COLLECTIONS}, "idempotency": {}}
-        totals = {}
-        report_totals = None
+        selected = state if queried is not None else {**state, **{key: [] for key in _DETAIL_COLLECTIONS}, "idempotency": {}}
+        totals = dict(queried['totals']) if queried is not None else {}
+        report_totals = queried.get('report_totals') if queried is not None else None
         for key in groups[panel]:
+            if queried is not None:
+                continue
             allowed = {"audit": grants.get("can_history_view"), "break_events": grants.get("can_history_view"),
                        "pending_changes": grants.get("can_history_view") and grants.get("can_pending_view") and grants.get("can_invoice_view"),
                        "invoice_changes": grants.get("can_history_view") and grants.get("can_paid_invoice_view"),
@@ -4981,6 +5002,11 @@ def install_live_tour_routes(
                           and (not selected_customer_ids or str(row.get("id")) in selected_customer_ids)
                           and list_queries.customer_matches(row,search)]
             else:
+                if (customer and not (grants.get('can_customers_view') or grants.get('can_invoice_view') or grants.get('can_paid_invoice_view'))
+                        and not list_queries.customer_matches({}, customer)):
+                    # A hidden customer name must not become a count lookup via
+                    # fallback filtering. Match the indexed permission gate.
+                    values = []
                 values = [row for row in values if list_queries.matches(row,date_from=date_from,date_to=date_to,employee=employee,customer=customer,service=service,bill_no=bill_no,history=panel=="history",invoice_dates=panel in {"reports","invoices"})]
             # Preserve source ordering inside each page, newest pages first.
             totals[key] = len(values)
@@ -5009,17 +5035,50 @@ def install_live_tour_routes(
                 "pages":max(1,max(((total+page_size-1)//page_size for total in totals.values()),default=1))}
 
     @app.get("/v2/live-tour/reports")
-    def live_tour_reports(ident: identity_type = Depends(current_identity)):
+    def live_tour_reports(
+        tab: str = "", page: Annotated[int, Query(ge=1)] = 1,
+        page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+        date_from: str = "", date_to: str = "", selected_date: Annotated[str, Query(alias="date")] = "",
+        employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
+        total_amount: Annotated[int | None, Query(ge=0, le=MAX_MONEY)] = None,
+        tip_amount: Annotated[int | None, Query(ge=0, le=MAX_MONEY)] = None,
+        performance_timing: str = "all", ident: identity_type = Depends(current_identity),
+    ):
+        if tab not in {"", "revenue", "employee", "tip", "combos", "performance", "invoices"}:
+            raise HTTPException(400, "Loại báo cáo Live Tour không hợp lệ.")
+        if performance_timing not in {"all", "early", "late", "ontime"}:
+            raise HTTPException(400, "Bộ lọc thời gian dịch vụ không hợp lệ.")
+        _parse_export_bounds(date_from=date_from, date_to=date_to)
+        if selected_date:
+            _parse_export_bounds(date_from=selected_date, date_to=selected_date)
+        filters = dict(date_from=date_from, date_to=date_to, date=selected_date, employee=employee,
+                       customer=customer, service=service, bill_no=bill_no, total_amount=total_amount,
+                       tip_amount=tip_amount, performance_timing=performance_timing)
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_reports_view")
-            state, revision = read_collections_view(conn, now, {"employees", "rooms", "services", "combos", "pending", "invoices", "reports"})
             grants = permissions(conn, ident)
+            queried = query_store.read_reports(conn, tab=tab, page=page, page_size=page_size,
+                                                filters=filters, grants=grants) if tab else None
+            if queried is not None:
+                state, revision = _normalize_state(queried['state'], now), int(queried['revision'])
+            else:
+                state, revision = read_collections_view(conn, now, {"employees", "rooms", "services", "combos", "pending", "invoices", "reports"})
         public = _state_response(state, revision, now, **grants)
         is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
-        return {"revision": revision, "invoices": public["state"]["invoices"],
-                "reports": public["report_rows"], "pending": public["pending_payments"], "performance": _service_performance_rows(state) if is_admin else [],
-                "capabilities": public["capabilities"], "payment_settings": public["payment_settings"]}
+        common = {"revision": revision, "capabilities": public["capabilities"], "payment_settings": public["payment_settings"]}
+        if not tab:
+            return {**common, "invoices": public["state"]["invoices"], "reports": public["report_rows"],
+                    "pending": public["pending_payments"], "performance": _service_performance_rows(state) if is_admin else []}
+        if queried is not None:
+            result = {key: queried[key] for key in ('total', 'summary', 'employee_totals')}
+            result.update(rows=public['state']['invoices'] if tab == 'invoices' else public['report_rows'],
+                          invoices=public['state']['invoices'])
+        else:
+            result = query_store.report_page(public, state, tab=tab, page=page, page_size=page_size, filters=filters,
+                                             performance=_service_performance_rows(state) if is_admin and tab == 'performance' else [])
+        return {**common, **result, "page": page, "page_size": page_size,
+                "pages": max(1, (result['total'] + page_size - 1) // page_size)}
 
     @app.get("/v2/live-tour/board-history")
     def live_tour_board_history(
@@ -5029,7 +5088,8 @@ def install_live_tour_routes(
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_reports_view")
             rows = _board_history_rows(conn, date_from=date_from, date_to=date_to, employee=employee)
-        return {"ok": True, "columns": BOARD_COLUMNS, "rows": rows, "count": len(rows)}
+            grants = permissions(conn, ident)
+        return {"ok": True, "columns": BOARD_COLUMNS, "rows": rows, "count": len(rows), "capabilities": {name: grants[f"can_{name}"] for name in CAPABILITY_FEATURES}}
 
     @app.get("/v2/live-tour/board-history/export.xlsx")
     def live_tour_board_history_export(
@@ -5086,8 +5146,12 @@ def install_live_tour_routes(
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_customers_view")
-            state, _ = read_board(conn, now, project=False)
             grants = permissions(conn, ident)
+            queried = query_store.read_customer_history(conn, customer_id, grants)
+            if queried is not None:
+                state = _normalize_state(queried['state'], now)
+            else:
+                state, _ = read_collections_view(conn, now, {'customers', 'invoices', 'reports', 'combo_usage', 'pending'})
         readable = deepcopy(state)
         if not grants["can_paid_invoice_view"]:
             readable["invoices"] = []
@@ -5352,14 +5416,12 @@ def install_live_tour_routes(
             grants = permissions(conn, ident)
         # Keep exactly the customer visibility of the report screen before filtering.
         report_rows = _report_rows_with_combo_kind(state)
-        if not (grants["can_customers_view"] or grants["can_paid_invoice_view"]):
+        if not (grants["can_customers_view"] or grants["can_invoice_view"] or grants["can_paid_invoice_view"]):
             report_rows = _redact_customer_pii(report_rows)
         # Detached snapshot; PDF rendering never holds a DB connection or board lock.
-        rows = [row for row in report_rows
-                if list_queries.matches(row, date_from=date_from, date_to=date_to, employee=employee,
-                                        customer=customer, service=service, bill_no=bill_no, invoice_dates=True)
-                and (not selected_date or list_queries.matches(row, date_from=selected_date, date_to=selected_date, invoice_dates=True))
-                and (total_amount is None or int(row.get("total") or 0) == total_amount)]
+        filters = dict(date_from=date_from, date_to=date_to, date=selected_date, employee=employee,
+                       customer=customer, service=service, bill_no=bill_no, total_amount=total_amount)
+        rows = [row for row in report_rows if query_store.matches_report(row, filters)]
         start, end = (selected_date, selected_date) if selected_date else (date_from, date_to)
         summary = customer_counts(rows, date_from=start, date_to=end)
         scope = dict(date_from=start, date_to=end, date=selected_date, employee=employee,
@@ -5377,6 +5439,7 @@ def install_live_tour_routes(
         kind: str = Query(default="board"), include_hidden: bool = Query(default=False),
         date_from: str = Query(default=""), date_to: str = Query(default=""),
         time_from: str = Query(default=""), time_to: str = Query(default=""),
+        selected_date: Annotated[str, Query(alias="date")] = "",
         customer_id: str = Query(default=""),
         employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
         report_kind: str = "", performance_timing: str = "",
@@ -5400,13 +5463,23 @@ def install_live_tour_routes(
             date_from=date_from.strip(), date_to=date_to.strip(),
             time_from=time_from.strip(), time_to=time_to.strip(),
         )
-        bounds['tip_amount'] = tip_amount
+        if selected_date:
+            _parse_export_bounds(date_from=selected_date, date_to=selected_date)
+        bounds.update(tip_amount=tip_amount, date=selected_date, report_filter=export_kind in {'reports', 'tip', 'employee', 'performance'})
         bounds.update(total_amount=total_amount, employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"paid", "revenue", "tip", "reports", "pending", "performance", "employee"}, invoice_dates=export_kind in {"paid", "revenue", "tip", "reports", "employee"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
+            if export_kind == "performance" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
+                raise HTTPException(403, "Chỉ Admin được xuất báo cáo thời gian dịch vụ.")
             for feature in EXPORT_FEATURES.get(export_kind, ()):
                 require_feature(conn, ident, feature)
-            state, _ = read_board(conn, now)
+            if export_kind in {'reports', 'tip', 'employee', 'performance', 'paid', 'revenue'}:
+                collections = {'reports', 'invoices'}
+                if export_kind in {'performance', 'revenue'}:
+                    collections.update(set(query_store.BASE) | {'pending'})
+                state, _ = read_collections_view(conn, now, collections)
+            else:
+                state, _ = read_board(conn, now)
             can_admin = feature_allowed(conn, ident, "live_tour_admin")
             can_recover_hidden = can_admin or feature_allowed(conn, ident, "live_tour_operate")
             grants = permissions(conn, ident)
@@ -5414,10 +5487,10 @@ def install_live_tour_routes(
             state = deepcopy(state)
             state["audit"] = _readable_audit(state["audit"], invoice_view=grants["can_invoice_view"] and grants["can_pending_view"],
                                              paid_invoice_view=grants["can_paid_invoice_view"], customers_view=grants["can_customers_view"])
-        elif export_kind == "revenue" and not (grants["can_customers_view"] or grants["can_paid_invoice_view"]):
+        elif export_kind == "revenue" and not (grants["can_customers_view"] or grants["can_invoice_view"] or grants["can_paid_invoice_view"]):
             state = deepcopy(state)
             state["invoices"] = _redact_customer_pii(state["invoices"])
-        elif export_kind == "reports" and not (grants["can_customers_view"] or grants["can_paid_invoice_view"]):
+        elif export_kind in {"reports", "tip", "employee"} and not (grants["can_customers_view"] or grants["can_invoice_view"] or grants["can_paid_invoice_view"]):
             state = deepcopy(state)
             state["reports"] = _redact_customer_pii(state["reports"])
         content, filename = _excel_bytes(

@@ -17,7 +17,7 @@ const built = await build({
     }))
     builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({
       contents: path === 'api'
-        ? 'export const veraApi = { purchases: (...args) => window.purchasePngFixture.purchases(...args) };'
+        ? 'export const veraApi = new Proxy({}, { get: (_, method) => (...args) => window.purchasePngFixture[method](...args) });'
         : 'export const elementToPngBlob = (...args) => window.purchasePngFixture.capture(...args);',
       loader: 'js',
     }))
@@ -36,7 +36,7 @@ function deferred() {
   return { promise, resolve }
 }
 
-async function fixture({ pendingCapture, share, canShare } = {}) {
+async function fixture({ pendingCapture, share, canShare, rows = purchaseRows, captureError } = {}) {
   const dom = new JSDOM('<body><div id="root"></div></body>', { url: 'https://example.test', pretendToBeVisual: true })
   const values = {
     window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
@@ -45,18 +45,20 @@ async function fixture({ pendingCapture, share, canShare } = {}) {
   const saved = Object.fromEntries(Object.keys(values).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   for (const [key, value] of Object.entries(values)) Object.defineProperty(globalThis, key, { value, configurable: true })
 
-  const captures = [], downloads = [], objectUrls = [], revoked = [], timers = [], reads = []
+  const captures = [], downloads = [], objectUrls = [], revoked = [], timers = [], reads = [], exports = [], imports = []
   const png = new dom.window.Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], { type: 'image/png' })
   dom.window.purchasePngFixture = {
     purchases: async params => {
       reads.push(params)
-      return { rows: purchaseRows, permissions: {}, start: '2026-10-01', end: '2026-10-31' }
+      return { rows, permissions: {}, start: '2026-10-01', end: '2026-10-31' }
     },
+    exportPurchases: async params => { exports.push(params) },
+    importPurchases: async (file, mode) => { imports.push({ file, mode }); return { source_rows: rows.length, inserted: rows.length, skipped: 0, total: rows.reduce((total, row) => total + row.amount, 0) } },
     // jsdom cannot render a canvas. Keep the page, filters, File construction,
     // download/share handlers and modal real; replace only the capture engine.
     capture: table => {
       captures.push({ table, snapshot: table.cloneNode(true) })
-      return pendingCapture?.promise || Promise.resolve(png)
+      return captureError ? Promise.reject(captureError) : pendingCapture?.promise || Promise.resolve(png)
     },
   }
   URL.createObjectURL = file => {
@@ -87,9 +89,10 @@ async function fixture({ pendingCapture, share, canShare } = {}) {
   const unmount = async () => {
     if (mounted) { await act(async () => root.unmount()); mounted = false }
   }
-  await act(async () => root.render(React.createElement(mod.exports.default, { user: { role: 'admin' } })))
+  const render = async user => act(async () => root.render(React.createElement(mod.exports.default, { user })))
+  await render({ role: 'admin', id: 'account-a' })
   return {
-    dom, captures, downloads, objectUrls, revoked, timers, reads, png, unmount,
+    dom, captures, downloads, objectUrls, revoked, timers, reads, exports, imports, png, unmount, render,
     action: name => document.querySelector(`[data-ui-key="purchases:${name}"]`),
     preview: () => document.querySelector('dialog.purchase-modal'),
     shareButton: () => [...document.querySelectorAll('dialog footer button')].find(button => button.textContent.includes('Chia sẻ ảnh')),
@@ -124,7 +127,7 @@ test('Download PNG captures the currently filtered table, then saves a PNG and c
     await act(async () => f.action('download-png').click())
 
     assert.equal(f.captures.length, 1)
-    assert.equal(f.captures[0].table, visibleTable)
+    assert.notEqual(f.captures[0].table, visibleTable, 'capture uses an on-demand complete snapshot, not the display page')
     const captured = f.captures[0].snapshot
     assert.deepEqual([...captured.tBodies[0].rows].map(row => row.cells[2].textContent), ['Khăn mặt', 'Khăn tắm'], 'capture includes all filtered rows, not just checked rows')
     assert.match(captured.caption.textContent, /01-10-2026 – 31-10-2026/)
@@ -273,4 +276,111 @@ test('dismissing the PNG preview with the dialog cancel event revokes its URL wi
     assert.deepEqual(f.downloads, [])
     assert.deepEqual(f.revoked, [url])
   } finally { await f.dispose() }
+})
+
+const manyPurchases = count => Array.from({ length: count }, (_, index) => ({
+  ...purchaseRows[0], id: index + 1, item: `Hàng ${String(index + 1).padStart(4, '0')}`, amount: 10,
+}))
+const purchasePager = () => document.querySelector('nav[aria-label="Phân trang mua hàng"]')
+const pageButton = text => [...purchasePager().querySelectorAll('button')].find(button => button.textContent === text)
+const displayTable = () => document.querySelector('.stable-data-region .purchase-table table') || document.querySelector('.purchase-table table')
+
+test('3000 purchases mount only 100 rows, retain cross-page selections and full totals, and reset pages on filters', async () => {
+  const f = await fixture({ rows: manyPurchases(3000) })
+  try {
+    assert.equal(document.querySelectorAll('tbody tr').length, 100, 'no hidden all-row table exists before an export')
+    assert.match(document.querySelector('.purchase-filter-total').textContent, /30\.000đ/)
+    assert.match(purchasePager().textContent, /Trang 1 \/ 30/)
+    await act(async () => displayTable().querySelector('input').click())
+    assert.equal(f.action('edit').disabled, false)
+    await act(async () => pageButton('Trang sau').click())
+    assert.match(displayTable().tBodies[0].rows[0].textContent, /Hàng 0101/)
+    await act(async () => displayTable().querySelector('input').click())
+    assert.equal(f.action('edit').disabled, true, 'selected rows on the previous page are retained')
+    await act(async () => pageButton('Trang trước').click())
+    assert.equal(displayTable().querySelector('input').checked, true)
+    await act(async () => pageButton('Trang sau').click())
+    await f.setItemFilter('Hàng 01')
+    assert.equal(displayTable().tBodies[0].rows.length, 100)
+    assert.match(displayTable().tBodies[0].rows[0].textContent, /Hàng 0100/)
+    assert.match(document.querySelector('.purchase-filter-total').textContent, /1\.000đ/)
+    assert.equal(purchasePager(), null)
+    await f.setItemFilter('Hàng 0001')
+    assert.equal(displayTable().tBodies[0].rows.length, 1)
+    assert.equal(displayTable().querySelector('input').checked, true)
+    await f.setItemFilter('')
+    assert.match(purchasePager().textContent, /Trang 1 \/ 30/)
+    assert.deepEqual(f.reads, [{ preset: 'this_month' }], 'display paging and local filtering issue no extra reads')
+    await act(async () => f.action('export').click())
+    assert.deepEqual(f.exports, [{ preset: 'this_month' }], 'Excel keeps its full date-range API export, with no page limit')
+  } finally { await f.dispose() }
+})
+
+test('PNG on a later display page captures every filtered row and cleans up its temporary full table', async () => {
+  const rows = manyPurchases(205).map((row, index) => ({ ...row, item: `${index < 150 ? 'Khăn' : 'Dầu'} ${row.item}` }))
+  const capture = deferred()
+  const f = await fixture({ rows, pendingCapture: capture })
+  try {
+    await f.setItemFilter('Khăn')
+    await act(async () => pageButton('Trang sau').click())
+    assert.equal(displayTable().tBodies[0].rows.length, 50)
+    await act(async () => f.action('download-png').click())
+    assert.equal(f.captures[0].snapshot.tBodies[0].rows.length, 150)
+    assert.match(f.captures[0].snapshot.textContent, /Khăn Hàng 0001/)
+    assert.match(f.captures[0].snapshot.textContent, /Khăn Hàng 0150/)
+    assert.doesNotMatch(f.captures[0].snapshot.textContent, /Dầu/)
+    assert.match(f.captures[0].snapshot.caption.textContent, /Tổng mua: 1\.500đ/)
+    assert.equal(displayTable().tBodies[0].rows.length, 50, 'the visible table remains on the selected page while capturing')
+    await act(async () => capture.resolve(f.png))
+    assert.equal(document.querySelector('.purchase-png-capture'), null)
+    assert.equal(document.querySelectorAll('tbody tr').length, 50)
+    assert.match(purchasePager().textContent, /Trang 2 \/ 2/)
+    assert.equal(f.downloads.length, 1)
+  } finally { await f.dispose() }
+})
+
+test('failed full PNG capture reports the error without exporting a partial page or retaining full DOM', async () => {
+  const f = await fixture({ rows: manyPurchases(205), captureError: new Error('Synthetic capture failure') })
+  try {
+    await act(async () => pageButton('Trang sau').click())
+    await act(async () => f.action('download-png').click())
+    assert.equal(f.captures[0].snapshot.tBodies[0].rows.length, 205)
+    assert.equal(document.querySelectorAll('tbody tr').length, 100)
+    assert.equal(document.querySelector('.purchase-png-capture'), null)
+    assert.match(document.querySelector('[role="alert"]').textContent, /Synthetic capture failure/)
+    assert.deepEqual(f.downloads, [])
+    assert.match(purchasePager().textContent, /Trang 2 \/ 3/)
+  } finally { await f.dispose() }
+})
+
+test('import may switch to all purchases without mounting all imported rows', async () => {
+  const f = await fixture({ rows: manyPurchases(3000) })
+  try {
+    const file = new File(['synthetic'], 'purchases.xlsx')
+    const input = document.querySelector('input[type="file"]')
+    Object.defineProperty(input, 'files', { value: [file], configurable: true })
+    await act(async () => input.dispatchEvent(new window.Event('change', { bubbles: true })))
+    assert.deepEqual(f.imports, [{ file, mode: 'append' }])
+    assert.deepEqual(f.reads, [{ preset: 'this_month' }, { preset: 'all' }])
+    assert.equal(document.querySelectorAll('tbody tr').length, 100)
+    assert.match(purchasePager().textContent, /Trang 1 \/ 30/)
+    assert.match(document.querySelector('.purchase-filter-total').textContent, /30\.000đ/)
+  } finally { await f.dispose() }
+})
+
+test('same-grant purchase account switches clear rows, selection and paging before the next read resolves', async () => {
+  const next = deferred(), f = await fixture({ rows: manyPurchases(205) })
+  try {
+    await act(async () => displayTable().querySelector('input').click())
+    await act(async () => pageButton('Trang sau').click())
+    f.dom.window.purchasePngFixture.purchases = () => next.promise
+    await f.render({ role: 'admin', id: 'account-b' })
+    assert.doesNotMatch(displayTable().textContent, /Hàng 0101/)
+    assert.match(displayTable().textContent, /Không có dữ liệu/)
+    assert.equal(purchasePager(), null)
+    await act(async () => next.resolve({ rows: manyPurchases(205), permissions: {} }))
+    assert.match(purchasePager().textContent, /Trang 1 \/ 3/)
+    assert.equal(displayTable().querySelector('input').checked, false)
+    assert.equal(f.action('edit').disabled, true)
+  } finally { next.resolve({ rows: [], permissions: {} }); await f.dispose() }
 })

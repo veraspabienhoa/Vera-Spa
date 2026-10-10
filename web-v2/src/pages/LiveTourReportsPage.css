@@ -211,3 +211,9 @@
  .live-tour-reports-page .report-summary-toolbar .live-tour-report-extra-metrics{grid-row:auto;grid-template-columns:repeat(2,minmax(0,1fr))}
  .live-tour-reports-page .report-summary-toolbar .table-pager{grid-column:1/-1;grid-row:3;width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 }
+
+.live-tour-reports-page .report-filter-hint {
+  margin: 0 0 12px;
+  color: var(--text-muted, #667085);
+  font-size: 12px;
+}

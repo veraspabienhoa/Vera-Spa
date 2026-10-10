@@ -232,19 +232,25 @@ def sync_changes(
             "before_payload": _json(before_payload) if before_payload is not None else None,
             "after_payload": _json(after_payload) if after_payload is not None else None,
         })
+    from vera_live_tour_query import schema_ready as query_schema_ready, project as query_project
+    query_ready = query_schema_ready(conn)
     for key, (ordinal, payload) in new.items():
         if key in old and old[key] == (ordinal, payload):
             continue
         table_name = RESOURCE_TABLES[key[0]]
+        query_columns = ',query_data,query_hash' if query_ready else ''
+        query_values = ',CAST(:query_data AS jsonb),:hash' if query_ready else ''
+        query_update = ',query_data=EXCLUDED.query_data,query_hash=EXCLUDED.query_hash' if query_ready else ''
         conn.execute(text(f"""
-            INSERT INTO {table_name}(resource_id,ordinal,payload,payload_hash,resource_revision,aggregate_revision,deleted_at,updated_at)
-            VALUES(:id,:ordinal,CAST(:payload AS jsonb),:hash,1,:aggregate,NULL,NOW())
+            INSERT INTO {table_name}(resource_id,ordinal,payload,payload_hash,resource_revision,aggregate_revision,deleted_at,updated_at{query_columns})
+            VALUES(:id,:ordinal,CAST(:payload AS jsonb),:hash,1,:aggregate,NULL,NOW(){query_values})
             ON CONFLICT(resource_id) DO UPDATE SET
               ordinal=EXCLUDED.ordinal, payload=EXCLUDED.payload, payload_hash=EXCLUDED.payload_hash,
               resource_revision={table_name}.resource_revision+1,
-              aggregate_revision=EXCLUDED.aggregate_revision, deleted_at=NULL, updated_at=NOW()
+              aggregate_revision=EXCLUDED.aggregate_revision, deleted_at=NULL, updated_at=NOW(){query_update}
         """), {"id": key[1], "ordinal": ordinal, "payload": _json(payload),
-                 "hash": _digest(payload), "aggregate": aggregate_revision})
+                 "hash": _digest(payload), "aggregate": aggregate_revision,
+                 "query_data": _json(query_project(key[0], payload)) if query_ready else None})
         upserted += 1
     for key in old.keys() - new.keys():
         table_name = RESOURCE_TABLES[key[0]]
