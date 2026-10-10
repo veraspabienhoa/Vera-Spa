@@ -67,3 +67,31 @@ After operator deployment, verify the exact deployed commit, `/v2/auth/health`,
 `/v2/health`, and the affected business operations. Use two test sessions editing
 the same schedule cell and different cells, a test image, and a slow-network Live
 Tour session. A successful build alone does not establish production correctness.
+
+## Pre-merge Node regression repair
+
+The complete Node suite on the original phase-one head reproduced four failures
+already present on its main baseline. Three assertions were stale: copied PNG
+bytes were incorrectly required to retain Blob object identity, a shared PNG
+helper was required to use the older Live-Tour-specific error wording, and the
+border test scanned unrelated stylesheet sections after the Live Tour comment.
+The implementation still needs to retain PNG bytes/type and source errors, and
+the Live Tour body-grid exception still applies on screen and in print.
+
+One failure exposed a real clipboard recovery problem: permission denial was
+retried after waiting for image generation, then wrapped in a plain Error. That
+lost the NotAllowedError name used by the Live Tour recovery message. Preserve
+original errors, handle late image rejection without an unhandled promise, and
+limit the one concrete-Blob compatibility retry to TypeError while user activation
+has not explicitly expired. Never turn copy failure into download or share.
+Source-generation errors take precedence when a browser masks rejected item data.
+
+Regressions now check immediate click-turn writes, byte preservation, malformed
+and empty PNGs, pending-image denial, masked source errors, legacy compatibility,
+expired activation, parsed border rules and deliberately injected CSS regressions.
+Purchase PNG UI tests preserve filtered-table download, explicit preview/share,
+unsupported sharing, cancellation, and object-URL cleanup. The production capture,
+download/share implementation and CSS are unchanged. CI also runs every
+`web-v2/tests/*.test.mjs`, in addition to its named checks, so these tests cannot
+silently fall outside the merge gate again. These are synthetic Node/DOM checks;
+actual OS clipboard/paste, device share sheets and production remain unverified.

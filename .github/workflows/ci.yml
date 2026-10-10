@@ -1299,6 +1299,9 @@ jobs:
         working-directory: web-v2
         run: node --test tests/holidayLeave.test.mjs tests/holidayLeaveForm.test.mjs
 
+      - name: Verify all Node regressions
+        run: node --test tests/*.test.mjs
+
       - name: Lint
         run: npm run lint
 

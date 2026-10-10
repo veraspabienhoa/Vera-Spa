@@ -32,4 +32,12 @@ def test_clipboard_uses_concrete_png_blob_for_chromium_native_apps():
     assert "const png = await image" in source
     assert "new ClipboardItem({ 'image/png': png })" in source
     assert "transient user activation" in source
-    assert "quyền Clipboard" in source
+    # Compatibility fallback must not swallow permission denial: the Live Tour
+    # caller recognizes its original name and displays the recovery message.
+    guard = "if (error?.name !== 'TypeError') throw error"
+    assert guard in source
+    assert source.index(guard) < source.index("const png = await image")
+    assert "navigator.userActivation?.isActive === false" in source
+    live_tour = Path("web-v2/src/pages/LiveTourPage.jsx").read_text(encoding="utf-8")
+    assert "err?.name === 'NotAllowedError'" in live_tour
+    assert "Hãy cho phép truy cập bộ nhớ tạm" in live_tour
