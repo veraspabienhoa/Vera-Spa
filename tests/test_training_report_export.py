@@ -54,7 +54,7 @@ def _model_text(pages):
     return "\n".join(command[1] for page in pages for command in page if command[0] == "text")
 
 
-def test_full_pdf_is_a4_embeds_vietnamese_fonts_and_preserves_every_field(tmp_path):
+def test_full_pdf_is_a4_embeds_vietnamese_fonts_and_preserves_template_content(tmp_path):
     report = synthetic_report(long_notes=True)
     original = deepcopy(report)
     blob = export.render_training_report(report, "pdf")
@@ -64,12 +64,19 @@ def test_full_pdf_is_a4_embeds_vietnamese_fonts_and_preserves_every_field(tmp_pa
     reader = PdfReader(path)
     assert len(reader.pages) >= 6
     text = _pdf_text(blob)
-    for marker in ["Trần Thị Thảo", "Nhật ký đào tạo đầy đủ", "Nguyễn Thị Hương", "Đỗ Ngọc Hà",
-                   "TAIL_JOURNAL_COMPLETE", "TAIL_EVALUATION_COMPLETE", "TAIL_HISTORY_COMPLETE",
-                   "Điểm mạnh", "Cần cải thiện", "Ghi chú", "Nhận xét", "Mã buổi", "Mã phiếu", "Mã đợt",
-                   "Ngày bắt đầu đợt: 01-10-2026", "Mức tay nghề: A", "Điểm tay nghề: 5/6", "Thái độ học tập: Tốt", "Chuyên cần: Chưa có",
-                   "02-10-2026 03:30:45", "06-10-2026 00:30:00", "01-10-2026 đến 10-10-2026"]:
+    # The PDF follows the supplied card template. Administrative IDs and
+    # submission timestamps remain in the DTO/PNG; selected filters appear in
+    # a compact journal subline. Every session, evaluation, criterion and full
+    # note remains, without the old administrative PDF sections.
+    for marker in ["Trần Thị Thảo", "Nhật ký đào tạo", "Lịch sử Đào tạo & Đánh giá",
+                   "Tiến độ kỹ năng", "Năng lực kỳ gần nhất", "Biểu đồ đánh giá",
+                   "Nguyễn Thị Hương", "Đỗ Ngọc Hà", "TAIL_JOURNAL_COMPLETE",
+                   "TAIL_EVALUATION_COMPLETE", "TAIL_HISTORY_COMPLETE", "Điểm mạnh",
+                   "Cần cải thiện", "Nhận xét", "01-10-2026 đến 05-10-2026",
+                   "Tay nghề: A", "Tinh thần: Tốt", "Chuyên cần: Chưa có"]:
         assert marker in text
+    assert "Mã buổi" not in text and "Mã phiếu" not in text
+    assert "Chi tiết đánh giá đã nộp" not in text
     assert "2026-10-" not in text
     assert "Chuyên cần: 0" not in text
     assert len(text) > 33_000

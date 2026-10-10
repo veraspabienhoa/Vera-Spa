@@ -7,6 +7,8 @@ from datetime import date, datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
+import re
+import unicodedata
 from typing import Any, Callable, Literal
 from uuid import uuid4
 from urllib.parse import quote
@@ -476,6 +478,17 @@ def _require_report_employee(conn, ident, username: str) -> dict[str, Any]:
     return _with_departments(conn, [employee])[0]
 
 
+def _training_report_filename(employee: dict[str, Any], file_format: str) -> str:
+    """Use the same employee display name as the report, safe as one basename."""
+    name = unicodedata.normalize("NFC", str(employee.get("full_name") or employee.get("username") or "NhanVien"))
+    # Path separators, Windows-reserved punctuation and control characters are
+    # never carried into a filename or HTTP header. Preserve Vietnamese letters.
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f]', "_", name)
+    name = re.sub(r"\s+", " ", name).strip(" .")
+    name = name.encode("utf-8")[:200].decode("utf-8", errors="ignore").rstrip(" .") or "NhanVien"
+    return f"{name}_VERA_DaoTao.{file_format}"
+
+
 def _report_evaluation_averages(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Aggregate the exact filtered records, retaining the existing four axes."""
     groups: dict[str, dict[str, Any]] = {}
@@ -841,8 +854,17 @@ def install_training_routes(
         _validate_report_dates(date_from, date_to)
         with engine_instance().begin() as conn:
             _schema(conn); require_feature(conn, ident, "training_view")
-            employees = _report_employees(conn, _training_employee_catalog(conn, ident), date_from, date_to)
-            return {"employees": _with_departments(conn, employees), "date_from": date_from, "date_to": date_to}
+            catalog = _with_departments(conn, _training_employee_catalog(conn, ident))
+            employees = _report_employees(conn, catalog, date_from, date_to)
+            # "No records" is an all-time fact, independent of the selected
+            # report dates. Draft evaluations alone are not submitted results.
+            recorded = _report_employees(conn, catalog) if date_from or date_to else employees
+            # A log deleted between READ COMMITTED reads must not put an employee
+            # in both tables in the same response. Favor their observed record.
+            recorded_names = {employee["username"].casefold() for employee in [*recorded, *employees]}
+            untrained = [employee for employee in catalog if employee["username"].casefold() not in recorded_names]
+            return {"employees": employees, "untrained_employees": untrained,
+                    "untrained_scope": "all_time", "date_from": date_from, "date_to": date_to}
 
     @app.get("/v2/training/reports/{employee_username}")
     def employee_training_report(
@@ -890,9 +912,9 @@ def install_training_routes(
             raise HTTPException(413, str(exc)) from exc
         except ReportExportUnavailable as exc:
             raise HTTPException(503, str(exc)) from exc
-        filename = f"VERA_BaoCaoDaoTao_{employee['username']}.{format}"
+        filename = _training_report_filename(employee, format)
         return Response(content=content, media_type="application/pdf" if format == "pdf" else "image/png",
-            headers={"Content-Disposition": f"attachment; filename=\"VERA_BaoCaoDaoTao.{format}\"; filename*=UTF-8''{quote(filename, safe='')}",
+            headers={"Content-Disposition": f"attachment; filename=\"VERA_DaoTao.{format}\"; filename*=UTF-8''{quote(filename, safe='')}",
                      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @app.get("/v2/training/evaluations/{assignment_id}/export.{file_format}")

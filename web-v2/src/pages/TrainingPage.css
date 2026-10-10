@@ -50,3 +50,5 @@
 .training-report-body .training-radar svg{max-height:280px}
 @media(max-width:900px){.training-progress-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.training-progress-filters{grid-template-columns:minmax(0,1fr)}.training-report-body{padding:12px}.training-report-body .training-report-heading{top:-12px}.training-report-file-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.training-report-file-actions small{grid-column:1/-1}.training-report-body .timeline article{grid-template-columns:minmax(0,1fr);gap:6px}.training-report-body .training-daily-report th:first-child{width:24%}.training-report-body .training-daily-report th:nth-child(2){width:15%}}
+
+.training-untrained-roster{margin-top:24px;min-width:0}.training-untrained-roster caption{text-align:left;color:#6c7d74;font-size:.85rem;margin-bottom:8px}

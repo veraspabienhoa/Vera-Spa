@@ -1,10 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
-import { trainingDateRange, readCompleteTrainingReport, validTrainingScore } from '../src/lib/trainingReport.js'
+import { trainingDateRange, readCompleteTrainingReport, validTrainingScore, trainingReportFilename, trainingReportResponseFilename } from '../src/lib/trainingReport.js'
 
 test('inclusive training calendar dates, leap months, custom bounds and missing scores', () => {
   assert.deepEqual(trainingDateRange({ mode:'all' }), {})
@@ -37,7 +38,7 @@ async function fixture(overrides={}){
   if(method==='trainingBootstrap')return Promise.resolve({people:[],assignments:[],notification_recipients:[],notifications:[],training_students:[]})
   if(method==='trainingReportEmployees')return Promise.resolve({employees:[{username:'Linh Đan',full_name:'Linh Đan',role:'nhanvien'},{username:'Minh An',full_name:'Minh An',role:'nhanvien'}]})
   if(method==='trainingReport')return Promise.resolve(report(args[0]))
-  if(method==='readTrainingReportExport')return Promise.resolve(new w.Blob([args[1]],{type:args[1]==='pdf'?'application/pdf':'image/png'}))
+  if(method==='readTrainingReportExport')return Promise.resolve({blob:new w.Blob([args[1]],{type:args[1]==='pdf'?'application/pdf':'image/png'})})
   throw Error(`Unexpected ${method}`)
  }
  const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),mod,mod.exports)
@@ -61,6 +62,7 @@ test('filters below heading, searchable names and complete employee modal preser
   assert.equal(f.calls.filter(c=>c.method==='readTrainingReportExport').length,0)
   await f.click(f.button('Xem / tải / chia sẻ PNG và PDF'));assert.equal(f.calls.filter(c=>c.method==='readTrainingReportExport').length,2)
   for(const label of ['Xem PDF','Xem PNG','Tải PDF','Tải PNG'])assert.ok([...document.querySelectorAll('a')].some(a=>a.textContent===label))
+  assert.deepEqual(f.urls.map(x=>x.file.name).sort(),['Linh Đan_VERA_DaoTao.pdf','Linh Đan_VERA_DaoTao.png'])
   await f.click(f.button('Chia sẻ PNG'));assert.equal(f.shares[0].files[0].type,'image/png')
   await f.click(document.querySelector('[aria-label="Đóng báo cáo đào tạo"]'));assert.equal(document.querySelector('[role=dialog]'),null);assert.deepEqual(f.revoked,f.urls.map(x=>x.url))
  }finally{await f.dispose()}
@@ -102,7 +104,7 @@ test('closing generation aborts both exports; late files never create object URL
   await f.open();await f.click(f.button('Linh Đan'));await f.click(f.button('Xem / tải / chia sẻ PNG và PDF'))
   const signals=f.calls.filter(c=>c.method==='readTrainingReportExport').map(c=>c.args[3].signal)
   await f.click(document.querySelector('[aria-label="Đóng báo cáo đào tạo"]'));assert.ok(signals.every(s=>s.aborted))
-  await act(async()=>pending.resolve(new f.w.Blob(['private'])));assert.deepEqual(f.urls,[])
+  await act(async()=>pending.resolve({blob:new f.w.Blob(['private'])}));assert.deepEqual(f.urls,[])
  }finally{await f.dispose()}
 })
 
@@ -119,7 +121,7 @@ test('late roster from obsolete dates is aborted and never replaces current auth
 
 test('server export denial closes selected report and removes every prepared file',async()=>{
  let denied=false
- const f=await fixture({trainingReportEmployees:()=>denied?Promise.reject(Object.assign(Error('Quyền đã bị thu hồi'),{status:403})):Promise.resolve({employees:[{username:'Linh Đan',role:'nhanvien'}]}),readTrainingReportExport:(_employee,format)=>{if(format==='png'){denied=true;return Promise.reject(Object.assign(Error('Quyền đã bị thu hồi'),{status:403}))}return Promise.resolve(new Blob(['pdf'],{type:'application/pdf'}))}})
+ const f=await fixture({trainingReportEmployees:()=>denied?Promise.reject(Object.assign(Error('Quyền đã bị thu hồi'),{status:403})):Promise.resolve({employees:[{username:'Linh Đan',role:'nhanvien'}]}),readTrainingReportExport:(_employee,format)=>{if(format==='png'){denied=true;return Promise.reject(Object.assign(Error('Quyền đã bị thu hồi'),{status:403}))}return Promise.resolve({blob:new Blob(['pdf'],{type:'application/pdf'})})}})
  try{
   await f.open();await f.click(f.button('Linh Đan'));await f.click(f.button('Xem / tải / chia sẻ PNG và PDF'))
   assert.equal(document.querySelector('[role=dialog]'),null);assert.equal(document.querySelector('a[download]'),null);assert.match(document.body.textContent,/Quyền đã bị thu hồi/)
@@ -132,4 +134,60 @@ test('same-count edits between history pages fail closed instead of mixing chart
  const initial=report('Linh Đan',101),changed={...initial,progress:initial.progress.map(item=>({...item,skill_score:1})),history:[historyRow(100)]}
  const controller=new AbortController()
  await assert.rejects(readCompleteTrainingReport(async(_employee,filters)=>filters.page===2?changed:initial,'Linh Đan',{},controller.signal),/Dữ liệu đã thay đổi/)
+})
+
+
+test('Vietnamese report filenames match the server rule and reject unsafe response names',()=>{
+ assert.equal(trainingReportFilename('Thảo Linh','pdf'),'Thảo Linh_VERA_DaoTao.pdf')
+ assert.equal(trainingReportFilename('Thảo Linh'.normalize('NFD'),'png'),'Thảo Linh_VERA_DaoTao.png')
+ assert.equal(trainingReportFilename('  ../Đỗ "Thảo"\\x\r\n:tail?*  ','pdf'),'_Đỗ _Thảo__x___tail___VERA_DaoTao.pdf')
+ assert.equal(trainingReportFilename('...','pdf'),'NhanVien_VERA_DaoTao.pdf')
+ assert.ok(new TextEncoder().encode(trainingReportFilename('Thảo🙂'.repeat(100),'png')).length<255)
+ const header=`attachment; filename="VERA_DaoTao.pdf"; filename*=UTF-8''${encodeURIComponent('Thảo Linh_VERA_DaoTao.pdf')}`
+ assert.equal(trainingReportResponseFilename(header,'pdf'),'Thảo Linh_VERA_DaoTao.pdf')
+ for(const value of [null,"filename*=UTF-8''bad%","filename*=UTF-8''..%2Fprivate_VERA_DaoTao.pdf",header.replace('.pdf','png').replace(/pdf$/,'png')])assert.equal(trainingReportResponseFilename(value,'pdf'),null)
+})
+
+test('untrained table is last, read-only and searchable without removed helper text',async()=>{
+ const f=await fixture({trainingReportEmployees:async()=>({employees:[{username:'Linh Đan',full_name:'Linh Đan',role:'nhanvien'}],untrained_employees:[{username:'new-staff',full_name:'Thảo Linh',department:'Chăm sóc',role:'nhanvien'}]})})
+ try{
+  await f.open()
+  const table=document.querySelector('.training-untrained-roster')
+  assert.ok(table);assert.match(table.textContent,/Nhân viên chưa được đào tạo \/ đánh giá/);assert.match(table.textContent,/Toàn bộ thời gian/)
+  assert.match(table.textContent,/Thảo Linh/);assert.equal(table.querySelector('button'),null)
+  assert.doesNotMatch(document.body.textContent,/Chọn tên để xem báo cáo|Nhật ký theo ngày đào tạo;|nhân viên\./)
+  assert.equal(table.nextElementSibling,null)
+  await f.type(document.querySelector('[role=combobox]'),'thao linh');assert.equal(table.querySelectorAll('tbody tr').length,1)
+  assert.equal(document.querySelector('.training-employee-roster > table tbody').children.length,0)
+  await f.render({...user,id:'new-account',permissions:{training_view:false}});assert.equal(document.querySelector('.training-untrained-roster'),null)
+ }finally{await f.dispose()}
+})
+
+test('view/download/native share all use authoritative employee-specific filenames',async()=>{
+ const f=await fixture({readTrainingReportExport:async(_employee,format)=>({blob:new Blob([format]),filename:`Thảo Linh_VERA_DaoTao.${format}`})})
+ try{
+  await f.open();await f.click(f.button('Linh Đan'));await f.click(f.button('Xem / tải / chia sẻ PNG và PDF'))
+  for(const format of ['pdf','png']){
+   const name=`Thảo Linh_VERA_DaoTao.${format}`
+   const download=[...document.querySelectorAll('a[download]')].find(a=>a.download===name)
+   assert.ok(download);assert.ok(f.urls.some(x=>x.file.name===name&&x.url===download.href))
+   await f.click(f.button(`Chia sẻ ${format.toUpperCase()}`));assert.equal(f.shares.at(-1).files[0].name,name)
+  }
+ }finally{await f.dispose()}
+})
+
+
+test('binary transport retains server filename, exact employee filters and cancellation',async()=>{
+ const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
+ const body=source.slice(source.indexOf('  readTrainingReportExport: async'),source.indexOf('  createTrainingSession:')).trim().replace(/^readTrainingReportExport: /,'').replace(/,$/,'')
+ const calls=[],controller=new AbortController(),blob=new Blob(['pdf'])
+ const read=new Function('binaryResponse','trainingReportResponseFilename',`return (${body})`)(async(...args)=>{
+  calls.push(args)
+  return {blob:async()=>blob,headers:new Headers({'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent('Thảo Linh_VERA_DaoTao.pdf')}`})}
+ },trainingReportResponseFilename)
+ const result=await read('employee/private','pdf',{date_from:'2026-10-01',date_to:'2026-10-31'},{signal:controller.signal})
+ assert.equal(result.blob,blob);assert.equal(result.filename,'Thảo Linh_VERA_DaoTao.pdf')
+ assert.equal(calls[0][0],'/v2/training/reports/employee%2Fprivate/export?date_from=2026-10-01&date_to=2026-10-31&format=pdf')
+ assert.equal(calls[0][1].signal,controller.signal)
+ controller.abort();await assert.rejects(read('Thảo Linh','png',{}, {signal:controller.signal}),error=>error.name==='AbortError')
 })

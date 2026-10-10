@@ -1,3 +1,4 @@
+import { trainingReportResponseFilename } from './trainingReport'
 import { invalidateSharedReads } from './sharedRead'
 import { notifyLeaveChange } from './leaveRefresh'
 import { getCurrentSession, isSupabaseConfigured, refreshCurrentSession, supabase } from './supabase'
@@ -493,7 +494,7 @@ export const veraApi = {
     const response = await binaryResponse(`/v2/training/reports/${encodeURIComponent(employee)}/export?${params}`, options)
     const blob = await response.blob()
     options.signal?.throwIfAborted()
-    return blob
+    return { blob, filename: trainingReportResponseFilename(response.headers.get('content-disposition'), format) }
   },
   createTrainingSession: (body) => request('/v2/training/sessions', { method: 'POST', body: JSON.stringify(body) }),
   updateTrainingSession: (id, body) => request(`/v2/training/sessions/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),

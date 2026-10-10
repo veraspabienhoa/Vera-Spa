@@ -294,6 +294,57 @@ def test_export_filename_handles_vietnamese_quotes_safely(report_client, monkeyp
     response = client.get(f"/v2/training/reports/{quote(username, safe='')}/export?format=pdf")
     assert response.status_code == 200, response.text
     assert response.headers["content-disposition"] == (
-        'attachment; filename="VERA_BaoCaoDaoTao.pdf"; filename*=UTF-8\'\''
-        + quote(f"VERA_BaoCaoDaoTao_{username}.pdf", safe="")
+        'attachment; filename="VERA_DaoTao.pdf"; filename*=UTF-8\'\''
+        + quote("Đỗ _Thảo__VERA_DaoTao.pdf", safe="")
     )
+
+
+def test_untrained_roster_is_all_time_disjoint_active_authorized_and_read_only(report_client):
+    client, engine, state = report_client
+    with engine.begin() as conn:
+        session(conn, "old-training", "2020-02-29", employee="empty")
+        evaluation(conn, "cancelled-result", "cancelled", "2026-10-10", employee="leader2", status="cancelled")
+    state["sql"].clear()
+    data = get(client, "/v2/training/report-employees", date_from="2026-12-01", date_to="2026-12-31")
+    assert data["employees"] == []
+    assert data["untrained_scope"] == "all_time"
+    assert {person["username"] for person in data["untrained_employees"]} == {"admin", "leader", "leader2", "manager", "draft"}
+    assert all(sql.lstrip().upper().startswith("SELECT") for sql in state["sql"])
+    all_time = get(client, "/v2/training/report-employees")
+    assert data["untrained_employees"] == all_time["untrained_employees"]
+    assert not ({p["username"] for p in all_time["employees"]} & {p["username"] for p in all_time["untrained_employees"]})
+    # No direct/effective role widening, inactive staff, or archived identities.
+    state["identity"] = Identity(employee_username="leader", role="leader")
+    assert [p["username"] for p in get(client, "/v2/training/report-employees")["untrained_employees"]] == ["draft"]
+    state["identity"] = Identity(employee_username="manager", role="quanly")
+    assert get(client, "/v2/training/report-employees")["untrained_employees"] == []
+    state["identity"] = Identity(employee_username="alice", role="nhanvien")
+    assert get(client, "/v2/training/report-employees")["untrained_employees"] == []
+
+
+@pytest.mark.parametrize("file_format", ["pdf", "png"])
+def test_report_filename_uses_display_name_preserves_unicode_and_is_one_safe_basename(file_format):
+    from pathlib import PureWindowsPath
+    import unicodedata
+    assert training._training_report_filename({"username": "account-id", "full_name": "Thảo Linh"}, file_format) == f"Thảo Linh_VERA_DaoTao.{file_format}"
+    assert training._training_report_filename({"username": "account-id", "full_name": unicodedata.normalize("NFD", "Thảo Linh")}, file_format) == f"Thảo Linh_VERA_DaoTao.{file_format}"
+    name = training._training_report_filename({"full_name": '  ../Đỗ "Thảo"\\x\r\n:tail?*  '}, file_format)
+    assert name == f"_Đỗ _Thảo__x___tail___VERA_DaoTao.{file_format}"
+    assert PureWindowsPath(name).name == name
+    assert not any(ord(char) < 32 for char in name)
+    long_name = training._training_report_filename({"full_name": "Thảo🙂" * 100}, file_format)
+    assert len(long_name.encode("utf-8")) < 255
+    assert training._training_report_filename({"full_name": "..."}, file_format) == f"NhanVien_VERA_DaoTao.{file_format}"
+
+
+def test_no_record_bucket_stays_disjoint_if_a_record_disappears_between_reads(report_client, monkeypatch):
+    client, _, _ = report_client
+    original = training._report_employees
+    calls = 0
+    def changing_read(conn, catalog, date_from=None, date_to=None):
+        nonlocal calls
+        calls += 1
+        return original(conn, catalog, date_from, date_to) if calls == 1 else []
+    monkeypatch.setattr(training, "_report_employees", changing_read)
+    data = get(client, "/v2/training/report-employees", date_from="2026-10-10", date_to="2026-10-10")
+    assert not ({p["username"] for p in data["employees"]} & {p["username"] for p in data["untrained_employees"]})

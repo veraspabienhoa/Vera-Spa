@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
+import { trainingReportFilename } from '../lib/trainingReport'
 
 const types = { pdf: 'application/pdf', png: 'image/png' }
 function canShare(file) { try { return Boolean(file && navigator.share && navigator.canShare?.({ files: [file] })) } catch { return false } }
@@ -9,9 +10,9 @@ function useReportFile(scope, format, onDenied) {
   useEffect(() => {
     const controller = new AbortController(); let active = true, url
     setResult(null)
-    veraApi.readTrainingReportExport(scope.employee, format, scope.filters, { signal: controller.signal }).then(blob => {
+    veraApi.readTrainingReportExport(scope.employee, format, scope.filters, { signal: controller.signal }).then(({ blob, filename }) => {
       if (!active) return
-      const file = new File([blob], `VERA_DaoTao.${format}`, { type: types[format] })
+      const file = new File([blob], filename || trainingReportFilename(scope.name || scope.employee, format), { type: types[format] })
       url = URL.createObjectURL(file); setResult({ scope, file, url })
     }).catch(error => {
       if (!active) return

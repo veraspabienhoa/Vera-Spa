@@ -80,3 +80,10 @@ report was exported during implementation.
 No business data, ratings, existing permissions, production services or FaceID
 operations were changed. Backend deployment is needed for the new read/export
 routes; publication of this draft does not authorize merge or deployment.
+
+## Reference-template follow-up
+
+The subsequent PDF-only card template, employee-specific filenames, removed helper
+lines and all-time no-record roster are documented in
+[the template and roster follow-up](training-report-template-roster-2026-10-10.md).
+The original verification counts above describe the earlier implementation.
