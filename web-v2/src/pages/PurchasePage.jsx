@@ -3,14 +3,13 @@ import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal, flushSync } from 'react-dom'
-import { ShoppingCart, RefreshCw, Upload, Download, TrendingDown, Plus, History, ImageDown, Share2 } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { ShoppingCart, RefreshCw, Upload, Download, TrendingDown, Plus, History } from 'lucide-react'
 import { veraApi } from '../lib/api'
 import VeraDateInput from '../components/VeraDateInput'
 import VeraMoneyInput from '../components/VeraMoneyInput'
 import UiToolbar from '../components/UiToolbar'
 import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
-import { elementToPngBlob } from '../lib/clipboardImage'
 import TablePager from '../components/TablePager'
 import useTablePage from '../lib/useTablePage'
 import './PurchasePage.css'
@@ -39,9 +38,9 @@ function Modal({ title, busy, close, children }) {
   </dialog>, document.body)
 }
 
-function PurchaseTable({ tableRef, rows, data, total, selectedIds, onSelect }) {
-  return <table ref={tableRef}><caption>VERA SPA · NHẬP MUA · {data.start ? formatVeraDate(data.start) : 'Tất cả'}{data.end ? ` – ${formatVeraDate(data.end)}` : ''} · Tổng mua: {money(total)}</caption><thead><tr>{['Chọn','Ngày mua','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt','Ngày nhập','Giờ nhập','Người nhập'].map(label=><th key={label} data-snapshot-ignore={label==='Chọn' ? true : undefined}>{label}</th>)}</tr></thead><tbody>
-      {rows.map(row=><tr key={row.id} className={selectedIds.has(row.id)?'purchase-selected-row':''}><td data-snapshot-ignore><input type="checkbox" aria-label={`Chọn ${row.item}`} checked={selectedIds.has(row.id)} onChange={e=>onSelect?.(row.id, e.target.checked)} disabled={!onSelect} /></td>
+function PurchaseTable({ rows, data, total, selectedIds, onSelect }) {
+  return <table><caption>VERA SPA · NHẬP MUA · {data.start ? formatVeraDate(data.start) : 'Tất cả'}{data.end ? ` – ${formatVeraDate(data.end)}` : ''} · Tổng mua: {money(total)}</caption><thead><tr>{['Chọn','Ngày mua','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt','Ngày nhập','Giờ nhập','Người nhập'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>
+      {rows.map(row=><tr key={row.id} className={selectedIds.has(row.id)?'purchase-selected-row':''}><td><input type="checkbox" aria-label={`Chọn ${row.item}`} checked={selectedIds.has(row.id)} onChange={e=>onSelect?.(row.id, e.target.checked)} disabled={!onSelect} /></td>
         <td>{formatVeraDate(row.purchase_date)}</td><td>{row.item}</td><td>{row.quantity}</td><td>{money(row.unit_price)}</td><td>{money(row.amount)}</td><td>{row.note}</td><td>{row.entered_at ? enteredDisplayFormatter.format(new Date(row.entered_at)).replaceAll('/','-') : '—'}</td><td>{row.entered_at ? enteredTimeFormatter.format(new Date(row.entered_at)) : '—'}</td><td>{row.entered_by || '—'}</td></tr>)}
       {!rows.length && <tr><td colSpan={10}>Không có dữ liệu trong khoảng đang chọn.</td></tr>}
     </tbody></table>
@@ -61,10 +60,6 @@ function PurchaseAccountPage({ user, embedded = false, initialPreset = 'this_mon
   const [filters,setFilters] = useState(filtersEmpty), [selected,setSelected] = useState([]), [busy,setBusy] = useState(false)
   const [editor,setEditor] = useState(null), [draft,setDraft] = useState([]), [modalError,setModalError] = useState(''), [history,setHistory] = useState(null)
   const [reload,setReload] = useState(0), [loading,setLoading] = useState(true)
-  const tableRef = useRef(null), captureTableRef = useRef(null)
-  const [pngCapture, setPngCapture] = useState(null)
-  const [pngPreview, setPngPreview] = useState(null)
-  useEffect(() => () => { if (pngPreview) URL.revokeObjectURL(pngPreview.url) }, [pngPreview])
   const importInput = useRef(null), importMode = useRef('append'), requestId = useRef('')
   const params = useMemo(() => ({ preset, ...(preset === 'custom' ? { start, end } : {}) }), [preset,start,end])
   useEffect(() => {
@@ -120,35 +115,6 @@ function PurchaseAccountPage({ user, embedded = false, initialPreset = 'this_mon
       setReload(n => n+1)
     })
   }
-  function downloadPng(file) {
-    const url = URL.createObjectURL(file), link = document.createElement('a')
-    link.href = url; link.download = file.name; link.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 60000)
-  }
-  async function exportPng(share = false) {
-    await run(async () => {
-      // The ordinary table is paged. Mount the complete filtered snapshot only
-      // for an explicit capture, and always discard it, including failed exports.
-      let blob
-      try {
-        flushSync(() => setPngCapture({ rows, data, total, selectedIds, width: tableRef.current?.getBoundingClientRect().width || 1200 }))
-        blob = await elementToPngBlob(captureTableRef.current)
-      } finally { setPngCapture(null) }
-      const file = new File([blob], `nhap-mua-${today()}.png`, { type: 'image/png' })
-      if (share) setPngPreview({ file, url: URL.createObjectURL(file) })
-      else downloadPng(file)
-    })
-  }
-  async function sharePng() {
-    if (!navigator.share || !navigator.canShare?.({ files: [pngPreview.file] })) {
-      downloadPng(pngPreview.file)
-      setMessage('Trình duyệt chưa hỗ trợ chia sẻ file. Đã tải PNG để bạn gửi qua ứng dụng khác.')
-      setPngPreview(null)
-      return
-    }
-    try { await navigator.share({ files: [pngPreview.file], title: 'Nhập mua · VERA SPA' }) }
-    catch (cause) { if (cause?.name !== 'AbortError') setError(cause.message || 'Không chia sẻ được PNG. Hãy tải ảnh và gửi lại.') }
-  }
   const filter = (key,value) => setFilters(old => ({ ...old,[key]:value }))
   return <section className="purchase-page" data-ui-key="page:purchases">
     <div className="page-heading">
@@ -181,21 +147,14 @@ function PurchaseAccountPage({ user, embedded = false, initialPreset = 'this_mon
         {admin && <button data-ui-key="purchases:import-append" className="secondary-button compact" disabled={busy} onClick={()=>chooseImport('append')}><Upload size={14}/> Import thêm mới</button>}
         {admin && <button data-ui-key="purchases:import-replace" className="secondary-button compact danger-button" disabled={busy} onClick={()=>chooseImport('replace')}><Upload size={14}/> Import thay toàn bộ</button>}
         <button data-ui-key="purchases:export" className="secondary-button compact purchase-export" title="Xuất excel theo thời gian đang chọn" disabled={busy || loading} onClick={()=>run(()=>veraApi.exportPurchases(params))}><Download size={14}/> Xuất excel</button>
-        <button data-ui-key="purchases:download-png" className="secondary-button compact" disabled={busy || loading} onClick={()=>exportPng()}><ImageDown size={14}/> Tải PNG</button>
-        <button data-ui-key="purchases:share-png" className="secondary-button compact" disabled={busy || loading} onClick={()=>exportPng(true)}><Share2 size={14}/> Share PNG</button>
       </UiToolbar>
     </div>
     </section>
     <input ref={importInput} hidden type="file" accept=".xlsb,.xlsx" onChange={importFile} />
     <StableDataRegion loading={loading}>
       <TablePager pagination={page} label="mua hàng" />
-      <div className="purchase-table"><PurchaseTable tableRef={tableRef} rows={page.rows} data={data} total={total} selectedIds={selectedIds} onSelect={(id, checked) => setSelected(old => checked ? [...old, id] : old.filter(value => value !== id))} /></div>
+      <div className="purchase-table"><PurchaseTable rows={page.rows} data={data} total={total} selectedIds={selectedIds} onSelect={(id, checked) => setSelected(old => checked ? [...old, id] : old.filter(value => value !== id))} /></div>
     </StableDataRegion>
-    {pngCapture && <div className="purchase-png-capture" aria-hidden="true" style={{ width: pngCapture.width }}><div className="purchase-table"><PurchaseTable tableRef={captureTableRef} {...pngCapture} /></div></div>}
-    {pngPreview && <Modal title="Chia sẻ PNG Nhập mua" busy={false} close={()=>setPngPreview(null)}>
-      <img src={pngPreview.url} alt="Bảng Nhập mua theo bộ lọc hiện tại" style={{maxWidth:'100%',height:'auto'}} />
-      <footer><button type="button" onClick={sharePng}><Share2 size={16}/> Chia sẻ ảnh</button><button type="button" onClick={()=>downloadPng(pngPreview.file)}><ImageDown size={16}/> Tải PNG</button></footer>
-    </Modal>}
     {editor && <Modal title={editor.id?'Sửa mua hàng':'Nhập mua hàng'} busy={busy} close={()=>setEditor(null)}><form onSubmit={save}>
       <StableFeedback>{modalError && <p role="alert">{modalError}</p>}</StableFeedback>
       {draft.map((row,index)=><div className="purchase-entry" key={index}>

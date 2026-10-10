@@ -112,7 +112,3 @@
     line-height: 1.3;
   }
 }
-
-/* Export all filtered rows only on demand; never keep a hidden full-size table mounted. */
-.purchase-png-capture { position: absolute; left: -100000px; top: 0; pointer-events: none; }
-.purchase-page .purchase-png-capture .purchase-table { max-height: none; overflow: visible; }
