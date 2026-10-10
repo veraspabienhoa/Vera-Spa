@@ -4,10 +4,12 @@ from vera_notification_delivery import enqueue as enqueue_notification
 import vera_web_v2_notification_settings as notification_settings
 
 from datetime import date, datetime, time
+from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable, Literal
 from uuid import uuid4
+from urllib.parse import quote
 
 from fastapi import Depends, HTTPException, Query, Response
 from PIL import Image, ImageDraw, ImageFont
@@ -400,20 +402,175 @@ def _audit(conn, entity_type: str, entity_id: str, action: str, actor: str, deta
              "actor": actor, "detail": __import__("json").dumps(detail or {}, ensure_ascii=False)})
 
 
-def _report_employees(conn, employees):
-    """Only permitted employees with daily or submitted comprehensive results."""
+def _validate_report_dates(date_from: date | None, date_to: date | None) -> None:
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(400, "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.")
+
+
+def _report_date_clause(column: str, date_from: date | None, date_to: date | None) -> str:
+    # Columns come from constants in this module, never from request input.
+    return ((f" AND {column} >= :date_from" if date_from else "")
+            + (f" AND {column} <= :date_to" if date_to else ""))
+
+
+def _training_employee_catalog(conn, ident) -> list[dict[str, Any]]:
+    """The same role-pair and active directory used by training bootstrap."""
+    allowed_roles = ROLE_TARGETS.get(str(ident.role or "").lower(), set())
+    role_filter = "" if _is_admin(ident) else (
+        " AND lower(COALESCE(e.role,'')) IN (" + ",".join(f"'{role}'" for role in sorted(allowed_roles)) + ")"
+        if allowed_roles else " AND FALSE"
+    )
+    return _rows(conn.execute(text("""
+        SELECT e.username, e.username AS full_name, lower(COALESCE(e.role,'')) AS role
+        FROM employees e
+        WHERE COALESCE(e.payload->>'__deleted','false') <> 'true'
+          AND """ + ACTIVE_EMPLOYEE_SQL + role_filter + " ORDER BY lower(COALESCE(NULLIF(e.full_name,''), e.username))")))
+
+
+def _with_departments(conn, employees):
+    from vera_web_v2_hr import registry, department_code
+    hr = registry(conn)
+    for employee in employees:
+        code = department_code(employee, hr)
+        employee["department"] = hr["departments"].get(code, {}).get("name", code)
+    return employees
+
+
+def _report_employees(conn, employees, date_from: date | None = None, date_to: date | None = None):
+    """Permitted employees with actual results in the inclusive business-date range.
+
+    Daily training_date and evaluation cycle end_date are Vietnam calendar DATE
+    values already. Do not reinterpret either as a UTC submission timestamp.
+    This query is deliberately independent of bootstrap's 300 recent sessions.
+    """
+    _validate_report_dates(date_from, date_to)
+    if not employees:
+        return []
+    cycle_join = " JOIN vera_evaluation_cycle c ON c.id=a.cycle_id" if date_from or date_to else ""
     usernames = {
         str(row[0]).casefold()
         for row in conn.execute(text("""
-            SELECT lower(employee_username) FROM vera_training_session
+            SELECT lower(employee_username) FROM vera_training_session WHERE TRUE
+            """ + _report_date_clause("training_date", date_from, date_to) + """
             UNION
             SELECT lower(a.employee_username)
             FROM vera_evaluation_assignment a
             JOIN vera_employee_evaluation ev ON ev.assignment_id=a.id
+            """ + cycle_join + """
             WHERE a.status='submitted'
-        """))
+            """ + _report_date_clause("c.end_date", date_from, date_to)),
+            {"date_from": date_from, "date_to": date_to})
     }
     return [employee for employee in employees if employee["username"].casefold() in usernames]
+
+
+def _require_report_employee(conn, ident, username: str) -> dict[str, Any]:
+    # Preserve the existing training report's assessment-pair authorization.
+    # Explicit scope rows do not grant or revoke report access in this module.
+    if not _is_admin(ident):
+        _, employee = _require_assessment_pair(conn, ident.employee_username, username)
+    else:
+        employee = _employee(conn, username)
+        if not employee:
+            raise HTTPException(404, "Không tìm thấy nhân viên.")
+    return _with_departments(conn, [employee])[0]
+
+
+def _report_evaluation_averages(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Aggregate the exact filtered records, retaining the existing four axes."""
+    groups: dict[str, dict[str, Any]] = {}
+    for item in details:
+        group = groups.setdefault(item["cycle_id"], {
+            "cycle_id": item["cycle_id"], "cycle_name": item["cycle_name"], "end_date": item["end_date"],
+            "craft": [], "communication": [], "attitude": [], "conduct": [],
+        })
+        for axis, key in (("craft", "craft_score"), ("communication", "communication_score"), ("attitude", "attitude_score")):
+            if item.get(key) is not None:
+                group[axis].append(Decimal(str(item[key])))
+        conduct = [item.get(key) for key in ("discipline_score", "appearance_score", "hygiene_score", "attendance_score")]
+        if all(value is not None for value in conduct):
+            group["conduct"].append(sum(Decimal(str(value)) for value in conduct) / 4)
+    result = []
+    for group in groups.values():
+        for axis in ("craft", "communication", "attitude", "conduct"):
+            values = group[axis]
+            group[axis] = float((sum(values) / len(values)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if values else None
+        result.append(group)
+    return sorted(result, key=lambda item: (str(item["end_date"]), str(item["cycle_id"])))
+
+
+def _read_training_report(conn, employee: dict[str, Any], *, evaluator_role="all", q="", date_from=None,
+                          date_to=None, rating="all", page=1, page_size=50, all_history=False):
+    """One filtered DTO for the report, charts, journal and full exports."""
+    role_clause = "" if evaluator_role == "all" else " AND lower(COALESCE(t.role,''))=:evaluator_role"
+    params = {"employee": employee["username"], "evaluator_role": evaluator_role,
+              "date_from": date_from, "date_to": date_to}
+    progress = _rows(conn.execute(text("""
+        SELECT ts.id,ts.training_date,ts.start_time,ts.end_time,ts.topic,ts.skill_grade,
+               ts.learning_attitude,ts.trainer_username,ts.trainer_username evaluator_name,
+               lower(COALESCE(t.role,'')) evaluator_role,ts.strengths,ts.improvements,ts.notes,ts.status,ts.created_at
+        FROM vera_training_session ts
+        LEFT JOIN employees t ON lower(t.username)=lower(ts.trainer_username)
+        WHERE lower(ts.employee_username)=lower(:employee)
+        """ + role_clause + _report_date_clause("ts.training_date", date_from, date_to) + """
+        ORDER BY training_date, start_time, ts.id
+        """), params))
+    for item in progress:
+        item["skill_score"] = GRADE_SCORE.get(item["skill_grade"])
+    evaluation_details = _rows(conn.execute(text("""
+        SELECT a.id,c.id cycle_id,c.name cycle_name,c.start_date,c.end_date,a.evaluator_username,
+               a.evaluator_username evaluator_name,
+               lower(COALESCE(t.role,'')) evaluator_role,a.status,ev.submitted_at,
+               ev.craft_score,ev.communication_score,ev.attitude_score,ev.discipline_score,
+               ev.appearance_score,ev.hygiene_score,ev.attendance_score,
+               ev.strengths,ev.improvements,ev.comments
+        FROM vera_evaluation_assignment a
+        JOIN vera_evaluation_cycle c ON c.id=a.cycle_id
+        JOIN vera_employee_evaluation ev ON ev.assignment_id=a.id
+        LEFT JOIN employees t ON lower(t.username)=lower(a.evaluator_username)
+        WHERE lower(a.employee_username)=lower(:employee) AND a.status='submitted'
+        """ + role_clause + _report_date_clause("c.end_date", date_from, date_to) + """
+        ORDER BY c.end_date DESC,ev.submitted_at DESC,a.id
+        """), params))
+    history = [
+        {"type": "daily", "date": item["training_date"], "id": item["id"],
+         "title": item["topic"] or "Đào tạo hằng ngày", "evaluator_name": item["evaluator_name"],
+         "evaluator_role": item["evaluator_role"], "rating": _rating_from_grade(item["skill_grade"]),
+         "rating_label": RATING_LABELS[_rating_from_grade(item["skill_grade"])], "detail": item}
+        for item in progress
+    ] + [
+        {"type": "comprehensive", "date": item["end_date"], "id": item["id"],
+         "title": item["cycle_name"], "evaluator_name": item["evaluator_name"],
+         "evaluator_role": item["evaluator_role"], "rating": _rating_from_scores(item),
+         "rating_label": RATING_LABELS[_rating_from_scores(item)], "detail": item}
+        for item in evaluation_details
+    ]
+    keyword = q.strip().casefold()
+    if keyword:
+        history = [item for item in history if keyword in " ".join(str(value or "") for value in (
+            item["title"], item["evaluator_name"], item["detail"].get("notes"),
+            item["detail"].get("comments"), item["detail"].get("strengths"),
+            item["detail"].get("improvements"),
+        )).casefold()]
+    if rating != "all":
+        history = [item for item in history if item["rating"] == rating]
+    # Derive every section from the same filter result before history pagination.
+    # Previously q/rating changed history only while charts showed extra records.
+    selected_daily = {item["id"] for item in history if item["type"] == "daily"}
+    selected_evaluations = {item["id"] for item in history if item["type"] == "comprehensive"}
+    progress = [item for item in progress if item["id"] in selected_daily]
+    evaluation_details = [item for item in evaluation_details if item["id"] in selected_evaluations]
+    evaluations = _report_evaluation_averages(evaluation_details)
+    history.sort(key=lambda item: (str(item.get("date") or ""), item["type"], str(item["id"])), reverse=True)
+    history_total = len(history)
+    if not all_history:
+        history = history[(page - 1) * page_size:page * page_size]
+    return {"employee_username": employee["username"], "employee": employee,
+            "date_from": date_from, "date_to": date_to,
+            "filters": {"evaluator_role": evaluator_role, "q": q, "rating": rating},
+            "progress": progress, "evaluations": evaluations, "evaluation_details": evaluation_details,
+            "history": history, "history_total": history_total, "page": page,
+            "page_size": page_size, "latest_radar": evaluations[-1] if evaluations else None}
 
 
 def install_training_routes(
@@ -425,19 +582,7 @@ def install_training_routes(
         with engine_instance().begin() as conn:
             _schema(conn)
             require_feature(conn, ident, "training_view")
-            viewer_role = str(ident.role or "").lower()
-            allowed_roles = ROLE_TARGETS.get(viewer_role, set())
-            role_filter = "" if _is_admin(ident) else (
-                " AND lower(COALESCE(e.role,'')) IN (" + ",".join(f"'{role}'" for role in sorted(allowed_roles)) + ")"
-                if allowed_roles else " AND FALSE"
-            )
-            employees = _rows(conn.execute(text("""
-                SELECT e.username, e.username AS full_name,
-                       lower(COALESCE(e.role,'')) AS role
-                FROM employees e
-                WHERE COALESCE(e.payload->>'__deleted','false') <> 'true'
-                  AND """ + ACTIVE_EMPLOYEE_SQL + role_filter + " ORDER BY lower(COALESCE(NULLIF(e.full_name,''), e.username))"),
-                {"viewer": ident.employee_username}))
+            employees = _training_employee_catalog(conn, ident)
             training_students = employees
             sessions_filter = "" if _is_admin(ident) else """
                 WHERE lower(ts.trainer_username)=lower(:viewer)
@@ -687,6 +832,18 @@ def install_training_routes(
             _audit(conn, "evaluation", assignment_id, "submit" if body.submit else "save_draft", ident.employee_username)
             return {"ok": True, "notifications_created": notified}
 
+    @app.get("/v2/training/report-employees")
+    def training_report_employees(
+        date_from: date | None = Query(default=None),
+        date_to: date | None = Query(default=None),
+        ident: identity_type = Depends(current_identity),
+    ):
+        _validate_report_dates(date_from, date_to)
+        with engine_instance().begin() as conn:
+            _schema(conn); require_feature(conn, ident, "training_view")
+            employees = _report_employees(conn, _training_employee_catalog(conn, ident), date_from, date_to)
+            return {"employees": _with_departments(conn, employees), "date_from": date_from, "date_to": date_to}
+
     @app.get("/v2/training/reports/{employee_username}")
     def employee_training_report(
         employee_username: str,
@@ -699,87 +856,44 @@ def install_training_routes(
         page_size: int = Query(default=50, ge=1, le=100),
         ident: identity_type = Depends(current_identity),
     ):
+        _validate_report_dates(date_from, date_to)
         with engine_instance().begin() as conn:
             _schema(conn); require_feature(conn, ident, "training_view")
-            if not _is_admin(ident):
-                _require_assessment_pair(conn, ident.employee_username, employee_username)
-            role_clause = "" if evaluator_role == "all" else " AND lower(COALESCE(t.role,''))=:evaluator_role"
-            progress = _rows(conn.execute(text("""
-                SELECT ts.id,ts.training_date,ts.start_time,ts.end_time,ts.topic,ts.skill_grade,
-                       ts.learning_attitude,ts.trainer_username,ts.trainer_username evaluator_name,
-                       lower(COALESCE(t.role,'')) evaluator_role,ts.strengths,ts.improvements,ts.notes,ts.status,ts.created_at
-                FROM vera_training_session ts
-                LEFT JOIN employees t ON lower(t.username)=lower(ts.trainer_username)
-                WHERE lower(ts.employee_username)=lower(:employee)
-            """ + role_clause + """
-                ORDER BY training_date, start_time
-            """), {"employee": employee_username, "evaluator_role": evaluator_role}))
-            for item in progress: item["skill_score"] = GRADE_SCORE.get(item["skill_grade"], 0)
-            evaluations = _rows(conn.execute(text("""
-                SELECT c.id cycle_id, c.name cycle_name, c.end_date,
-                       ROUND(AVG(ev.craft_score),2) craft,
-                       ROUND(AVG(ev.communication_score),2) communication,
-                       ROUND(AVG(ev.attitude_score),2) attitude,
-                       ROUND(AVG((ev.discipline_score+ev.appearance_score+ev.hygiene_score+ev.attendance_score)/4.0),2) conduct
-                FROM vera_evaluation_assignment a
-                JOIN vera_evaluation_cycle c ON c.id=a.cycle_id
-                JOIN vera_employee_evaluation ev ON ev.assignment_id=a.id
-                LEFT JOIN employees t ON lower(t.username)=lower(a.evaluator_username)
-                WHERE lower(a.employee_username)=lower(:employee) AND a.status='submitted'
-            """ + role_clause + """
-                GROUP BY c.id, c.name, c.end_date ORDER BY c.end_date
-            """), {"employee": employee_username, "evaluator_role": evaluator_role}))
-            evaluation_details = _rows(conn.execute(text("""
-                SELECT a.id,c.name cycle_name,c.end_date,a.evaluator_username,
-                       a.evaluator_username evaluator_name,
-                       lower(COALESCE(t.role,'')) evaluator_role,a.status,ev.submitted_at,
-                       ev.craft_score,ev.communication_score,ev.attitude_score,ev.discipline_score,
-                       ev.appearance_score,ev.hygiene_score,ev.attendance_score,
-                       ev.strengths,ev.improvements,ev.comments
-                FROM vera_evaluation_assignment a
-                JOIN vera_evaluation_cycle c ON c.id=a.cycle_id
-                JOIN vera_employee_evaluation ev ON ev.assignment_id=a.id
-                LEFT JOIN employees t ON lower(t.username)=lower(a.evaluator_username)
-                WHERE lower(a.employee_username)=lower(:employee) AND a.status='submitted'
-            """ + role_clause + " ORDER BY c.end_date DESC,ev.submitted_at DESC"),
-                {"employee": employee_username, "evaluator_role": evaluator_role}))
-            if date_from or date_to:
-                progress = [item for item in progress if (not date_from or item["training_date"] >= date_from) and (not date_to or item["training_date"] <= date_to)]
-                evaluations = [item for item in evaluations if (not date_from or item["end_date"] >= date_from) and (not date_to or item["end_date"] <= date_to)]
-                evaluation_details = [item for item in evaluation_details if (not date_from or item["end_date"] >= date_from) and (not date_to or item["end_date"] <= date_to)]
-            history = [
-                {"type": "daily", "date": item["training_date"], "id": item["id"],
-                 "title": item["topic"] or "Đào tạo hằng ngày", "evaluator_name": item["evaluator_name"],
-                 "evaluator_role": item["evaluator_role"], "rating": _rating_from_grade(item["skill_grade"]),
-                 "rating_label": RATING_LABELS[_rating_from_grade(item["skill_grade"])], "detail": item}
-                for item in progress
-            ] + [
-                {"type": "comprehensive", "date": item["end_date"], "id": item["id"],
-                 "title": item["cycle_name"], "evaluator_name": item["evaluator_name"],
-                 "evaluator_role": item["evaluator_role"], "rating": _rating_from_scores(item),
-                 "rating_label": RATING_LABELS[_rating_from_scores(item)], "detail": item}
-                for item in evaluation_details
-            ]
-            keyword = q.strip().casefold()
-            if keyword:
-                history = [item for item in history if keyword in " ".join(str(value or "") for value in (
-                    item["title"], item["evaluator_name"], item["detail"].get("notes"),
-                    item["detail"].get("comments"), item["detail"].get("strengths"),
-                    item["detail"].get("improvements"),
-                )).casefold()]
-            if date_from:
-                history = [item for item in history if item.get("date") and item["date"] >= date_from]
-            if date_to:
-                history = [item for item in history if item.get("date") and item["date"] <= date_to]
-            if rating != "all":
-                history = [item for item in history if item["rating"] == rating]
-            history.sort(key=lambda item: str(item.get("date") or ""), reverse=True)
-            history_total = len(history)
-            history = history[(page - 1) * page_size:page * page_size]
-            return {"employee_username": employee_username, "progress": progress,
-                    "evaluations": evaluations, "evaluation_details": evaluation_details,
-                    "history": history, "history_total": history_total, "page": page,
-                    "page_size": page_size, "latest_radar": evaluations[-1] if evaluations else None}
+            employee = _require_report_employee(conn, ident, employee_username)
+            return _read_training_report(conn, employee, evaluator_role=evaluator_role, q=q,
+                date_from=date_from, date_to=date_to, rating=rating, page=page, page_size=page_size)
+
+    @app.get("/v2/training/reports/{employee_username}/export")
+    def export_training_report(
+        employee_username: str,
+        format: Literal["pdf", "png"] = Query(default="pdf"),
+        evaluator_role: Literal["all", "leader", "quanly"] = Query(default="all"),
+        q: str = Query(default="", max_length=200),
+        date_from: date | None = Query(default=None),
+        date_to: date | None = Query(default=None),
+        rating: Literal["all", "excellent", "good", "average", "weak"] = Query(default="all"),
+        ident: identity_type = Depends(current_identity),
+    ):
+        from vera_web_v2_training_report_export import (
+            ReportExportTooLarge, ReportExportUnavailable, render_training_report,
+        )
+        _validate_report_dates(date_from, date_to)
+        with engine_instance().begin() as conn:
+            _schema(conn); require_feature(conn, ident, "training_view")
+            employee = _require_report_employee(conn, ident, employee_username)
+            report = _read_training_report(conn, employee, evaluator_role=evaluator_role, q=q,
+                date_from=date_from, date_to=date_to, rating=rating, all_history=True)
+        # Rendering holds no business DB connection or transaction.
+        try:
+            content = render_training_report(report, format)
+        except ReportExportTooLarge as exc:
+            raise HTTPException(413, str(exc)) from exc
+        except ReportExportUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        filename = f"VERA_BaoCaoDaoTao_{employee['username']}.{format}"
+        return Response(content=content, media_type="application/pdf" if format == "pdf" else "image/png",
+            headers={"Content-Disposition": f"attachment; filename=\"VERA_BaoCaoDaoTao.{format}\"; filename*=UTF-8''{quote(filename, safe='')}",
+                     "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @app.get("/v2/training/evaluations/{assignment_id}/export.{file_format}")
     def export_evaluation(
