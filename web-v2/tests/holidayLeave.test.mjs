@@ -17,3 +17,10 @@ test('Changed scopes and modes send only applicable fields', () => {
   assert.deepEqual(holidayPayload(form, 'retry').dates, ['2026-10-21'])
   assert.deepEqual(holidayPayload(form, 'retry').departments, [])
 })
+
+test('Hours combine with selected dates and clear when switching to all day',()=>{
+ const form={scope:'all',mode:'dates',dates:['2026-10-10','2026-10-12'],note:'Lễ',timeMode:'hours',timeFrom:'17:00:00',timeTo:'00:00:00'}
+ const payload=holidayPayload(form,'id')
+ assert.deepEqual(payload.dates,form.dates);assert.equal(payload.time_from,'17:00:00');assert.equal(payload.time_to,'00:00:00')
+ assert.equal(holidayPayload({...form,timeMode:'all_day'},'id').time_from,undefined)
+})

@@ -24,10 +24,13 @@ test('Form confirms before submitting all-employee day registration',async()=>{
  assert.equal(w.writes.length,1);assert.equal(w.writes[0].scope,'all');assert.equal(w.writes[0].mode,'day');assert.equal(w.writes[0].dates.length,1);assert.equal(w.writes[0].note,'Lễ Test');assert.match(w.writes[0].request_id,/^[0-9a-f-]{36}$/)
  await w.unmount();w.close()
 })
-test('HR department selector and paired date/time inputs',async()=>{
+test('HR department selector keeps day choice with separate hours',async()=>{
  const dom=await mount(),w=dom.window;let selects=[...w.document.querySelectorAll('form select')]
  await change(w,selects[0],'departments');assert.equal(w.document.querySelectorAll('form input[type=checkbox]').length,2)
  await w.act(async()=>w.document.querySelector('form input[type=checkbox]').click());selects=[...w.document.querySelectorAll('form select')]
- await change(w,selects[1],'hours');assert.equal(w.document.querySelectorAll('form input[type=time]').length,2);assert.equal(w.document.querySelectorAll('form .vera-datetime-input').length,2);assert.match(w.document.querySelector('form').textContent,/1 nhân viên/)
+ await change(w,selects[2],'hours');assert.equal(w.document.querySelectorAll('form input[type=time]').length,2);assert.ok(w.document.querySelector('[aria-label="Ngày nghỉ lễ"]'));assert.equal(selects[1].value,'day');assert.match(w.document.querySelector('form').textContent,/1 nhân viên/)
+ await change(w,[...w.document.querySelectorAll('input')].find(input=>input.maxLength===1000),'Nghỉ buổi tối')
+ await w.act(async()=>{w.document.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await tick()})
+ assert.equal(w.writes[0].mode,'day');assert.equal(w.writes[0].dates.length,1);assert.equal(w.writes[0].time_from,'17:00:00');assert.equal(w.writes[0].time_to,'00:00:00')
  await w.unmount();w.close()
 })

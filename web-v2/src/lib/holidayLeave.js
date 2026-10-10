@@ -15,6 +15,7 @@ export function holidayPayload(form, requestId) {
     dates: form.mode === 'day' ? [form.day] : form.mode === 'dates' ? form.dates : [],
     date_from: form.mode === 'range' ? form.dateFrom : null,
     date_to: form.mode === 'range' ? form.dateTo : null,
+    ...(form.timeMode === 'hours' ? { time_from: form.timeFrom, time_to: form.timeTo } : {}),
     starts_at: form.mode === 'hours' ? form.startsAt : null,
     ends_at: form.mode === 'hours' ? form.endsAt : null,
   }
