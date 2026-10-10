@@ -1228,11 +1228,13 @@ def _parse_minutes_late(row) -> float | None:
     return max(0.0, float(diff))
 
 
-def _confirmed_break_return_records(engine, work_date: date) -> list[dict]:
-    """Build today's break facts from the same FaceID rules used by Web V2."""
+def _confirmed_break_return_records(engine, work_date: date, *, conn=None) -> list[dict]:
+    """Build canonical break facts, reusing a supplied transaction connection."""
+    from contextlib import nullcontext
     import vera_web_v2_attendance_break_window as break_window
     import vera_web_v2_attendance_v42 as attendance
     import vera_web_v2_support_shift_break as support_shift
+    from vera_web_v2_attendance_query_perf import _records_v42_fast as attendance_records
 
     original_cluster = attendance._cluster_punches
     original_picker = attendance._pick_break_pair
@@ -1250,15 +1252,18 @@ def _confirmed_break_return_records(engine, work_date: date) -> list[dict]:
             cfg=cfg,
         )
 
-    # _records_v42 resolves these functions at runtime. Temporarily install the
+    # The shared reader resolves these functions at runtime. Temporarily install the
     # production five-minute grouping/window rules while this background worker
     # reconstructs confirmed break pairs from the just-written snapshot.
     attendance._cluster_punches = cluster_in_five_minutes
     attendance._pick_break_pair = break_window._pick_break_pair
     attendance._break_from_punches = break_with_current_window
     try:
-        with engine.connect() as conn:
-            records = attendance._records_v42(conn, work_date, work_date)
+        with (nullcontext(conn) if conn is not None else engine.connect()) as conn:
+            # Standalone snapshot jobs never run the API's query_perf.install().
+            # Call the source-aware reader explicitly so FaceGate cutover, raw
+            # archive guards and legacy history use this same connection.
+            records = attendance_records(conn, work_date, work_date)
             support_map = support_shift._support_map(conn, work_date, work_date)
             leave_rows = conn.execute(text("""
                 SELECT employee_name, leave_reason
@@ -1298,62 +1303,96 @@ def _confirmed_break_return_records(engine, work_date: date) -> list[dict]:
 
 
 def process_break_return_penalties(engine, catalog: dict) -> dict:
-    """Write confirmed mid-shift late-return penalties during TimeSoft sync."""
+    """Project and write on one connection, isolating each best-effort penalty."""
     from vera_web_v2_break_return_penalty import confirmed_break_return_fact
 
     result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
     today = datetime.now(VN_TZ).date()
+    committed_logs = []
     try:
-        records = _confirmed_break_return_records(engine, today)
+        with engine.begin() as conn:
+            if auto_check.penalties_paused(conn):
+                return result
+            # Keep the canonical evidence read in the owning write transaction,
+            # rather than releasing its connection and later writing stale facts.
+            records = _confirmed_break_return_records(engine, today, conn=conn)
+            for item in records:
+                fact = confirmed_break_return_fact(item, today)
+                if fact is None:
+                    continue
+                result["eligible"] += 1
+                late_minutes = int(fact["late_minutes"])
+                reason_item = auto_check.outside_reason(catalog, late_minutes)
+                if not reason_item:
+                    result["errors"] += 1
+                    _log(f"DIRECT BREAK RETURN ERROR: Nội quy thiếu mức Ra ngoài vào muộn cho {late_minutes} phút.")
+                    continue
+
+                employee = str(fact["employee"] or "").strip()
+                facegate_source = item.get("evidence_source") == "facegate"
+                source_name = "FaceGate" if facegate_source else "TimeSoft"
+                detail = (
+                    f"Đồng bộ {source_name} trực tiếp · nghỉ giữa ca vào lại trễ {late_minutes} phút"
+                    f" · Giờ ra {fact['break_out'].strftime('%H:%M:%S')}"
+                    f" · Hạn vào lại {fact['deadline'].strftime('%H:%M:%S')}"
+                    f" · FaceID vào lại {fact['break_in'].strftime('%H:%M:%S')}"
+                )
+                try:
+                    with conn.begin_nested():
+                        if facegate_source:
+                            # A new archive/mapping issue or changed break pair
+                            # must not be written from the earlier projection.
+                            current = next((row for row in _confirmed_break_return_records(
+                                engine, today, conn=conn,
+                            ) if _employee_key(row.get("employee_name")) == _employee_key(employee)), None)
+                            if not current or confirmed_break_return_fact(current, today) != fact:
+                                result["skipped"] += 1
+                                continue
+                            try:
+                                synced = datetime.fromisoformat(str(current.get("attendance_fine_evidence_synced_at") or ""))
+                                fresh = bool(synced.tzinfo and 0 <= (datetime.now(VN_TZ) - synced).total_seconds() <= 300)
+                            except (ValueError, TypeError):
+                                fresh = False
+                            if not fresh:
+                                result["skipped"] += 1
+                                continue
+                        # A pause made after projection still stops new writes.
+                        if auto_check.penalties_paused(conn):
+                            result["skipped"] += 1
+                            continue
+                        ok, message = auto_check.save_violation(
+                            conn,
+                            work_date=fact["work_day"],
+                            employee=employee,
+                            reason_item=reason_item,
+                            detail=detail,
+                            source=("ĐỒNG BỘ FACEGATE - NGHỈ GIỮA CA" if facegate_source
+                                    else "ĐỒNG BỘ TIMESOFT - NGHỈ GIỮA CA"),
+                            minutes=late_minutes,
+                            approved_window=(fact["deadline"], fact["break_in"]),
+                        )
+                    if ok and message in {"SKIP_DUPLICATE", "SKIP_ROLE_NOT_ELIGIBLE", "SKIP_GRACE_PERIOD", "SKIP_APPROVED_HOLIDAY"}:
+                        result["skipped"] += 1
+                    elif ok:
+                        result["added"] += 1
+                        committed_logs.append(
+                            f"DIRECT BREAK RETURN ADDED: {employee} · {reason_item['name']} · "
+                            f"{late_minutes} phút · {fact['work_day']}"
+                        )
+                    else:
+                        result["errors"] += 1
+                        _log(f"DIRECT BREAK RETURN ERROR: {employee}: {message}")
+                except Exception as exc:
+                    result["errors"] += 1
+                    _log(f"DIRECT BREAK RETURN ERROR: {employee}: {type(exc).__name__}: {exc}")
     except Exception as exc:
-        result["errors"] += 1
-        _log(f"DIRECT BREAK RETURN ERROR: không dựng được dữ liệu nghỉ giữa ca: {type(exc).__name__}: {exc}")
+        # Do not report financial rows or outbox entries that failed to commit.
+        result["errors"] += max(1, result["added"])
+        result["added"] = 0
+        _log(f"DIRECT BREAK RETURN ERROR: giao dịch nghỉ giữa ca chưa hoàn tất: {type(exc).__name__}: {exc}")
         return result
-
-    for item in records:
-        fact = confirmed_break_return_fact(item, today)
-        if fact is None:
-            continue
-        result["eligible"] += 1
-        late_minutes = int(fact["late_minutes"])
-        reason_item = auto_check.outside_reason(catalog, late_minutes)
-        if not reason_item:
-            result["errors"] += 1
-            _log(f"DIRECT BREAK RETURN ERROR: Nội quy thiếu mức Ra ngoài vào muộn cho {late_minutes} phút.")
-            continue
-
-        employee = str(fact["employee"] or "").strip()
-        detail = (
-            f"Đồng bộ TimeSoft trực tiếp · nghỉ giữa ca vào lại trễ {late_minutes} phút"
-            f" · Giờ ra {fact['break_out'].strftime('%H:%M:%S')}"
-            f" · Hạn vào lại {fact['deadline'].strftime('%H:%M:%S')}"
-            f" · FaceID vào lại {fact['break_in'].strftime('%H:%M:%S')}"
-        )
-        try:
-            with engine.begin() as conn:
-                ok, message = auto_check.save_violation(
-                    conn,
-                    work_date=fact["work_day"],
-                    employee=employee,
-                    reason_item=reason_item,
-                    detail=detail,
-                    source="ĐỒNG BỘ TIMESOFT - NGHỈ GIỮA CA",
-                    minutes=late_minutes,
-                )
-            if ok and message in {"SKIP_DUPLICATE", "SKIP_ROLE_NOT_ELIGIBLE", "SKIP_GRACE_PERIOD"}:
-                result["skipped"] += 1
-            elif ok:
-                result["added"] += 1
-                _log(
-                    f"DIRECT BREAK RETURN ADDED: {employee} · {reason_item['name']} · "
-                    f"{late_minutes} phút · {fact['work_day']}"
-                )
-            else:
-                result["errors"] += 1
-                _log(f"DIRECT BREAK RETURN ERROR: {employee}: {message}")
-        except Exception as exc:
-            result["errors"] += 1
-            _log(f"DIRECT BREAK RETURN ERROR: {employee}: {type(exc).__name__}: {exc}")
+    for message in committed_logs:
+        _log(message)
     return result
 
 
@@ -1365,6 +1404,33 @@ def _timesoft_penalty_date_eligible(
 ) -> bool:
     """Bound historical evaluation to an explicit manual Auto Check run."""
     return target_date == today or include_synced_history
+
+
+def _facegate_arrival_current(conn, row, work_date, employee):
+    """Recheck the exact arrival basis on the financial write connection.
+
+    Source selection, newly ambiguous evidence or a changed arrival/shift must
+    defer this snapshot. A later normal worker pass can recompute safely.
+    """
+    from vera_attendance_source import source_for
+    marker = _timesoft_row_value(row, ['_vera_evidence_source'])
+    if source_for(work_date) != 'facegate':
+        return marker != 'facegate'
+    if marker != 'facegate':
+        return False
+    from vera_facegate_runtime import records
+    matches = [r for r in records(conn, work_date, work_date) if r.get('employee_name') == employee]
+    if len(matches) != 1:
+        return False
+    current = matches[0]
+    try:
+        return bool(current.get('attendance_fine_evidence_ready') is True
+            and current.get('identity_verified') and current.get('check_in')
+            and current.get('check_in_at') == _timesoft_row_value(row, ['_vera_checkin_at'])
+            and str(current.get('shift_start') or '') == _timesoft_row_value(row, ['StartWorkTime'])
+            and float(current.get('late_minutes') or 0) == float(_parse_minutes_late(row)))
+    except (TypeError, ValueError):
+        return False
 
 
 def process_timesoft_penalties(
@@ -1419,6 +1485,9 @@ def process_timesoft_penalties(
             registered_covered = False
             registered_revoked = 0
             with engine.begin() as conn:
+                if auto_check.penalties_paused(conn):
+                    result['skipped'] += 1
+                    continue
                 department = department_attendance.employee_role(conn, employee)
                 if department in department_attendance.DEPARTMENTS:
                     if not department_attendance.control_for(conn, department)["attendance_enabled"]:
@@ -1505,6 +1574,9 @@ def process_timesoft_penalties(
             if checkin_time:
                 detail += f" · Check-in {checkin_time}"
             with engine.begin() as conn:
+                if auto_check.penalties_paused(conn) or not _facegate_arrival_current(conn, row, work_date, employee):
+                    result['skipped'] += 1
+                    continue
                 ok, msg = auto_check.save_violation(
                     conn, work_date=work_date, employee=employee, reason_item=reason_item,
                     detail=detail,

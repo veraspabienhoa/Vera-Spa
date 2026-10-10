@@ -32,6 +32,7 @@ def test_penalty_projection_reuses_connection_and_isolates_failed_write(monkeypa
                            pool_size=1, max_overflow=0, pool_timeout=0.01)
     with engine.begin() as conn:
         conn.execute(text('CREATE TABLE recorded (id INTEGER PRIMARY KEY)'))
+        conn.execute(text('CREATE TABLE vera_app_setting (category TEXT, setting_key TEXT, value_json TEXT)'))
     today = datetime.now(outside.VN_TZ).date()
     records = [{'date': today.strftime('%d/%m/%Y'), 'employee_name': 'test-worker',
                 'break_enabled': True, 'break_out': '13:00:00', 'break_in': '15:00:00',

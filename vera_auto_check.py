@@ -84,6 +84,17 @@ def ensure_schema(conn) -> None:
     """))
 
 
+def penalties_paused(conn) -> bool:
+    """Read the live switch on the caller connection, without schema writes."""
+    value = conn.execute(text("""
+        SELECT value_json FROM vera_app_setting
+        WHERE category='auto_check' AND setting_key='config'
+        LIMIT 1
+    """)).scalar()
+    config = _json(value, {})
+    return str(config.get("status", "RUNNING")).upper() == "PAUSED"
+
+
 def load_config(conn) -> dict:
     ensure_schema(conn)
     row = conn.execute(text("""
