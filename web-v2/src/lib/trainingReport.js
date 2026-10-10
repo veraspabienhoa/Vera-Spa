@@ -46,3 +46,31 @@ export async function readCompleteTrainingReport(load, employee, filters, signal
   if (history.length !== total || new Set(history.map(item => `${item.type}:${item.id}`)).size !== total) throw new Error('Dữ liệu đã thay đổi trong lúc tải. Hãy mở lại báo cáo.')
   return { ...report, history }
 }
+
+// This basename rule mirrors the server and preserves Vietnamese display names.
+export function trainingReportFilename(name, format) {
+  const safe = Array.from(String(name || 'NhanVien').normalize('NFC')).map(char => {
+    const code = char.codePointAt(0)
+    return code < 32 || (code >= 127 && code <= 159) || /[<>:"/\\|?*]/.test(char) ? '_' : char
+  }).join('').replace(/\s+/g, ' ').replace(/^[ .]+|[ .]+$/g, '')
+  let cleaned = '', bytes = 0
+  const encoder = new TextEncoder()
+  for (const char of safe) {
+    bytes += encoder.encode(char).length
+    if (bytes > 200) break
+    cleaned += char
+  }
+  return `${cleaned.replace(/[ .]+$/g, '') || 'NhanVien'}_VERA_DaoTao.${format}`
+}
+
+export function trainingReportResponseFilename(header, format) {
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header || '')?.[1]
+  if (!encoded) return null
+  try {
+    const name = decodeURIComponent(encoded)
+    // Only use the expected, sanitized server basename; malformed or unrelated
+    // headers fall back to the selected employee's display name at the caller.
+    const suffix = `_VERA_DaoTao.${format}`
+    return name.endsWith(suffix) && trainingReportFilename(name.slice(0, -suffix.length), format) === name ? name : null
+  } catch { return null }
+}

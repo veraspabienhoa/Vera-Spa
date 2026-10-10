@@ -1,7 +1,7 @@
 """Complete, Vietnamese training-report exports from an already-authorized DTO.
 
-No database access or authorization belongs here. Both formats consume the same
-paginated drawing model: PNG contains every PDF page, never a clipped screenshot.
+No database access or authorization belongs here. PDF uses the reference card
+template; PNG retains its full, paginated drawing model without clipping.
 """
 from __future__ import annotations
 
@@ -469,7 +469,9 @@ def _build_layout(report: dict, *, png: bool = False) -> list[list[tuple]]:
 def _render_pdf(pages: list[list[tuple]], report: dict) -> bytes:
     output = BytesIO()
     pdf = canvas.Canvas(output, pagesize=A4, pageCompression=1)
-    pdf.setTitle("Báo cáo đào tạo - " + _text(report.get("employee_username")))
+    employee = report.get("employee") or {}
+    pdf.setTitle("Báo cáo đào tạo - " + _text(employee.get("full_name") or employee.get("display_name")
+                                             or report.get("employee_username") or employee.get("username")))
     pdf.setAuthor("VERA SPA")
     for page in pages:
         for command in page:
@@ -484,6 +486,12 @@ def _render_pdf(pages: list[list[tuple]], report: dict) -> bytes:
                 x, y, width, height, color = args
                 pdf.setFillColor(color)
                 pdf.rect(x, PAGE_HEIGHT - y - height, width, height, fill=1, stroke=0)
+            elif kind == "roundrect":
+                x, y, width, height, radius, fill, border = args
+                pdf.setFillColor(fill)
+                pdf.setStrokeColor(border)
+                pdf.setLineWidth(.6)
+                pdf.roundRect(x, PAGE_HEIGHT - y - height, width, height, radius, fill=1, stroke=1)
             elif kind == "line":
                 x1, y1, x2, y2, color, width = args
                 pdf.setStrokeColor(color)
@@ -567,5 +575,7 @@ def render_training_report(report: dict, format: str) -> bytes:
     if file_format not in {"pdf", "png"}:
         raise ValueError("Định dạng báo cáo phải là PDF hoặc PNG.")
     fonts = _fonts()
-    pages = _build_layout(report, png=file_format == "png")
-    return _render_pdf(pages, report) if file_format == "pdf" else _render_png(pages, fonts)
+    if file_format == "pdf":
+        from vera_web_v2_training_report_pdf import build_pdf_layout
+        return _render_pdf(build_pdf_layout(report), report)
+    return _render_png(_build_layout(report, png=True), fonts)

@@ -61,13 +61,16 @@ export default function TrainingProgressReports({ user }) {
     if (!valid) return
     const controller = new AbortController(); let active = true
     veraApi.trainingReportEmployees(filters, { signal: controller.signal }).then(data => {
-      if (active) setResult({ queryKey, employees: data.employees || [] })
+      if (active) setResult({ queryKey, employees: data.employees || [], untrained: data.untrained_employees || [] })
     }).catch(error => { if (active && !controller.signal.aborted) setResult({ queryKey, error }) })
     return () => { active = false; controller.abort() }
   }, [queryKey, filters, valid])
   const active = valid && result?.queryKey === queryKey ? result : null
   const employees = active?.employees || []
-  const rows = employees.filter(item => employee ? item.username === employee : searchTextMatches([item.username, item.full_name], search))
+  const untrained = active?.untrained || []
+  const options = [...employees, ...untrained]
+  const matches = item => employee ? item.username === employee : searchTextMatches([item.username, item.full_name], search)
+  const rows = employees.filter(matches), untrainedRows = untrained.filter(matches)
   const scope = selected?.queryKey === queryKey && employees.some(item => item.username === selected.employee) ? selected : null
   const updateMode = value => { setMode(value); setDraftValid({ day:true, start:true, end:true }); setEmployee(''); setSearch(''); setSelected(null) }
   const validity = key => value => setDraftValid(old => old[key] === value ? old : { ...old, [key]:value })
@@ -75,7 +78,7 @@ export default function TrainingProgressReports({ user }) {
   return <section className="training-card training-employee-roster" aria-label="Báo cáo tiến độ">
     <h2>Nhân viên đã được đào tạo / đánh giá</h2>
     <div className="training-progress-filters">
-      <LiveTourSearchSelect label="Nhân viên" value={employee} options={employees.map(item => ({ value:item.username, label:item.full_name || item.username, detail:item.username }))} placeholder="Nhập tên hoặc chọn nhân viên…" emptyLabel="Tất cả nhân viên" disabled={!active || Boolean(active.error)} searchValue={search} onSearch={value => { setSearch(value); setEmployee('') }} onChange={value => { setEmployee(value); setSearch(employees.find(item => item.username === value)?.full_name || value) }}/>
+      <LiveTourSearchSelect label="Nhân viên" value={employee} options={options.map(item => ({ value:item.username, label:item.full_name || item.username, detail:item.username }))} placeholder="Nhập tên hoặc chọn nhân viên…" emptyLabel="Tất cả nhân viên" disabled={!active || Boolean(active.error)} searchValue={search} onSearch={value => { setSearch(value); setEmployee('') }} onChange={value => { setEmployee(value); setSearch(options.find(item => item.username === value)?.full_name || value) }}/>
       <label>Thời gian đào tạo<select aria-label="Thời gian đào tạo" value={mode} onChange={event => updateMode(event.target.value)}><option value="all">Tất cả thời gian</option><option value="day">Ngày đào tạo</option><option value="month">Tháng đào tạo</option><option value="custom">Khoảng ngày tùy chọn</option></select></label>
       {mode === 'day' && <label>Ngày đào tạo<VeraDateInput aria-label="Ngày đào tạo" value={day} onChange={changeDate(setDay,'day')} onDraftValidity={validity('day')}/></label>}
       {mode === 'month' && <label>Tháng đào tạo<input type="month" aria-label="Tháng đào tạo" value={month} onChange={event => { setMonth(event.target.value); setEmployee(''); setSearch(''); setSelected(null) }}/></label>}
@@ -84,7 +87,12 @@ export default function TrainingProgressReports({ user }) {
     {!valid && <p role="status">Nhập đầy đủ ngày hợp lệ; ngày kết thúc không được trước ngày bắt đầu.</p>}
     {valid && !active && <p role="status">Đang tải nhân viên theo khoảng ngày…</p>}
     {active?.error && <div><p role="alert" className="error-box">{active.error.message}</p><button type="button" className="secondary-button" onClick={() => setReload(n => n+1)}>Thử tải lại danh sách</button></div>}
-    {active?.employees && <><p className="muted">{trainingRangeLabel(filters)} · {rows.length} nhân viên. Chọn tên để xem báo cáo.</p><p className="muted">Nhật ký theo ngày đào tạo; đánh giá theo ngày kết thúc kỳ.</p><table><thead><tr><th>Nhân viên</th><th>Bộ phận</th></tr></thead><tbody>{rows.map(item => <tr key={item.username}><td><button type="button" className="text-button" aria-haspopup="dialog" onClick={() => setSelected({ queryKey, employee:item.username, name:item.full_name || item.username, filters })}>{item.full_name || item.username}</button></td><td>{item.department || item.role}</td></tr>)}</tbody></table>{!rows.length && <p>Không có nhân viên đã đào tạo / đánh giá phù hợp bộ lọc.</p>}</>}
+    {active?.employees && <><table><thead><tr><th>Nhân viên</th><th>Bộ phận</th></tr></thead><tbody>{rows.map(item => <tr key={item.username}><td><button type="button" className="text-button" aria-haspopup="dialog" onClick={() => setSelected({ queryKey, employee:item.username, name:item.full_name || item.username, filters })}>{item.full_name || item.username}</button></td><td>{item.department || item.role}</td></tr>)}</tbody></table>{!rows.length && <p>Không có nhân viên đã đào tạo / đánh giá phù hợp bộ lọc.</p>}</>}
+    {active?.employees && <section className="training-untrained-roster" aria-labelledby="training-untrained-title">
+      <h2 id="training-untrained-title">Nhân viên chưa được đào tạo / đánh giá</h2>
+      <table><caption>Chưa có hồ sơ · Toàn bộ thời gian</caption><thead><tr><th>Nhân viên</th><th>Bộ phận</th></tr></thead><tbody>{untrainedRows.map(item => <tr key={item.username}><td>{item.full_name || item.username}</td><td>{item.department || item.role}</td></tr>)}</tbody></table>
+      {!untrainedRows.length && <p>Không có nhân viên phù hợp.</p>}
+    </section>}
     {scope && <TrainingEmployeeReport key={`${scope.queryKey}:${scope.employee}`} scope={scope} onClose={() => setSelected(null)} onDenied={() => { setSelected(null); setReload(n => n+1) }}/>}
   </section>
 }

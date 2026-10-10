@@ -82,3 +82,12 @@ def test_native_report_filters_recompute_latest_without_missing_or_outside_recor
         assert report["latest_radar"]["craft"] == 2.0
         assert report["latest_radar"]["end_date"] == date(2024, 2, 29)
         assert len(report["history"]) == report["history_total"] == 1
+
+
+def test_native_all_time_untrained_complement_never_uses_selected_period(training_database):
+    with training_database.begin() as conn:
+        conn.execute(text("SET TRANSACTION READ ONLY"))
+        catalog = training._training_employee_catalog(conn, Identity(employee_username="leader", role="leader"))
+        assert training._report_employees(conn, catalog, date(2027, 1, 1), date(2027, 1, 1)) == []
+        recorded = {p["username"] for p in training._report_employees(conn, catalog)}
+        assert [p["username"] for p in catalog if p["username"] not in recorded] == ["empty"]
