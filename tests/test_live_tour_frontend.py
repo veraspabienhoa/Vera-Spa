@@ -373,8 +373,10 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
     source = _source(LIVE_TOUR)
     api = _source(API)
 
-    assert "preset: 'all'" in source
-    assert "if (panel === 'pending') setListFilters" in source
+    assert "normalizeTourDateFilters" in source
+    assert "dateSection === 'reports' ? 'yesterday' : 'all'" in source
+    assert "readTourDateSelection(user, section" in source
+    assert "allowedPresets={allowedDatePresets}" in source
     assert "<LiveTourFilters" in source
     for key in ("date_from", "date_to"):
         assert f"'{key}'" in api
@@ -383,9 +385,11 @@ def test_live_tour_export_filters_are_optional_and_forwarded_to_the_api():
         source.index("const exportData") : source.index("const removeCatalogItem")
     ]
     assert "FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery" in export_flow
-    assert "...listFilters, preset: ''" in export_flow
-    assert "...listFilters" in export_flow
-    assert "veraApi.exportLiveTourExcel(kind === 'revenue' ? 'reports' : kind, query)" in export_flow
+    assert "preset: ''" not in export_flow
+    assert "tourExportSection(kind)" in export_flow
+    assert "allowedTourPresets(datePolicy, section)" in export_flow
+    assert "tourDateFiltersReady(exportFilters)" in export_flow
+    assert "veraApi.exportLiveTourExcel(kind === 'revenue' ? 'reports' : kind, query, { signal: controller.signal })" in export_flow
     assert "veraApi.readLiveTourPng()" in source
     assert "query.date_from && query.date_to && query.date_from > query.date_to" in export_flow
     assert "query.time_from > query.time_to" not in export_flow
@@ -529,11 +533,13 @@ def test_live_tour_checkout_can_link_an_exact_existing_customer_and_load_history
     assert "customer_id: id" in customer
     assert "customer_name: customer?.label" in customer and "phone: customer?.detail" in customer
     assert "const openCustomerHistory" in source
-    assert "veraApi.liveTourCustomerHistory(customerId)" in source
+    assert "veraApi.liveTourCustomerHistory(customerHistoryId, JSON.parse(customerHistoryQuery), { signal: controller.signal })" in source
+    assert "customerHistoryPresets" in source
+    assert "customerHistoryScope" in source
     assert "exportLiveTourExcel('customer_detail', compactExportQuery" in source
-    assert "date_from: customerHistoryFilters.date_from" in source
-    assert "date_to: customerHistoryFilters.date_to" in source
-    assert "liveTourCustomerHistory: (customerId)" in api
+    assert "customer_id: customerId, ...customerHistorySelection" in source
+    assert "tourDateFiltersReady(customerHistorySelection)" in source
+    assert "liveTourCustomerHistory: (customerId, query = {}, options = {})" in api
     assert "/v2/live-tour/customers/${encodeURIComponent(customerId)}/history" in api
     api_params = api[api.index("function liveTourExportParams") : api.index("export const veraApi")]
     assert "'customer_id'" in api_params

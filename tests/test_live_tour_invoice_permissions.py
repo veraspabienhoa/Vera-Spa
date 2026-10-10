@@ -9,13 +9,14 @@ from fastapi.testclient import TestClient
 
 import vera_web_v2_live_tour as live
 from vera_web_v2_live_tour_permissions import CAPABILITY_FEATURES, EXPORT_FEATURES, LEGACY_FEATURE_INHERITANCE
+from vera_live_tour_date_policy import DATE_FEATURES
 from test_live_tour_backend import NOW, RouteEngine, RouteIdentity
 from test_live_tour_safety import api_client, payable_state
 from test_live_tour_combo_booking import setup, booking
 from test_service_catalog import action
 
 
-ALL = set(CAPABILITY_FEATURES.values()) | {"live_tour_view", "live_tour_operate", "live_tour_payment", "live_tour_admin", "live_tour_export"}
+ALL = set(DATE_FEATURES) | set(CAPABILITY_FEATURES.values()) | {"live_tour_view", "live_tour_operate", "live_tour_payment", "live_tour_admin", "live_tour_export"}
 
 
 def pending_state():
@@ -30,7 +31,9 @@ def paid_state():
     return state, paid
 
 
-def scoped_client(monkeypatch, state, grants):
+def scoped_client(monkeypatch, state, grants, *, date_permissions=False):
+    # Older fixture callers model pre-date-policy effective read grants.
+    # Explicit-date tests opt out and provide the exact 32 boolean decisions.
     class FixedDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
@@ -42,7 +45,7 @@ def scoped_client(monkeypatch, state, grants):
             raise HTTPException(403, feature)
     app = FastAPI()
     live.install_live_tour_routes(app, engine_instance=RouteEngine, current_identity=lambda: RouteIdentity(),
-                                 require_feature=require, feature_allowed=lambda _c, _i, feature: feature in grants,
+                                 require_feature=require, feature_allowed=lambda _c, _i, feature: feature in grants or (not date_permissions and feature in DATE_FEATURES),
                                  identity_type=RouteIdentity)
     return TestClient(app), shared
 

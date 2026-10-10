@@ -84,9 +84,11 @@ async function binaryResponseUnshared(path, options = {}, failureMessage = 'Khô
   let lastError
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
+      options.signal?.throwIfAborted()
       response = await fetch(`${apiBase}${path}`, { ...options, headers })
       break
     } catch (error) {
+      if (options.signal?.aborted) throw error
       lastError = error
       if (attempt === 1) await new Promise((resolve) => setTimeout(resolve, 800))
     }
@@ -103,6 +105,7 @@ async function binaryResponseUnshared(path, options = {}, failureMessage = 'Khô
     const payload = await response.json().catch(() => ({}))
     const error = new Error(apiErrorMessage(payload, response.status))
     error.status = response.status
+    error.payload = payload
     throw error
   }
   return response
@@ -111,6 +114,7 @@ async function binaryResponseUnshared(path, options = {}, failureMessage = 'Khô
 async function download(path, fallbackName, options = {}) {
   const response = await binaryResponse(path, options, 'Không tải được file Excel sau 2 lần thử')
   const blob = await response.blob()
+  options.signal?.throwIfAborted()
   const disposition = response.headers.get('Content-Disposition') || ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   let filename = fallbackName
@@ -187,7 +191,7 @@ function liveTourExportParams(kind, query = {}) {
   for (const key of ['columns', 'employee_ids']) {
     if (Array.isArray(query[key])) query[key].forEach((value) => params.append(key, String(value)))
   }
-  for (const key of ['bill_no', 'employee', 'customer', 'service', 'report_kind', 'performance_timing', 'total_amount', 'tip_amount', 'date_from', 'date_to', 'date', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
+  for (const key of ['preset', 'bill_no', 'employee', 'customer', 'service', 'report_kind', 'performance_timing', 'total_amount', 'tip_amount', 'date_from', 'date_to', 'date', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
     const value = String(query?.[key] ?? '').trim()
     if (value) params.set(key, value)
   }
@@ -540,13 +544,13 @@ export const veraApi = {
   birthdays: (month = new Date().getMonth() + 1) => request(`/v2/birthdays?month=${encodeURIComponent(month)}`),
   tour: (refresh = false) => request(`/v2/tour?refresh=${refresh ? 'true' : 'false'}`),
   liveTourAppearance: () => request('/v2/live-tour/appearance'),
-  liveTour: (refresh = false, includeHidden = false, knownRevision = null, view = 'full') => {
+  liveTour: (refresh = false, includeHidden = false, knownRevision = null, view = 'full', options = {}) => {
     const params = new URLSearchParams({
       view, refresh: refresh ? 'true' : 'false',
       include_hidden: includeHidden ? 'true' : 'false',
     })
     if (Number.isInteger(knownRevision) && knownRevision >= 0) params.set('known_revision', String(knownRevision))
-    return request(`/v2/live-tour?${params}`)
+    return request(`/v2/live-tour?${params}`, options)
   },
   liveTourCollection: (panel, query = {}, options = {}) => request(`/v2/live-tour/collections/${encodeURIComponent(panel)}?${new URLSearchParams(Object.entries(query).filter(([,value])=>value !== '' && value != null))}`, options),
   liveTourAction: async (body) => {
@@ -570,25 +574,32 @@ export const veraApi = {
   },
   liveTourBoardHistory: (query = {}, options = {}) => {
     const params = new URLSearchParams()
+    if (query.preset) params.set('preset', query.preset)
+    if (query.date) params.set('date', query.date)
     if (query.date_from) params.set('date_from', query.date_from)
     if (query.date_to) params.set('date_to', query.date_to)
     if (query.employee?.trim()) params.set('employee', query.employee.trim())
     return request(`/v2/live-tour/board-history${params.size ? `?${params}` : ''}`, options)
   },
-  exportLiveTourBoardHistory: (query = {}) => {
+  exportLiveTourBoardHistory: (query = {}, options = {}) => {
     const params = new URLSearchParams()
+    if (query.preset) params.set('preset', query.preset)
+    if (query.date) params.set('date', query.date)
     if (query.date_from) params.set('date_from', query.date_from)
     if (query.date_to) params.set('date_to', query.date_to)
     if (query.employee?.trim()) params.set('employee', query.employee.trim())
-    return download(`/v2/live-tour/board-history/export.xlsx${params.size ? `?${params}` : ''}`, 'VERA_LichSu_LiveTour.xlsx')
+    return download(`/v2/live-tour/board-history/export.xlsx${params.size ? `?${params}` : ''}`, 'VERA_LichSu_LiveTour.xlsx', options)
   },
   liveTourMyTips: () => request('/v2/live-tour/my-tips'),
   spaCustomers: () => request('/v2/live-tour/customers'),
   spaSettings: () => request('/v2/live-tour/settings'),
-  liveTourCustomerHistory: (customerId) => request(`/v2/live-tour/customers/${encodeURIComponent(customerId)}/history`),
+  liveTourCustomerHistory: (customerId, query = {}, options = {}) => {
+    const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value !== '' && value != null))
+    return request(`/v2/live-tour/customers/${encodeURIComponent(customerId)}/history${params.size ? `?${params}` : ''}`, options)
+  },
   readCustomerCountPdf: async (query = {}, options = {}) => {
     const params = new URLSearchParams()
-    for (const key of ['date_from', 'date_to', 'date', 'employee', 'customer', 'service', 'bill_no', 'total_amount']) {
+    for (const key of ['preset', 'date_from', 'date_to', 'date', 'employee', 'customer', 'service', 'bill_no', 'total_amount']) {
       const value = String(query[key] ?? '').trim()
       if (value) params.set(key, value)
     }
@@ -601,7 +612,7 @@ export const veraApi = {
     const params = new URLSearchParams()
     // Keep this scope identical to PDF. Paging and selected rows never limit
     // the complete invoice-count chart/table prepared by the server.
-    for (const key of ['date_from', 'date_to', 'date', 'employee', 'customer', 'service', 'bill_no', 'total_amount']) {
+    for (const key of ['preset', 'date_from', 'date_to', 'date', 'employee', 'customer', 'service', 'bill_no', 'total_amount']) {
       const value = String(query[key] ?? '').trim()
       if (value) params.set(key, value)
     }
@@ -610,9 +621,9 @@ export const veraApi = {
     if (blob.type.split(';')[0] !== 'image/png' || !blob.size) throw new Error('Máy chủ không trả về file PNG hợp lệ.')
     return blob
   },
-  exportLiveTourExcel: (kind = 'board', query = {}) => {
+  exportLiveTourExcel: (kind = 'board', query = {}, options = {}) => {
     const params = liveTourExportParams(kind, query)
-    return download(`/v2/live-tour/export.xlsx?${params}`, `VeraSpa_LiveTour_${kind}.xlsx`)
+    return download(`/v2/live-tour/export.xlsx?${params}`, `VeraSpa_LiveTour_${kind}.xlsx`, options)
   },
   importLiveTourExcel: (file, expectedRevision) => upload('/v2/live-tour/import.xlsx', file, { expected_revision: expectedRevision }),
   scheduleShiftSettings: () => {

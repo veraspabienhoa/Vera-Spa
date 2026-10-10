@@ -6,6 +6,7 @@ import { searchTextMatches } from '../lib/searchText'
 import { RefreshCw, Save, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { veraApi } from '../lib/api'
+import { canEditCatalogFeature, catalogAllowedFeatures, datePermissionSaveProblem, hasAnyDateParent, permissionFeatureKeys, supportsDateFilterPolicy } from '../lib/permissionCatalog'
 
 const roleLabel = { giamdoc: 'Giám đốc', quanly: 'Quản lý', letan: 'Lễ tân', leader: 'Leader', nhanvien: 'Nhân viên', locker: 'Locker', tapvu: 'Tạp vụ' }
 
@@ -21,34 +22,20 @@ export default function PermissionsPage() {
   const [notice, setNotice] = useState(null)
   const [refreshDirty, setRefreshDirty] = useState(false)
 
-  const allFeatureKeys = (source = data) => {
-    const pageKeys = (source?.pages || []).flatMap((page) => Object.keys(page?.features || {}))
-    return pageKeys.length ? [...new Set(pageKeys)] : Object.values(source?.groups || {}).flatMap((items) => Object.keys(items))
-  }
-  const featureAllowed = (key, role, account = '', source = data) => {
-    const accountOverride = source?.account_overrides?.[account] || {}
-    const roleOverride = source?.role_overrides?.[role] || {}
-    if (Object.hasOwn(accountOverride, key)) return accountOverride[key]
-    if (Object.hasOwn(roleOverride, key)) return roleOverride[key]
-    const legacy = source?.legacy_inheritance?.[key]
-    return legacy ? featureAllowed(legacy, role, account, source) : (source?.defaults?.[role] || []).includes(key)
-  }
-  const roleAllowed = (role, source = data) => {
-    return allFeatureKeys(source).filter((key) => featureAllowed(key, role, '', source))
-  }
+  const allFeatureKeys = (source = data) => permissionFeatureKeys(source)
+  const roleAllowed = (role, source = data) => catalogAllowedFeatures(role, '', source)
   const expandDependencies = (features, source = data) => {
     const dependencies = source?.dependencies || {}
     const expanded = new Set(features)
-    let changed = true
-    while (changed) {
-      changed = false
-      for (const feature of [...expanded]) {
-        for (const required of dependencies[feature] || []) {
-          if (!expanded.has(required)) {
-            expanded.add(required)
-            changed = true
-          }
-        }
+    const pending = [...features]
+    const visited = new Set()
+    while (pending.length) {
+      const feature = pending.pop()
+      if (visited.has(feature)) continue
+      visited.add(feature)
+      for (const required of dependencies[feature] || []) {
+        expanded.add(required)
+        if (!Object.hasOwn(source?.date_filter_features || {}, feature)) pending.push(required)
       }
     }
     return [...expanded]
@@ -71,7 +58,7 @@ export default function PermissionsPage() {
       const roleFeatures = roleAllowed(account?.role, source)
       setAllowed(isInherited
         ? roleFeatures
-        : allFeatureKeys(source).filter((key) => featureAllowed(key, account?.role, nextTarget, source)))
+        : catalogAllowedFeatures(account?.role, nextTarget, source))
     }
   }
   const load = async ({ keepNotice = false } = {}) => {
@@ -101,9 +88,10 @@ export default function PermissionsPage() {
     // starts a private override from the inherited role baseline.
     if (scope === 'account' && inherit) setInherit(false)
     setAllowed((current) => {
-      if (!current.includes(feature)) return expandDependencies([...current, feature])
+      if (!current.includes(feature)) return [...new Set([...current, ...expandDependencies([feature])])]
       const blocked = new Set([feature, ...dependentFeatures(feature)])
-      return current.filter((item) => !blocked.has(item))
+      const remaining = current.filter((item) => !blocked.has(item))
+      return remaining.filter((item) => hasAnyDateParent(item, remaining, data))
     })
   }
   const enablePrivatePermissions = () => {
@@ -123,10 +111,18 @@ export default function PermissionsPage() {
   const save = async () => {
     setBusy(true); setNotice(null)
     try {
-      const normalizedAllowed = inherit ? allowed : expandDependencies(allowed)
-      const result = await veraApi.savePermissions(scope, target, { allowed_features: normalizedAllowed, inherit, expected_revision: data.revision })
+      // Toggles expand newly chosen actions. An unchanged save must not expand
+      // inherited legacy actions over an existing explicit view denial.
+      const normalizedAllowed = allowed
+      const editsDatePolicy = supportsDateFilterPolicy(data)
+      const result = await veraApi.savePermissions(scope, target, { allowed_features: normalizedAllowed, inherit, expected_revision: data.revision, preserve_unchanged: true, ...(editsDatePolicy ? { date_filter_policy_version: 1 } : {}) })
       const refreshed = await load({ keepNotice: true })
       if (refreshed) applyTarget(scope, target, refreshed)
+      const verificationProblem = editsDatePolicy ? datePermissionSaveProblem(result, refreshed) : ''
+      if (verificationProblem) {
+        setNotice({ status: 'error', message: verificationProblem })
+        return
+      }
       setNotice({ status: 'success', message: result.message })
     } catch (error) {
       setNotice({ status: 'error', message: `KHÔNG THÀNH CÔNG (${error.message})` })
@@ -134,7 +130,7 @@ export default function PermissionsPage() {
     }
   }
   const pages = useMemo(() => (data?.pages || []).map((page) => {
-    const items = Object.entries(page?.features || {}).filter(([key, value]) => searchTextMatches([page.label, key, value], search))
+    const items = Object.entries(page?.features || {}).filter(([key, value]) => canEditCatalogFeature(key, data) && searchTextMatches([page.label, key, value], search))
     return { ...page, items }
   }).filter((page) => page.items.length), [data, search])
 
@@ -167,12 +163,13 @@ export default function PermissionsPage() {
         </UiToolbar>
       </>}
       <label className="permission-search"><input aria-label="Tìm quyền" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm quyền…" /></label>
+      {supportsDateFilterPolicy(data) && <p className="permission-date-note">Mỗi mục Live Tour có 8 quyền lọc ngày riêng. Quyền chưa cấu hình kế thừa quyền xem mục đó; bỏ chọn cả 8 sẽ chặn dữ liệu theo ngày. Lịch sử cần quyền Xem lịch sử hoặc Sao lưu; quyền Sao lưu không mở nội dung nhật ký.</p>}
     </section>
     <div className="permission-pages">
       {pages.map((page) => <section data-ui-key="u-3507366ab96e" className="permission-page-card" key={page.id}>
         <div className="permission-page-head"><h2>{page.label}</h2><span>{page.items.filter(([key]) => allowed.includes(key)).length}/{page.items.length} quyền</span></div>
         <UiToolbar data-ui-key="u-96946da0cd4c" className="permission-check-grid permission-page-actions">
-          {page.items.map(([key, value]) => <label key={key} className={`${allowed.includes(key) ? 'checked' : ''} ${page.view_feature === key ? 'permission-view-permission' : ''}`.trim()}><input type="checkbox" checked={allowed.includes(key)} onChange={() => toggle(key)} /><span><strong>{value}</strong><small>{key}</small></span></label>)}
+          {page.items.map(([key, value]) => <label key={key} className={`${allowed.includes(key) ? 'checked' : ''} ${page.view_feature === key ? 'permission-view-permission' : ''}`.trim()}><input type="checkbox" checked={allowed.includes(key)} disabled={!hasAnyDateParent(key, allowed, data)} onChange={() => toggle(key)} /><span><strong>{value}</strong><small>{key}</small>{!hasAnyDateParent(key, allowed, data) && <small>Cần Xem lịch sử hoặc Sao lưu</small>}</span></label>)}
         </UiToolbar>
       </section>)}
     </div>

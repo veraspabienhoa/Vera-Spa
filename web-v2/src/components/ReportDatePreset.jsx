@@ -12,20 +12,20 @@ function searchDate(value) {
 
 // Selecting a date applies one day. Incomplete/invalid drafts never change the
 // active filter. Keep the shared combobox's keyboard, portal and Clear behavior.
-export default function ReportDatePreset({ value, presets, onChange, label = 'Thời gian', className = '' }) {
+export default function ReportDatePreset({ value, presets, onChange, label = 'Thời gian', className = '', allowDateSearch = true }) {
   const [draft, setDraft] = useState(null)
   const selectedLabel = presets.find(([id]) => id === value)?.[1] || ''
   const query = draft ?? selectedLabel
   const date = searchDate(query)
   const options = presets.map(([id, title]) => ({ value: id, label: title }))
-  if (date) options.push({ value: `date:${date}`, label: formatVeraDate(date), detail: 'Xem dữ liệu ngày này' })
+  if (date && allowDateSearch) options.push({ value: `date:${date}`, label: formatVeraDate(date), detail: 'Xem dữ liệu ngày này' })
   return <LiveTourSearchSelect className={`report-date-preset ${className}`} label={label}
     filterActive={Boolean(value && value !== 'all')} required value={value} options={options} searchValue={query}
-    placeholder="Gõ thời gian hoặc ngày ddmmyyyy" onSearch={setDraft}
+    placeholder={allowDateSearch ? "Gõ thời gian hoặc ngày ddmmyyyy" : "Chọn thời gian được cấp quyền"} onSearch={setDraft}
     filterOption={(option, text) => draft === null || option.value === `date:${date}` || searchTextMatches(option.label, text)}
     onChange={next => {
       setDraft(null)
-      if (next.startsWith('date:')) onChange('custom', next.slice(5))
-      else onChange(next || 'all')
+      if (next.startsWith('date:')) { if (allowDateSearch) onChange('custom', next.slice(5)) }
+      else onChange(next || (presets.some(([id]) => id === 'all') ? 'all' : presets[0]?.[0] || ''))
     }}/>
 }

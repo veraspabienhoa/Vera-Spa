@@ -44,7 +44,9 @@ def test_requested_frontend_wiring_is_present():
     assert "max={device === 'desktop' ? 1000 : 260}" in appearance_page
 
     assert "defaultTourYesterdayFilters" in reports
-    assert "preset: 'yesterday'" in live_tour and "panel === 'reports'" in live_tour
+    assert "dateSection === 'reports' ? 'yesterday'" in live_tour
+    assert "normalizeTourDateFilters" in live_tour
+    assert "allowedTourPresets(datePolicy, dateSection)" in live_tour
 
     assert "LiveTourEmployeeRevenueBreakdown" in reports
     assert "Chụp biểu đồ" in breakdown

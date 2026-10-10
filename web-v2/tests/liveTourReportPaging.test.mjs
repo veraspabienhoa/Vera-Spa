@@ -65,7 +65,7 @@ const money = value => `${Number(value).toLocaleString('vi-VN')} đ`
 test('report read contract applies money to the selected tab and preserves ISO date/zero', () => {
   const filters = { preset: 'custom', date: '2026-10-09', date_from: '2026-10-09', date_to: '2026-10-09',
     employee: 'Ánh', service: 'Body', total_amount: 0, tip_amount: '50' }
-  assert.deepEqual(reportReadQuery(filters, 'revenue', 'early', 4), { tab: 'revenue', page: 4, page_size: 100,
+  assert.deepEqual(reportReadQuery(filters, 'revenue', 'early', 4), { tab: 'revenue', page: 4, page_size: 100, preset: 'custom',
     date: '2026-10-09', date_from: '2026-10-09', date_to: '2026-10-09', employee: 'Ánh', service: 'Body', total_amount: 0 })
   assert.equal(reportReadQuery(filters, 'tip', 'all').tip_amount, '50')
   assert.equal(reportReadQuery(filters, 'performance', 'early').performance_timing, 'early')
@@ -91,7 +91,7 @@ test('million-row history renders only the requested page with exact filter-wide
   } })
   try {
     assert.equal(requests.length, 1)
-    assert.deepEqual(requests[0].query, { tab: 'revenue', page: 1, page_size: 100, date_from: queryDate, date_to: queryDate })
+    assert.deepEqual(requests[0].query, { tab: 'revenue', page: 1, page_size: 100, preset: 'yesterday', date_from: queryDate, date_to: queryDate })
     assert.ok(requests[0].options.signal instanceof AbortSignal)
     assert.equal(document.querySelectorAll('.live-tour-report-table tbody tr').length, 100)
     assert.match(document.querySelector('.tour-revenue-summary').textContent, new RegExp(money(fullSummary.totalRevenue)))

@@ -1,5 +1,50 @@
 """Independent Live Tour grants, including safe legacy-permission fallback."""
 
+# Policy v1 preserves existing readable date ranges until a role or account
+# explicitly configures an individual date grant. These are read capabilities:
+# a true date flag never bypasses the section's effective read permissions.
+DATE_FILTER_POLICY_VERSION = 1
+DATE_FILTER_PRESETS = {
+    "all": "Tất cả",
+    "today": "Hôm nay",
+    "yesterday": "Hôm qua",
+    "week": "Tuần này",
+    "last_week": "Tuần trước",
+    "month": "Tháng này",
+    "last_month": "Tháng trước",
+    "custom": "Tùy chỉnh",
+}
+DATE_FILTER_SECTIONS = {
+    "pending": "Hóa đơn chờ thanh toán",
+    "invoices": "Hóa đơn đã thanh toán",
+    "reports": "Báo cáo",
+    "history": "Lịch sử & sao lưu",
+}
+DATE_FILTER_FEATURES = {
+    f"live_tour_{section}_date_{preset}": f"{label} · Lọc ngày · {preset_label}"
+    for section, label in DATE_FILTER_SECTIONS.items()
+    for preset, preset_label in DATE_FILTER_PRESETS.items()
+}
+DATE_FILTER_DEPENDENCIES = {
+    # Board/collection routes retain their own live_tour_view guards. Direct
+    # section exports have always worked with section grants alone.
+    f"live_tour_{section}_date_{preset}": set(parents)
+    for section, parents in {
+        "pending": ("live_tour_pending_view", "live_tour_invoice_view"),
+        "invoices": ("live_tour_paid_invoice_view",),
+        # Standalone Reports has never required the Live Tour board grant.
+        "reports": ("live_tour_reports_view",),
+        # Backup-only readers have always used the history panel for backup
+        # metadata. Preserve that route without granting access to the audit.
+        "history": (),
+    }.items()
+    for preset in DATE_FILTER_PRESETS
+}
+DATE_FILTER_PARENT_ANY = {
+    f"live_tour_history_date_{preset}": ("live_tour_history_view", "live_tour_backup")
+    for preset in DATE_FILTER_PRESETS
+}
+
 LEGACY_FEATURE_INHERITANCE = {
     "live_tour_booking": "live_tour_operate",
     "live_tour_invoice_view": "live_tour_payment",

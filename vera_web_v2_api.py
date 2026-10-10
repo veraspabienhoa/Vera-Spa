@@ -456,7 +456,9 @@ class Identity(BaseModel):
 
 
 from vera_web_v2_permissions import DEFAULT_ROLE_FEATURES as WEB_V2_DEFAULT_FEATURES, FEATURES as WEB_V2_FEATURES
-from vera_web_v2_live_tour_permissions import LEGACY_FEATURE_INHERITANCE
+from vera_web_v2_live_tour_permissions import (
+    DATE_FILTER_DEPENDENCIES, DATE_FILTER_PARENT_ANY, LEGACY_FEATURE_INHERITANCE,
+)
 
 _PERMISSION_CACHE_SECONDS = max(
     1.0, float(os.getenv("VERA_PERMISSION_CACHE_SECONDS", "60") or 60),
@@ -516,6 +518,18 @@ def _feature_allowed(
 
     payload = permission_payload if isinstance(permission_payload, dict) else _permission_payload(conn)
 
+    # Date capabilities are always bounded by the account's effective section
+    # access, even when the role or account explicitly grants the date flag.
+    # Do not change historical dependency semantics for unrelated permissions.
+    if feature in DATE_FILTER_DEPENDENCIES:
+        if not all(_feature_allowed(conn, ident, parent, payload)
+                   for parent in DATE_FILTER_DEPENDENCIES[feature]):
+            return False
+        any_parents = DATE_FILTER_PARENT_ANY.get(feature, ())
+        if any_parents and not any(_feature_allowed(conn, ident, parent, payload)
+                                   for parent in any_parents):
+            return False
+
     username_key = _norm(ident.employee_username)
     for item in payload.get("accounts", []) or []:
         if not isinstance(item, dict):
@@ -532,6 +546,10 @@ def _feature_allowed(
     legacy_feature = LEGACY_FEATURE_INHERITANCE.get(feature)
     if legacy_feature:
         return _feature_allowed(conn, ident, legacy_feature, payload)
+    if feature in DATE_FILTER_DEPENDENCIES:
+        # Unconfigured v1 date capabilities inherit the section read that was
+        # checked above. Saving explicit false remains a persistent denial.
+        return True
     return feature in WEB_V2_DEFAULT_FEATURES.get(role, set())
 
 
@@ -2885,6 +2903,7 @@ install_permission_routes(
     identity_type=Identity,
     vn_tz=VN_TZ,
     permissions_changed=_clear_permission_cache,
+    feature_allowed=_feature_allowed,
 )
 
 from vera_web_v2_profile import install_profile_routes

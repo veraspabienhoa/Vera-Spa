@@ -11,6 +11,7 @@ import LiveTourReportsPanel from '../components/LiveTourReportsPanel'
 import LiveTourHistoryPanel from '../components/LiveTourHistoryPanel'
 import LiveTourCatalogPanel from '../components/LiveTourCatalogPanel'
 import useLiveTourDetails from '../lib/useLiveTourDetails'
+import { TOUR_DATE_SECTIONS, resolveTourDatePolicy, allowedTourPresets, normalizeTourDateFilters, tourDateFiltersReady, tourDatePolicyKey, tourProfileKey, tourDateSectionReadable, readTourDateSelection, saveTourDateSelection, tourExportSection } from '../lib/liveTourDatePermissions'
 import { refreshAfterLiveTourAction } from '../lib/liveTourActionResult'
 import usePanelActions from '../lib/usePanelActions'
 import { canStartOutsideShift } from '../lib/liveTourStartPermission'
@@ -29,13 +30,13 @@ import { tourStartOrder } from '../lib/liveTourOrder'
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import LiveTourFilters from '../components/LiveTourFilters'
 import LiveTourRevenueSummary from '../components/LiveTourRevenueSummary'
-import { EMPTY_TOUR_FILTERS, filterTourRows, tourDateRange } from '../lib/liveTourFilters'
+import { EMPTY_TOUR_FILTERS, TOUR_DATE_PRESETS, filterTourRows, tourDateRange } from '../lib/liveTourFilters'
 import {
   BellRing, ClipboardCopy, Clock3, Crown, DoorOpen, Download,
   ExternalLink, History, LayoutGrid, PauseCircle, Play, Plus,
   Printer, RefreshCw, Search, Share2, Trash2, X,
 } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { veraApi } from '../lib/api'
 import LiveTourBookingDialog from '../components/LiveTourBookingDialog'
@@ -118,7 +119,7 @@ function readCachedLiveTour(key) {
     const cached = JSON.parse(window.sessionStorage.getItem(key) || 'null')
     if (!cached?.savedAt || Date.now() - cached.savedAt > LIVE_TOUR_CACHE_MAX_AGE) return EMPTY_LIVE_TOUR
     if (!Array.isArray(cached.data?.columns) || !Array.isArray(cached.data?.records)) return EMPTY_LIVE_TOUR
-    return { ...EMPTY_LIVE_TOUR, ...cacheSafeLiveTour(cached.data) }
+    return { ...EMPTY_LIVE_TOUR, ...cacheSafeLiveTour(cached.data), capabilities: {}, revision: null }
   } catch {
     return EMPTY_LIVE_TOUR
   }
@@ -132,6 +133,12 @@ function sanitizeLiveTourCacheValue(value) {
   )))
 }
 
+function clearProtectedTourData(data) {
+  return { ...data, pending_payments: [], pending: [], invoices: [], reports: {}, report_rows: [], report_totals: {},
+    audit: [], history: [], backups: [], pending_changes: [], invoice_changes: [], customer_changes: [], break_events: [], pending_count: 0,
+    state: { ...data.state, pending: [], invoices: [], reports: [], audit: [], backups: [] } }
+}
+
 function cacheSafeLiveTour(data) {
   // Prune large/private collections before recursively sanitizing. The previous
   // order walked customers, invoices, reports and audit history only to discard
@@ -142,7 +149,7 @@ function cacheSafeLiveTour(data) {
     : undefined
   const candidate = {
     ...source,
-    customers: [], pending_payments: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], combo_sale_requests: [], report_rows: [], reports: {},
+    customers: [], pending_payments: [], pending: [], invoices: [], combo_usage: [], combo_purchases: [], combo_sale_requests: [], report_rows: [], reports: {}, report_totals: {},
     audit: [], history: [], backups: [], pending_changes: [], invoice_changes: [], customer_changes: [], pending_count: 0, combo_sale_request_count: 0,
     ...(state ? { state } : {}),
   }
@@ -581,7 +588,13 @@ const EMPTY_FORM = {
   ticket_units: '1', private_service: false, request_eligible: true, non_request_eligible: true, request_duration: '',
 }
 
-export default function LiveTourPage({ user, navigationToggle = null }) {
+export default function LiveTourPage(props) {
+  // Account/verified-profile changes unmount every reader and dialog before
+  // another account can paint even one frame of cached financial data.
+  return <LiveTourWorkspace key={tourProfileKey(props.user)} {...props}/>
+}
+
+function LiveTourWorkspace({ user, navigationToggle = null }) {
   usePageRefresh(() => load(true), () => Boolean(busy || actionBusy || modal || bookingContext || pendingContext))
   const cacheKey = liveTourCacheKey(user)
   const tipPreferenceKey = `${cacheKey}:tip-mode`
@@ -600,7 +613,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [employeePickId, setEmployeePickId] = useState('')
   const [roomSegment, setRoomSegment] = useState('all')
   const [customerContext, setCustomerContext] = useState(null)
-  const [listFilters, setListFilters] = useState(() => ({ ...EMPTY_TOUR_FILTERS, preset: 'all' }))
+  const [dateSelections, setDateSelections] = useState(() => Object.fromEntries(TOUR_DATE_SECTIONS.map(section => [section, readTourDateSelection(user, section, window.sessionStorage)])))
   const [selectedRoomKey, setSelectedRoomKey] = useState('')
   const [roomFilterIds, setRoomFilterIds] = useState(() => new Set())
   const [clockMs, setClockMs] = useState(Date.now())
@@ -621,13 +634,77 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const [comboLookupSearch, setComboLookupSearch] = useState('')
   const [customerHistoryModal, setCustomerHistoryModal] = useState(null)
   const [customerHistoryBusy, setCustomerHistoryBusy] = useState(false)
+  const exportController = useRef(null)
+  const [customerHistoryDraftValidity, setCustomerHistoryDraftValidity] = useState({})
   const [customerHistoryFilters, setCustomerHistoryFilters] = useState(() => ({ preset: 'month', ...tourDateRange('month') }))
   const [customColumns, setCustomColumns] = useState(null)
   const [customScope, setCustomScope] = useState('displayed')
   const [appearanceMobile, setAppearanceMobile] = useState(() => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 820px)').matches)
   const [lookupSearch, setLookupSearch] = useState('')
   const [bookingCustomerIds, setBookingCustomerIds] = useState([])
+  const datePolicy = useMemo(() => resolveTourDatePolicy(user, boardData.capabilities), [user, boardData.capabilities])
+  const datePolicyKey = tourDatePolicyKey(user, datePolicy)
+  const dateSection = TOUR_DATE_SECTIONS.includes(activePanel) ? activePanel : 'pending'
+  const allowedDatePresets = allowedTourPresets(datePolicy, dateSection)
+  const listFilters = useMemo(() => normalizeTourDateFilters(dateSelections[dateSection], allowedTourPresets(datePolicy, dateSection), {
+    preferredPreset: dateSection === 'invoices' ? 'today' : dateSection === 'reports' ? 'yesterday' : 'all', serverToday: datePolicy.server_today,
+  }), [dateSelections, dateSection, datePolicy])
+  const [filterValidity, setFilterValidity] = useState({ scope: '', valid: true })
+  const filterScope = `${datePolicyKey}:${dateSection}`
+  const filterDraftValid = filterValidity.scope !== filterScope || filterValidity.valid
+  const listReadAllowed = !TOUR_DATE_SECTIONS.includes(activePanel) || (filterDraftValid && tourDateFiltersReady(listFilters))
+  const setListFilters = next => setDateSelections(current => ({ ...current, [dateSection]: typeof next === 'function' ? next(listFilters) : next }))
+  const [dialogPolicyKey, setDialogPolicyKey] = useState(datePolicyKey)
+  const previousDatePolicy = useRef(datePolicy)
+  const latestBoardLoad = useRef(null)
+  const dialogsAuthorized = dialogPolicyKey === datePolicyKey
+  useEffect(() => { saveTourDateSelection(user, dateSection, listFilters, window.sessionStorage) }, [user, dateSection, listFilters])
+  useLayoutEffect(() => {
+    if (tourDatePolicyKey(user, previousDatePolicy.current) === datePolicyKey) return
+    setDialogPolicyKey(datePolicyKey)
+    const previous = previousDatePolicy.current
+    const reduced = TOUR_DATE_SECTIONS.some(section => allowedTourPresets(previous, section).some(preset => !allowedTourPresets(datePolicy, section).includes(preset)))
+      || (previous.server_today && previous.server_today !== datePolicy.server_today)
+    previousDatePolicy.current = datePolicy
+    const refreshPolicyData = reduced || Boolean(previous.server_today)
+    if (refreshPolicyData) {
+      setData(current => clearProtectedTourData(current))
+      latestRevisionRef.current = null
+    }
+    boardController.current?.abort(); exportController.current?.abort()
+    setPendingContext(null); setReceipt(null); setCustomerHistoryModal(null); setCustomerContext(null)
+    // Read-only permission changes must not retain a modal's copied invoice.
+    // Booking/quick payment inputs are not date-read grants and keep their scope.
+    setModal(current => current?.kind === 'checkout' && current?.item ? null : current)
+    try { window.sessionStorage.removeItem(cacheKey) } catch { /* optional cache */ }
+    // A changed policy/day may leave the ledger revision unchanged. Fetch one
+    // full board so newly authorized counts do not remain cleared forever.
+    if (refreshPolicyData) void latestBoardLoad.current?.(false)
+  }, [datePolicyKey, datePolicy, cacheKey, user])
+  const acceptReadCapabilities = useCallback(next => {
+    if (next?.date_filters) setData(current => JSON.stringify(current.capabilities) === JSON.stringify(next) ? current : { ...current, capabilities: next })
+  }, [])
+  const denyDateRead = useCallback((section, error) => {
+    setPendingContext(null); setReceipt(null); setCustomerHistoryModal(null)
+    const next = error?.payload?.detail?.capabilities || error?.payload?.capabilities
+    if (next?.date_filters) { acceptReadCapabilities(next); return }
+    if (TOUR_DATE_SECTIONS.includes(section)) setData(current => {
+      const policy = resolveTourDatePolicy(user, current.capabilities)
+      return { ...clearProtectedTourData(current), capabilities: { ...current.capabilities, date_filters: { ...policy, sections: { ...policy.sections, [section]: [] } } } }
+    })
+  }, [user, acceptReadCapabilities])
+  const customerHistoryPresets = useMemo(() => {
+    const readable = ['pending', 'invoices', 'reports'].filter(section => tourDateSectionReadable(user, boardData.capabilities, section)).map(section => allowedTourPresets(datePolicy, section))
+    return readable.length ? TOUR_DATE_PRESETS.map(([id]) => id).filter(id => readable.every(presets => presets.includes(id))) : []
+  }, [datePolicy, user, boardData.capabilities])
+  const customerHistorySelection = useMemo(() => normalizeTourDateFilters(customerHistoryFilters, customerHistoryPresets, { preferredPreset: 'month', serverToday: datePolicy.server_today }), [customerHistoryFilters, customerHistoryPresets, datePolicy.server_today])
+  const customerHistoryId = customerHistoryModal?.customerId || ''
+  const customerHistoryQuery = JSON.stringify(customerHistoryPresets.length ? customerHistorySelection : {})
+  const customerHistoryScope = JSON.stringify([datePolicyKey, customerHistoryId, customerHistoryQuery])
+  const customerHistoryCurrent = customerHistoryModal?.scope === customerHistoryScope
+  const customerHistoryCanRead = (!customerHistoryPresets.length || tourDateFiltersReady(customerHistorySelection)) && !Object.values(customerHistoryDraftValidity).includes(false)
   const details = useLiveTourDetails({board:boardData,panel:activePanel,filters:listFilters,customerSearch,enabled:!actionBusy,
+    authorizationKey:datePolicyKey,readAllowed:listReadAllowed,onCapabilities:acceptReadCapabilities,onReadDenied:denyDateRead,
     lookupOpen:Boolean(modal || bookingContext || comboLookupOpen || (pendingContext?.mode === 'edit' && !pendingContext.paid)) && boardData.capabilities?.customers_view === true,
     lookupSearch:comboLookupOpen ? comboLookupSearch : lookupSearch,
     selectedCustomerIds: bookingContext ? bookingCustomerIds : [],
@@ -673,20 +750,26 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const canHistory = capability('history_view', isAdmin || user?.permissions?.live_tour_history_view === true)
   const canBackup = capability('backup', isAdmin || user?.permissions?.live_tour_backup === true)
   const canManageCatalog = canAdmin || capabilities.catalog_admin === true || capabilities.manage_catalog === true
-  const canExportKind = useCallback((kind) => hasLiveTourExportAccess(kind, { export: canExport, pending: canPending, invoiceView: canInvoiceView, paidInvoiceView: canPaidInvoiceView, customers: canCustomers, reports: canReports, history: canHistory }), [canExport, canPending, canInvoiceView, canPaidInvoiceView, canCustomers, canReports, canHistory])
+  const canExportKind = useCallback((kind) => (!tourExportSection(kind) || (allowedTourPresets(datePolicy, tourExportSection(kind)).length > 0 && (tourExportSection(kind) !== dateSection || filterDraftValid))) && hasLiveTourExportAccess(kind, { export: canExport, pending: canPending, invoiceView: canInvoiceView, paidInvoiceView: canPaidInvoiceView, customers: canCustomers, reports: canReports, history: canHistory }), [datePolicy, dateSection, filterDraftValid, canExport, canPending, canInvoiceView, canPaidInvoiceView, canCustomers, canReports, canHistory])
   const loadPending = useRef(false)
+  const boardController = useRef(null), boardMounted = useRef(true)
   const actionBusyRef = useRef(actionBusy)
   useEffect(() => { actionBusyRef.current = actionBusy }, [actionBusy])
   const load = useCallback(async (refresh = false, quiet = false, conditional = false) => {
     // Polls must not consume another backend connection while a read is pending.
     if (quiet && loadPending.current) return
     // Explicit reloads wait for the previous read, then fetch fresh state.
-    while (loadPending.current) await new Promise((resolve) => setTimeout(resolve, 100))
+    while (loadPending.current && boardMounted.current) await new Promise((resolve) => setTimeout(resolve, 100))
+    if (!boardMounted.current) return
     loadPending.current = true
+    const controller = new AbortController()
+    boardController.current = controller
     if (!quiet) setBusy(true)
     try {
-      const response = await veraApi.liveTour(refresh, false, conditional ? latestRevisionRef.current : null, 'board')
+      const response = await veraApi.liveTour(refresh, false, conditional ? latestRevisionRef.current : null, 'board', { signal: controller.signal })
+      if (!boardMounted.current || controller.signal.aborted) return
       if (response?.unchanged) {
+        if (response.capabilities?.date_filters) setData(current => JSON.stringify(current.capabilities) === JSON.stringify(response.capabilities) ? current : { ...current, capabilities: response.capabilities })
         return
       }
       const next = { ...EMPTY_LIVE_TOUR, ...response }
@@ -698,6 +781,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         return new Set([...current].filter((id) => valid.has(id)))
       })
     } catch (err) {
+      if (!boardMounted.current || controller.signal.aborted) return
       setData((current) => cacheSafeLiveTour(current))
       if (err.status === 403) { setModal(null); setBookingContext(null); setPendingContext(null); setReceipt(null); setCustomerHistoryModal(null) }
     } finally {
@@ -705,18 +789,22 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       if (!quiet) setBusy(false)
     }
   }, [cacheKey])
+  latestBoardLoad.current = load
 
   useEffect(() => {
+    boardMounted.current = true
     // This lifecycle deliberately depends only on `load`. Previously every
     // dialog open/close and action-busy transition recreated it and triggered
     // another full, projecting load immediately after an operator action.
     void load(false, initiallyCached.current)
-    const poll = () => { if (!actionBusyRef.current) void load(false, true, true) }
+    const poll = () => { if (!actionBusyRef.current || actionBusyRef.current.startsWith('export-')) void load(false, true, true) }
     const interval = startLiveTourPolling(poll)
     const onVisibilityChange = () => { if (document.visibilityState === 'visible') poll() }
     document.addEventListener('visibilitychange', onVisibilityChange)
     const stopWatching = watchLeaveChanges(() => { if (!actionBusyRef.current) void load(false, true) })
     return () => {
+      boardMounted.current = false
+      boardController.current?.abort(); exportController.current?.abort()
       window.clearInterval(interval)
       document.removeEventListener('visibilitychange', onVisibilityChange)
       stopWatching()
@@ -1184,7 +1272,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     : ''
 
   const chooseFilter = (key) => setActiveFilter((current) => current === key ? 'all' : key)
-  const allPendingPayments = asArray(boardData.pending_payments).length ? asArray(boardData.pending_payments) : asArray(boardData.pending).length ? asArray(boardData.pending) : asArray(boardData.state?.pending)
+  const allPendingPayments = !dialogsAuthorized ? [] : asArray(boardData.pending_payments).length ? asArray(boardData.pending_payments) : asArray(boardData.pending).length ? asArray(boardData.pending) : asArray(boardData.state?.pending)
   const pagedPendingPayments = data.pending_payments ?? data.pending ?? data.state?.pending ?? allPendingPayments
   const customers = asArray(data.customers).length ? asArray(data.customers) : asArray(data.state?.customers)
   const services = orderedCatalog(asArray(data.services).length ? asArray(data.services) : asArray(data.catalogs?.services).length ? asArray(data.catalogs?.services) : asArray(data.state?.services))
@@ -1313,13 +1401,13 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const allCustomerComboPurchases = asArray(customerHistoryData.combo_purchases).length
     ? asArray(customerHistoryData.combo_purchases)
     : asArray(customerHistoryData.purchases)
-  const customerComboPurchaseHistory = filterTourRows(allCustomerComboPurchases.map((purchase) => ({ ...purchase, created_at: purchase?.effective_at || purchase?.purchased_at || purchase?.created_at })), customerHistoryFilters)
-  const customerComboUsageHistory = filterTourRows(asArray(customerHistoryData.combo_usage), customerHistoryFilters)
+  const customerComboPurchaseHistory = filterTourRows(allCustomerComboPurchases.map((purchase) => ({ ...purchase, created_at: purchase?.effective_at || purchase?.purchased_at || purchase?.created_at })), customerHistorySelection)
+  const customerComboUsageHistory = filterTourRows(asArray(customerHistoryData.combo_usage), customerHistorySelection)
   const comboPurchaseReceptionist = (purchase) => purchase?.receptionist || purchase?.actor || asArray(customerHistoryData.invoices).find((invoice) => String(invoice?.purchased_combo_id || '') === String(purchase?.id || ''))?.actor || purchase?.lk || purchase?.created_by || 'Chưa có thông tin'
   const selectedRecords = validRecords.filter((record, index) => selectedIds.has(recordId(record, index)))
   const allDisplayedSelected = displayedRecords.length > 0 && displayedRecords.every((record, index) => selectedIds.has(recordId(record, index)))
 
-  const pendingReminderCount = canPending ? Number(data.pending_count ?? pendingPayments.length) : 0
+  const pendingReminderCount = dialogsAuthorized && canPending && allowedTourPresets(datePolicy, 'pending').length ? Number(data.pending_count ?? pendingPayments.length) : 0
   const hasPendingReminder = pendingReminderCount > 0
   const announcePendingPayments = useCallback((count) => {
     if (count <= 0) return
@@ -1423,7 +1511,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       setError('Tài khoản chưa được cấp đủ quyền để xuất loại dữ liệu Live Tour này.')
       return
     }
-    const query = FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery({ ...listFilters, preset: '' }) : {}
+    const section = tourExportSection(kind)
+    const exportFilters = section ? normalizeTourDateFilters(section === dateSection ? listFilters : dateSelections[section], allowedTourPresets(datePolicy, section), { serverToday: datePolicy.server_today }) : null
+    if (section && ((!filterDraftValid && section === dateSection) || !tourDateFiltersReady(exportFilters))) { setError('Chưa có bộ lọc ngày được cấp quyền để xuất dữ liệu.'); return }
+    const query = FILTERED_EXPORT_KINDS.has(kind) ? compactExportQuery(exportFilters) : {}
     if (kind === 'custom') {
       query.columns = (customColumns ?? columns).filter((column) => columns.includes(column))
       if (!query.columns.length) { setError('Hãy chọn ít nhất một cột để xuất.'); return }
@@ -1437,57 +1528,59 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       return
     }
     setActionBusy(`export-${kind}`)
+    const controller = new AbortController()
+    exportController.current?.abort(); exportController.current = controller
     setError('')
     try {
-      await veraApi.exportLiveTourExcel(kind === 'revenue' ? 'reports' : kind, query)
+      await veraApi.exportLiveTourExcel(kind === 'revenue' ? 'reports' : kind, query, { signal: controller.signal })
     } catch (err) {
-      setError(err.message || 'Không xuất được dữ liệu Live Tour.')
+      if (!controller.signal.aborted) setError(err.message || 'Không xuất được dữ liệu Live Tour.')
     } finally {
       setActionBusy('')
     }
   }
 
-  const openCustomerHistory = async (customer) => {
-    if (!canCustomers) {
-      setError('Tài khoản chưa được cấp quyền xem lịch sử khách hàng.')
-      return
-    }
-    const customerId = stableCustomerId(customer)
-    if (!customerId) {
-      setError('Khách hàng này chưa có mã ổn định để xem lịch sử.')
-      return
-    }
-    setCustomerHistoryFilters({ preset: 'month', ...tourDateRange('month') })
-    setCustomerHistoryModal({ customerId, customer, data: null, error: '' })
+  useEffect(() => {
+    if (!customerHistoryId || !dialogsAuthorized || !customerHistoryCanRead) { setCustomerHistoryBusy(false); return undefined }
+    const controller = new AbortController()
     setCustomerHistoryBusy(true)
-    try {
-      const history = await veraApi.liveTourCustomerHistory(customerId)
-      setCustomerHistoryModal((current) => current?.customerId === customerId ? { ...current, data: history, error: '' } : current)
-    } catch (err) {
-      setCustomerHistoryModal((current) => current?.customerId === customerId ? { ...current, error: err.message || 'Không tải được lịch sử khách hàng.' } : current)
-    } finally {
-      setCustomerHistoryBusy(false)
-    }
+    veraApi.liveTourCustomerHistory(customerHistoryId, JSON.parse(customerHistoryQuery), { signal: controller.signal }).then(history => {
+      if (controller.signal.aborted) return
+      acceptReadCapabilities(history.capabilities)
+      setCustomerHistoryModal(current => current?.customerId === customerHistoryId ? { ...current, scope: customerHistoryScope, data: history, error: '' } : current)
+    }).catch(err => {
+      if (!controller.signal.aborted) setCustomerHistoryModal(current => current?.customerId === customerHistoryId ? { ...current, scope: customerHistoryScope, data: null, error: err.message || 'Không tải được lịch sử khách hàng.' } : current)
+    }).finally(() => { if (!controller.signal.aborted) setCustomerHistoryBusy(false) })
+    return () => controller.abort()
+  }, [customerHistoryId, customerHistoryQuery, customerHistoryScope, dialogsAuthorized, customerHistoryCanRead, acceptReadCapabilities])
+
+  const openCustomerHistory = (customer) => {
+    if (!canCustomers) { setError('Tài khoản chưa được cấp quyền xem lịch sử khách hàng.'); return }
+    const customerId = stableCustomerId(customer)
+    if (!customerId) { setError('Khách hàng này chưa có mã ổn định để xem lịch sử.'); return }
+    setCustomerHistoryDraftValidity({})
+    setCustomerHistoryFilters(normalizeTourDateFilters({ preset: 'month' }, customerHistoryPresets, { serverToday: datePolicy.server_today }))
+    setCustomerHistoryModal({ customerId, customer, data: null, error: '' })
   }
 
   const exportCustomerHistory = async () => {
     const customerId = customerHistoryModal?.customerId
-    if (!customerId || !canExportKind('customer_detail') || actionBusy) return
+    if (!customerId || !canExportKind('customer_detail') || !tourDateFiltersReady(customerHistorySelection) || !customerHistoryCanRead || actionBusy) return
     setActionBusy('export-customer-detail')
+    const controller = new AbortController()
+    exportController.current?.abort(); exportController.current = controller
     setError('')
     try {
-      await veraApi.exportLiveTourExcel('customer_detail', compactExportQuery({ customer_id: customerId, date_from: customerHistoryFilters.date_from, date_to: customerHistoryFilters.date_to }))
+      await veraApi.exportLiveTourExcel('customer_detail', compactExportQuery({ customer_id: customerId, ...customerHistorySelection }), { signal: controller.signal })
     } catch (err) {
-      setError(err.message || 'Không xuất được lịch sử khách hàng.')
+      if (!controller.signal.aborted) setError(err.message || 'Không xuất được lịch sử khách hàng.')
     } finally {
       setActionBusy('')
     }
   }
 
   const openWorkspacePanel = (panel) => {
-    if (panel === 'pending') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'all' })
-    if (panel === 'invoices') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'today', ...tourDateRange('today') })
-    if (panel === 'reports') setListFilters({ ...EMPTY_TOUR_FILTERS, preset: 'yesterday', ...tourDateRange('yesterday') })
+    if (panel === 'invoices') setDateSelections(current => ({ ...current, invoices: normalizeTourDateFilters({ ...EMPTY_TOUR_FILTERS, preset: 'today' }, allowedTourPresets(datePolicy, 'invoices'), { preferredPreset: 'today', serverToday: datePolicy.server_today }) }))
     setActivePanel(panel)
     window.requestAnimationFrame(() => workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
@@ -1683,7 +1776,11 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         {details.loading && <span role="status">Đang tải…</span>}{details.error && <span role="alert">{details.error}</span>}
       </div>}
       {['pending', 'invoices', 'reports', 'history'].includes(activePanel) && <LiveTourFilters
+        key={filterScope}
         value={listFilters}
+        onValidityChange={valid => setFilterValidity({ scope: filterScope, valid })}
+        allowedPresets={allowedDatePresets}
+        serverToday={datePolicy.server_today}
         showDate
         onChange={setListFilters}
         rows={activePanel === 'pending' ? allPendingPayments : activePanel === 'invoices' ? asArray(data.state?.invoices) : activePanel === 'reports' ? allReports : [...asArray(data.customer_changes), ...asArray(data.pending_changes), ...asArray(data.invoice_changes), ...asArray(data.break_events), ...asArray(data.backups)]}
@@ -1691,17 +1788,18 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         services={services}
         employees={data.state?.employees || []}
       />}
+      {TOUR_DATE_SECTIONS.includes(activePanel) && !listReadAllowed && <div className="live-tour-empty">{allowedDatePresets.length ? 'Chọn đầy đủ khoảng ngày hợp lệ để xem dữ liệu.' : 'Tài khoản chưa được cấp bộ lọc thời gian cho mục này.'}</div>}
       {!activePanel && <div className="live-tour-empty">Chọn mục để xem hóa đơn, khách hàng hoặc báo cáo.</div>}
 
-      {activePanel === 'pending' && canPending && <LiveTourPendingPanel actionBusy={actionBusy} asArray={asArray} canExportKind={canExportKind} canInvoiceDelete={canInvoiceDelete} canInvoiceEdit={canInvoiceEdit} canInvoiceView={canInvoiceView} canPayment={canPayment} data={data} exportData={panelActions.exportData} itemId={itemId} openModal={panelActions.openModal} pendingPayments={pendingPayments} setError={setError} setPendingContext={setPendingContext}/>}
+      {activePanel === 'pending' && listReadAllowed && canPending && <LiveTourPendingPanel actionBusy={actionBusy} asArray={asArray} canExportKind={canExportKind} canInvoiceDelete={canInvoiceDelete} canInvoiceEdit={canInvoiceEdit} canInvoiceView={canInvoiceView} canPayment={canPayment} data={data} exportData={panelActions.exportData} itemId={itemId} openModal={panelActions.openModal} pendingPayments={pendingPayments} setError={setError} setPendingContext={setPendingContext}/>}
 
       {activePanel === 'invoices' && details.ready && canPaidInvoiceView && <LiveTourInvoicesPanel canExportKind={canExportKind} exportData={panelActions.exportData} actionBusy={actionBusy} asArray={asArray} canPaidInvoiceDelete={canPaidInvoiceDelete} canPaidInvoiceEdit={canPaidInvoiceEdit} data={data} formatMoney={formatMoney} setError={setError} setPendingContext={setPendingContext} setReceipt={setReceipt} visibleInvoices={visibleInvoices} invoiceTotal={details.total} page={details.page} pages={details.pages}/>}
 
       {activePanel === 'customers' && canCustomers && <LiveTourCustomersPanel canCustomers={canCustomers} canExportKind={canExportKind} canImportCombo={canImportCombo} canPayment={canPayment} capabilities={capabilities} customerComboPurchases={customerComboPurchases} customerSearch={customerSearch} data={data} exportData={panelActions.exportData} filteredCustomers={filteredCustomers} isAdmin={isAdmin} itemId={itemId} itemLabel={itemLabel} openCustomerHistory={panelActions.openCustomerHistory} openModal={panelActions.openModal} setCustomerContext={setCustomerContext} setCustomerSearch={setCustomerSearch} setError={setError} stableCustomerId={stableCustomerId}/>}
 
-      {activePanel === 'reports' && !details.initialLoading && canReports && <LiveTourReportsPanel EXPORT_KINDS={EXPORT_KINDS} actionBusy={actionBusy} asArray={asArray} canExportKind={canExportKind} canPaidInvoiceView={canPaidInvoiceView} columns={columns} copyBoardImage={panelActions.copyBoardImage} customColumns={customColumns} customScope={customScope} data={data} exportData={panelActions.exportData} formatMoney={formatMoney} itemId={itemId} itemLabel={itemLabel} reportInvoiceCount={reportInvoiceCount} reports={reports} setCustomColumns={setCustomColumns} setCustomScope={setCustomScope} setReceipt={setReceipt}/>}
+      {activePanel === 'reports' && listReadAllowed && !details.initialLoading && canReports && <LiveTourReportsPanel EXPORT_KINDS={EXPORT_KINDS} actionBusy={actionBusy} asArray={asArray} canExportKind={canExportKind} canPaidInvoiceView={canPaidInvoiceView} columns={columns} copyBoardImage={panelActions.copyBoardImage} customColumns={customColumns} customScope={customScope} data={data} exportData={panelActions.exportData} formatMoney={formatMoney} itemId={itemId} itemLabel={itemLabel} reportInvoiceCount={reportInvoiceCount} reports={reports} setCustomColumns={setCustomColumns} setCustomScope={setCustomScope} setReceipt={setReceipt}/>}
 
-      {activePanel === 'history' && !details.initialLoading && (canHistory || canBackup) && <LiveTourHistoryPanel actionBusy={actionBusy} backups={backups} canBackup={canBackup} canCustomers={canCustomers} canExportKind={canExportKind} canHistory={canHistory} executeAction={panelActions.executeAction} exportData={panelActions.exportData} filteredBreakEvents={filteredBreakEvents} filteredCustomerChanges={filteredCustomerChanges} filteredInvoiceChanges={filteredInvoiceChanges} itemId={itemId} itemLabel={itemLabel}/>}
+      {activePanel === 'history' && listReadAllowed && !details.initialLoading && (canHistory || canBackup) && <LiveTourHistoryPanel actionBusy={actionBusy} backups={backups} canBackup={canBackup} canCustomers={canCustomers} canExportKind={canExportKind} canHistory={canHistory} executeAction={panelActions.executeAction} exportData={panelActions.exportData} filteredBreakEvents={filteredBreakEvents} filteredCustomerChanges={filteredCustomerChanges} filteredInvoiceChanges={filteredInvoiceChanges} itemId={itemId} itemLabel={itemLabel}/>}
 
       {activePanel === 'catalog' && canAdmin && <LiveTourCatalogPanel actionBusy={actionBusy} asArray={asArray} canAdmin={canAdmin} canManageCatalog={canManageCatalog} catalogRooms={catalogRooms} combos={combos} confirmExpired={panelActions.confirmExpired} data={data} executeAction={panelActions.executeAction} expiredGrace={expiredGrace} expiredPreview={expiredPreview} formatMoney={formatMoney} isVipRoom={isVipRoom} itemId={itemId} itemLabel={itemLabel} openModal={panelActions.openModal} previewExpired={panelActions.previewExpired} removeCatalogItem={panelActions.removeCatalogItem} roomLabel={roomLabel} services={services} setExpiredGrace={setExpiredGrace} setExpiredPreview={setExpiredPreview}/>}
     </section>
@@ -1723,15 +1821,16 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       <UiToolbar data-ui-key="u-22e0a300a413" className="live-tour-modal-actions"><button data-ui-key="u-46a5808aa1ad" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={() => setComboLookupOpen(false)}><UiCustomText uiKey="u-46a5808aa1ad">Đóng</UiCustomText></button></UiToolbar>
     </LiveTourModal>}
 
-    {customerHistoryModal && canCustomers && <LiveTourModal title={`Lịch sử khách hàng · ${itemLabel(customerHistoryData.customer || customerHistoryModal.customer, 'Khách hàng')}`} onClose={() => setCustomerHistoryModal(null)}>
+    {dialogsAuthorized && customerHistoryModal && canCustomers && <LiveTourModal title={`Lịch sử khách hàng · ${itemLabel(customerHistoryData.customer || customerHistoryModal.customer, 'Khách hàng')}`} onClose={() => setCustomerHistoryModal(null)}>
       {customerHistoryBusy && <div className="live-tour-empty">Đang tải lịch sử chính xác theo mã khách hàng…</div>}
       {customerHistoryModal.error && <div className="error-box">{customerHistoryModal.error}</div>}
-      {!customerHistoryBusy && customerHistoryModal.data && <div className="live-tour-history-sections">
-        {(!canPaidInvoiceView || !canInvoiceView || !canPending || !canReports) && <p>Chỉ hiển thị các phần được cấp quyền. Nội dung hóa đơn hoặc báo cáo chưa được cấp quyền sẽ không được tải.</p>}
         <div className="live-tour-customer-history-filter" role="group" aria-label="Lọc thời gian lịch sử Combo">
-          <label><span>Thời gian</span><select value={customerHistoryFilters.preset} onChange={(event) => { const preset = event.target.value; setCustomerHistoryFilters({ preset, ...tourDateRange(preset) }) }}><option value="all">Tất cả</option><option value="month">Tháng này</option><option value="last-month">Tháng trước</option><option value="custom">Tùy chỉnh</option></select></label>
-          {customerHistoryFilters.preset === 'custom' && <><label><span>Từ ngày</span><VeraDateInput value={customerHistoryFilters.date_from} max={customerHistoryFilters.date_to || undefined} onChange={(event) => setCustomerHistoryFilters((current) => ({ ...current, date_from: event.target.value }))}/></label><label><span>Đến ngày</span><VeraDateInput value={customerHistoryFilters.date_to} min={customerHistoryFilters.date_from || undefined} onChange={(event) => setCustomerHistoryFilters((current) => ({ ...current, date_to: event.target.value }))}/></label></>}
+          {customerHistoryPresets.length > 0 ? <label><span>Thời gian</span><select value={customerHistorySelection.preset} onChange={(event) => { const preset = event.target.value; setCustomerHistoryDraftValidity({}); setCustomerHistoryFilters({ preset, ...tourDateRange(preset, datePolicy.server_today ? new Date(`${datePolicy.server_today}T12:00:00+07:00`) : new Date()) }) }}>{TOUR_DATE_PRESETS.filter(([id]) => customerHistoryPresets.includes(id)).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label> : <p>Lịch sử được giới hạn theo quyền thời gian của từng mục.</p>}
+          {customerHistoryPresets.includes('custom') && customerHistorySelection.preset === 'custom' && <><label><span>Từ ngày</span><VeraDateInput onDraftValidity={valid => setCustomerHistoryDraftValidity(current => ({ ...current, date_from: valid }))} value={customerHistoryFilters.date_from} max={customerHistoryFilters.date_to || undefined} onChange={(event) => setCustomerHistoryFilters((current) => ({ ...current, date_from: event.target.value }))}/></label><label><span>Đến ngày</span><VeraDateInput onDraftValidity={valid => setCustomerHistoryDraftValidity(current => ({ ...current, date_to: valid }))} value={customerHistoryFilters.date_to} min={customerHistoryFilters.date_from || undefined} onChange={(event) => setCustomerHistoryFilters((current) => ({ ...current, date_to: event.target.value }))}/></label></>}
         </div>
+      {!customerHistoryBusy && customerHistoryCurrent && customerHistoryModal.data && <div className="live-tour-history-sections">
+        {(!canPaidInvoiceView || !canInvoiceView || !canPending || !canReports) && <p>Chỉ hiển thị các phần được cấp quyền. Nội dung hóa đơn hoặc báo cáo chưa được cấp quyền sẽ không được tải.</p>}
+
         <section data-ui-key="u-0f49bb433a85" className="live-tour-catalog-section live-tour-combo-purchase-history"><h3>Lịch sử mua Combo ({customerComboPurchaseHistory.length})</h3>
           {customerComboPurchaseHistory.length ? <div className="live-tour-combo-purchase-list">{customerComboPurchaseHistory.map((purchase, index) => <article className="live-tour-combo-purchase-detail" key={itemId(purchase, index)}>
             <dl>
@@ -1753,10 +1852,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           })}</div> : <div className="live-tour-empty">Khách hàng chưa sử dụng vé Combo.</div>}
         </section>
       </div>}
-      <UiToolbar data-ui-key="u-2b85edff763d" className="live-tour-modal-actions"><button data-ui-key="u-f4cd4af6d32a" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={() => setCustomerHistoryModal(null)}><UiCustomText uiKey="u-f4cd4af6d32a">Đóng</UiCustomText></button><button data-ui-key="u-45936ff4c709" data-ui-label-default="Xuất excel" type="button" className="primary-button" disabled={!canExportKind('customer_detail') || customerHistoryBusy || Boolean(actionBusy)} onClick={exportCustomerHistory}><Download size={13}/><UiCustomText uiKey="u-45936ff4c709"> Xuất excel</UiCustomText></button></UiToolbar>
+      <UiToolbar data-ui-key="u-2b85edff763d" className="live-tour-modal-actions"><button data-ui-key="u-f4cd4af6d32a" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={() => setCustomerHistoryModal(null)}><UiCustomText uiKey="u-f4cd4af6d32a">Đóng</UiCustomText></button><button data-ui-key="u-45936ff4c709" data-ui-label-default="Xuất excel" type="button" className="primary-button" disabled={!canExportKind('customer_detail') || !tourDateFiltersReady(customerHistorySelection) || !customerHistoryCanRead || customerHistoryBusy || Boolean(actionBusy)} onClick={exportCustomerHistory}><Download size={13}/><UiCustomText uiKey="u-45936ff4c709"> Xuất excel</UiCustomText></button></UiToolbar>
     </LiveTourModal>}
 
-    {modal && <LiveTourModal title={{
+    {modal && (dialogsAuthorized || modal.kind !== 'checkout' || !modal.item) && <LiveTourModal title={{
       checkout: 'Thanh toán', quick_checkout: 'Thanh toán nhanh',
       combo_approvals: 'Duyệt yêu cầu bán combo',
       change_employee: 'Đổi nhân viên', replace_service: 'Đổi dịch vụ', add_service: 'Thêm dịch vụ',
@@ -1890,10 +1989,10 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     </LiveTourModal>}
 
 {bookingContext && <LiveTourBookingDialog allowBookingOutsideShift={allowBookingOutsideShift} onSelectedCustomersChange={setBookingCustomerIds} onCustomerSearch={setLookupSearch} key={bookingContext.employeeId || bookingContext.roomGroup} data={data} sourceEmployees={[...asArray(boardData.state?.employees), ...asArray(boardData.retained_assignments)]} sourceRevision={boardData.revision} context={bookingContext} canInvoiceEdit={canInvoiceEdit} onPendingEdit={(item, revision) => { if (!canInvoiceEdit) return; setBookingContext(null); setError(''); setPendingContext({ item, mode: 'edit', revision: revision ?? data.revision }) }} canAdmin={canAdmin} canSharePrivateRoom={['admin', 'quanly', 'letan'].includes(normalizedRole)} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker, sourceRevision) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [], sourceRevision } : { rowIds: [worker.id], sourceEmployees: [worker], sourceRevision }) }}/>}
-    {pendingContext && !pendingContext.paid && canPending && canInvoiceView && <LiveTourPendingDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} catalog={data.services || []} customers={data.customers || []} canChangeCustomer={canCustomers} onCustomerSearch={setLookupSearch} onCustomerSelect={id => setPendingContext(current => ({...current,lookupCustomerId:id}))} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
-    {customerContext && <LiveTourCustomerDialog context={customerContext} comboCatalog={combos} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setCustomerContext(null)}/>}
-    {pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
-    {receipt && canPaidInvoiceView && <LiveTourReceipt key={receipt.invoice.id} invoice={receipt.invoice} paymentSettings={data.payment_settings} autoPrint={receipt.autoPrint} onClose={() => setReceipt(null)}/>}
+    {dialogsAuthorized && pendingContext && !pendingContext.paid && canPending && canInvoiceView && <LiveTourPendingDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} catalog={data.services || []} customers={data.customers || []} canChangeCustomer={canCustomers} onCustomerSearch={setLookupSearch} onCustomerSelect={id => setPendingContext(current => ({...current,lookupCustomerId:id}))} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
+    {dialogsAuthorized && customerContext && <LiveTourCustomerDialog context={customerContext} comboCatalog={combos} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setCustomerContext(null)}/>}
+    {dialogsAuthorized && pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
+    {dialogsAuthorized && receipt && canPaidInvoiceView && <LiveTourReceipt key={receipt.invoice.id} invoice={receipt.invoice} paymentSettings={data.payment_settings} autoPrint={receipt.autoPrint} onClose={() => setReceipt(null)}/>}
     {isAdmin && <LiveTourPartialLeaveSettings key={JSON.stringify(data.payment_settings?.partial_leave_times)} value={data.payment_settings} busy={Boolean(actionBusy)} onSave={payload => executeAction('payment_settings_update', payload, [])}/>}
   </div>
 }

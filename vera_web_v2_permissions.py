@@ -4,13 +4,18 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import os
-from typing import Any, Callable
+from types import SimpleNamespace
+from typing import Any, Callable, Literal
 
 import gspread
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from vera_web_v2_live_tour_permissions import LEGACY_FEATURE_INHERITANCE
+from vera_web_v2_live_tour_permissions import (
+    DATE_FILTER_DEPENDENCIES, DATE_FILTER_FEATURES, DATE_FILTER_PARENT_ANY,
+    DATE_FILTER_POLICY_VERSION, DATE_FILTER_PRESETS, DATE_FILTER_SECTIONS,
+    LEGACY_FEATURE_INHERITANCE,
+)
 
 
 CREDENTIAL_SHEET_ID = os.getenv(
@@ -148,6 +153,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "storage_delete": "Xóa dữ liệu lưu trữ theo thời gian",
     },
 }
+FEATURE_GROUPS["Live Tour"].update(DATE_FILTER_FEATURES)
 FEATURES = {key: label for group in FEATURE_GROUPS.values() for key, label in group.items()}
 
 # Permission UI is organized by actual Web V2 pages/menu surfaces. A page can
@@ -160,9 +166,11 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
         "live_tour_invoice_edit", "live_tour_invoice_delete", "live_tour_paid_invoice_view",
         "live_tour_paid_invoice_edit", "live_tour_paid_invoice_delete",
         "live_tour_invoice_date_edit", "live_tour_export",
+        *[key for key in DATE_FILTER_FEATURES if key.startswith(("live_tour_pending_date_", "live_tour_invoices_date_"))],
     ]},
     {"id": "reports", "label": "Báo cáo Live Tour", "view_feature": "live_tour_reports_view", "features": [
         "live_tour_reports_view", "live_tour_reports_edit", "live_tour_reports_delete",
+        *[key for key in DATE_FILTER_FEATURES if key.startswith("live_tour_reports_date_")],
     ]},
     {"id": "customers", "label": "Khách hàng", "view_feature": "live_tour_customers_view", "features": [
         "live_tour_customers_view", "live_tour_customers_edit", "live_tour_customers_delete",
@@ -170,6 +178,7 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
     ]},
     {"id": "live-tour-settings", "label": "Cài đặt Live Tour", "view_feature": "live_tour_view", "features": [
         "live_tour_admin", "live_tour_history_view", "live_tour_backup",
+        *[key for key in DATE_FILTER_FEATURES if key.startswith("live_tour_history_date_")],
     ]},
     {"id": "tour", "label": "Bảng tua", "view_feature": "tour", "features": [
         "tour", "tour_refresh", "tour_leave_sync",
@@ -446,17 +455,27 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
 }
 
 
+FEATURE_DEPENDENCIES.update(DATE_FILTER_DEPENDENCIES)
+
+
 def permission_closure(features: set[str] | list[str] | tuple[str, ...]) -> set[str]:
     """Return features plus every transitive prerequisite currently registered."""
     allowed = {str(feature).strip() for feature in features if str(feature).strip()}
-    changed = True
-    while changed:
-        changed = False
-        for feature in tuple(allowed):
-            for dependency in FEATURE_DEPENDENCIES.get(feature, set()):
-                if dependency in FEATURES and dependency not in allowed:
-                    allowed.add(dependency)
-                    changed = True
+    pending = list(allowed)
+    visited: set[str] = set()
+    while pending:
+        feature = pending.pop()
+        if feature in visited:
+            continue
+        visited.add(feature)
+        for dependency in FEATURE_DEPENDENCIES.get(feature, set()):
+            if dependency not in FEATURES:
+                continue
+            allowed.add(dependency)
+            # Date parents are already the complete runtime requirement. In
+            # particular, standalone Reports must not acquire a board grant.
+            if feature not in DATE_FILTER_DEPENDENCIES:
+                pending.append(dependency)
     return allowed
 
 
@@ -500,9 +519,11 @@ DEFAULT_ROLE_FEATURES = {
 
 
 class PermissionUpdate(BaseModel):
-    allowed_features: list[str] = Field(default_factory=list, max_length=200)
+    allowed_features: list[str] = Field(default_factory=list, max_length=1000)
     inherit: bool = False
     expected_revision: int | None = Field(default=None, ge=0)
+    preserve_unchanged: bool = False
+    date_filter_policy_version: Literal[1] | None = None
 
 
 def _payload(raw: Any) -> dict[str, Any]:
@@ -522,6 +543,7 @@ def install_permission_routes(
     app, *, engine_instance: Callable[[], Any], current_identity,
     google_client: Callable[[], Any], identity_type, vn_tz,
     permissions_changed: Callable[[], None] | None = None,
+    feature_allowed: Callable[..., bool] | None = None,
 ):
     def require_admin(ident):
         if str(ident.role or "").lower() != "admin":
@@ -548,6 +570,12 @@ def install_permission_routes(
             "account_overrides": {item["username"]: _scope_rows(payload, "account", item["username"]) for item in accounts},
             "defaults": {role: sorted(DEFAULT_ROLE_FEATURES.get(role, set())) for role in ROLES},
             "legacy_inheritance": LEGACY_FEATURE_INHERITANCE,
+            "date_filter_policy_version": DATE_FILTER_POLICY_VERSION,
+            "date_filter_features": DATE_FILTER_FEATURES,
+            "date_filter_presets": DATE_FILTER_PRESETS,
+            "date_filter_sections": DATE_FILTER_SECTIONS,
+            "date_filter_parent_any": DATE_FILTER_PARENT_ANY,
+            "date_filter_legacy_inheritance": "effective_section_read",
             "dependencies": {key: sorted(value) for key, value in FEATURE_DEPENDENCIES.items() if key in FEATURES},
             "revision": int(row.get("revision") or 0) if row else 0,
         }
@@ -565,6 +593,8 @@ def install_permission_routes(
         unknown = sorted(set(body.allowed_features) - set(FEATURES))
         if unknown:
             raise HTTPException(400, f"Có quyền không hợp lệ: {', '.join(unknown)}")
+        if body.preserve_unchanged and body.expected_revision is None:
+            raise HTTPException(428, "Hãy Làm mới phân quyền trước khi lưu thay đổi.")
 
         conn = engine_instance().connect()
         tx = conn.begin()
@@ -580,16 +610,54 @@ def install_permission_routes(
                 raise HTTPException(409, "Phân quyền đã thay đổi ở thiết bị khác. Hãy Làm mới rồi lưu lại.")
             payload = _payload(row.get("value_json") if row else None)
             key = "accounts" if scope == "account" else "roles"
+            edits_date_features = (body.date_filter_policy_version == DATE_FILTER_POLICY_VERSION
+                                   or any(feature in DATE_FILTER_FEATURES for feature in body.allowed_features))
+            saved_features = set(FEATURES) if edits_date_features else set(FEATURES) - set(DATE_FILTER_FEATURES)
+            # A tab opened before the date catalog existed sends no date IDs.
+            # Keep its old date rows (including absence) instead of fabricating
+            # 32 false overrides. A v1 all-false save is explicit via version.
+            if scope == "account" and body.inherit:
+                saved_features = set(FEATURES)
             keep = [
                 item for item in payload.get(key, []) or []
                 if str(item.get("target") or "").casefold().strip() != target.casefold()
-                or str(item.get("feature") or "") not in FEATURES
+                or str(item.get("feature") or "") not in saved_features
             ]
             now = datetime.now(vn_tz)
             if not (scope == "account" and body.inherit):
-                allowed = permission_closure(set(body.allowed_features))
-                keep.extend({"target": target, "feature": feature, "allowed": feature in allowed} for feature in FEATURES)
+                if body.preserve_unchanged:
+                    if feature_allowed is None:
+                        raise HTTPException(503, "Chưa thể kiểm tra quyền hiện tại an toàn. Hãy tải lại.")
+                    target_role = target.lower()
+                    if scope == "account":
+                        target_role = conn.execute(text("""
+                            SELECT lower(COALESCE(role,'')) role FROM employees
+                            WHERE lower(username)=lower(:username)
+                              AND COALESCE(payload->>'__deleted','false') <> 'true'
+                            LIMIT 1
+                        """), {"username": target}).scalar_one_or_none()
+                        if target_role is None:
+                            raise HTTPException(404, "Không tìm thấy tài khoản cần phân quyền.")
+                    subject = SimpleNamespace(role=target_role, employee_username=target if scope == "account" else "")
+                    baseline = {feature for feature in FEATURES if feature_allowed(conn, subject, feature, payload)}
+                    allowed = set(body.allowed_features)
+                    # A legacy true action may coexist with an explicit denied
+                    # view. Do not silently lift that deny on an unchanged save.
+                    # Actual newly enabled actions still bring their parents.
+                    newly_enabled = allowed - baseline
+                    date_supplied_parents = {
+                        parent for feature in newly_enabled
+                        for parent in DATE_FILTER_DEPENDENCIES.get(feature, ())
+                    }
+                    # The editor visibly adds these minimal read checks with
+                    # the date grant. Treating them again as independent roots
+                    # would silently expand old view dependencies (board etc.).
+                    allowed.update(permission_closure(newly_enabled - date_supplied_parents))
+                else:
+                    allowed = permission_closure(set(body.allowed_features))
+                keep.extend({"target": target, "feature": feature, "allowed": feature in allowed} for feature in FEATURES if feature in saved_features)
             payload[key] = keep
+            payload["date_filter_policy_version"] = DATE_FILTER_POLICY_VERSION
             payload.setdefault("roles" if key == "accounts" else "accounts", [])
 
             mirror = [HEADERS]
@@ -634,6 +702,7 @@ def install_permission_routes(
                 "message": "Đã lưu phân quyền THÀNH CÔNG. Các quyền nền bắt buộc đã được tự động bổ sung.",
                 "allowed_features": sorted(allowed) if not (scope == "account" and body.inherit) else [],
                 "revision": revision + 1,
+                "date_filter_policy_version": DATE_FILTER_POLICY_VERSION,
                 "mirror_pending": bool(mirror_warning),
                 "warnings": [mirror_warning] if mirror_warning else [],
             }

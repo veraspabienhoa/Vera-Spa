@@ -36,7 +36,7 @@ def test_page_permissions_keep_dependency_auto_sync():
 
     assert '"revenue_entry_create": {"revenue_view"}' in backend
     assert "allowed = permission_closure(set(body.allowed_features))" in backend
-    assert "return expandDependencies([...current, feature])" in page
+    assert "...expandDependencies([feature])" in page
     assert "const blocked = new Set([feature, ...dependentFeatures(feature)])" in page
 
 
