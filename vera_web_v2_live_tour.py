@@ -5438,16 +5438,9 @@ def install_live_tour_routes(
             "alerting": alerting,
         }
 
-    @app.get("/v2/live-tour/customer-count.pdf")
-    def live_tour_customer_count_pdf(
-        date_from: str = Query(default="", max_length=10), date_to: str = Query(default="", max_length=10),
-        selected_date: str = Query(default="", alias="date", max_length=10),
-        employee: str = Query(default="", max_length=200), customer: str = Query(default="", max_length=200),
-        service: str = Query(default="", max_length=200), bill_no: str = Query(default="", max_length=100),
-        total_amount: int | None = Query(default=None, ge=0, le=MAX_MONEY),
-        ident: identity_type = Depends(current_identity),
-    ):
-        from vera_customer_count_pdf import customer_counts, customer_count_pdf
+    def customer_count_snapshot(date_from, date_to, selected_date, employee, customer,
+                                service, bill_no, total_amount, ident):
+        from vera_customer_count_pdf import customer_counts
         _parse_export_bounds(date_from=date_from, date_to=date_to)
         if selected_date:
             _parse_export_bounds(date_from=selected_date, date_to=selected_date)
@@ -5461,7 +5454,8 @@ def install_live_tour_routes(
         report_rows = _report_rows_with_combo_kind(state)
         if not (grants["can_customers_view"] or grants["can_invoice_view"] or grants["can_paid_invoice_view"]):
             report_rows = _redact_customer_pii(report_rows)
-        # Detached snapshot; PDF rendering never holds a DB connection or board lock.
+        # Both formats use the complete filtered ledger, never the visible page.
+        # Detached snapshot; rendering never holds a DB connection or board lock.
         filters = dict(date_from=date_from, date_to=date_to, date=selected_date, employee=employee,
                        customer=customer, service=service, bill_no=bill_no, total_amount=total_amount)
         rows = [row for row in report_rows if query_store.matches_report(row, filters)]
@@ -5469,12 +5463,48 @@ def install_live_tour_routes(
         summary = customer_counts(rows, date_from=start, date_to=end)
         scope = dict(date_from=start, date_to=end, date=selected_date, employee=employee,
                      customer=customer, service=service, bill_no=bill_no, total_amount=total_amount)
+        return summary, scope, now
+
+    @app.get("/v2/live-tour/customer-count.pdf")
+    def live_tour_customer_count_pdf(
+        date_from: str = Query(default="", max_length=10), date_to: str = Query(default="", max_length=10),
+        selected_date: str = Query(default="", alias="date", max_length=10),
+        employee: str = Query(default="", max_length=200), customer: str = Query(default="", max_length=200),
+        service: str = Query(default="", max_length=200), bill_no: str = Query(default="", max_length=100),
+        total_amount: int | None = Query(default=None, ge=0, le=MAX_MONEY),
+        ident: identity_type = Depends(current_identity),
+    ):
+        from vera_customer_count_pdf import customer_count_pdf
+        summary, scope, now = customer_count_snapshot(date_from, date_to, selected_date, employee, customer,
+                                                      service, bill_no, total_amount, ident)
         try:
             content = customer_count_pdf(summary, scope, generated_at=now)
         except RuntimeError as exc:
             raise HTTPException(503, str(exc)) from exc
         return StreamingResponse(BytesIO(content), media_type="application/pdf",
                                  headers={"Content-Disposition": "attachment; filename=VERA_SoLuongKhach.pdf",
+                                          "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @app.get("/v2/live-tour/customer-count.png")
+    def live_tour_customer_count_png(
+        date_from: str = Query(default="", max_length=10), date_to: str = Query(default="", max_length=10),
+        selected_date: str = Query(default="", alias="date", max_length=10),
+        employee: str = Query(default="", max_length=200), customer: str = Query(default="", max_length=200),
+        service: str = Query(default="", max_length=200), bill_no: str = Query(default="", max_length=100),
+        total_amount: int | None = Query(default=None, ge=0, le=MAX_MONEY),
+        ident: identity_type = Depends(current_identity),
+    ):
+        from vera_customer_count_png import customer_count_png, CustomerCountImageTooLarge
+        summary, scope, now = customer_count_snapshot(date_from, date_to, selected_date, employee, customer,
+                                                      service, bill_no, total_amount, ident)
+        try:
+            content = customer_count_png(summary, scope, generated_at=now)
+        except CustomerCountImageTooLarge as exc:
+            raise HTTPException(413, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        return StreamingResponse(BytesIO(content), media_type="image/png",
+                                 headers={"Content-Disposition": "attachment; filename=VERA_SoLuongKhach.png",
                                           "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @app.get("/v2/live-tour/export.xlsx")

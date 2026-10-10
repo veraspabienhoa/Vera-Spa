@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { JSDOM as BaseJSDOM } from 'jsdom'
 import { answerDialogs } from './dialogAnswers.mjs'
+import { bookingDateRange } from '../src/lib/bookingDateRange.js'
 class JSDOM extends BaseJSDOM { constructor(...args) { super(...args); answerDialogs(this.window) } }
 
 const built = await build({
@@ -92,6 +93,12 @@ test('date presets reach API; details opens accessible modal and Escape closes i
  try {
   await w.mountPage({id:'a',role:'letan'})
   const button=text=>[...w.document.querySelectorAll('button')].find(b=>b.textContent===text)
+  assert.deepEqual([...w.document.querySelectorAll('.online-booking-periods > button')].map(b=>b.textContent),['Hôm nay','Hôm qua','Ngày mai','Tuần này','Tuần sau','Tuỳ chỉnh'])
+  await w.act(async()=>button('Hôm qua').click())
+  assert.equal(w.lastParams.date_from,bookingDateRange('yesterday').date_from)
+  assert.equal(w.lastParams.date_from,w.lastParams.date_to)
+  assert.equal(w.lastParams.page,1)
+  assert.equal(button('Hôm qua').getAttribute('aria-pressed'),'true')
   await w.act(async()=>button('Ngày mai').click())
   assert.match(w.lastParams.date_from,/^\d{4}-\d{2}-\d{2}$/)
   assert.equal(w.lastParams.date_from,w.lastParams.date_to)
@@ -99,9 +106,21 @@ test('date presets reach API; details opens accessible modal and Escape closes i
   await w.act(async()=>button('Chi tiết').click())
   const modal=w.document.querySelector('[role="dialog"]')
   assert.ok(modal);assert.ok(modal.textContent.includes('Đặt lịch'))
+  assert.deepEqual([...modal.querySelectorAll('.online-booking-detail-actions > button')].map(b=>b.textContent),['Sửa lịch hẹn','Xóa lịch hẹn','Lưu'])
+  assert.equal(button('Lưu').disabled,true,'unchanged detail remains unsaveable after footer regrouping')
   assert.ok(modal.textContent.includes('Phòng yên tĩnh'))
   await w.act(async()=>modal.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true})))
   assert.equal(w.document.querySelector('[role="dialog"]'),null)
+ }finally{await w.unmount();w.close()}
+})
+
+test('contact details retain just the save action in the same footer',async()=>{
+ const dom=await mount(),w=dom.window
+ try {
+  w.rows=[{id:2,kind:'contact',customer_name:'Khách liên hệ',status:'new',note:'',revision:1}]
+  await w.mountPage({id:'a',role:'letan'})
+  await w.act(async()=>[...w.document.querySelectorAll('button')].find(b=>b.textContent==='Chi tiết').click())
+  assert.deepEqual([...w.document.querySelectorAll('.online-booking-detail-actions > button')].map(b=>b.textContent),['Lưu'])
  }finally{await w.unmount();w.close()}
 })
 

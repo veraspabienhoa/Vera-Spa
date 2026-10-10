@@ -157,9 +157,9 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
         </div>
         <div className="checkin-quick-dates">{CHECKIN_PRESETS.filter(([id]) => id !== 'custom').map(([id, label]) => <button key={id} type="button" className="secondary-button" aria-pressed={filters.preset === id} onClick={() => preset(id)}>{label}</button>)}<button type="button" className="secondary-button" onClick={() => change(EMPTY_CHECKIN_DETAILS)}>Xóa lọc chi tiết</button></div>
         <div className="device-actions checkin-history-actions">
-          <button className="secondary-button checkin-live-device-button" type="button" disabled={busy || exporting} onClick={loadFromFacegate}><RefreshCw size={16} className={busy && source === 'facegate' ? 'spin' : ''} />{busy && source === 'facegate' ? 'Đang tải từ máy…' : 'Tải lại dữ liệu từ máy Face ID'}</button>
-          <button className="secondary-button" type="submit"><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang tải…' : 'Xem lịch sử'}</button>
-          <button className="secondary-button" type="button" disabled={busy || !records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} />{exporting ? 'Đang xuất…' : 'Xuất excel'}</button>
+          <button className="secondary-button" type="submit"><RefreshCw size={16} className={busy ? 'spin' : ''} /><span>{busy ? 'Đang tải…' : 'Xem lịch sử'}</span></button>
+          <button className="secondary-button checkin-live-device-button" type="button" disabled={busy || exporting} onClick={loadFromFacegate}><RefreshCw size={16} className={busy && source === 'facegate' ? 'spin' : ''} /><span>{busy && source === 'facegate' ? 'Đang tải từ máy…' : 'Tải từ Face ID'}</span></button>
+          <button className="secondary-button" type="button" disabled={busy || !records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} /><span>{exporting ? 'Đang xuất…' : 'Xuất excel'}</span></button>
         </div>
       </fieldset>
     </form>

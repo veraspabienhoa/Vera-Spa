@@ -322,39 +322,44 @@ test('a committed edit refreshes the current filters and keeps its original expe
   } finally { await fixture.close() }
 })
 
-test('PDF dialogs are account/permission scoped, abort late reads and revoke prepared files', async () => {
+test('PDF/PNG dialogs are account/permission scoped, abort late reads and revoke both prepared files', async () => {
   const requests = [], created = [], revoked = []
   const originalCreate = URL.createObjectURL, originalRevoke = URL.revokeObjectURL
   URL.createObjectURL = file => { const url = `blob:report-${created.length}`; created.push({ url, file }); return url }
   URL.revokeObjectURL = url => revoked.push(url)
   const firstUser = { id: 'user-one', role: 'admin', employee_username: 'operator', permissions: {} }
   const nextUser = { ...firstUser, id: 'user-two' }
+  const prepare = (format, filters, options) => { const read = deferred(); requests.push({ ...read, format, filters, signal: options.signal }); return read.promise }
   const fixture = await mount({
     liveTourReports: async () => reportPage(),
-    readCustomerCountPdf: (filters, options) => { const read = deferred(); requests.push({ ...read, filters, signal: options.signal }); return read.promise },
+    readCustomerCountPdf: (...args) => prepare('pdf', ...args),
+    readCustomerCountPng: (...args) => prepare('png', ...args),
   }, firstUser)
   try {
-    await click('Chia sẻ số khách · PDF')
-    assert.equal(requests.length, 1)
-    assert.equal(requests[0].filters.date_from, queryDate)
-    assert.equal(requests[0].filters.page, undefined)
-    assert.match(document.querySelector('[role="dialog"]').textContent, /Đang tạo PDF/)
+    await click('Chia sẻ số khách · PDF/PNG')
+    assert.equal(requests.length, 2)
+    for (const read of requests) { assert.equal(read.filters.date_from, queryDate); assert.equal(read.filters.page, undefined) }
+    assert.match(document.querySelector('[role="dialog"]').textContent, /Đang tạo PDF.*Đang tạo PNG/)
     await act(async () => fixture.root.render(React.createElement(fixture.Component, { user: nextUser })))
-    assert.equal(requests[0].signal.aborted, true)
+    assert.ok(requests.every(read => read.signal.aborted))
     assert.equal(document.querySelector('[role="dialog"]'), null)
-    await act(async () => requests[0].resolve(new Blob(['old private report'], { type: 'application/pdf' })))
-    assert.equal(created.length, 0, 'a late response cannot create an old account PDF URL')
-    await click('Chia sẻ số khách · PDF')
-    await act(async () => requests[1].resolve(new Blob(['current report'], { type: 'application/pdf' })))
-    assert.match(document.querySelector('[role="dialog"]').textContent, /PDF đã sẵn sàng/)
-    assert.equal(created.length, 1)
+    await act(async () => {
+      for (const read of requests) read.resolve(new Blob(['old private report'], { type: read.format === 'pdf' ? 'application/pdf' : 'image/png' }))
+    })
+    assert.equal(created.length, 0, 'late responses cannot create files for the previous account')
+    await click('Chia sẻ số khách · PDF/PNG')
+    await act(async () => {
+      for (const read of requests.slice(2)) read.resolve(new Blob(['current report'], { type: read.format === 'pdf' ? 'application/pdf' : 'image/png' }))
+    })
+    assert.match(document.querySelector('[role="dialog"]').textContent, /PDF đã sẵn sàng.*PNG đã sẵn sàng/)
+    assert.equal(created.length, 2)
     await act(async () => fixture.root.render(React.createElement(fixture.Component, { user: { ...nextUser, permissions: { live_tour_export: false } } })))
     assert.equal(document.querySelector('[role="dialog"]'), null)
-    assert.deepEqual(revoked, ['blob:report-0'])
-    assert.equal(requests[1].signal.aborted, true)
+    assert.deepEqual(revoked, ['blob:report-0', 'blob:report-1'])
+    assert.ok(requests.slice(2).every(read => read.signal.aborted))
     await act(async () => fixture.root.render(React.createElement(fixture.Component, { user: nextUser })))
-    assert.equal(document.querySelector('[role="dialog"]'), null, 'restoring an identity cannot reopen its old PDF')
-    assert.equal(requests.length, 2)
+    assert.equal(document.querySelector('[role="dialog"]'), null, 'restoring an identity cannot reopen its old report')
+    assert.equal(requests.length, 4)
   } finally {
     await fixture.close()
     URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke

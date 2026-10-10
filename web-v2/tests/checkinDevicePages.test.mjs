@@ -48,13 +48,15 @@ test('history reloads the selected dates directly from the FaceGate device', asy
     queries.push(query)
     return { records: [{ event_id: 27, occurred_at: '2026-10-02T09:15:00+07:00' }], options: { statuses: ['1'], types: ['0'] } }
   } }, context)
-  await dom.window.testAct(async () => button(dom, 'Tải lại dữ liệu từ máy Face ID').click())
+  assert.deepEqual([...dom.window.document.querySelectorAll('.checkin-history-actions > button')].map(node => node.textContent.trim()), ['Xem lịch sử', 'Tải từ Face ID', 'Xuất excel'])
+  assert.equal(queries.length, 0, 'rendering the toolbar must not request a device refresh')
+  await dom.window.testAct(async () => button(dom, 'Tải từ Face ID').click())
   assert.equal(queries.length, 1)
   assert.equal(queries[0].source, 'facegate')
   assert.ok(queries[0].start)
   assert.ok(queries[0].end)
   assert.match(dom.window.document.querySelector('.checkin-history-page').textContent, /đọc trực tiếp từ máy/)
-  assert.equal(button(dom, 'Tải lại dữ liệu từ máy Face ID').disabled, false)
+  assert.equal(button(dom, 'Tải từ Face ID').disabled, false)
 })
 
 test('history follows the six-field order and reloads without updating device IP', async (context) => {
@@ -68,7 +70,7 @@ test('history follows the six-field order and reloads without updating device IP
   const labels = [...dom.window.document.querySelectorAll('.checkin-filter-details > label')].map(el => el.firstChild.textContent)
   assert.deepEqual(labels, ['Ngày cụ thể', 'Nguồn dữ liệu', 'Loại sự kiện', 'Tên / mã nhân viên', 'Mã sự kiện', 'Trạng thái'])
   assert.doesNotMatch(dom.window.document.querySelector('.checkin-filters').textContent, /IP Face ID/)
-  await dom.window.testAct(async () => button(dom, 'Tải lại dữ liệu từ máy Face ID').click())
+  await dom.window.testAct(async () => button(dom, 'Tải từ Face ID').click())
   assert.equal(writes, 0)
   assert.equal(queried.source, 'facegate')
 })
