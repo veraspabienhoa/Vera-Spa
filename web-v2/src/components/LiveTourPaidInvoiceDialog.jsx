@@ -21,7 +21,7 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
   const [discount, setDiscount] = useState(String(isComboRedemption(item) ? 0 : item.discount || 0))
   const [tip, setTip] = useState(String(item.tip || 0))
   const [method, setMethod] = useState(item.payment_method)
-  const [note, setNote] = useState(item.note || '')
+  const [note, setNote] = useState(item.note ?? '')
   const [reason, setReason] = useState('')
   const [invoiceAt, setInvoiceAt] = useState(() => invoiceLocalTime(item))
   const covered = isComboRedemption(item)
@@ -33,7 +33,8 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
     const result = await onAction(deleting ? 'paid_invoice_delete' : 'paid_invoice_update', {
       invoice_id: item.id, reason: reason.trim(),
       ...(!deleting && canEditDate && invoiceAt !== invoiceLocalTime(item) ? { invoice_at: `${invoiceAt}:00+07:00` } : {}),
-      ...(!deleting ? { entries, discount: Number(discount), tip: Number(tip), payment_method: method, note } : {}),
+      ...(!deleting ? { entries, discount: Number(discount), tip: Number(tip), payment_method: method } : {}),
+      ...(!deleting && note !== (item.note ?? '') ? { note } : {}),
     }, [], { expectedRevision: revision })
     if (result) onClose()
   }
@@ -50,16 +51,17 @@ export default function LiveTourPaidInvoiceDialog({ context, busy, error, onActi
       <p>Đây là điều chỉnh sổ hệ thống; không tự hoàn tiền qua ngân hàng hoặc thẻ. Cần đối soát thu/hoàn tiền thực tế riêng.</p>
       <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
         {!deleting && canEditDate && true && <label className="live-tour-field wide"><span>Ngày giờ hóa đơn (giờ Việt Nam)</span><VeraDateTimeInput required value={invoiceAt} onChange={e => setInvoiceAt(e.target.value)}/></label>}
-        {item.entries.map((entry, index) => <div data-ui-key="u-f3166d51ac8c" className="wide live-tour-data-card" key={index}><strong>{entry.employee_name || 'Bán combo'} · {entry.service}</strong><small>{entry.room}</small>
+        {item.entries.map((entry, index) => <div data-ui-key="u-f3166d51ac8c" className="wide live-tour-data-card" key={index}><strong>{entry.employee_name || 'Bán combo'} · {entry.service}</strong><small>{entry.room}</small>{entry.note && <small style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú booking: {entry.note}</small>}
           {deleting ? <span>{money(covered ? 0 : entry.price)}</span> : <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><VeraMoneyInput max="10000000000" required disabled={covered} value={covered ? '0' : prices[index]} onChange={(event) => setPrices((current) => current.map((price, i) => i === index ? event.target.value : price))}/></label>}
         </div>)}
         {!deleting && <>
           <label className="live-tour-field"><span>Giảm giá (đ)</span><VeraMoneyInput max={subtotal} required disabled={covered} value={discount} onChange={(event) => setDiscount(event.target.value)}/></label>
           <label className="live-tour-field"><span>TIP (đ)</span><VeraMoneyInput max="10000000000" required value={tip} onChange={(event) => setTip(event.target.value)}/></label>
           <label className="live-tour-field wide"><span>Phương thức thu tiền</span><select value={method} disabled={item.payment_method === 'COMBO'} onChange={(event) => setMethod(event.target.value)}>{(item.payment_method === 'COMBO' ? ['COMBO'] : ['TIỀN MẶT', 'CHUYỂN KHOẢN', 'THẺ']).map((value) => <option key={value}>{value}</option>)}</select></label>
-          <label className="live-tour-field wide"><span>Ghi chú</span><textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)}/></label>
+          <label className="live-tour-field wide"><span>Ghi chú hóa đơn</span><textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)}/></label>
           <div className="wide tour-booking-total"><span>Tổng tiền sau sửa{covered ? ' (combo đã trả trước)' : ''}</span><strong>{money(total)}</strong></div>
         </>}
+        {deleting && item.note && <p className="wide" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú hóa đơn: {item.note}</p>}
         <label className="live-tour-field wide"><span>Lý do {deleting ? 'hủy' : 'sửa'}{isAdmin ? ' (không bắt buộc)' : ' *'}</span><textarea required={!isAdmin} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label>
         <UiToolbar data-ui-key="u-04c00bbd323b" className="live-tour-modal-actions wide"><button data-ui-key="u-ad34181f38ce" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-ad34181f38ce">Đóng</UiCustomText></button><button data-ui-key="u-03d2b0024e0c" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!isAdmin && !reason.trim()}>{deleting ? 'Xác nhận hủy hóa đơn' : 'Lưu điều chỉnh hóa đơn'}</button></UiToolbar>
       </fieldset></form>

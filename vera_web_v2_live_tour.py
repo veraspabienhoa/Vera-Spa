@@ -1105,7 +1105,7 @@ def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
     for key in (
         "service", "request", "request_source", "room", "status", "booked_at", "booking_created_at", "auto_started_at", "auto_start_error", "booking_actor", "private_room_share_group",
         "started_at", "completed_at", "payment_status", "customer_id", "customer_name",
-        "customer_phone", "booking_id",
+        "customer_phone", "booking_id", "note",
         "service_price_source", "completion_note",
     ):
         employee[key] = ""
@@ -1387,7 +1387,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
         "payment_status": "", "customer_id": str((customer or {}).get("id") or ""),
         "customer_name": str((customer or {}).get("name") or ""),
         "customer_phone": str((customer or {}).get("phone") or ""),
-        "note": str(payload.get("note", employee.get("note")) or ""),
+        "note": str(payload.get("note") or ""),
         "vip": bool(payload.get("vip", employee.get("vip", False))),
     })
     employee.pop("private_room_share_group", None)
@@ -1652,6 +1652,20 @@ def _quick_booking_entry(state, booking, now, payment=None):
             "booked_at": _iso(booked), "request": ""}
 
 
+def _entry_notes(entries) -> str:
+    """Default invoice text; immutable source notes remain on each entry.
+
+    Match the browser default: skip blank notes, retain original text and order,
+    and include identical notes only once. Never read a later live assignment.
+    """
+    notes = []
+    for entry in entries:
+        note = str(entry.get("note") or "")
+        if note.strip() and note not in notes:
+            notes.append(note)
+    return "\n".join(notes)
+
+
 def _checkout_mutating(
     state: dict[str, Any], payload: dict[str, Any], actor: str, now: datetime,
     quick: bool, timing: dict[str, Any],
@@ -1691,6 +1705,7 @@ def _checkout_mutating(
             "request": item.get("request"), "duration": item.get("duration"),
             "completion_delta_minutes": item.get("completion_delta_minutes"),
             "completion_note": item.get("completion_note", ""),
+            "note": str(item.get("note") or ""),
             "price": _resolved_service_price(state, item),
             "price_source": str(item.get("service_price_source") or "catalog_reconciled"),
         } for item in employees]
@@ -1810,7 +1825,11 @@ def _checkout_mutating(
         "combo_covered_amount": catalog_subtotal - subtotal if combo_purchase is not None else 0,
         "combo_extra_subtotal": subtotal if combo_purchase is not None else 0,
         "combo_component_debits": deepcopy(debit_plan),
-        "entries": entries, "note": str(payload.get("note") or ""), "quick": quick,
+        "entries": entries,
+        # Missing is not the same as an intentional blank. Invoice edits never
+        # change the booking-note snapshots on the source entries.
+        "note": str(payload.get("note", (pending or {}).get("note", _entry_notes(entries))) or ""),
+        "quick": quick,
         **({"source": "quick_booking"} if manual_booking else {}),
     }
     state["invoices"].append(invoice)
@@ -1848,6 +1867,7 @@ def _checkout_mutating(
             "bill_no": invoice["bill_no"], "ticket_no": invoice["ticket_no"],
             "payment_method": invoice["payment_method"], "tip": allocated_tip,
             "total": allocated_total, "note": invoice["note"],
+            "booking_note": entry.get("note", ""),
             "combo_units": (
                 sum(item["units"] for item in component_debits(combo_purchase, [entry], state["services"], timing["effective_datetime"].astimezone(VN_TZ).date(), check_balance=False, allow_extras=True))
                 if combo_purchase is not None and "component_balances" in combo_purchase
@@ -2297,7 +2317,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         customer = _customer(state, customer_payload) if _contains_customer_pii(customer_payload) else None
         combo = _booking_combo(state, customer, payload, {"service": name, "service_items": items}, now, employee)
         employee.update(service=name, duration=duration, service_price=price, service_price_source="catalog", service_items=items,
-                        room=room_item["name"], request=request, note=str(payload.get("note") or ""), **combo)
+                        room=room_item["name"], request=request, note=str(payload.get("note", employee.get("note")) or ""), **combo)
         if "request" in payload and not employee.get("started_at"):
             employee["request_source"] = "manual"
         if customer:
@@ -2309,6 +2329,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         working = deepcopy(state)
         if "service_items" in payload:
             _apply_action(working, "update_booking", payload, actor, now)
+        elif "note" in payload:
+            _employee(working, payload.get("employee_id"))["note"] = str(payload["note"] or "")
         _apply_action(working, "complete", payload, actor, now)
         pending_result = _apply_action(working, "move_pending", payload, actor, now)
         state.clear()
@@ -2421,10 +2443,11 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
                 "request": item.get("request"), "duration": item.get("duration"),
                 "completion_delta_minutes": item.get("completion_delta_minutes"),
                 "completion_note": item.get("completion_note", ""),
+                "note": str(item.get("note") or ""),
                 "price": _resolved_service_price(state, item),
                 "price_source": str(item.get("service_price_source") or "catalog_reconciled"),
             } for item in employees],
-            "note": str(payload.get("note") or ""),
+            "note": str(payload.get("note", _entry_notes(employees)) or ""),
         }
         booking_time = _booking_timing(pending["entries"], now)
         pending.update(effective_at=booking_time["effective_at"], booked_at=booking_time["effective_at"], business_date=booking_time["business_date"])
@@ -3258,6 +3281,23 @@ def _customer_history(
     ]
     combo_purchases.sort(key=_history_sort_key, reverse=True)
 
+    # Usage entries are financial component debits, often aggregated across
+    # several employees. Do not zip or replace them with invoice service rows.
+    # Project note attribution from the exact same-customer invoice only; the
+    # route has already removed invoices the caller is not permitted to see.
+    invoice_sources = {
+        str(item["id"]): item for item in state.get("invoices", [])
+        if item.get("id") and str(item.get("customer_id") or "") == wanted
+    }
+    for usage in combo_usage:
+        invoice = invoice_sources.get(str(usage.get("invoice_id") or ""))
+        if invoice is not None:
+            usage["booking_entries"] = [{
+                key: deepcopy(entry.get(key, ""))
+                for key in ("employee_id", "employee_name", "service", "room", "note")
+            } for entry in invoice.get("entries", [])]
+            usage["invoice_note"] = invoice.get("note", "")
+
     services: list[dict[str, Any]] = []
     for invoice in invoices:
         invoice_entries = list(invoice.get("entries") or [])
@@ -3277,6 +3317,8 @@ def _customer_history(
                 "price": entry.get("price", 0),
                 "completion_delta_minutes": entry.get("completion_delta_minutes"),
                 "completion_note": entry.get("completion_note", ""),
+                "note": entry.get("note", ""),
+                "invoice_note": invoice.get("note", ""),
                 "payment_method": invoice.get("payment_method", ""),
                 "customer_id": wanted,
             })
@@ -3387,6 +3429,7 @@ def _service_performance_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
             "effective_at": parent.get("effective_at") or entry.get("effective_at") or _iso(completed),
             "employee_id": employee_id, "employee_name": entry.get("employee_name") or entry.get("name") or "",
             "service": entry.get("service") or "", "room": entry.get("room") or "", "request": entry.get("request") or "",
+            "booking_note": entry.get("note", ""),
             "booked_at": _iso(booked) if booked else "", "started_at": _iso(started),
             "board_started_at": starts.get("board_started_at") or "", "board_yc_started_at": starts.get("board_yc_started_at") or "",
             "completed_at": _iso(completed), "duration": int(round(duration)) if duration is not None else None,

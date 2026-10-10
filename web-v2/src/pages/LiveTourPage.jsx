@@ -39,6 +39,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { createPortal } from 'react-dom'
 import { veraApi } from '../lib/api'
 import LiveTourBookingDialog from '../components/LiveTourBookingDialog'
+import LiveTourBookingNotes from '../components/LiveTourBookingNotes'
+import { checkoutNote } from '../lib/liveTourNotes'
 import LiveTourPendingDialog from '../components/LiveTourPendingDialog'
 import LiveTourPaidInvoiceDialog from '../components/LiveTourPaidInvoiceDialog'
 import LiveTourInvoiceChanges from '../components/LiveTourInvoiceChanges'
@@ -53,7 +55,7 @@ import LiveTourPageItems from '../components/LiveTourPageItems'
 import LiveTourCheckoutCustomer from '../components/LiveTourCheckoutCustomer'
 import LiveTourComboImportFields from '../components/LiveTourComboImportFields'
 import LiveTourTipInput from '../components/LiveTourTipInput'
-import { bookingDateTime, bookingTimeLabel, defaultTipMode } from '../lib/liveTourCheckout'
+import { bookingDateTime, bookingTimeLabel, checkoutEmployeeEntry, defaultTipMode } from '../lib/liveTourCheckout'
 import { checkoutBookingTime, discountAmount } from '../lib/liveTourBooking'
 import { copyPngToClipboard } from '../lib/clipboardImage'
 import './LiveTourControls.css'
@@ -751,7 +753,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
 
   const executeAction = useCallback(async (action, payload = {}, ids = [...selectedIds], options = {}) => {
     if (actionBusy) return null
-    if (data.revision === null || data.revision === undefined) {
+    if (data.revision == null || ('expectedRevision' in options && options.expectedRevision == null)) {
       setError('Hãy tải Live Tour thành công trước khi thực hiện thao tác.')
       return null
     }
@@ -801,7 +803,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       if (isRevisionConflict(err)) {
         setSelectedIds(new Set())
         await load(true, true)
-        setError(message)
+        setError(options.expectedRevision != null ? `${message} Hãy đóng cửa sổ và mở lại dữ liệu mới nhất trước khi lưu.` : message)
       } else {
         setError(message)
       }
@@ -870,9 +872,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       setError('Chỉ đổi nhân viên đang thực hiện trong thời hạn đổi nhân viên đã cài đặt.'); return
     }
     const capturedRowIds = context.rowIds ?? (['checkout', 'quick_checkout'].includes(kind) ? [...selectedIds] : undefined)
-    const capturedEmployees = capturedRowIds?.length
-      ? [...asArray(data.state?.employees), ...asArray(data.retained_assignments)].filter((employee) => capturedRowIds.includes(stableEmployeeId(employee)))
-      : []
+    const capturedEmployees = context.sourceEmployees || (capturedRowIds?.length
+      ? [...asArray(boardData.state?.employees), ...asArray(boardData.retained_assignments)].filter((employee) => capturedRowIds.includes(stableEmployeeId(employee)))
+      : [])
     if (kind === 'checkout' && !(context.item?.entries || capturedEmployees).some((entry) => entry?.service || entry?.service_items?.length)) {
       setError('Không tìm thấy dịch vụ để thanh toán. Hãy làm mới Bảng tua hoặc chọn hóa đơn trong Chờ thanh toán.')
       return
@@ -892,6 +894,9 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       tip_mode: defaultTipMode(tipPreferenceKey),
       booking_date: '', booking_time: bookingDateTime().time,
       ...context.defaults,
+      note: ['checkout', 'quick_checkout'].includes(kind)
+        ? checkoutNote(context.item, context.item?.entries || capturedEmployees)
+        : source.note ?? context.defaults?.note ?? '',
       room: source.room ?? (kind === 'room_upsert' ? source.name : source.code) ?? context.defaults?.room ?? '',
       service: source.service ?? source.name ?? context.defaults?.service ?? '',
       customer_id: source.customer_id ?? context.defaults?.customer_id ?? '',
@@ -912,7 +917,14 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       vip: Boolean(source.is_vip ?? (source.type ? normalizedColumn(source.type) === 'VIP' : context.defaults?.vip)),
       requires_admin_approval: source.requires_admin_approval === true,
     })
-    setModal({ kind, ...context, ...(capturedRowIds !== undefined ? { rowIds: capturedRowIds } : {}) })
+    setModal({ kind, ...context, ...(capturedRowIds !== undefined ? { rowIds: capturedRowIds } : {}),
+      ...(['checkout', 'quick_checkout'].includes(kind) ? {
+        item: context.item ? structuredClone(context.item) : undefined,
+        sourceEntries: context.item ? structuredClone(context.item.entries || []) : capturedEmployees.map(checkoutEmployeeEntry),
+        sourceRecord: kind === 'quick_checkout' && capturedRowIds?.length === 1 ? structuredClone(asArray(boardData.records).find(row => stableEmployeeId(row) === capturedRowIds[0])) : null,
+        sourceRevision: context.sourceRevision ?? (context.item ? data.revision : boardData.revision),
+      } : {}),
+    })
   }
 
   const closeModal = () => { if (!actionBusy) setModal(null) }
@@ -1000,7 +1012,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       payload.backdate_one_day = true
       payload.correction_reason = correctionReason
     }
-    const result = await executeAction(action, payload, modalIds, modal.kind === 'change_employee' ? { expectedRevision: modal.revision } : {})
+    const result = await executeAction(action, payload, modalIds, ['checkout', 'quick_checkout'].includes(modal.kind) ? { expectedRevision: modal.sourceRevision } : modal.kind === 'change_employee' ? { expectedRevision: modal.revision } : {})
     if (result) {
       if (['checkout', 'quick_checkout'].includes(modal.kind) && result.result?.invoice && (data.payment_settings?.open_receipt !== false || form.print_after)) setReceipt({ invoice: result.result.invoice, autoPrint: form.print_after })
       setModal(null)
@@ -1070,7 +1082,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
     setBookingContext({ employeeId: stableEmployeeId(record) })
   }
   const manualQuickBooking = modal?.kind === 'quick_checkout' && form.checkout_source === 'manual'
-  const selectedQuickCheckoutRecord = validRecords.find((record) => stableEmployeeId(record) === form.employee_id && isQuickCheckoutEligible(record, columns)) || null
+  const selectedQuickCheckoutRecord = modal?.sourceRecord || null
   const areaGroups = useMemo(() => new Map(Object.entries(data.room_groups || {}).map(([name, group]) => [normalizedColumn(name), group])), [data.room_groups])
   const areaKey = useCallback((value) => {
     const group = typeof value === 'object' && value ? value.area_name ?? value.group ?? roomValue(value) : value
@@ -1212,25 +1224,30 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
   const backups = (asArray(data.backups).length ? asArray(data.backups) : asArray(data.state?.backups)).filter(historyMatches)
   const filteredCustomers = useMemo(()=>activePanel === 'customers' ? customers.filter((customer) => customerMatches({ ...customer, name: itemLabel(customer) }, customerSearch)) : [],[activePanel,customers,customerSearch])
   const comboLookupCustomers = customers.filter((customer) => customerComboPurchases(customer).length > 0 && customerMatches({ ...customer, name: itemLabel(customer) }, comboLookupSearch))
-  const quickCheckoutEmployees = [...asArray(data.state?.employees), ...asArray(data.retained_assignments)]
-  const quickCheckoutMatches = validRecords.filter((record) => isQuickCheckoutEligible(record, columns)).map((record) => {
+  const quickCheckoutEmployees = [...asArray(boardData.state?.employees), ...asArray(boardData.retained_assignments)]
+  const quickCheckoutMatches = asArray(boardData.records).filter((record) => validLiveTourRecord(record, boardData.columns || columns) && isQuickCheckoutEligible(record, boardData.columns || columns)).map((record) => {
     const id = stableEmployeeId(record), employee = quickCheckoutEmployees.find((row) => stableEmployeeId(row) === id)
     return { value: `employee:${id}`, label: cellValue(record, employeeColumn),
       detail: `${employee?.room || cellValue(record, roomColumn)} · ${employee?.service || cellValue(record, serviceColumn)}`,
-      employeeId: id, source: employee || {} }
+      employeeId: id, source: employee || {}, record, revision: boardData.revision }
   })
   const quickCheckoutOptions = [...quickCheckoutMatches, ...(canPending && canInvoiceView ? allPendingPayments.map((pending) => ({
     value: `pending:${pending.id || pending._id}`, label: asArray(pending.entries).map((entry) => entry.employee_name).filter(Boolean).join(', ') || 'Hóa đơn chờ thanh toán',
     detail: asArray(pending.entries).map((entry) => `${entry.room || ''} · ${entry.service || ''}`).join(' / '),
-    pending, source: pending,
+    pending, source: pending, revision: boardData.revision,
   })) : [])]
   const chooseQuickCheckout = (value) => {
     const option = quickCheckoutOptions.find((item) => item.value === value)
     const source = option?.source || {}
     setForm((current) => ({ ...current, employee_id: option?.employeeId || '', pending_id: option?.pending?.id || option?.pending?._id || '',
       employee_search: option?.label || '', customer_id: source.customer_id || '', customer_name: source.customer_name || '', phone: source.customer_phone || '',
+      note: checkoutNote(option?.pending, option?.pending?.entries || [source]),
       combo_purchase_id: source.combo_purchase_id || '', payment_method: source.combo_purchase_id ? 'COMBO' : 'TIỀN MẶT' }))
-    setModal((current) => ({ ...current, item: option?.pending, rowIds: [] }))
+    setModal((current) => ({ ...current, item: option?.pending ? structuredClone(option.pending) : undefined, rowIds: [],
+      sourceEntries: option?.pending ? structuredClone(option.pending.entries || []) : option?.employeeId ? [checkoutEmployeeEntry(source)] : [],
+      sourceRecord: option?.record ? structuredClone(option.record) : null,
+      sourceRevision: option?.revision ?? boardData.revision,
+    }))
   }
   const purchasedCombos = useMemo(()=>modal ? customers.flatMap((customer) => customerComboPurchases(customer).map((purchase) => ({ customer, purchase }))) : [],[customers,modal])
   const checkoutSourceEntries = (() => {
@@ -1249,25 +1266,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
         booked_at: `${form.booking_date}T${form.booking_time}:00+07:00`,
         service_items: quickServiceItems.map(part => ({ ...part, unit_price: services.find(item => item.id === part.service_id)?.price, ticket_units: services.find(item => item.id === part.service_id)?.ticket_units ?? 1 })) }]
     }
-    const pendingEntries = asArray(modal?.item?.entries)
-    if (pendingEntries.length) return pendingEntries
-    const modalRowIds = asArray(modal?.rowIds)
-    const ids = modalRowIds.length
-      ? modalRowIds
-      : modal?.kind === 'quick_checkout' && selectedQuickCheckoutRecord
-        ? [stableEmployeeId(selectedQuickCheckoutRecord)]
-        : []
-    return ids.map((id) => {
-      const employee = [...asArray(data.state?.employees), ...asArray(data.retained_assignments)].find((item) => stableEmployeeId(item) === id)
-      if (employee) return {
-        employee_id: id, employee_name: employee.name, service: employee.service, room: employee.room, booked_at: employee.booked_at,
-        price: employee.service_price, price_source: employee.service_price_source, service_items: employee.service_items,
-        combo_purchase_id: employee.combo_purchase_id, combo_reserved_units: employee.combo_reserved_units,
-        combo_reserved_components: employee.combo_reserved_components,
-      }
-      const record = asArray(data.records).find((item) => stableEmployeeId(item) === id)
-      return record ? { employee_id: id, employee_name: cellValue(record, employeeColumn), service: cellValue(record, serviceColumn), room: cellValue(record, roomColumn) } : null
-    }).filter((entry) => entry?.service)
+    return asArray(modal?.sourceEntries)
   })()
   const effectiveCatalogDate = ['checkout', 'quick_checkout'].includes(modal?.kind)
     ? vietnamDate(checkoutBookingTime(checkoutSourceEntries, modal?.item, clockMs))
@@ -1750,7 +1749,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           {customerComboUsageHistory.length ? <div className="live-tour-history-list">{customerComboUsageHistory.slice(0, 100).map((usage, index) => {
             const purchase = customerComboPurchaseHistory.find((item) => String(item?.id || '') === String(usage?.combo_purchase_id || ''))
             const usedServices = asArray(usage?.entries).map((entry) => `${entry?.service || 'Dịch vụ'}${entry?.units ? ` (${entry.units} vé)` : ''}`).join(' · ')
-            return <article key={itemId(usage, index)}><strong>{purchase?.combo_name || 'Gói Combo'} · sử dụng {usage?.units ?? 0} vé</strong><span>{usedServices || 'Chưa ghi dịch vụ'}</span><small>Ngày sử dụng: {bookingTimeLabel(usage?.effective_at || usage?.created_at || usage?.at)}</small><small>Hóa đơn: {usage?.bill_no || usage?.invoice_id || 'Chưa có'} · Lễ tân: {usage?.actor || 'Chưa có thông tin'}</small><small>Số vé: {usage?.remaining_before ?? '—'} → {usage?.remaining_after ?? '—'}</small></article>
+            return <article key={itemId(usage, index)}><strong>{purchase?.combo_name || 'Gói Combo'} · sử dụng {usage?.units ?? 0} vé</strong><span>{usedServices || 'Chưa ghi dịch vụ'}</span><small>Ngày sử dụng: {bookingTimeLabel(usage?.effective_at || usage?.created_at || usage?.at)}</small><small>Hóa đơn: {usage?.bill_no || usage?.invoice_id || 'Chưa có'} · Lễ tân: {usage?.actor || 'Chưa có thông tin'}</small><small>Số vé: {usage?.remaining_before ?? '—'} → {usage?.remaining_after ?? '—'}</small><LiveTourBookingNotes entries={asArray(usage?.booking_entries)}/>{usage?.invoice_note && <small className="tour-invoice-note">Ghi chú hóa đơn: {usage.invoice_note}</small>}</article>
           })}</div> : <div className="live-tour-empty">Khách hàng chưa sử dụng vé Combo.</div>}
         </section>
       </div>}
@@ -1776,7 +1775,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
           {['checkout', 'quick_checkout'].includes(modal.kind) && <>
             {modal.kind === 'quick_checkout' && <>
               {canBook && !modal.item && <div className="tour-checkout-source wide">
-                <button data-ui-key="u-bb0f107e16d1" data-ui-label-default="Thanh toán nhanh" type="button" className="secondary-button" aria-pressed={manualQuickBooking} onClick={() => setForm(current => ({ ...current, checkout_source: 'manual' }))}><UiCustomText uiKey="u-bb0f107e16d1">Thanh toán nhanh</UiCustomText></button>
+                <button data-ui-key="u-bb0f107e16d1" data-ui-label-default="Thanh toán nhanh" type="button" className="secondary-button" aria-pressed={manualQuickBooking} onClick={() => { if (manualQuickBooking) return; setForm(current => ({ ...current, checkout_source: 'manual', pending_id: '', note: '' })); setModal(current => ({ ...current, item: undefined, sourceEntries: [], sourceRecord: null, sourceRevision: boardData.revision })) }}><UiCustomText uiKey="u-bb0f107e16d1">Thanh toán nhanh</UiCustomText></button>
                 <button data-ui-key="u-20b67774132d" data-ui-label-default="Mua combo cho khách hàng" type="button" className="secondary-button" onClick={() => openModal('combo_purchase', { rowIds: [], defaults: { customer_id: form.customer_id, customer_name: form.customer_name, phone: form.phone } })}><UiCustomText uiKey="u-20b67774132d">Mua combo cho khách hàng</UiCustomText></button>
               </div>}
               {!manualQuickBooking && <div className="wide"><LiveTourSearchSelect className="live-tour-employee-picker" label="Tìm nhân viên / phòng / dịch vụ chờ thanh toán" required
@@ -1835,7 +1834,8 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
             {!checkoutHasUnresolvedPricing && <LiveTourPaymentQr screenSettings={data.payment_settings?.customer_screen} bank={data.payment_settings?.user_bank} amount={checkoutPreviewTotal} reference={form.bill_no || 'VERA SPA'}/>}
             <LiveTourTipInput key={tipPreferenceKey} form={form} setForm={setForm} cards={asArray(data.payment_settings?.tip_cards)} preferenceKey={tipPreferenceKey} total={checkoutTipPreview}/>
             <label className="live-tour-check-field wide"><input type="checkbox" checked={form.print_after} onChange={(event) => setForm((current) => ({ ...current, print_after: event.target.checked }))}/> In hóa đơn sau khi thanh toán</label>
-            <label className="live-tour-field wide"><span>Ghi chú</span><textarea value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
+            <LiveTourBookingNotes entries={checkoutSourceEntries} className="wide"/>
+            <label className="live-tour-field wide"><span>Ghi chú hóa đơn</span><textarea maxLength={2000} value={form.note} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}/></label>
           </>}
 
 
@@ -1889,7 +1889,7 @@ export default function LiveTourPage({ user, navigationToggle = null }) {
       </form>
     </LiveTourModal>}
 
-{bookingContext && <LiveTourBookingDialog allowBookingOutsideShift={allowBookingOutsideShift} onSelectedCustomersChange={setBookingCustomerIds} onCustomerSearch={setLookupSearch} key={bookingContext.employeeId || bookingContext.roomGroup} data={data} context={bookingContext} canAdmin={canAdmin} canSharePrivateRoom={['admin', 'quanly', 'letan'].includes(normalizedRole)} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [] } : { rowIds: [worker.id] }) }}/>}
+{bookingContext && <LiveTourBookingDialog allowBookingOutsideShift={allowBookingOutsideShift} onSelectedCustomersChange={setBookingCustomerIds} onCustomerSearch={setLookupSearch} key={bookingContext.employeeId || bookingContext.roomGroup} data={data} sourceEmployees={[...asArray(boardData.state?.employees), ...asArray(boardData.retained_assignments)]} sourceRevision={boardData.revision} context={bookingContext} canInvoiceEdit={canInvoiceEdit} onPendingEdit={(item, revision) => { if (!canInvoiceEdit) return; setBookingContext(null); setError(''); setPendingContext({ item, mode: 'edit', revision: revision ?? data.revision }) }} canAdmin={canAdmin} canSharePrivateRoom={['admin', 'quanly', 'letan'].includes(normalizedRole)} canOperate={canOperate} canBook={canBook} canCustomers={canCustomers} canPayment={canPayment && canInvoiceView && canPending} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => { if (!actionBusy) setBookingContext(null) }} onCheckout={(pending, worker, sourceRevision) => { setBookingContext(null); openModal('checkout', pending ? { item: pending, rowIds: [], sourceRevision } : { rowIds: [worker.id], sourceEmployees: [worker], sourceRevision }) }}/>}
     {pendingContext && !pendingContext.paid && canPending && canInvoiceView && <LiveTourPendingDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} catalog={data.services || []} customers={data.customers || []} canChangeCustomer={canCustomers} onCustomerSearch={setLookupSearch} onCustomerSelect={id => setPendingContext(current => ({...current,lookupCustomerId:id}))} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}
     {customerContext && <LiveTourCustomerDialog context={customerContext} comboCatalog={combos} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setCustomerContext(null)}/>}
     {pendingContext?.paid && canPaidInvoiceView && <LiveTourPaidInvoiceDialog key={`${pendingContext.item.id}:${pendingContext.mode}`} context={pendingContext} isAdmin={isAdmin} canEditDate={isAdmin || capabilities.invoice_date_edit === true} busy={Boolean(actionBusy)} error={error} onAction={executeAction} onClose={() => setPendingContext(null)}/>}

@@ -1053,7 +1053,7 @@ def test_assignment_cleanup_clears_only_tour_fields():
     preserved = {
         key: deepcopy(ktv[key]) for key in (
             "id", "name", "vip", "tour_count", "request_count", "work_status", "shift",
-            "break_history", "clock_in", "clock_out", "sort_index", "appointment", "note",
+            "break_history", "clock_in", "clock_out", "sort_index", "appointment",
         )
     }
 
@@ -1065,7 +1065,7 @@ def test_assignment_cleanup_clears_only_tour_fields():
     for key in (
         "service", "request", "request_source", "room", "status",
         "booked_at", "started_at", "completed_at", "payment_status", "customer_id",
-        "customer_name", "customer_phone", "booking_id",
+        "customer_name", "customer_phone", "booking_id", "note",
         "service_price_source",
     ):
         assert ktv[key] == ""

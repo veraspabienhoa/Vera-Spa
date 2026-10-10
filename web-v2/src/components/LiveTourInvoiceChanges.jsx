@@ -10,9 +10,9 @@ export default function LiveTourInvoiceChanges({ changes }) {
       <p>Lý do: <strong>{change.reason}</strong></p>
       {['before', 'after'].map((key) => <div key={key}><h4>{key === 'before' ? 'Trước thay đổi' : 'Sau thay đổi'}</h4>
         {change[key] ? <><p>{change[key].customer_name || 'Khách lẻ'} · {change[key].customer_phone}</p>
-          {change[key].entries?.map((entry, index) => <p key={index}>{entry.employee_name} · {entry.service} · {entry.room} · {money(entry.price)}</p>)}
+          {change[key].entries?.map((entry, index) => <div key={index}><p>{entry.employee_name} · {entry.service} · {entry.room} · {money(entry.price)}</p>{entry.note && <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú booking: {entry.note}</p>}</div>)}
           {change[key].total != null && <p>Giảm giá: {money(change[key].discount)} · TIP: {money(change[key].tip)} · Tổng tiền: <strong>{money(change[key].total)}</strong> · {change[key].payment_method}</p>}
-          <p>Ngày giờ hóa đơn: {formatVeraDateTime(change[key].effective_at || change[key].booked_at || change[key].created_at)}</p><p>Ghi chú: {change[key].note || '—'}</p></> : <p>Đã xóa / hủy; không còn trong sổ hóa đơn có hiệu lực.</p>}
+          <p>Ngày giờ hóa đơn: {formatVeraDateTime(change[key].effective_at || change[key].booked_at || change[key].created_at)}</p><p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú hóa đơn: {change[key].note || '—'}</p></> : <p>Đã xóa / hủy; không còn trong sổ hóa đơn có hiệu lực.</p>}
       </div>)}
     </details>)}
   </div>

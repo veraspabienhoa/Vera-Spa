@@ -17,6 +17,8 @@ import './LiveTourBookingDialog.css'
 import LiveTourTransactionDialog from './LiveTourTransactionDialog'
 import LiveTourPageItems from './LiveTourPageItems'
 import { defaultBookingRequest } from '../lib/liveTourShiftReady'
+import LiveTourBookingNotes from './LiveTourBookingNotes'
+import { checkoutNote } from '../lib/liveTourNotes'
 
 const money = (value) => Number(value || 0).toLocaleString('vi-VN') + ' đ'
 
@@ -136,10 +138,13 @@ function LiveTourMultiBookingDialog({ data, context, allowBookingOutsideShift = 
   </LiveTourTransactionDialog>
 }
 
-function LiveTourSingleBookingDialog({ data, context, allowBookingOutsideShift = false, canAdmin, canOperate, canBook, canCustomers, canPayment, canSharePrivateRoom, busy, error, onAction, onClose, onCheckout, onCustomerSearch, onSelectedCustomersChange }) {
+function LiveTourSingleBookingDialog({ data, sourceRevision = data.revision, sourceEmployees, context, allowBookingOutsideShift = false, canAdmin, canOperate, canBook, canCustomers, canPayment, canInvoiceEdit, canSharePrivateRoom, busy, error, onAction, onClose, onCheckout, onPendingEdit, onCustomerSearch, onSelectedCustomersChange }) {
   const [sharePrivateRoom, setSharePrivateRoom] = useState(false)
-  const employees = [...(data.state?.employees || []), ...(data.retained_assignments || [])]
+  const employees = sourceEmployees || [...(data.state?.employees || []), ...(data.retained_assignments || [])]
   const initial = employees.find((row) => row.id === context.employeeId)
+  // Keep draft values and the assignment they came from on the same revision.
+  // Only explicit employee selection or a successful move starts a new source.
+  const [source, setSource] = useState(() => ({ employee: structuredClone(initial), revision: sourceRevision }))
   const catalog = orderedCatalog(data.services || [])
   const [employeeId, setEmployeeId] = useState(initial?.id || '')
   const [items, setItems] = useState(() => bookingServiceItems(initial, catalog))
@@ -151,8 +156,9 @@ function LiveTourSingleBookingDialog({ data, context, allowBookingOutsideShift =
   const [note, setNote] = useState(initial?.service ? initial.note || '' : '')
   const [serviceId, setServiceId] = useState('')
   const [completed, setCompleted] = useState(null)
+  const [completedRevision, setCompletedRevision] = useState(null)
   const [message, setMessage] = useState('')
-  const employee = employees.find((row) => row.id === employeeId)
+  const employee = source.employee
   const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
   const roomState = bookingRoomState(rooms, data.room_assignments || employees, catalog, employeeId, room, items, sharePrivateRoom)
   const awaitingPayment = tourNameKey(employee?.status) === 'cho thanh toan'
@@ -180,6 +186,7 @@ function LiveTourSingleBookingDialog({ data, context, allowBookingOutsideShift =
   })
   const selectEmployee = (id) => {
     const worker = employees.find((row) => row.id === id)
+    setSource({ employee: structuredClone(worker), revision: sourceRevision })
     setEmployeeId(id); setItems(bookingServiceItems(worker, catalog)); setServiceId('')
     setRoom(worker?.service ? worker.room : ''); setRequest(defaultBookingRequest(worker, data.payment_settings?.shift_ready_times))
     setCustomerId(worker?.service ? worker.customer_id || '' : ''); setNote(worker?.service ? worker.note || '' : '')
@@ -192,13 +199,17 @@ function LiveTourSingleBookingDialog({ data, context, allowBookingOutsideShift =
     if (!employeeId || !room || !items.length) { setMessage('Hãy chọn nhân viên, ít nhất một dịch vụ và phòng/giường.'); return }
     const result = await onAction(editing ? 'update_booking' : 'booking', {
       ...bookingPayload(), start_now: false,
-    }, [])
+    }, [], { expectedRevision: source.revision })
     if (result) onClose()
   }
   const retainBillAndBook = async () => {
     if (!awaitingPayment || !hasPayableService || !canPayment || !canBook || busy) return
-    const result = await onAction('move_pending', { employee_id: employeeId }, [])
+    const result = await onAction('move_pending', { employee_id: employeeId }, [], { expectedRevision: source.revision })
     if (result?.result?.pending) {
+      const cleared = [...(result.state?.employees || []), ...(result.retained_assignments || [])].find(row => row.id === employeeId)
+      setSource({ employee: structuredClone(cleared || { ...employee, service: '', service_items: [], status: '', note: '',
+        room: '', customer_id: '', customer_name: '', customer_phone: '', combo_purchase_id: '', combo_reserved_units: 0, combo_reserved_components: [],
+      }), revision: result.revision })
       setItems([]); setRoom(''); setRequest(defaultBookingRequest({ ...employee, service: '' }, data.payment_settings?.shift_ready_times)); setCustomerId(''); setComboId(''); setNote(''); setServiceId('')
       setMessage('')
     }
@@ -209,8 +220,13 @@ function LiveTourSingleBookingDialog({ data, context, allowBookingOutsideShift =
     const result = await onAction('clear_orphan_pending', {
       employee_id: employeeId,
       reason: 'Xóa phiên Chờ thanh toán mồ côi, không có dữ liệu dịch vụ và không có hóa đơn chờ.',
-    }, [])
+    }, [], { expectedRevision: source.revision })
     if (result) onClose()
+  }
+  const editAwaitingNote = async () => {
+    if (!awaitingPayment || !hasPayableService || !canPayment || !canInvoiceEdit || busy) return
+    const result = await onAction('move_pending', { employee_id: employeeId }, [], { expectedRevision: source.revision })
+    if (result?.result?.pending) onPendingEdit(result.result.pending, result.revision)
   }
   const finish = async () => {
     setMessage('')
@@ -220,8 +236,8 @@ function LiveTourSingleBookingDialog({ data, context, allowBookingOutsideShift =
     if (changed && roomState.error) { setMessage(roomState.error); return }
     if (changed && comboError) { setMessage(comboError); return }
     if (changed && (!room || !items.length)) { setMessage('Hãy chọn ít nhất một dịch vụ và phòng/giường trước khi hoàn thành.'); return }
-    const result = await onAction('finish_to_pending', changed ? bookingPayload() : { employee_id: employeeId }, [])
-    if (result) setCompleted(result.result.pending)
+    const result = await onAction('finish_to_pending', changed ? bookingPayload() : { employee_id: employeeId }, [], { expectedRevision: source.revision })
+    if (result) { setCompleted(result.result.pending); setCompletedRevision(result.revision) }
   }
   const bookingClock = useBookingClock()
   const employeeOptions = bookingEmployees(employees, bookingClock, data.booking_settings?.employee_available_minutes, data.records, allowBookingOutsideShift).map((row) => {
@@ -233,16 +249,21 @@ function LiveTourSingleBookingDialog({ data, context, allowBookingOutsideShift =
   return <LiveTourTransactionDialog busy={busy} onClose={onClose} className="tour-booking-dialog"
     title={completed ? 'Đã hoàn thành dịch vụ' : awaitingPayment ? `Booking · ${employee?.name}` : editing ? `Booking · ${employee?.name}` : `Đặt lịch${context.roomLabel ? ` · ${context.roomLabel}` : ''}`}>
     {(roomState.error || error || message) && <p className="error-box" role="alert">{roomState.error || error || message}</p>}
-    {completed ? <><p>Đã chuyển dịch vụ vào Chờ thanh toán. {employee?.name} đã rảnh để nhận lịch mới.</p><UiToolbar data-ui-key="u-6cb88f5944e7" className="live-tour-modal-actions"><button data-ui-key="u-cb6dc6939f71" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-cb6dc6939f71">Đóng</UiCustomText></button>{canPayment && <button data-ui-key="u-8f4fb8b11101" data-ui-label-default="Thanh toán" type="button" className="primary-button" onClick={() => onCheckout(completed)}><UiCustomText uiKey="u-8f4fb8b11101">Thanh toán</UiCustomText></button>}</UiToolbar></>
+    {completed ? <><p>Đã chuyển dịch vụ vào Chờ thanh toán. {employee?.name} đã rảnh để nhận lịch mới.</p>
+      {completed.entries && <><LiveTourBookingNotes entries={completed.entries}/>
+        <label className="live-tour-field tour-booking-note"><span>Ghi chú hóa đơn</span><textarea readOnly value={checkoutNote(completed)}/></label></>}
+      <UiToolbar data-ui-key="u-6cb88f5944e7" className="live-tour-modal-actions"><button data-ui-key="u-cb6dc6939f71" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-cb6dc6939f71">Đóng</UiCustomText></button>{canInvoiceEdit && <button type="button" className="secondary-button" disabled={busy} onClick={() => onPendingEdit(completed, completedRevision)}>Sửa ghi chú hóa đơn</button>}{canPayment && <button data-ui-key="u-8f4fb8b11101" data-ui-label-default="Thanh toán" type="button" className="primary-button" onClick={() => onCheckout(completed, null, completedRevision)}><UiCustomText uiKey="u-8f4fb8b11101">Thanh toán</UiCustomText></button>}</UiToolbar></>
       : awaitingPayment ? <>
         <p><strong>{employee?.name}</strong> còn phiên dịch vụ đã hoàn thành, chưa chuyển khỏi dòng nhân viên.</p>
         {hasPayableService ? <p>{employee.service} · {employee.room}</p> : <p className="error-box" role="alert">Phiên này đang có trạng thái Chờ thanh toán nhưng thiếu dữ liệu dịch vụ. Hãy làm mới Bảng tua và kiểm tra hóa đơn cũ trước khi đặt lịch mới.</p>}
+        <label className="live-tour-field tour-booking-note"><span>Ghi chú booking</span><textarea readOnly value={employee?.note || ''}/></label>
         <UiToolbar data-ui-key="u-2059c6ece485" className="live-tour-modal-actions">
           <button data-ui-key="u-34e181f90d21" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-34e181f90d21">Đóng</UiCustomText></button>
           {canAdmin && !hasPayableService && <button data-ui-key="u-4098a0a9d150" data-ui-label-default="Xóa phiên lỗi" type="button" className="danger-button" disabled={busy} onClick={clearOrphanPending}><UiCustomText uiKey="u-4098a0a9d150">Xóa phiên lỗi</UiCustomText></button>}
+          {canPayment && canInvoiceEdit && hasPayableService && <button type="button" className="secondary-button" disabled={busy} onClick={editAwaitingNote}>Chuyển sang hóa đơn chờ để sửa ghi chú</button>}
           {canPayment && hasPayableService && <>
             {canBook && <button data-ui-key="u-34d324f5f3b4" data-ui-label-default="Giữ hóa đơn chờ và đặt lịch mới" type="button" className="primary-button" disabled={busy} onClick={retainBillAndBook}><UiCustomText uiKey="u-34d324f5f3b4">Giữ hóa đơn chờ và đặt lịch mới</UiCustomText></button>}
-            <button data-ui-key="u-63931c23f637" data-ui-label-default="Thanh toán" type="button" className="secondary-button" disabled={busy} onClick={() => onCheckout(null, employee)}><UiCustomText uiKey="u-63931c23f637">Thanh toán</UiCustomText></button>
+            <button data-ui-key="u-63931c23f637" data-ui-label-default="Thanh toán" type="button" className="secondary-button" disabled={busy} onClick={() => onCheckout(null, employee, source.revision)}><UiCustomText uiKey="u-63931c23f637">Thanh toán</UiCustomText></button>
           </>}
         </UiToolbar>
       </>

@@ -238,7 +238,8 @@ def test_live_tour_only_reloads_on_a_confirmed_revision_conflict_and_keeps_real_
     assert "const message = liveTourErrorDetail(err)" in execute_action
     assert "if (isRevisionConflict(err))" in execute_action
     assert "await load(true, true)" in execute_action
-    assert execute_action.count("setError(message)") >= 2
+    assert "setError(options.expectedRevision != null ? `${message} Hãy đóng cửa sổ và mở lại dữ liệu mới nhất trước khi lưu.` : message)" in execute_action
+    assert "} else {\n        setError(message)" in execute_action
     assert "err?.status === 409 ||" not in execute_action
     assert "xung đột|revision|phiên bản" not in execute_action
 
