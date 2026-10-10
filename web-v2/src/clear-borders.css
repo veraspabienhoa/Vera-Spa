@@ -281,7 +281,7 @@ body .online-booking-page .online-booking-periods>button{--vera-button-border:#3
 body .online-booking-page .online-booking-periods>.date-search-field{width:100%;max-width:100%;min-width:0;flex-basis:auto}
 body .online-booking-page .online-booking-periods .vera-date-input{width:100%;min-width:0}
 body .online-booking-page .online-booking-periods .vera-date-picker-button{width:36px;min-width:36px;min-height:0;height:calc(100% - 6px);padding:0;border-radius:8px}
-body .online-booking-page .online-booking-periods .vera-native-date-picker{width:36px}
+body .online-booking-page .online-booking-periods .vera-native-date-picker{width:36px!important}
 @media(max-width:1000px){body .online-booking-page .online-booking-periods{grid-template-columns:repeat(3,minmax(0,1fr))}body .online-booking-page .online-booking-periods>.date-search-field{grid-column:1/-1;max-width:360px}}
 body .online-booking-page .online-booking-periods button[aria-pressed="true"]{background:#204c3e;color:#fff;box-shadow:0 2px 5px #204c3e26}
 body .online-booking-page .online-booking-periods button:focus-visible{outline:2px solid #287950;outline-offset:2px}

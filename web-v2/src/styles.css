@@ -213,6 +213,10 @@ button:not(:disabled):not(.disabled):not(.search-clear-button):not(.vera-dropdow
   appearance: auto !important;
 }
 .vera-date-input > .vera-date-picker-button { pointer-events: none; }
+/* Native input receives real taps (including Safari's direct-activation
+   fallback); expose its calendar hit area and keyboard focus over the icon. */
+.vera-native-date-picker::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: auto; height: auto; margin: 0; padding: 0; cursor: pointer; }
+.vera-date-input:has(> .vera-native-date-picker:focus-visible) > .vera-date-picker-button { outline: 2px solid var(--green-800); outline-offset: 2px; }
 .vera-date-input.invalid > input[type="text"] { border-color: var(--danger); background: var(--danger-bg); box-shadow: 0 0 0 2px rgba(180,48,48,.1); }
 .required-label { display: inline-flex; align-items: baseline; gap: 3px; }
 .required-star { color: #d31f1f; font-size: 14px; font-weight: 950; }
@@ -648,6 +652,7 @@ tr:last-child td { border-bottom: 0; }
 .staff-table select, .staff-table input[type="date"] { width: 100%; max-width: 100%; min-width: 0; padding: 6px 4px; border-radius: 7px; font-size: 10px; text-overflow: ellipsis; }
 .staff-table .vera-date-input > input[type="text"] { width: 100%; max-width: 100%; min-width: 0; padding: 6px 30px 6px 4px; border-radius: 7px; font-size: 10px; text-overflow: ellipsis; }
 .staff-table .vera-date-picker-button { width: 27px; }
+.staff-table .vera-date-input > .vera-native-date-picker { width: 27px !important; }
 .staff-table td:nth-child(3) select { padding-inline: 3px; font-size: 9px; }
 .staff-table input[type="checkbox"] { width: 17px; height: 17px; padding: 0; accent-color: var(--green-800); }
 .staff-table .staff-edit-button, .staff-table .danger-button, .staff-table .secondary-button { width: 100%; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 6px 3px; font-size: 9px; white-space: nowrap; }
