@@ -20,7 +20,7 @@ def routes(engine, allowed=True):
 
 
 def body(department='letan', username='reception-test'):
-    return schedule.ScheduleSave(rows=[schedule.ScheduleRow(work_date=date(2026, 10, 1),
+    return schedule.ScheduleSave(rows=[schedule.ScheduleWriteRow(expected_revision=0, work_date=date(2026, 10, 1),
         employee_username=username, employee_name='Test', department=department, shift_code='Ca 1')])
 
 
@@ -35,8 +35,9 @@ def test_schedule_editor_matrix(role, department):
 def test_reception_save_and_delete(database, monkeypatch, role):
     monkeypatch.setattr(schedule, '_employee_catalog', lambda *args: [{'username':'reception-test'}])
     endpoints = routes(database)
-    assert endpoints['/v2/work-schedule', 'PUT'](body(), identity(role))['saved'] == 1
-    assert endpoints['/v2/work-schedule', 'DELETE'](date(2026,10,1), 'reception-test', identity(role))['deleted'] == 1
+    result = endpoints['/v2/work-schedule', 'PUT'](body(), identity(role))
+    assert result['saved'] == 1
+    assert endpoints['/v2/work-schedule', 'DELETE'](date(2026,10,1), 'reception-test', result['revisions'][0]['revision'], identity(role))['deleted'] == 1
 
 
 def test_reception_rejects_other_departments_before_database():
@@ -62,7 +63,7 @@ def test_reception_cannot_spoof_employee_or_overwrite_other_department(database,
         endpoints['/v2/work-schedule','PUT'](body(), identity('letan'))
     assert exc.value.status_code == 403
     with pytest.raises(HTTPException) as exc:
-        endpoints['/v2/work-schedule','DELETE'](date(2026,10,1), 'reception-test', identity('letan'))
+        endpoints['/v2/work-schedule','DELETE'](date(2026,10,1), 'reception-test', 1, identity('letan'))
     assert exc.value.status_code == 403
     with database.begin() as conn:
         assert conn.execute(text('SELECT department FROM vera_work_schedule')).scalar_one() == 'locker'

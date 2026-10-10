@@ -38,5 +38,11 @@ def test_schedule_frontend_import_waits_for_manual_save():
     source = (Path(__file__).resolve().parents[1] / "web-v2/src/pages/WorkSchedulePage.jsx").read_text(encoding="utf-8")
     assert "Xuất excel" in source
     assert "Import Excel" in source
-    assert "importedAwaitingManualSaveRef.current = true" in source
-    assert "Excel chờ Lưu lịch" in source
+    import_section = source.split("const importScheduleTemplate = async", 1)[1].split("const activeShiftDefinitions", 1)[0]
+    assert "manualSaveRequired: true" in import_section
+    assert "setDrafts((current) => ({ ...current, ...imported }))" in import_section
+    assert "workspace.manualSaveRequired || Object.keys(conflicts).length" in source
+    assert "Chờ kiểm tra và Lưu lịch" in source
+    # Excel previews are drafts only; the coordinated save attaches revisions.
+    assert "method: 'PUT'" not in import_section
+    assert "expected_revision = current.revisions[key] || 0" in source

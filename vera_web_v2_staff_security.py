@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from time import monotonic
 import unicodedata
 import zipfile
 from typing import Any, Callable
@@ -137,13 +138,23 @@ def _image_dimensions(data: bytes, *, min_edge: int = 160) -> tuple[int, int]:
         raise HTTPException(400, "Không đọc được dữ liệu ảnh.") from exc
 
 
-def _ocr_text(data: bytes) -> str:
+def _ocr_text(data: bytes, *, deadline: float | None = None) -> str:
+    def remaining_timeout() -> float:
+        if deadline is None:
+            return 20
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise TimeoutError("OCR deadline exceeded")
+        return min(20, remaining)
+
+    remaining_timeout()
     command = shutil.which("tesseract")
     if not command:
         return ""
     try:
         with PILImage.open(BytesIO(data)) as source:
             normalized = ImageOps.exif_transpose(source).convert("RGB")
+        remaining_timeout()
         if max(normalized.size) < 1800:
             scale = 1800 / max(normalized.size)
             normalized = normalized.resize(
@@ -153,15 +164,19 @@ def _ocr_text(data: bytes) -> str:
         grayscale = ImageOps.autocontrast(ImageOps.grayscale(normalized)).filter(ImageFilter.SHARPEN)
         variants = []
         for image in (normalized, grayscale):
+            remaining_timeout()
             output = BytesIO()
             image.save(output, format="PNG", optimize=True)
             variants.append(output.getvalue())
+    except TimeoutError:
+        raise
     except Exception:
         variants = [data]
 
     for language in ("vie+eng", "eng"):
         texts = []
         for payload, page_mode in zip(variants, ("6", "11")):
+            timeout = remaining_timeout()
             try:
                 result = subprocess.run(
                     [command, "stdin", "stdout", "-l", language, "--psm", page_mode],
@@ -169,10 +184,12 @@ def _ocr_text(data: bytes) -> str:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     check=False,
-                    timeout=20,
+                    timeout=timeout,
                 )
             except (OSError, subprocess.TimeoutExpired):
+                remaining_timeout()
                 continue
+            remaining_timeout()
             if result.returncode == 0:
                 value = result.stdout.decode("utf-8", errors="ignore").strip()
                 if value and value not in texts:

@@ -28,5 +28,7 @@ def test_work_schedule_has_all_time_presets_and_custom_date_range():
 def test_schedule_refetches_when_selected_range_changes():
     source = (ROOT / "web-v2/src/pages/WorkSchedulePage.jsx").read_text(encoding="utf-8")
     assert 'const rangeKey = `${rangeStart}_${rangeEnd}`' in source
-    assert "useEffect(() => { void load(); return () => loadRequestRef.current?.abort() }, [department, month, rangeKey])" in source
+    assert "const scopeKey = `${department}|${rangeKey}|${month}|" in source
+    assert "useEffect(() => { void load(); return () => loadRequestRef.current?.abort() }, [scopeKey])" in source
+    assert "controller.signal.aborted || !isCurrentScope(scopeToken)" in source
     assert "start=${rangeStart}&end=${rangeEnd}" in source

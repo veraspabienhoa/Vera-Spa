@@ -11,6 +11,7 @@ load_live_tour_mode_override()
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import text
 
+from vera_image_text_worker import image_text_worker
 import vera_web_v2_api_shared as _shared
 import vera_web_v2_admin_audit_archive as _audit_archive
 import vera_web_v2_contracts as _contracts
@@ -111,22 +112,7 @@ async def extract_profile_image_text(
     request: Request,
     _ident: _api.Identity = Depends(_api.current_identity),
 ):
-    content_type = str(request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
-    if content_type not in _staff_security.ALLOWED_IMAGE_TYPES:
-        raise HTTPException(400, "Chỉ chấp nhận ảnh WebP, JPEG hoặc PNG.")
-    content = await request.body()
-    if not content or len(content) > _staff_security.MAX_IDENTITY_BYTES:
-        raise HTTPException(400, "Ảnh trống hoặc vượt quá dung lượng cho phép.")
-    if not _staff_security._valid_image(content, content_type):
-        raise HTTPException(400, "Nội dung file ảnh không hợp lệ.")
-    _staff_security._image_dimensions(content)
-    raw_text = _staff_security._ocr_text(content).strip()
-    return {
-        "ok": True,
-        "text": raw_text,
-        "ocr_status": "extracted" if raw_text else "not_detected",
-        "message": "Đã nhận dạng chữ trên ảnh." if raw_text else "Không nhận dạng được chữ trên ảnh.",
-    }
+    return await image_text_worker.extract(request, security=_staff_security)
 
 
 def _login_profile(employee_username: str) -> dict:
