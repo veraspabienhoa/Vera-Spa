@@ -14,6 +14,8 @@ import useDialogFocus from '../lib/useDialogFocus'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import VeraMoneyInput from './VeraMoneyInput'
 import './LiveTourBookingDialog.css'
+import LiveTourBookingNotes from './LiveTourBookingNotes'
+import { checkoutNote } from '../lib/liveTourNotes'
 
 const money = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ`
 
@@ -28,12 +30,13 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
   const [comboId, setComboId] = useState(item.combo_purchase_id || '')
   const customer = customers.find(row => row.id === customerId)
   const purchases = customerPurchases(customer).filter(row => !row.deleted_at).map(row => availableBookingPurchase(row, customerId === item.customer_id ? item.entries : []))
-  const [note, setNote] = useState(item.note || '')
+  const [note, setNote] = useState(() => checkoutNote(item))
   const [reason, setReason] = useState('')
   const [invoiceAt, setInvoiceAt] = useState(() => invoiceLocalTime(item))
   const setItems = (index, items) => setRows((current) => current.map((row, i) => i === index ? { items, price: bookingTotal(items, catalog) } : row))
   const submit = async (event) => {
     event.preventDefault()
+    if ((!editing && !deleting) || busy) return
     const entries = rows.flatMap((row, index) => {
       const changed = JSON.stringify(row.items) !== JSON.stringify(initial[index].items)
       const priceChanged = Number(row.price) !== Number(initial[index].price)
@@ -41,7 +44,7 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
     })
     const result = await onAction(deleting ? 'pending_delete' : 'pending_update', {
       pending_id: item.id, reason: reason.trim(),
-      ...(!deleting && canEditDate && invoiceAt !== invoiceLocalTime(item) ? { invoice_at: `${invoiceAt}:00+07:00` } : {}), ...(editing ? { note, entries } : {}),
+      ...(!deleting && canEditDate && invoiceAt !== invoiceLocalTime(item) ? { invoice_at: `${invoiceAt}:00+07:00` } : {}), ...(editing ? { entries, ...(note !== checkoutNote(item) ? { note } : {}) } : {}),
       ...(editing && canChangeCustomer && (customerId !== (item.customer_id || '') || comboId !== (item.combo_purchase_id || '')) ? { customer_id: customerId, combo_purchase_id: comboId } : {}),
     }, [], { expectedRevision: revision })
     if (result) onClose()
@@ -81,7 +84,8 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
           {entry.combo_purchase_id && <small>Giữ chỗ combo: {entry.combo_reserved_units || 0} vé · số vé được kiểm tra lại khi thay đổi dịch vụ.</small>}
         </div>)}
         <div className="wide tour-booking-total"><span>Tổng tiền dịch vụ</span><strong>{money(rows.reduce((sum, row) => sum + Number(row.price || 0), 0))}</strong></div>
-        {editing ? <label className="live-tour-field wide"><span>Ghi chú</span><textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)}/></label> : <p className="wide">Ghi chú: {item.note || '—'}</p>}
+        <LiveTourBookingNotes entries={item.entries} className="wide"/>
+        {editing ? <label className="live-tour-field wide"><span>Ghi chú hóa đơn</span><textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)}/></label> : <p className="wide tour-invoice-note">Ghi chú hóa đơn: {checkoutNote(item) || '—'}</p>}
         {(editing || deleting) && <label className="live-tour-field wide"><span>Lý do {deleting ? 'xóa' : 'sửa'}{isAdmin ? ' (không bắt buộc)' : ' *'}</span><textarea required={!isAdmin} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label>}
         <UiToolbar data-ui-key="u-d0011b71d66a" className="live-tour-modal-actions wide"><button data-ui-key="u-dd40d0ed9435" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-dd40d0ed9435">Đóng</UiCustomText></button>{(editing || deleting) && <button data-ui-key="u-5412073eb050" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!isAdmin && !reason.trim()}>{deleting ? 'Xác nhận xóa hóa đơn chờ' : 'Lưu sửa hóa đơn'}</button>}</UiToolbar>
       </fieldset></form>

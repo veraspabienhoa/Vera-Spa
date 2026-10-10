@@ -26,7 +26,7 @@ def running_state():
 
 
 @pytest.mark.parametrize("action", ["complete", "finish_to_pending", "move_pending", "checkout", "quick_checkout"])
-def test_only_five_board_columns_clear_and_invoice_source_is_retained(action):
+def test_service_columns_clear_and_booking_note_moves_with_invoice_source(action):
     state = running_state()
     at = NOW + timedelta(minutes=60)
     before = live._employee_record(state["employees"][0], at)
@@ -36,8 +36,9 @@ def test_only_five_board_columns_clear_and_invoice_source_is_retained(action):
     result = live._apply_action(state, action, payload, "tester", at)
     after = live._employee_record(state["employees"][0], at)
     assert all(after[column] == "" for column in CLEARED)
-    for column in set(live.BOARD_COLUMNS) - CLEARED - {"TT thanh toán", "Kết quả hoàn thành"}:
+    for column in set(live.BOARD_COLUMNS) - CLEARED - {"TT thanh toán", "Kết quả hoàn thành", "Ghi chú"}:
         assert after[column] == before[column], column
+    assert after["Ghi chú"] == (before["Ghi chú"] if action == "complete" else "")
     assert after["TT thanh toán"] == ("ĐÃ THANH TOÁN" if action in {"checkout", "quick_checkout"} else "CHO THANH TOÁN")
     assert after["Kết quả hoàn thành"] == "Sớm 30 phút"
     assert after["_countdown_deadline"] == ""
@@ -50,6 +51,7 @@ def test_only_five_board_columns_clear_and_invoice_source_is_retained(action):
         assert entries[0]["service"] == "Body 90"
         assert entries[0]["room"] == "1.1"
         assert entries[0]["request"] == "YC" and entries[0]["price"] == 100
+        assert entries[0]["note"] == before["Ghi chú"]
     if action != "complete":
         assert not live._has_unsettled_work(state["employees"][0])
         with pytest.raises(HTTPException):
@@ -61,7 +63,8 @@ def test_old_pending_checkout_does_not_clear_new_booking_or_appointment():
     pending = live._apply_action(state, "finish_to_pending", {"employee_id": "e1"}, "tester", NOW)["pending"]
     live._apply_action(state, "update_appointment", {"employee_id": "e1", "appointment": "18:00"}, "tester", NOW)
     worker = live._booking(state, {"employee_id": "e1", "room": "2.1", "service": "Body 90"}, NOW)
-    assert worker["appointment"] == "18:00" and worker["note"] == "Giữ ghi chú"
+    assert worker["appointment"] == "18:00" and worker["note"] == ""
+    assert pending["entries"][0]["note"] == "Giữ ghi chú"
     assert "last_assignment_display" not in worker
     record = live._employee_record(worker, NOW)
     assert record["TG bắt đầu thực hiện YC"] == live._display_datetime(NOW)
