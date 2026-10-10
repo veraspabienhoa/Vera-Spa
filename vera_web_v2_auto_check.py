@@ -1,7 +1,7 @@
 """Authenticated Web V2 control/status API for PostgreSQL Auto Check."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Any, Callable
 from urllib.parse import quote
@@ -11,8 +11,13 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 import vera_auto_check as core
+import vera_attendance_source as attendance_source
+import vera_facegate_attendance as facegate
+import vera_facegate_runtime as facegate_runtime
 
 
 class AutoCheckConfig(BaseModel):
@@ -78,6 +83,47 @@ def _workbook(events: list[dict], start: date, end: date) -> bytes:
 
 
 def install_auto_check_routes(app, *, engine_instance: Callable[[], Any], current_identity, require_feature, identity_type):
+    @app.get("/v2/auto-check/evidence")
+    def auto_check_evidence(identity: identity_type = Depends(current_identity)):
+        # Source diagnostics already require Admin. Do not expand access to
+        # device/mapping status through the ordinary Auto Check view grant.
+        if str(getattr(identity, "role", "") or "").strip().lower() != "admin":
+            raise HTTPException(403, "Chỉ Admin được xem tình trạng bằng chứng chấm công.")
+        now = datetime.now(attendance_source.VN_TZ)
+        end = now.date()
+        start = end - timedelta(days=1)
+        try:
+            with engine_instance().begin() as conn:
+                # Separate from dashboard(): its legacy schema initialization
+                # is a write. Never call a worker, publisher or penalty writer.
+                conn.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+                conn.execute(text("SET LOCAL statement_timeout='8s'"))
+                conn.execute(text("SET LOCAL lock_timeout='2s'"))
+                require_feature(conn, identity, "auto_penalty")
+                source = attendance_source.source_for(end)
+                health = attendance_source.health(conn, now=now)
+                report = {
+                    "source": source,
+                    "checked_at": now.isoformat(),
+                    "cache_fresh": bool(health.get("cache_fresh")),
+                    "last_sync_at": health.get("last_sync_at"),
+                    "age_seconds": health.get("age_seconds"),
+                    "evidence": None,
+                }
+                if source == "facegate":
+                    start = max(start, attendance_source.effective_date())
+                    data = facegate.project_evidence(conn, start, end)
+                    report["evidence"] = facegate_runtime.evidence_diagnostics(data, start, end, now=now)
+                report.update(start=start.isoformat(), end=end.isoformat())
+                return report
+        except facegate.EvidenceError as exc:
+            # Exceptions may contain raw evidence. Never echo their text.
+            raise HTTPException(409, "Chưa đọc đủ bằng chứng chấm công. Hãy kiểm tra nguồn và hồ sơ thiết bị.") from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, "Chưa đọc được cấu hình nguồn chấm công hoặc hồ sơ thiết bị.") from exc
+        except SQLAlchemyError as exc:
+            raise HTTPException(503, "Chưa tải được tình trạng bằng chứng chấm công. Vui lòng thử lại.") from exc
+
     @app.get("/v2/auto-check")
     def auto_check_dashboard(
         limit: int = 100,

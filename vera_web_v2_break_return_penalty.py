@@ -35,7 +35,8 @@ def _work_day(item: dict[str, Any]) -> date | None:
 
 def confirmed_break_return_fact(item: dict[str, Any], today: date) -> dict[str, Any] | None:
     """Return a confirmed, eligible late-return fact for UI and background jobs."""
-    if item.get('evidence_source') == 'facegate' and item.get('attendance_evidence_issues'):
+    if item.get('evidence_source') == 'facegate' and (
+            item.get('attendance_evidence_issues') or item.get('attendance_fine_evidence_ready') is not True):
         return None
     work_day = _work_day(item)
     if (
@@ -100,6 +101,11 @@ def install_break_return_penalty(
             item = dict(raw)
             fact = confirmed_break_return_fact(item, today)
             if fact is None:
+                output.append(item)
+                continue
+
+            if auto_check.penalties_paused(conn):
+                item['break_return_penalty_status'] = 'PAUSED'
                 output.append(item)
                 continue
 

@@ -79,7 +79,7 @@ def scenario(monkeypatch):
     monkeypatch.setattr(rule, 'load_policy', lambda conn: state.policy)
     monkeypatch.setattr(rule.auto_check, 'load_config', lambda conn: {'status': 'PAUSED' if state.policy.get('paused') else 'RUNNING'})
     monkeypatch.setattr(fg, 'project_evidence', lambda conn, left, right: data)
-    monkeypatch.setattr(runtime, 'archive_complete', lambda *args: state.complete)
+    monkeypatch.setattr(runtime, 'archive_complete', lambda *args, **kwargs: state.complete)
     monkeypatch.setattr(participation, 'suspended', lambda *args: False)
     monkeypatch.setattr(alerts, '_staff_scheduled_rows', lambda *args: [dict(employee_username='Test', employee_name='Test', employee_role='nhanvien', shift_code='Ca 2')])
     monkeypatch.setattr(alerts, '_scheduled_rows', lambda *args: [])
@@ -172,7 +172,8 @@ def test_existing_matching_absence_is_preserved_on_every_refresh(scenario, weeke
         s.leaves.append(dict(record_uid='late', employee_name='Test', leave_reason='Đi trễ CÓ phép'))
     before = deepcopy(s.leaves)
     for _ in range(2):
-        assert rule.process(s.conn, now=now) == {'added': 0, 'skipped': 1}
+        result = rule.process(s.conn, now=now)
+        assert {k: result[k] for k in ('added', 'skipped')} == {'added': 0, 'skipped': 1}
     assert s.leaves == before
     assert not s.saved and not s.notices
 
@@ -198,7 +199,9 @@ def test_registered_absence_cohort_keeps_uids_ordinals_and_money(database, scena
                      penalty=500000 if ordinal < 3 else 600000, payload='{"original":true}'))
         before = conn.execute(text('SELECT * FROM leave_records ORDER BY record_uid')).mappings().all()
         for _ in range(2):
-            assert rule.process(conn, now=s.now) == {'added': 0, 'skipped': 2}
+            result = rule.process(conn, now=s.now)
+            assert {k: result[k] for k in ('added', 'skipped')} == {'added': 0, 'skipped': 2}
+            assert result['evidence']['global_issue_count'] == 0
         assert conn.execute(text('SELECT * FROM leave_records ORDER BY record_uid')).mappings().all() == before
         assert conn.execute(text('SELECT count(*) FROM vera_auto_check_event')).scalar() == 0
         assert conn.execute(text("SELECT to_regclass('vera_absence_replacement_audit')")).scalar() is None
@@ -318,3 +321,39 @@ def test_registered_holiday_suppresses_unpaid_absence_and_notification(scenario,
     monkeypatch.setattr(holiday, 'approved_day', lambda conn, username, day: True)
     assert rule.process(scenario.conn, now=scenario.now)['added'] == 0
     assert scenario.saved == [] and scenario.notices == []
+
+
+@pytest.mark.parametrize('owner,day_offset,added', [('Test', 0, 0), ('Other', 0, 1), ('Test', -1, 1)])
+def test_proven_conflict_only_blocks_its_employee_and_business_day(scenario, owner, day_offset, added):
+    s = scenario
+    s.data['index']['other'] = {'username': 'Other'}
+    s.data['issues'] = [{'reason': 'unverified_status_type', 'scope': 'employee_days',
+        'username': owner, 'work_dates': [(s.now.date()+timedelta(days=day_offset)).isoformat()]}]
+    assert rule.process(s.conn, now=s.now)['added'] == added
+    assert len(s.saved) == added
+    assert rule.process(s.conn, now=s.now)['added'] == 0
+    assert len(s.saved) == added
+
+
+def test_scoped_conflict_cannot_hide_new_global_conflict_at_write_recheck(scenario, monkeypatch):
+    import vera_facegate_attendance as fg
+    from copy import deepcopy
+    s = scenario
+    clean = deepcopy(s.data)
+    dirty = deepcopy(s.data); dirty['issues'] = [{'reason': 'unmapped_reference'}]
+    calls = iter([clean, dirty])
+    monkeypatch.setattr(fg, 'project_evidence', lambda *_: next(calls))
+    assert rule.process(s.conn, now=s.now)['added'] == 0
+    assert not s.saved and not s.notices
+
+
+def test_mapping_removed_at_write_recheck_never_creates_absence(scenario, monkeypatch):
+    import vera_facegate_attendance as fg
+    from copy import deepcopy
+    s = scenario
+    clean = deepcopy(s.data)
+    dirty = deepcopy(s.data); dirty['index'] = {}
+    calls = iter([clean, dirty])
+    monkeypatch.setattr(fg, 'project_evidence', lambda *_: next(calls))
+    assert rule.process(s.conn, now=s.now)['added'] == 0
+    assert not s.saved and not s.notices

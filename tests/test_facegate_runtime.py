@@ -73,7 +73,7 @@ def test_one_arrival_per_worker_row_keeps_real_date_and_minutes(monkeypatch, fac
     conn = object()
     monkeypatch.setattr(source, 'health', lambda c: {'cache_fresh': c is conn})
     monkeypatch.setattr(runtime, 'records', lambda c, a, b: [{**record(),
-        'identity_verified': True, 'check_in_at': '2026-09-29T09:02:57+07:00',
+        'identity_verified': True, 'attendance_fine_evidence_ready': True, 'check_in_at': '2026-09-29T09:02:57+07:00',
         'punch_times': ['09:02:57', '14:21:22', '14:21:24'], 'late_minutes': 2}])
     frames = runtime.worker_frames(conn, [date(2026, 9, 28), DAY])
     assert len(frames) == 1 and len(frames[0][1]) == 1

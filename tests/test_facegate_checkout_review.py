@@ -166,10 +166,10 @@ def test_preview_integration_reuses_context_day_and_keeps_cutover_closed(monkeyp
         return [review]
     monkeypatch.setattr(cr, 'read_reviews', read_reviews)
     monkeypatch.setattr(fg, 'mapping_device_id', lambda: DEVICE)
-    def read_evidence(connection, first, last):
+    def read_evidence(connection, first, last, *, include_conflicts=False):
         assert connection is conn
         calls.append(first)
-        return ADDR, [MAPPING], evidence(), []
+        return (ADDR, [MAPPING], evidence(), [], []) if include_conflicts else (ADDR, [MAPPING], evidence(), [])
     monkeypatch.setattr(fg, 'read_evidence', read_evidence)
     def calculate(connection, first, last, *, datasets):
         assert connection is conn

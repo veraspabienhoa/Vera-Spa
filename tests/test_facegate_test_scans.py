@@ -56,7 +56,7 @@ def test_preview_excludes_test_checkout_but_preserves_raw_comparison(monkeypatch
     staff = [{'username': 'Yến Linh', 'full_name': 'Yến Linh', 'role': 'letan'}]
     conn = object()
     monkeypatch.setattr(checkout, 'read_reviews', lambda *_: [])
-    monkeypatch.setattr(fg, 'read_evidence', lambda *_: (ADDR, [MAPPING], raw, []))
+    monkeypatch.setattr(fg, 'read_evidence', lambda *_, **__: (ADDR, [MAPPING], raw, [], []))
     observed = []
     def calculate(c, first, last, *, datasets):
         assert c is conn

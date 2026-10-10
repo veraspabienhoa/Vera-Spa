@@ -431,14 +431,15 @@ export const veraApi = {
     return binaryResponse(`/v2/devices/capture-log/image?${params}`, {}, 'Không tải được ảnh FaceGate')
       .then(response => response.blob())
   },
-  autoCheck: (start = '', end = '') => {
+  autoCheck: (start = '', end = '', options = {}) => {
     const params = new URLSearchParams()
     if (start && end) {
       params.set('start', start)
       params.set('end', end)
     }
-    return request(`/v2/auto-check${params.size ? `?${params}` : ''}`)
+    return request(`/v2/auto-check${params.size ? `?${params}` : ''}`, options)
   },
+  autoCheckEvidence: (options = {}) => request('/v2/auto-check/evidence', options),
   updateAutoCheck: (body) => request('/v2/auto-check/config', { method: 'PUT', body: JSON.stringify(body) }),
   runAutoCheck: () => request('/v2/auto-check/run', { method: 'POST' }),
   exportAutoCheckExcel: (start, end) => download(`/v2/auto-check/export.xlsx?${new URLSearchParams({ start, end })}`, 'VERA_Auto_Check.xlsx'),

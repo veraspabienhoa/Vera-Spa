@@ -113,7 +113,7 @@ def replace_unpermitted(conn, rows, *, day, username, target_reason):
 def process(conn, *, now=None):
     from vera_attendance_source import source_for
     import vera_facegate_attendance as fg
-    from vera_facegate_runtime import archive_complete
+    from vera_facegate_runtime import archive_complete, archive_sync, blocking_issues, issue_scope, evidence_diagnostics, future_evidence
     from vera_attendance_participation import suspended
     from vera_missing_checkin_notifications import _staff_scheduled_rows, _scheduled_rows, _merge_schedules
     from vera_resource_concurrency import lock_transition
@@ -132,13 +132,15 @@ def process(conn, *, now=None):
     if auto_check.load_config(conn)['status'] == 'PAUSED':
         return {**result, 'reason': 'auto_penalty_paused'}
     data = fg.project_evidence(conn, day, day)
-    if not data['rows'] or not archive_complete(data, day) or any(i.get('reason') != 'no_vera_shift' for i in data['issues']):
+    result['evidence'] = evidence_diagnostics(data, day, day, now=now)
+    if (not data['rows'] or future_evidence(data, now) or not archive_complete(data, day, before=archive_sync(data, day))
+            or any(issue_scope(i, data) is None for i in blocking_issues(data, day))):
         return {**result, 'reason': 'incomplete_or_ambiguous_evidence'}
-    saved = next(s for s in data['syncs'] if str(s['work_date']) == day.isoformat())
-    synced = datetime.fromisoformat(str(saved['last_synced_at'])).astimezone(VN_TZ)
-    if not 0 <= (now - synced).total_seconds() <= 300:
+    synced = archive_sync(data, day)
+    if synced is None or not 0 <= (now - synced).total_seconds() <= 300:
         return {**result, 'reason': 'stale_evidence'}
-    mapped = {m['username'] for m in data['index'].values() if not suspended(m['username'], day)}
+    mapped = {m['username'] for m in data['index'].values()
+              if not suspended(m['username'], day) and not blocking_issues(data, day, m['username'])}
     # Any mapped scan is evidence of presence: do not invent an absence because
     # a scan has an unexpected status or the attendance projection is pending.
     checked = {r.get('EmployeeName') for r in data['rows']}
@@ -186,13 +188,13 @@ def process(conn, *, now=None):
         # Re-read after the employee/leave lock, immediately before any deletion
         # or penalty. A newer scan or incomplete refresh cancels the operation.
         fresh = fg.project_evidence(conn, day, day)
-        if (not fresh['rows'] or not archive_complete(fresh, day)
-                or any(i.get('reason') != 'no_vera_shift' for i in fresh['issues'])
+        if (not fresh['rows'] or future_evidence(fresh, now) or not archive_complete(fresh, day, before=archive_sync(fresh, day))
+                or blocking_issues(fresh, day, username)
+                or username not in {m['username'] for m in fresh['index'].values()}
                 or username in {r.get('EmployeeName') for r in fresh['rows']}):
             result['skipped'] += 1
             continue
-        latest = next((s for s in fresh['syncs'] if str(s['work_date']) == day.isoformat()), None)
-        latest_sync = datetime.fromisoformat(str(latest['last_synced_at'])).astimezone(VN_TZ) if latest else None
+        latest_sync = archive_sync(fresh, day)
         cutoff = deadline_for(row, day, policy)
         if latest_sync is None or latest_sync <= cutoff or not 0 <= (now-latest_sync).total_seconds() <= 300:
             result['skipped'] += 1

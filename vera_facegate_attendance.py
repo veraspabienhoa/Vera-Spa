@@ -72,6 +72,23 @@ def business_day(instant, intervals, *, allow_checkout=False):
     return None, 'overlapping_shifts' if candidates else 'no_vera_shift'
 
 
+def scoped_issue(reason, username, instant, windows, *, allow_checkout=False):
+    """Scope only after identity/address validation and exhaustive VERA windows.
+
+    A bare username on an error is not enough. Unknown identity, changed reviewed
+    evidence and conflicting payloads still block the whole projection.
+    """
+    if reason not in {'overlapping_shifts', 'unverified_status_type'}:
+        return {}
+    day, _ = business_day(instant, windows, allow_checkout=allow_checkout)
+    days = [day] if day else [d for d, interval in windows.items()
+        if interval and interval[0] - timedelta(hours=4) <= instant <= interval[1] + timedelta(hours=2)]
+    if not days:
+        return {}
+    return {'scope': 'employee_days', 'username': username,
+            'work_dates': sorted(d.isoformat() for d in days)}
+
+
 def confirmed_index(mappings, employees, address):
     from vera_web_v2_attendance_v42 import _norm
     staff = {row['username']: row for row in employees}
@@ -168,16 +185,24 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
         if not reason and (str(payload.get('status_code')), str(payload.get('type_code'))) not in PREVIEW_STATUS_TYPES:
             reason = 'unverified_status_type'
         if reason:
+            scope = {}
+            if reason == 'unverified_status_type' and mapping:
+                username = mapping['username']
+                role = str(profiles[username].get('role') or '').strip().lower()
+                scope = scoped_issue(reason, username, instant, windows[username],
+                                     allow_checkout=role in {'letan', 'locker', 'tapvu'})
             issues.append({'event_id': event_id, 'reason': reason,
                            'registration_ref': payload.get('registration_ref'),
-                           'device_name': str(payload.get('device_name') or '')[:160]})
+                           'device_name': str(payload.get('device_name') or '')[:160], **scope})
             continue
         username = mapping['username']
         role = str(profiles[username].get('role') or '').strip().lower()
         day, reason = business_day(instant, windows[username],
                                    allow_checkout=role in {'letan', 'locker', 'tapvu'})
         if reason:
-            issues.append({'event_id': event_id, 'reason': reason, 'username': username})
+            issues.append({'event_id': event_id, 'reason': reason, 'username': username,
+                           **scoped_issue(reason, username, instant, windows[username],
+                                          allow_checkout=role in {'letan', 'locker', 'tapvu'})})
             continue
         if not start <= day <= end:
             continue
@@ -196,7 +221,7 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
     return output, issues, index
 
 
-def read_evidence(conn, start, end):
+def read_evidence(conn, start, end, *, include_conflicts=False):
     """Bounded range includes next calendar day for overnight VERA shifts."""
     from vera_web_v2_devices import facegate_address
     device_id = mapping_device_id()
@@ -208,7 +233,7 @@ def read_evidence(conn, start, end):
     # Schema is created by archive ingestion, never during a preview request.
     available = conn.execute(text("SELECT to_regclass('vera_facegate_event') IS NOT NULL AND to_regclass('vera_facegate_sync_day') IS NOT NULL")).scalar()
     if not available:
-        return address, mappings, [], []
+        return (address, mappings, [], [], []) if include_conflicts else (address, mappings, [], [])
     params = {'device': device_id, 'start': start.isoformat(), 'end': (end + timedelta(days=1)).isoformat()}
     events = conn.execute(text('''SELECT event_id,occurred_at,payload_json,payload_sha256 FROM vera_facegate_event
         WHERE device_id=:device AND work_date BETWEEN :start AND :end
@@ -217,6 +242,17 @@ def read_evidence(conn, start, end):
         raise EvidenceError('too_many_events')
     syncs = conn.execute(text('''SELECT work_date,last_observed_count,last_synced_at FROM vera_facegate_sync_day
         WHERE device_id=:device AND work_date BETWEEN :start AND :end'''), params).mappings().all()
+    if include_conflicts:
+        available = conn.execute(text("SELECT to_regclass('vera_facegate_event_conflict') IS NOT NULL")).scalar()
+        if not available:
+            raise EvidenceError('conflict_archive_unavailable')
+        conflicts = conn.execute(text('''SELECT event_id,occurred_at,work_date
+            FROM vera_facegate_event_conflict
+            WHERE device_id=:device AND work_date BETWEEN :start AND :end
+            ORDER BY occurred_at,event_id LIMIT 20001'''), params).mappings().all()
+        if len(conflicts) > MAX_EVENTS:
+            raise EvidenceError('too_many_conflicts')
+        return address, mappings, events, syncs, conflicts
     return address, mappings, events, syncs
 
 
@@ -338,7 +374,7 @@ def project_evidence(conn, start, end, *, checkout_reviews_override=None):
                      if checkout_reviews_override is None else checkout_reviews_override)
     reviews = checkout_review.relevant_reviews(saved_reviews, start, end)
     evidence_start = min([start] + [date.fromisoformat(r['work_date']) for r in reviews])
-    address, mappings, events, syncs = read_evidence(conn, evidence_start, end)
+    address, mappings, events, syncs, conflicts = read_evidence(conn, evidence_start, end, include_conflicts=True)
     employees = attendance._active_roster(conn)
     definitions, _ = attendance.snapshot._shift_break_settings(conn)
     schedules = attendance._schedule_map(conn, start - timedelta(days=1), end + timedelta(days=1))
@@ -357,6 +393,10 @@ def project_evidence(conn, start, end, *, checkout_reviews_override=None):
     invalid_ids = {i['event_id'] for i in identity_issues}
     rows = [r for r in rows if r['_vera_event_id'] not in invalid_ids]
     issues.extend(identity_issues)
+    # The archive primary key retains the first payload. Conflicting captures
+    # live separately, so adapting only retained events cannot detect them.
+    issues.extend({'event_id': str(c['event_id']), 'reason': 'conflicting_duplicate'}
+                  for c in conflicts)
     rows, issues, applied_reviews = checkout_review.overlay_rows(
         rows, issues, reviews, events, index, employees, address,
         review_device_id, start, end, resolve)

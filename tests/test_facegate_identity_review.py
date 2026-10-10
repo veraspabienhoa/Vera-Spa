@@ -80,7 +80,7 @@ def projection(monkeypatch, events, *, shift=('Ca 2', '17:00', '22:00')):
     import vera_facegate_checkout_review as checkout
     monkeypatch.setattr(fg, 'mapping_device_id', lambda: 'test-device')
     monkeypatch.setattr(checkout, 'read_reviews', lambda *_: [])
-    monkeypatch.setattr(fg, 'read_evidence', lambda *_: (review.ADDRESS, [MAPPING], events, []))
+    monkeypatch.setattr(fg, 'read_evidence', lambda *_, **__: (review.ADDRESS, [MAPPING], events, [], []))
     monkeypatch.setattr(attendance, '_active_roster', lambda _: STAFF)
     monkeypatch.setattr(attendance.snapshot, '_shift_break_settings', lambda _: ([], {}))
     monkeypatch.setattr(attendance, '_schedule_map', lambda *_: {})
