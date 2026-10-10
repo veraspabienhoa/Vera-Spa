@@ -10,7 +10,7 @@
 .tour-transaction-dialog .wide{grid-column:1/-1}
 .tour-transaction-dialog .tour-booking-customer,.tour-transaction-dialog .tour-booking-combo,.tour-transaction-dialog .tour-booking-service-picker,.tour-transaction-dialog .tour-booking-items,.tour-transaction-dialog .tour-booking-note{grid-column:span 2}
 .tour-transaction-dialog .live-tour-field,.tour-transaction-dialog .live-tour-search-select{min-width:0;gap:3px;margin:0}
-.tour-transaction-dialog .live-tour-field>span,.tour-transaction-dialog .live-tour-search-select>label{display:block;margin:0 0 3px;font-size:11px;font-weight:700;line-height:1.15}
+.tour-transaction-dialog .live-tour-field>span:not(.vera-datetime-input),.tour-transaction-dialog .live-tour-search-select>label{display:block;margin:0 0 3px;font-size:11px;font-weight:700;line-height:1.15}
 .tour-transaction-dialog input:not([type=checkbox]),.tour-transaction-dialog select,.tour-transaction-dialog textarea{box-sizing:border-box;min-width:0;width:100%;height:32px;min-height:32px;margin:0;padding:4px 6px;border:1px solid #cbdcd1;border-radius:6px;background:#fff;font-size:16px;font-weight:400;line-height:1.25}
 .tour-transaction-dialog textarea{height:36px;min-height:36px;resize:none}
 .tour-transaction-dialog input[type=checkbox]{width:16px;height:16px;min-height:0;margin:0;flex:0 0 auto}
