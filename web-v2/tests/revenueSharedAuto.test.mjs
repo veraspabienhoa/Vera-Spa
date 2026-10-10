@@ -322,12 +322,12 @@ test('independent purchase report total includes all filtered rows and ignores t
     assert.equal(call.path,'/v2/purchases')
     for (const label of ['Nhập mua hàng','Sửa dòng đã chọn','Xóa dòng đã chọn','Import thêm mới','Import thay toàn bộ','Xuất excel']) assert.ok(f.button(label))
     const total=()=>f.doc.querySelector('.purchase-filter-total').textContent
-    assert.match(total(),/1\.050đ/); assert.match(total(),/105 dòng/)
+    assert.match(total(),/1\.050đ/); assert.doesNotMatch(total(),/\d+ dòng/)
     assert.equal(f.doc.querySelectorAll('.purchase-table tbody tr').length,105)
     await f.change(f.doc.querySelector('[placeholder="Tìm hàng hóa"]'),'Hàng 1')
-    assert.match(total(),/170đ/); assert.match(total(),/17 dòng/)
+    assert.match(total(),/170đ/); assert.doesNotMatch(total(),/\d+ dòng/)
     await f.change(f.doc.querySelector('.purchase-filter-secondary label:nth-child(4) input'),'khong-co')
-    assert.match(total(),/0đ/); assert.match(total(),/0 dòng/)
+    assert.match(total(),/0đ/); assert.doesNotMatch(total(),/\d+ dòng/)
   } finally { await f.close() }
 })
 

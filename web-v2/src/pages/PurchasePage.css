@@ -83,3 +83,37 @@
 .purchase-controls .purchase-filter-total span { flex-basis: 100%; }
 .purchase-controls .purchase-filter-total strong { margin: 0; font-size: 18px; white-space: nowrap; }
 .purchase-controls .purchase-filter-total small { white-space: nowrap; }
+
+/* Put the compact total and all permitted actions on one desktop row. */
+@media (min-width: 761px) {
+  .purchase-controls .purchase-summary-head {
+    grid-template-columns: minmax(120px, 160px) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+  }
+  .purchase-controls .purchase-filter-total {
+    width: 100%;
+    align-self: stretch;
+    padding: 7px 8px;
+    gap: 6px;
+  }
+  .purchase-controls .purchase-filter-total strong {
+    font-size: 15px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .purchase-controls .purchase-actions {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .purchase-controls .purchase-actions button {
+    min-width: 0;
+    width: 100%;
+    justify-content: center;
+    padding: 6px 4px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+}
