@@ -41,9 +41,11 @@ export function RequestCard({ row, reload, onClose, services = [] }) {
     <div className="online-booking-actions"><label>Trạng thái<select value={status} onChange={e => setStatus(e.target.value)}>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>
     <label>Ghi chú xử lý<textarea value={note} maxLength={2000} onChange={e => setNote(e.target.value)}/></label>
     {row.updated_by && <small>Cập nhật: {row.updated_by} · {formatVeraDateTime(row.updated_at)}</small>}
-    {row.kind === 'booking' && <div className="online-booking-actions"><button disabled={busy} onClick={() => setEditing(true)}>Sửa lịch hẹn</button><button className="danger-button" disabled={busy} onClick={remove}>Xóa lịch hẹn</button></div>}
     {error && <p role="alert">{error}</p>}
-    <button disabled={busy || (status === row.status && note === row.note)} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button>
+    <footer className="online-booking-detail-actions">
+      {row.kind === 'booking' && <><button type="button" disabled={busy} onClick={() => setEditing(true)}>Sửa lịch hẹn</button><button type="button" className="danger-button" disabled={busy} onClick={remove}>Xóa lịch hẹn</button></>}
+      <button type="button" disabled={busy || (status === row.status && note === row.note)} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button>
+    </footer>
   </article></EmployeeProfileModal>
 }
 
@@ -79,7 +81,7 @@ export default function OnlineBookingPage({ user }) {
       <select aria-label="Loại yêu cầu" value={kind} onChange={e => { setPage(1); setKind(e.target.value) }}><option value="">Đặt lịch và liên hệ</option><option value="booking">Đặt lịch</option><option value="contact">Liên hệ</option></select>
       <div className="online-booking-filter-buttons"><button type="submit">Tìm</button><button type="button" disabled={busy} onClick={reload}>Làm mới</button></div>
     </form>
-    <div className="online-booking-periods date-search-toolbar" aria-label="Lọc ngày booking"><DateSearchField ariaLabel="Ngày booking" value={period === 'day' ? range.date_from : ''} onChange={date => { setPage(1); setPeriod(date ? 'day' : ''); setRange({ date_from: date, date_to: date }) }} />{[['today','Hôm nay'],['tomorrow','Ngày mai'],['week','Tuần này'],['next-week','Tuần sau'],['custom','Tuỳ chỉnh']].map(([key,label]) => <button key={key} type="button" aria-pressed={period===key} onClick={() => { setPeriod(key); if(key!=='custom') { setPage(1); setRange(bookingDateRange(key)) } }}>{label}</button>)}</div>
+    <div className="online-booking-periods date-search-toolbar" aria-label="Lọc ngày booking"><DateSearchField ariaLabel="Ngày booking" value={period === 'day' ? range.date_from : ''} onChange={date => { setPage(1); setPeriod(date ? 'day' : ''); setRange({ date_from: date, date_to: date }) }} />{[['today','Hôm nay'],['yesterday','Hôm qua'],['tomorrow','Ngày mai'],['week','Tuần này'],['next-week','Tuần sau'],['custom','Tuỳ chỉnh']].map(([key,label]) => <button key={key} type="button" aria-pressed={period===key} onClick={() => { setPeriod(key); if(key!=='custom') { setPage(1); setRange(bookingDateRange(key)) } }}>{label}</button>)}</div>
     {period==='custom' && <form className="online-booking-actions" onSubmit={e => { e.preventDefault(); if(draftRange.date_from && draftRange.date_to && draftRange.date_from>draftRange.date_to) return; setPage(1); setRange({...draftRange}) }}>
       <label>Từ ngày<VeraDateInput aria-label="Từ ngày" value={draftRange.date_from} onChange={e=>setDraftRange(v=>({...v,date_from:e.target.value}))}/></label>
       <label>Đến ngày<VeraDateInput aria-label="Đến ngày" min={draftRange.date_from} value={draftRange.date_to} onChange={e=>setDraftRange(v=>({...v,date_to:e.target.value}))}/></label>

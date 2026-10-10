@@ -597,6 +597,19 @@ export const veraApi = {
     if (blob.type.split(';')[0] !== 'application/pdf') throw new Error('Máy chủ không trả về file PDF hợp lệ.')
     return blob
   },
+  readCustomerCountPng: async (query = {}, options = {}) => {
+    const params = new URLSearchParams()
+    // Keep this scope identical to PDF. Paging and selected rows never limit
+    // the complete invoice-count chart/table prepared by the server.
+    for (const key of ['date_from', 'date_to', 'date', 'employee', 'customer', 'service', 'bill_no', 'total_amount']) {
+      const value = String(query[key] ?? '').trim()
+      if (value) params.set(key, value)
+    }
+    const response = await binaryResponse(`/v2/live-tour/customer-count.png?${params}`, { ...options, cache: 'no-store' }, 'Không tạo được báo cáo PNG')
+    const blob = await response.blob()
+    if (blob.type.split(';')[0] !== 'image/png' || !blob.size) throw new Error('Máy chủ không trả về file PNG hợp lệ.')
+    return blob
+  },
   exportLiveTourExcel: (kind = 'board', query = {}) => {
     const params = liveTourExportParams(kind, query)
     return download(`/v2/live-tour/export.xlsx?${params}`, `VeraSpa_LiveTour_${kind}.xlsx`)
