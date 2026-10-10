@@ -77,43 +77,38 @@
 }
 
 /* Keep the purchase total compact rather than stretching beside all actions. */
-.purchase-controls .purchase-summary-head { grid-template-columns: minmax(0,1fr); align-items: start; }
+.purchase-controls .purchase-summary-head { display: grid; grid-template-columns: minmax(0,1fr); align-items: start; padding: 12px 0 0; }
 .purchase-controls .purchase-filter-total { align-self: start; justify-self: start; width: fit-content; max-width: 100%; min-width: 0; padding: 8px 10px; }
 .purchase-controls .purchase-filter-total > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
 .purchase-controls .purchase-filter-total span { flex-basis: 100%; }
-.purchase-controls .purchase-filter-total strong { margin: 0; font-size: 18px; white-space: nowrap; }
+.purchase-controls .purchase-filter-total strong { margin: 0; font-size: 18px; white-space: nowrap; overflow-wrap: normal; font-variant-numeric: tabular-nums; }
 .purchase-controls .purchase-filter-total small { white-space: nowrap; }
+.purchase-controls .purchase-actions button { overflow-wrap: normal; word-break: normal; }
 
-/* Put the compact total and all permitted actions on one desktop row. */
+/* Keep a content-sized total beside the actions. Wrap whole buttons when the
+   available width cannot fit every action; never squeeze labels into letters.
+   The explicit display above also isolates this from Revenue's summary flex. */
 @media (min-width: 761px) {
   .purchase-controls .purchase-summary-head {
-    grid-template-columns: minmax(120px, 160px) minmax(0, 1fr);
-    align-items: stretch;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: start;
     gap: 8px;
   }
   .purchase-controls .purchase-filter-total {
-    width: 100%;
-    align-self: stretch;
-    padding: 7px 8px;
-    gap: 6px;
-  }
-  .purchase-controls .purchase-filter-total strong {
-    font-size: 15px;
-    white-space: normal;
-    overflow-wrap: anywhere;
+    width: max-content;
+    align-self: start;
   }
   .purchase-controls .purchase-actions {
     display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
     gap: 6px;
   }
   .purchase-controls .purchase-actions button {
     min-width: 0;
     width: 100%;
     justify-content: center;
-    padding: 6px 4px;
-    font-size: 11px;
+    padding: 8px 6px;
+    font-size: 12px;
     line-height: 1.3;
   }
 }

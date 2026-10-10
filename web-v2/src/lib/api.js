@@ -486,14 +486,22 @@ export const veraApi = {
   storagePreview: (start, end) => request(`/v2/storage/preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   exportStorageExcel: (start, end, dataset = 'all') => download(`/v2/storage/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&dataset=${encodeURIComponent(dataset)}`, 'VERA_LuuTru.xlsx'),
   deleteStorageData: (body) => request('/v2/storage', { method: 'DELETE', body: JSON.stringify(body) }),
-  trainingBootstrap: () => request('/v2/training/bootstrap'),
+  trainingBootstrap: (options = {}) => request('/v2/training/bootstrap', options),
+  trainingReportEmployees: (filters = {}, options = {}) => request(`/v2/training/report-employees?${new URLSearchParams(filters)}`, options),
+  readTrainingReportExport: async (employee, format, filters = {}, options = {}) => {
+    const params = new URLSearchParams({ ...filters, format })
+    const response = await binaryResponse(`/v2/training/reports/${encodeURIComponent(employee)}/export?${params}`, options)
+    const blob = await response.blob()
+    options.signal?.throwIfAborted()
+    return blob
+  },
   createTrainingSession: (body) => request('/v2/training/sessions', { method: 'POST', body: JSON.stringify(body) }),
   updateTrainingSession: (id, body) => request(`/v2/training/sessions/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
   saveTrainingScope: (body) => request('/v2/training/scopes', { method: 'PUT', body: JSON.stringify(body) }),
   createEvaluationCycle: (body) => request('/v2/training/cycles', { method: 'POST', body: JSON.stringify(body) }),
   changeEvaluationCycle: (id, action) => request(`/v2/training/cycles/${encodeURIComponent(id)}/${action}`, { method: 'POST' }),
   saveTrainingEvaluation: (id, body) => request(`/v2/training/evaluations/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
-  trainingReport: (employee, filters = {}) => {
+  trainingReport: (employee, filters = {}, options = {}) => {
     const params = new URLSearchParams()
     params.set('evaluator_role', filters.evaluator_role || 'all')
     if (filters.q?.trim()) params.set('q', filters.q.trim())
@@ -502,7 +510,7 @@ export const veraApi = {
     if (filters.rating && filters.rating !== 'all') params.set('rating', filters.rating)
     params.set('page', String(filters.page || 1))
     params.set('page_size', String(filters.page_size || 50))
-    return request(`/v2/training/reports/${encodeURIComponent(employee)}?${params}`)
+    return request(`/v2/training/reports/${encodeURIComponent(employee)}?${params}`, options)
   },
   exportTrainingEvaluation: (assignmentId, format) => download(
     `/v2/training/evaluations/${encodeURIComponent(assignmentId)}/export.${format}`,

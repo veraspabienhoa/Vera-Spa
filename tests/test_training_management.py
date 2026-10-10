@@ -74,7 +74,13 @@ def test_training_history_filters_and_notifications_are_wired():
     for endpoint in ["notification-recipients", "notifications/{notification_id}/detail"]:
         assert endpoint in backend
     assert "Chỉ hiển thị Leader" in page and "Chỉ hiển thị Quản lý" in page
-    assert "Lịch sử Đào tạo & Đánh giá" in page
+    reports = (ROOT / "web-v2/src/components/TrainingProgressReports.jsx").read_text(encoding="utf-8")
+    charts = (ROOT / "web-v2/src/components/TrainingReportCharts.jsx").read_text(encoding="utf-8")
+    assert "TrainingProgressReports" in page
+    assert "Lịch sử Đào tạo & Đánh giá" in reports
+    assert "TrainingProgressChart" in reports and "TrainingCriteriaChart" in reports and "TrainingRadar" in reports
+    assert "Biểu đồ radar năng lực" in charts
+    assert "tab === 'history'" not in page
     assert "trainingNotificationDetail" in popup
 
 
@@ -93,7 +99,10 @@ def test_training_ratings_exports_and_cycle_notifications_are_wired():
     assert "_dispatch_cycle_notifications" in backend
     assert 'export.{file_format}' in backend
     assert "UsernameAutocomplete" in page
-    assert "Xuất sắc" in page and "Ảnh PNG" in page
+    files = (ROOT / "web-v2/src/components/TrainingReportFiles.jsx").read_text(encoding="utf-8")
+    assert "Xuất sắc" in backend
+    assert "Ảnh PNG" in files and "PDF A4" in files
+    assert 'reports/{employee_username}/export' in backend
 
 
 def test_training_ui_uses_unrestricted_student_directory_for_daily_log():

@@ -25,3 +25,28 @@
 .training-page .training-history-item>div{min-width:0;overflow-wrap:anywhere}
 
 .training-daily-report,.training-employee-roster{min-width:0;overflow-wrap:anywhere}.training-daily-report table,.training-employee-roster table{width:100%;table-layout:fixed;border-collapse:collapse}.training-daily-report th,.training-daily-report td,.training-employee-roster td,.training-employee-roster th{border:1px solid #b8cbbf;padding:10px;text-align:left;vertical-align:top}.training-daily-report th:first-child{width:22%}.training-daily-report th:nth-child(2){width:18%}.training-daily-report article+article{border-top:1px solid #b8cbbf;margin-top:10px;padding-top:10px}.training-daily-report p{margin:6px 0}.training-employee-roster button[aria-pressed=true]{font-weight:900;text-decoration:underline}@media(max-width:760px){.training-daily-report,.training-employee-roster{padding:10px}.training-daily-report td,.training-daily-report th{padding:6px;font-size:12px}.training-grid>*{min-width:0}}
+
+/* Report filters replace the old standalone employee picker. */
+.training-progress-filters{display:grid;grid-template-columns:minmax(220px,1.5fr) repeat(3,minmax(160px,1fr));align-items:start;gap:12px;margin-bottom:14px;min-width:0}
+.training-progress-filters>*,.training-progress-filters label{min-width:0;margin:0}
+.training-progress-filters .live-tour-search-select{width:100%;min-width:0}
+.training-progress-filters :is(input,select){min-height:44px;max-width:100%}
+.training-employee-roster .text-button{text-align:left;overflow-wrap:anywhere;min-height:44px}
+.training-report-modal{width:min(1150px,100%);color:#183d31}
+.training-report-body{padding:20px;min-width:0}
+.training-report-body .training-report-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;position:sticky;top:-20px;z-index:2;background:#fff;border-bottom:1px solid #b8cbbf;border-radius:0;padding:14px 0}
+.training-report-heading>div{min-width:0;overflow-wrap:anywhere}
+.training-report-heading h2{margin:5px 0}
+.training-report-heading p{margin:6px 0}
+.training-report-heading>button{flex:0 0 auto;min-height:44px;min-width:44px}
+.training-report-files{display:grid;gap:10px;padding:14px;background:#f3f8f5;border:1px solid #b8cbbf;border-radius:12px}
+.training-report-file{display:grid;gap:8px;min-width:0}
+.training-report-files p{margin:0;overflow-wrap:anywhere}
+.training-report-file-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0}
+.training-report-file-actions :is(a,button){display:flex;align-items:center;justify-content:center;min-height:44px;text-decoration:none}
+.training-report-file-actions small{flex-basis:100%;overflow-wrap:anywhere}
+.training-report-export-control{display:flex;flex-wrap:wrap}
+.training-report-body .training-card{min-width:0}
+.training-report-body .training-radar svg{max-height:280px}
+@media(max-width:900px){.training-progress-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.training-progress-filters{grid-template-columns:minmax(0,1fr)}.training-report-body{padding:12px}.training-report-body .training-report-heading{top:-12px}.training-report-file-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.training-report-file-actions small{grid-column:1/-1}.training-report-body .timeline article{grid-template-columns:minmax(0,1fr);gap:6px}.training-report-body .training-daily-report th:first-child{width:24%}.training-report-body .training-daily-report th:nth-child(2){width:15%}}
