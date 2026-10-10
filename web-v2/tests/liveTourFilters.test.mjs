@@ -252,3 +252,29 @@ test('report exact date accepts typing and picker, Clear removes date bounds wit
     assert.equal(current.date_to, '2026-10-07')
   } finally { await act(() => root.unmount()) }
 })
+
+for (const initiallySelected of [true, false]) test(`exact-date Clear then blur preserves validity (${initiallySelected ? 'selected date' : 'partial empty-filter draft'})`, async () => {
+  const root = createRoot(document.querySelector('#root')), validity = [], changes = []
+  let current = { ...EMPTY_TOUR_FILTERS, ...(initiallySelected ? { date: '2026-10-10', date_from: '2026-10-10', date_to: '2026-10-10', preset: 'custom' } : {}) }
+  const render = () => root.render(React.createElement(module.exports.default, {
+    showDate: true, rows, value: current, onValidityChange: valid => validity.push(valid),
+    onChange(value) { changes.push(value); current = value; render() },
+  }))
+  try {
+    await act(render)
+    const field = document.querySelector('input[aria-label="Lọc ngày hóa đơn"]')
+    await act(() => field.focus())
+    if (!initiallySelected) await act(() => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(field, '1210')
+      field.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    })
+    assert.equal(validity.at(-1), false)
+    await act(() => document.querySelector('[aria-label="Clear Lọc ngày hóa đơn"]').click())
+    await act(() => field.blur())
+    assert.equal(validity.at(-1), true)
+    assert.equal(field.checkValidity(), true)
+    assert.equal(current.preset, 'all')
+    assert.equal(current.date, '')
+    assert.equal(changes.length, 1)
+  } finally { await act(() => root.unmount()) }
+})
