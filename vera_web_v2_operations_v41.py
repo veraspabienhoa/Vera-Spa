@@ -19,6 +19,7 @@ from openpyxl import Workbook
 
 import vera_web_v2_admin_audit_archive as audit_module
 import vera_web_v2_snapshot as snapshot_module
+from vera_web_v2_attendance_summary import SummaryFilter, filter_attendance_summary
 
 
 RELEASE = "4.1-operations-search-filters-export"
@@ -222,6 +223,7 @@ def install_operations_v41(
         employee: str = Query(default="", max_length=200),
         department: str = Query(default="", max_length=200),
         shift: str = Query(default="", max_length=200),
+        summary_filter: SummaryFilter = Query(default="all"),
         ident: identity_type = Depends(current_identity),
     ):
         _validate_range(start, end, max_days=63)
@@ -229,6 +231,7 @@ def install_operations_v41(
             require_feature(conn, ident, "snapshot_export")
             all_records = snapshot_module._records(conn, start, end)
         records = _snapshot_filter(all_records, employee, department, shift)
+        records = filter_attendance_summary(records, summary_filter)
         content = _snapshot_workbook(records)
         filename = f"VERA_ChamCong_{start.isoformat()}_{end.isoformat()}.xlsx"
         return StreamingResponse(

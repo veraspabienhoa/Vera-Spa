@@ -5,9 +5,11 @@ import UiToolbar from '../components/UiToolbar'
 import UiCustomText from '../components/UiCustomText'
 import ClearableSearchInput from '../components/ClearableSearchInput'
 import { BellRing, CalendarDays, Download, Power, RefreshCw, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import VeraDateInput from '../components/VeraDateInput'
+import { formatVeraDate } from '../lib/veraDate'
+import { ATTENDANCE_SUMMARY_FILTERS, attendanceSummary, deadlineMsFor, matchesAttendanceSummary } from '../lib/attendanceSummary'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
@@ -33,6 +35,8 @@ const rangeFor = (filter) => {
 }
 const FILTERS = ['Hôm nay', 'Hôm qua', 'Tuần này', 'Tuần trước', 'Tháng này', 'Tháng trước', 'Tùy chỉnh']
 const emptyFilters = { employee: '', department: '', shift: '' }
+const EMPTY_RECORDS = []
+const EMPTY_OPTIONS = { employees: [], departments: [], shifts: [] }
 const normalizedFilters = (values) => ({
   employee: values.employee.trim(),
   department: values.department.trim(),
@@ -46,18 +50,6 @@ const durationClock = (seconds) => {
   const mins = Math.floor((total % 3600) / 60)
   const secs = total % 60
   return `${`${hours}`.padStart(2, '0')}:${`${mins}`.padStart(2, '0')}:${`${secs}`.padStart(2, '0')}`
-}
-const deadlineMsFor = (item) => {
-  if (item.break_return_deadline_iso) {
-    const value = new Date(item.break_return_deadline_iso).getTime()
-    if (Number.isFinite(value)) return value
-  }
-  const parts = String(item.date || '').split('/')
-  const clock = String(item.break_return_deadline || '')
-  if (parts.length !== 3 || !clock) return NaN
-  const [day, month, year] = parts
-  const value = new Date(`${year}-${month}-${day}T${clock}`).getTime()
-  return Number.isFinite(value) ? value : NaN
 }
 const liveBreakTiming = (item, nowMs) => {
   if (item.break_restricted_reason || !item.break_out || item.break_in) return ''
@@ -114,7 +106,7 @@ const breakReturnStatusFor = (item) => {
   if (item.break_out && !item.break_in) {
     return {
       label: 'Đang nghỉ giữa ca',
-      detail: `Bắt đầu nghỉ giữa ca ${item.date} ${item.break_out}${deadline ? ` · phải vào lại lúc ${deadline}` : ''}`,
+      detail: `Bắt đầu nghỉ giữa ca ${formatVeraDate(item.date, item.date)} ${item.break_out}${deadline ? ` · phải vào lại lúc ${deadline}` : ''}`,
       tone: 'attendance-break-active',
     }
   }
@@ -141,14 +133,18 @@ async function requestJson(path, options = {}) {
   return payload
 }
 
-async function downloadExcel(path, fallbackName) {
+async function downloadExcel(path, fallbackName, signal) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
-  const response = await fetch(`${apiBase}${path}`, { headers: await authHeaders() })
+  const headers = await authHeaders()
+  if (signal.aborted) return
+  const response = await fetch(`${apiBase}${path}`, { headers, signal })
+  if (signal.aborted) return
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
     throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   }
   const blob = await response.blob()
+  if (signal.aborted) return
   const disposition = response.headers.get('Content-Disposition') || ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   let filename = fallbackName
@@ -160,6 +156,12 @@ async function downloadExcel(path, fallbackName) {
 }
 
 export default function SnapshotPage({ user, embedded = false }) {
+  // A changed account or permission scope must never reuse the old table/request.
+  const scope = JSON.stringify([user?.id, user?.username, user?.role, user?.permissions])
+  return <SnapshotContent key={scope} user={user} embedded={embedded} />
+}
+
+function SnapshotContent({ user, embedded }) {
   usePageRefresh(() => load(), () => Boolean(busy || controlBusy))
   const initial = useMemo(() => rangeFor('Hôm nay'), [])
   const [period, setPeriod] = useState('Hôm nay')
@@ -167,8 +169,9 @@ export default function SnapshotPage({ user, embedded = false }) {
   const [end, setEnd] = useState(initial[1])
   const [filters, setFilters] = useState(emptyFilters)
   const [applied, setApplied] = useState(emptyFilters)
-  const [records, setRecords] = useState([])
-  const [options, setOptions] = useState({ employees: [], departments: [], shifts: [] })
+  const [recordResult, setRecordResult] = useState(null)
+  const [summaryFilter, setSummaryFilter] = useState('all')
+  const tableId = useId()
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
@@ -180,31 +183,9 @@ export default function SnapshotPage({ user, embedded = false }) {
   })
   const [controlBusy, setControlBusy] = useState('')
   const requestRevisionRef = useRef(0)
+  const requestAbortRef = useRef(null)
+  const exportAbortRef = useRef(null)
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
-
-  const summary = useMemo(() => ({
-    employees: records.length,
-    breaks: records.filter((item) => !item.break_restricted_reason && item.break_out && item.break_in).length,
-    over: records.filter((item) => {
-      if (item.break_restricted_reason) return Boolean(item.break_out)
-      if (Number(item.break_over_minutes || 0) > 0 || Number(item.break_return_late_minutes || 0) > 0) return true
-      if (!item.break_out || item.break_in) return false
-      const deadline = deadlineMsFor(item)
-      return Number.isFinite(deadline) && deadline < clockMs
-    }).length,
-    incomplete: records.filter((item) => !item.break_restricted_reason && item.break_enabled && (!item.break_out || !item.break_in)).length,
-  }), [clockMs, records])
-
-  const displayRecords = useMemo(() => [...records].sort((left, right) => {
-    const leftGroup = breakSortGroup(left)
-    const rightGroup = breakSortGroup(right)
-    if (leftGroup !== rightGroup) return leftGroup - rightGroup
-    if (leftGroup === 0) {
-      const remainingDiff = breakRemainingForSort(left, clockMs) - breakRemainingForSort(right, clockMs)
-      if (remainingDiff !== 0) return remainingDiff
-    }
-    return String(left.employee_name || '').localeCompare(String(right.employee_name || ''), 'vi')
-  }), [clockMs, records])
 
   const queryString = useCallback((extra = applied) => {
     const params = new URLSearchParams({ start, end })
@@ -214,15 +195,43 @@ export default function SnapshotPage({ user, embedded = false }) {
     return params.toString()
   }, [applied, end, start])
 
+  const activeQuery = queryString()
+  useEffect(() => {
+    setExporting(false)
+    return () => exportAbortRef.current?.abort()
+  }, [activeQuery, summaryFilter, filters.employee, filters.department, filters.shift])
+  const records = recordResult?.query === activeQuery ? recordResult.records : EMPTY_RECORDS
+  const options = recordResult?.query === activeQuery ? recordResult.options : EMPTY_OPTIONS
+
+  const summary = useMemo(() => attendanceSummary(records, clockMs), [clockMs, records])
+  const summaryLabel = ATTENDANCE_SUMMARY_FILTERS.find(item => item.id === summaryFilter).label
+  const hasFilters = summaryFilter !== 'all' || Object.values(filters).some(Boolean)
+  const pendingFilters = Object.keys(emptyFilters).some(key => filters[key].trim() !== applied[key])
+
+  const displayRecords = useMemo(() => records
+    .filter(item => matchesAttendanceSummary(item, summaryFilter, clockMs))
+    .sort((left, right) => {
+      const leftGroup = breakSortGroup(left)
+      const rightGroup = breakSortGroup(right)
+      if (leftGroup !== rightGroup) return leftGroup - rightGroup
+      if (leftGroup === 0) {
+        const remainingDiff = breakRemainingForSort(left, clockMs) - breakRemainingForSort(right, clockMs)
+        if (remainingDiff !== 0) return remainingDiff
+      }
+      return String(left.employee_name || '').localeCompare(String(right.employee_name || ''), 'vi')
+    }), [clockMs, records, summaryFilter])
+
   const load = useCallback(async () => {
     const revision = requestRevisionRef.current + 1
     requestRevisionRef.current = revision
+    requestAbortRef.current?.abort()
+    const controller = new AbortController()
+    requestAbortRef.current = controller
     setBusy(true); setError('')
     try {
-      const result = await requestJson(`/v2/snapshot?${queryString()}`)
+      const result = await requestJson(`/v2/snapshot?${queryString()}`, { signal: controller.signal })
       if (revision !== requestRevisionRef.current) return
-      setRecords(result.records || [])
-      setOptions(result.filters || { employees: [], departments: [], shifts: [] })
+      setRecordResult({ query: queryString(), records: result.records || EMPTY_RECORDS, options: result.filters || EMPTY_OPTIONS })
       setClockMs(Date.now())
     } catch (e) {
       if (revision === requestRevisionRef.current) setError(e.message || 'Không tải được dữ liệu chấm công.')
@@ -231,7 +240,10 @@ export default function SnapshotPage({ user, embedded = false }) {
     }
   }, [queryString])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+    return () => { requestRevisionRef.current += 1; requestAbortRef.current?.abort() }
+  }, [load])
   useEffect(() => {
     if (!isAdmin) return
     requestJson('/v2/attendance/department-controls')
@@ -262,7 +274,7 @@ export default function SnapshotPage({ user, embedded = false }) {
     setStart(nextStart); setEnd(nextEnd)
   }
 
-  const clearFilters = () => { setFilters(emptyFilters); setApplied(emptyFilters) }
+  const clearFilters = () => { setFilters(emptyFilters); setApplied(emptyFilters); setSummaryFilter('all') }
 
   const toggleDepartmentControl = async (department, key) => {
     const current = departmentControls[department] || {}
@@ -284,10 +296,17 @@ export default function SnapshotPage({ user, embedded = false }) {
   }
 
   const exportExcel = async () => {
+    exportAbortRef.current?.abort()
+    const controller = new AbortController()
+    exportAbortRef.current = controller
     setExporting(true); setError('')
-    try { await downloadExcel(`/v2/snapshot/export.xlsx?${queryString(normalizedFilters(filters))}`, 'VERA_ChamCong.xlsx') }
-    catch (e) { setError(e.message || 'Không export được Chấm công.') }
-    finally { setExporting(false) }
+    try {
+      const params = new URLSearchParams(queryString())
+      if (summaryFilter !== 'all') params.set('summary_filter', summaryFilter)
+      await downloadExcel(`/v2/snapshot/export.xlsx?${params}`, 'VERA_ChamCong.xlsx', controller.signal)
+    }
+    catch (e) { if (!controller.signal.aborted) setError(e.message || 'Không export được Chấm công.') }
+    finally { if (!controller.signal.aborted) setExporting(false) }
   }
 
   return <div className="feature-page attendance-page">
@@ -317,22 +336,29 @@ export default function SnapshotPage({ user, embedded = false }) {
           <datalist id="attendance-shifts">{(options.shifts || []).map((value) => <option key={value} value={value}/>)}</datalist>
         </div>
       </div>
-      {(Object.values(filters).some(Boolean) || user?.permissions?.snapshot_export) && <UiToolbar data-ui-key="u-8f0cd3e782f6" className="attendance-toolbar-actions">
-        {Object.values(filters).some(Boolean) && <button data-ui-key="u-3144d0bed172" data-ui-label-default="Bỏ lọc" className="secondary-button" type="button" onClick={clearFilters}><X size={16}/><UiCustomText uiKey="u-3144d0bed172"> Bỏ lọc</UiCustomText></button>}
-        {user?.permissions?.snapshot_export && <button data-ui-key="u-d02cd56bafe6" className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Xuất excel'}</button>}
+      {(hasFilters || user?.permissions?.snapshot_export) && <UiToolbar data-ui-key="u-8f0cd3e782f6" className="attendance-toolbar-actions">
+        {hasFilters && <button data-ui-key="u-3144d0bed172" data-ui-label-default="Bỏ lọc" className="secondary-button" type="button" onClick={clearFilters}><X size={16}/><UiCustomText uiKey="u-3144d0bed172"> Bỏ lọc</UiCustomText></button>}
+        {user?.permissions?.snapshot_export && <button data-ui-key="u-d02cd56bafe6" className="secondary-button" title="Xuất nhóm đang chọn từ dữ liệu mới nhất tại thời điểm xuất" onClick={exportExcel} disabled={exporting || busy || pendingFilters || recordResult?.query !== activeQuery}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Xuất excel'}</button>}
       </UiToolbar>}
     </section>
 
-    <section data-ui-key="u-ec59b89f2984" className="panel"><div data-ui-key="u-87c6926cbbf5" className="panel-title-row"><div><h2>CHẤM CÔNG NHÂN VIÊN</h2><p>{records.length} bản ghi · {start} → {end}{applied.employee ? ` · ${applied.employee}` : ''}{applied.department ? ` · ${applied.department}` : ''}{applied.shift ? ` · ${applied.shift}` : ''}.</p></div></div>
-      <div className="attendance-kpis"><div className="attendance-kpi"><strong>{summary.employees}</strong><span>Bản ghi chấm công</span></div><div className="attendance-kpi"><strong>{summary.breaks}</strong><span>Đủ cặp nghỉ giữa ca</span></div><div className="attendance-kpi"><strong>{summary.over}</strong><span>Vi phạm nghỉ / ra ngoài</span></div><div className="attendance-kpi"><strong>{summary.incomplete}</strong><span>Đang nghỉ / thiếu FaceID vào lại</span></div></div>
-      <div className="responsive-data-table"><table data-ui-key="u-15dc5f0a107a"><thead><tr><th data-ui-key="u-395b55975eef" data-ui-label-default="Ngày"><UiCustomText uiKey="u-395b55975eef">Ngày</UiCustomText></th><th data-ui-key="u-f02f95877617" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-f02f95877617">Nhân viên</UiCustomText></th><th data-ui-key="u-af64b34f4de6" data-ui-label-default="Ca làm việc"><UiCustomText uiKey="u-af64b34f4de6">Ca làm việc</UiCustomText></th><th data-ui-key="u-d33f37089866" data-ui-label-default="Tình trạng đầu ca"><UiCustomText uiKey="u-d33f37089866">Tình trạng đầu ca</UiCustomText></th><th data-ui-key="u-46d6e45c2661" data-ui-label-default="Nghỉ giữa ca"><UiCustomText uiKey="u-46d6e45c2661">Nghỉ giữa ca</UiCustomText></th><th data-ui-key="u-a3e410889db2" data-ui-label-default="Tình trạng vào lại sau nghỉ"><UiCustomText uiKey="u-a3e410889db2">Tình trạng vào lại sau nghỉ</UiCustomText></th></tr></thead><tbody>{displayRecords.map((item, index) => {
+    <section data-ui-key="u-ec59b89f2984" className="panel"><div data-ui-key="u-87c6926cbbf5" className="panel-title-row"><div><h2>CHẤM CÔNG NHÂN VIÊN</h2><p>{displayRecords.length}/{records.length} bản ghi · {formatVeraDate(start)} → {formatVeraDate(end)}{applied.employee ? ` · ${applied.employee}` : ''}{applied.department ? ` · ${applied.department}` : ''}{applied.shift ? ` · ${applied.shift}` : ''}.</p></div></div>
+      <div className="attendance-kpis" role="group" aria-label="Lọc nhóm chấm công">
+        {ATTENDANCE_SUMMARY_FILTERS.map(({ id, label }) => <button key={id} type="button"
+          className="attendance-kpi" aria-pressed={summaryFilter === id} aria-controls={tableId}
+          onClick={() => setSummaryFilter(current => current === id ? 'all' : id)}>
+          <strong>{summary[id]}</strong><span>{label}</span>
+        </button>)}
+      </div>
+      <p className="attendance-summary-status" role="status">{summaryFilter === 'all' ? 'Tất cả bản ghi chấm công' : summaryLabel} · {displayRecords.length} bản ghi</p>
+      <div className="responsive-data-table"><table id={tableId} data-ui-key="u-15dc5f0a107a" aria-busy={busy}><thead><tr><th data-ui-key="u-395b55975eef" data-ui-label-default="Ngày"><UiCustomText uiKey="u-395b55975eef">Ngày</UiCustomText></th><th data-ui-key="u-f02f95877617" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-f02f95877617">Nhân viên</UiCustomText></th><th data-ui-key="u-af64b34f4de6" data-ui-label-default="Ca làm việc"><UiCustomText uiKey="u-af64b34f4de6">Ca làm việc</UiCustomText></th><th data-ui-key="u-d33f37089866" data-ui-label-default="Tình trạng đầu ca"><UiCustomText uiKey="u-d33f37089866">Tình trạng đầu ca</UiCustomText></th><th data-ui-key="u-46d6e45c2661" data-ui-label-default="Nghỉ giữa ca"><UiCustomText uiKey="u-46d6e45c2661">Nghỉ giữa ca</UiCustomText></th><th data-ui-key="u-a3e410889db2" data-ui-label-default="Tình trạng vào lại sau nghỉ"><UiCustomText uiKey="u-a3e410889db2">Tình trạng vào lại sau nghỉ</UiCustomText></th></tr></thead><tbody>{displayRecords.map((item, index) => {
         const startStatus = startStatusFor(item)
         const returnStatus = breakReturnStatusFor(item)
         const liveBreak = liveBreakTiming(item, clockMs)
         const breakIsLate = liveBreak.startsWith('VÀO LẠI TRỄ') || minutes(item.break_return_late_minutes) > 0
         const restricted = Boolean(item.break_restricted_reason)
         return <tr key={`${item.date}-${item.employee_code}-${item.check_in}-${index}`}>
-          <td>{item.date}</td>
+          <td>{formatVeraDate(item.date, item.date)}</td>
           <td><strong>{item.employee_name}</strong><small>{item.employee_code} · {item.break_department || '—'}</small></td>
           <td>{item.shift || '—'}<small>{item.shift_start || '—'} – {item.shift_end || '—'}</small></td>
           <td className="attendance-status-cell"><strong className={startStatus.tone}>{startStatus.label}</strong><small>FaceID: {item.check_in || '—'}</small><small>{startStatus.detail}</small></td>
@@ -359,7 +385,7 @@ export default function SnapshotPage({ user, embedded = false }) {
           </td>
           <td className="attendance-status-cell"><strong className={returnStatus.tone}>{returnStatus.label}</strong><small>{returnStatus.detail}</small><small>FaceID vào lại: {item.break_in || '—'}</small></td>
         </tr>
-      })}</tbody></table></div>{!records.length && <div className="setup-note">Không có dữ liệu phù hợp bộ lọc.</div>}</section>
+      })}</tbody></table></div>{!displayRecords.length && <div className="setup-note">Không có dữ liệu phù hợp bộ lọc.</div>}</section>
 
     {isAdmin && <section data-ui-key="u-b681748c8cbe" className="panel attendance-department-controls">
       <div data-ui-key="u-eace497d09ab" className="panel-title-row"><div><h2>CHẤM CÔNG THEO BỘ PHẬN</h2><p>Điều khiển chấm công, thông báo và quy tắc nghỉ giữa ca theo từng bộ phận.</p></div></div>
