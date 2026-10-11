@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { createLiveTourRefresh } from './liveTourRefresh'
+import { validateTourReportCollection } from './liveTourReportCollection'
 
 export default function useLiveTourDetails({ board, panel, filters, customerSearch, lookupOpen, lookupSearch, selectedCustomerId, selectedCustomerIds = [], enabled = true, authorizationKey = '', readAllowed = true, onCapabilities, onReadDenied }) {
   const onDeniedRef = useRef(onReadDenied)
@@ -27,12 +28,15 @@ export default function useLiveTourDetails({ board, panel, filters, customerSear
     if (!enabled || !readAllowed || !['customers','pending','invoices','reports','history'].includes(panel) || !hasBoard) {setLoading(false);return}
     const reader = createLiveTourRefresh({
       getRevision: () => revisionRef.current,
-      read: ({signal}) => veraApi.liveTourCollection(panel, { ...JSON.parse(queryKey), page }, {signal}),
+      read: async ({signal}) => {
+        const value = await veraApi.liveTourCollection(panel, { ...JSON.parse(queryKey), page }, {signal})
+        return panel === 'reports' ? validateTourReportCollection(value) : value
+      },
       onData: (value, {loadedRevision}) => {
         onCapabilitiesRef.current?.(value.capabilities || value.data?.capabilities)
         setResult({panel, queryKey, scopeKey, page, value, loadedRevision})
       },
-      onError: err => {setResult(null);setError(err.message);if(err.status === 403)onDeniedRef.current?.(panel,err)},
+      onError: err => {onCapabilitiesRef.current?.(err.reportCapabilities);setResult(null);setError(err.message);if(err.status === 403)onDeniedRef.current?.(panel,err)},
       onLoading: value => {setLoading(value);if(value)setError('')},
     })
     refreshRef.current = reader.schedule
@@ -87,5 +91,5 @@ export default function useLiveTourDetails({ board, panel, filters, customerSear
     const customers=[...new Map([...(detail.customers || board.customers || []), ...lookup].map(row=>[row.id,row])).values()]
     return {...base,...detail,revision:value ? result.loadedRevision : board.revision,customers,state:{...base.state,...detail.state,customers}}
   },[board,value,result,lookup,authorizationKey,panel])
-  return {data,page,setPage,ready:Boolean(value),initialLoading:loading && !value,pages:value?.pages || 1,total:value?.total || 0,loading,error:error || lookupError}
+  return {data,page,setPage,ready:Boolean(value),initialLoading:loading && !value,pages:value?.pages || 1,total:value?.total || 0,loading,error:error || lookupError,retry:() => refreshRef.current?.()}
 }

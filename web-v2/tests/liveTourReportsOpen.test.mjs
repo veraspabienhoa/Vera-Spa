@@ -175,3 +175,72 @@ test('leaving and reopening reports cancels the abandoned read and never shows i
     assert.deepEqual(f.mutations, [])
   } finally { await f.close() }
 })
+
+test('incomplete report aggregates remain a retryable read error instead of crashing the mounted board', async () => {
+  const f = await fixture()
+  try {
+    await open(); await f.wait()
+    await f.resolve(response({ summary: {} }))
+    healthy()
+    assert.equal(summary(), null, 'missing totals must not be replaced with zeros or page-local sums')
+    assert.match(document.querySelector('.live-tour-pagination [role="alert"]').textContent, /báo cáo/)
+    await click('Thử tải lại', document.querySelector('.live-tour-pagination')); await f.wait()
+    assert.equal(f.reads.length, 2)
+    await f.resolve(response())
+    healthy(); assert.match(summary().textContent, new RegExp(money(totals.totalRevenue)))
+  } finally { await f.close() }
+})
+
+for (const [name, patch] of Object.entries({
+  employee: { employee_name: { label: 'SYNTHETIC-PRIVATE' } },
+  service: { service: { label: 'SYNTHETIC-PRIVATE' } },
+  invoiceNumbers: { bill_numbers: { private: 'SYNTHETIC-PRIVATE' } },
+  nestedInvoiceNumbers: { payload: { invoice: { bill_numbers: {} } } },
+  entries: { entries: [{ employee_name: {} }] },
+})) test(`invalid ${name} report fields keep Live Tour mounted and recover through retry`, async () => {
+  const f = await fixture('letan')
+  try {
+    await open(); await f.wait()
+    await f.resolve(response({ rows: [{ id: 'bad', business_date: yesterday, total: 123, ...patch }] }))
+    healthy(); assert.equal(summary(), null)
+    assert.match(document.querySelector('.live-tour-pagination [role="alert"]').textContent, /REPORT_DATA_INVALID/)
+    assert.doesNotMatch(document.body.textContent, /SYNTHETIC-PRIVATE/)
+    assert.ok(document.querySelector('.tour-heading-actions'), 'board navigation stays usable')
+    await click('Thử tải lại', document.querySelector('.live-tour-pagination')); await f.wait()
+    await f.resolve(response())
+    healthy(); assert.match(summary().textContent, new RegExp(money(totals.totalRevenue)))
+    assert.deepEqual(f.mutations, [])
+  } finally { await f.close() }
+})
+
+test('nullable optional report fields and valid zero aggregates render without falling back to stale aliases', async () => {
+  const f = await fixture('quanly')
+  try {
+    await open(); await f.wait()
+    await f.resolve(response({ rows: [{ id: 'nullable', business_date: yesterday, employee_name: null, service: null, effective_at: null, total: 123, tip: null, entries: null, bill_numbers: null }] }))
+    healthy(); assert.ok(summary()); assert.equal(document.querySelectorAll('.live-tour-panel-body .live-tour-data-card').length, 1)
+    await click('Hôm nay', document.querySelector('.report-date-buttons')); await f.wait()
+    const empty = response({ rows: [], total: 0, summary: { totalRevenue: 0, serviceRevenue: 0, tip: 0, invoiceCount: 0 } })
+    empty.data.state.reports = [{ id: 'stale', employee_name: 'STALE-ALIAS', business_date: today }]
+    await f.resolve(empty)
+    healthy(); assert.match(summary().textContent, /0 đ/)
+    assert.doesNotMatch(document.body.textContent, /STALE-ALIAS/)
+    assert.match(document.body.textContent, /Chưa có số liệu báo cáo/)
+  } finally { await f.close() }
+})
+
+test('permission reductions on invalid report responses still revoke visible data and retry controls', async () => {
+  const f = await fixture('letan')
+  try {
+    await open(); await f.wait(); await f.resolve(response())
+    assert.ok(summary())
+    await click('Hôm nay', document.querySelector('.report-date-buttons')); await f.wait()
+    const denied = { ...capabilities([]), reports_view: false, paid_invoice_view: false }
+    f.board.capabilities = denied
+    await f.resolve(response({ summary: {}, caps: denied }))
+    healthy(); assert.equal(summary(), null)
+    assert.doesNotMatch(document.body.textContent, /SYNTHETIC|987\.654\.321/)
+    assert.equal([...document.querySelectorAll('.tour-heading-actions button')].some(button => button.textContent.trim() === 'Báo cáo'), false)
+    assert.equal([...document.querySelectorAll('.live-tour-pagination button')].some(button => button.textContent === 'Thử tải lại'), false)
+  } finally { await f.close() }
+})

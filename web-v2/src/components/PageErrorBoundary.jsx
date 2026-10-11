@@ -1,8 +1,9 @@
 import { Component, Fragment } from 'react'
 import { hasNewPageBuild, isPageLoadFailure } from '../lib/pageLoadFailure'
+import { loadedPageRevision, pageRenderDiagnostic } from '../lib/pageRenderDiagnostic'
 
 export default class PageErrorBoundary extends Component {
-  state = { failed: false, attempt: 0, loadFailure: false, newBuild: false }
+  state = { failed: false, attempt: 0, loadFailure: false, newBuild: false, diagnostic: '' }
   mounted = true
 
   componentWillUnmount() { this.mounted = false }
@@ -15,12 +16,12 @@ export default class PageErrorBoundary extends Component {
   }
 
   static getDerivedStateFromError(error) {
-    return { failed: true, loadFailure: isPageLoadFailure(error), newBuild: false }
+    return { failed: true, loadFailure: isPageLoadFailure(error), newBuild: false, diagnostic: pageRenderDiagnostic(error) }
   }
 
   retry = () => {
     this.props.onRetry?.()
-    this.setState(({ attempt }) => ({ failed: false, attempt: attempt + 1 }))
+    this.setState(({ attempt }) => ({ failed: false, attempt: attempt + 1, diagnostic: '' }))
   }
 
   update = () => {
@@ -41,6 +42,7 @@ export default class PageErrorBoundary extends Component {
       <h2 id="page-recovery-title">Không mở được {this.props.page === 'leave' ? 'Đăng ký nghỉ' : 'chức năng này'}</h2>
       <p>{this.state.newBuild ? 'Hệ thống đã có bản mới. Hãy cập nhật để mở lại đúng trang này.' : this.state.loadFailure ? 'Không tải được tệp giao diện. Kiểm tra kết nối rồi thử mở lại.' : 'Giao diện gặp lỗi khi hiển thị. Bạn có thể thử mở lại.'}</p>
       <small>Mã lỗi: {this.state.loadFailure ? 'PAGE_MODULE_LOAD' : 'PAGE_RENDER'} · {this.props.page}</small>
+      <small>Chi tiết: {this.state.diagnostic} · bản {loadedPageRevision}</small>
       <div className="page-recovery-actions">
         <button type="button" className="primary-button" onClick={this.state.newBuild ? this.update : this.retry}>{this.state.newBuild ? 'Cập nhật và mở lại' : 'Thử mở lại'}</button>
         <a className="secondary-button" href={url.href} target="_blank" rel="noopener noreferrer">Mở bản mới trong tab khác</a>
