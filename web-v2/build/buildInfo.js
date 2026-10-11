@@ -18,6 +18,9 @@ export default function buildInfo(revision = sourceRevision()) {
   return {
     name: 'vera-build-info',
     apply: 'build',
+    // Embedded provenance identifies the code running in this tab, even when
+    // build-info.json already describes a newer deployment.
+    config: () => ({ define: { __VERA_BUILD_REVISION__: JSON.stringify(/^[a-f0-9]{40}$/i.test(revision) ? revision : 'development') } }),
     generateBundle(_options, bundle) {
       const entries = Object.values(bundle).filter(item => item.type === 'chunk' && item.isEntry)
       if (entries.length !== 1) throw new Error('Expected one VERA browser entry')

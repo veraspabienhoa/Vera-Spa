@@ -1295,7 +1295,7 @@ function LiveTourWorkspace({ user, navigationToggle = null }) {
   }
   const combos = asArray(data.combo_catalog).length ? asArray(data.combo_catalog) : asArray(data.catalogs?.combos).length ? asArray(data.catalogs?.combos) : asArray(data.state?.combos)
   const pendingComboSaleRequests = asArray(data.combo_sale_requests).filter((item) => item?.status === 'pending')
-  const allReports = asArray(data.report_rows).length ? asArray(data.report_rows) : asArray(data.state?.reports).length ? asArray(data.state?.reports) : asArray(data.reports)
+  const allReports = Array.isArray(data.report_rows) ? data.report_rows : Array.isArray(data.state?.reports) ? data.state.reports : asArray(data.reports)
   const pendingPayments = useMemo(()=>activePanel === 'pending' ? filterTourRows(pagedPendingPayments, listFilters) : [],[activePanel,pagedPendingPayments,listFilters])
   const reports = useMemo(()=>activePanel === 'reports' ? filterTourRows(allReports, listFilters, true) : [],[activePanel,allReports,listFilters])
   const visibleInvoices = useMemo(()=>activePanel === 'invoices' ? filterTourRows(asArray(data.state?.invoices), listFilters, true) : [],[activePanel,data.state?.invoices,listFilters])
@@ -1773,7 +1773,7 @@ function LiveTourWorkspace({ user, navigationToggle = null }) {
         <button type="button" disabled={details.loading || details.page <= 1} onClick={()=>details.setPage(page=>page-1)}>Trang trước</button>
         <span>Trang {details.page}/{details.pages} · {details.total} mục</span>
         <button type="button" disabled={details.loading || details.page >= details.pages} onClick={()=>details.setPage(page=>page+1)}>Trang sau</button>
-        {details.loading && <span role="status">Đang tải…</span>}{details.error && <span role="alert">{details.error}</span>}
+        {details.loading && <span role="status">Đang tải…</span>}{details.error && <><span role="alert">{details.error}</span>{activePanel === 'reports' && listReadAllowed && canReports && <button type="button" disabled={details.loading} onClick={details.retry}>Thử tải lại</button>}</>}
       </div>}
       {['pending', 'invoices', 'reports', 'history'].includes(activePanel) && <LiveTourFilters
         key={filterScope}

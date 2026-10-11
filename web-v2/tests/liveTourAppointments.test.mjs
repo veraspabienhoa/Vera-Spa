@@ -47,7 +47,16 @@ async function fixture({ canEdit = true, conflict = false, payable = false, setu
   let fail = conflict
   globalThis.__tourTestApi = {
     liveTour: async () => structuredClone(data),
-    liveTourCollection: async (panel, query) => { collections.push({ panel, query }); return {data:structuredClone(data),page:1,pages:1,total:0,revision:data.revision} },
+    liveTourCollection: async (panel, query) => {
+      collections.push({ panel, query })
+      const detail = structuredClone(data)
+      // Match the real empty report collection contract, including full-filter
+      // zero aggregates; a board response is not a successful report read.
+      if (panel === 'reports') Object.assign(detail, { report_rows: [],
+        report_totals: { totalRevenue: 0, serviceRevenue: 0, tip: 0, invoiceCount: 0 },
+        state: { ...detail.state, reports: [], invoices: [] } })
+      return { data: detail, page: 1, page_size: 50, pages: 1, total: 0, revision: data.revision }
+    },
     liveTourCustomerHistory: async (customerId) => ({ customer: structuredClone(data.customers.find((customer) => customer.id === customerId)), summary: { combo_remaining: 7 }, combo_purchases: structuredClone(data.customers.find((customer) => customer.id === customerId)?.combo_purchases || []), combo_usage: [{ id: 'u1', service: 'Body 90', business_date: TODAY_VN }], invoices: [], reports: [], pending: [] }),
     exportLiveTourExcel: async (kind, query) => { exports.push({ kind, query }) },
     liveTourAction: async (body) => {

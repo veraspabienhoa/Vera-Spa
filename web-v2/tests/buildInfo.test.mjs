@@ -11,7 +11,7 @@ test('a real Vite build stamps the commit and the hashed entry used by HTML', as
   const revision = 'a'.repeat(40)
   try {
     await writeFile(join(root, 'index.html'), '<div id="root"></div><script type="module" src="/main.js"></script>')
-    await writeFile(join(root, 'main.js'), 'document.getElementById("root").textContent="VERA"')
+    await writeFile(join(root, 'main.js'), 'document.getElementById("root").textContent=__VERA_BUILD_REVISION__')
     const { output } = await build({ root, configFile: false, logLevel: 'silent', plugins: [buildInfo(revision)], build: { write: false } })
     const info = JSON.parse(output.find(item => item.fileName === 'build-info.json').source)
     const html = output.find(item => item.fileName === 'index.html').source
@@ -19,5 +19,6 @@ test('a real Vite build stamps the commit and the hashed entry used by HTML', as
     assert.ok(output.some(item => item.type === 'chunk' && item.isEntry && `/${item.fileName}` === info.entry_script))
     assert.ok(html.includes(`src="${info.entry_script}"`))
     assert.deepEqual(Object.keys(info).sort(), ['entry_script', 'revision'])
+    assert.ok(output.find(item => item.type === 'chunk' && item.isEntry).code.includes(revision), 'loaded JavaScript embeds its own revision without fetching a newer manifest')
   } finally { await rm(root, { recursive: true, force: true }) }
 })
