@@ -4,7 +4,7 @@ import './fitPayrollTables.css'
 // Scale the whole table together: all columns and full amounts remain visible.
 export function fitPayrollTable(table) {
   // Editable configuration tables scroll at full size and keep names sticky.
-  if (table.closest?.('.department-config-table')) {
+  if (table.closest?.('.department-config-table') || table.closest?.('.department-payroll-source-table')) {
     table.style.zoom = '1'
     return
   }

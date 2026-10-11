@@ -42,10 +42,53 @@ def quote(value):
     return '"' + value.replace('"', '""') + '"'
 
 
+def rename_salary_map(value, old, new):
+    """Move only a known current salary-map owner, never a generic JSON key."""
+    if not isinstance(value, dict):
+        raise HTTPException(409, 'Cấu hình lương theo nhân viên không hợp lệ; chưa đổi tên.')
+    matching = [key for key in value if str(key).strip().casefold() == old.strip().casefold()]
+    if len(matching) > 1 or any(str(key).strip().casefold() == new.strip().casefold()
+                               for key in value if key not in matching):
+        raise HTTPException(409, 'Tên mới đã có cấu hình lương hoặc nguồn lương; chưa đổi tên.')
+    if not matching:
+        return value
+    return {new if key == matching[0] else key: item for key, item in value.items()}
+
+
+def migrate_salary_maps(conn, old, new):
+    """Serialize with employee config CAS and preserve configured rate values."""
+    if not conn.execute(text("SELECT to_regclass('vera_app_setting')")).scalar():
+        return 0
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:department-employee-salary'))"))
+    rows = conn.execute(text("""SELECT setting_key,value_json FROM vera_app_setting
+        WHERE category='payroll' AND setting_key IN
+        ('department_employee_salary_configs','department_employee_salary_sources')
+        ORDER BY setting_key FOR UPDATE""")).mappings().all()
+    changed = []
+    for row in rows:
+        after = rename_salary_map(row['value_json'], old, new)
+        if after != row['value_json']:
+            changed.append((row['setting_key'], after))
+    for key, value in changed:
+        conn.execute(text("""UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb),
+            revision=COALESCE(revision,0)+1,updated_at=NOW()
+            WHERE category='payroll' AND setting_key=:key"""),
+            {'key': key, 'value': json.dumps(value, ensure_ascii=False)})
+    # The numeric config revision is the shared source/rate CAS token. A source-
+    # only rename must invalidate an earlier configuration tab as well.
+    if changed and not any(key == 'department_employee_salary_configs' for key, _ in changed):
+        conn.execute(text("""INSERT INTO vera_app_setting(category,setting_key,value_json,revision,updated_at)
+            VALUES ('payroll','department_employee_salary_configs','{}'::jsonb,1,NOW())
+            ON CONFLICT(category,setting_key) DO UPDATE
+            SET revision=COALESCE(vera_app_setting.revision,0)+1,updated_at=NOW()"""))
+    return len(changed)
+
+
 def migrate_references(conn, old, new, actor):
     """Use the caller's connection and the normal Live Tour versioned writer."""
     import vera_web_v2_live_tour as tour
     history_lock(conn)
+    salary_changes = migrate_salary_maps(conn, old, new)
     conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:v2:feature_permissions'))"))
     if tour.resource_store.enabled():
         tour.resource_store.lock(conn)
@@ -64,7 +107,7 @@ def migrate_references(conn, old, new, actor):
     all_cols = conn.execute(text('SELECT table_name,column_name FROM information_schema.columns WHERE table_schema=current_schema()')).mappings().all()
     for col in all_cols:
         available.setdefault(col['table_name'], set()).add(col['column_name'])
-    counts = {}
+    counts = {'vera_app_setting.salary_maps': salary_changes} if salary_changes else {}
     for col in columns:
         table, field, kind = col['table_name'], col['column_name'], col['data_type']
         # Device/raw evidence remains immutable; serving aliases resolve it.

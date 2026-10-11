@@ -73,6 +73,8 @@ def test_combined_calculation_reads_period_inputs_once(monkeypatch):
             return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: []))
     monkeypatch.setattr(payroll.work_schedule, '_ensure_schema', lambda conn: None)
     monkeypatch.setattr(payroll, '_probation_policies', lambda *args, **kwargs: {})
+    monkeypatch.setattr(payroll, '_hc_late_events', lambda *args: {})
+    monkeypatch.setattr(payroll, '_setting_snapshot', lambda conn, key, default: (default, 0))
     monkeypatch.setattr(payroll, '_combo_sale_counts', lambda *args: {})
     config_calls, penalty_calls = [], []
     monkeypatch.setattr(payroll, '_employee_config_map', lambda conn: config_calls.append(1) or {})

@@ -189,7 +189,7 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
         "leave_today_khong_phep_edit_delete", "leave_created_today_edit_delete", "employee_penalty_view",
     ]},
     {"id": "schedule", "label": "Lịch làm việc", "view_feature": "", "features": [
-        "work_schedule_quanly", "work_schedule_letan", "work_schedule_locker", "work_schedule_tapvu",
+        "work_schedule_quanly", "work_schedule_letan", "work_schedule_locker", "work_schedule_tapvu", "work_schedule_hc",
     ]},
     {"id": "long-leave", "label": "Phép năm / Làm đẹp / Nghỉ việc", "view_feature": "long_leave", "features": [
         "long_leave", "long_leave_form", "resignation_form", "long_leave_stats",

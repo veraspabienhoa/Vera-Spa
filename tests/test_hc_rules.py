@@ -302,3 +302,41 @@ def test_unconfigured_department_switch_has_explicit_disabled_state():
         assert hc.rule_switch(current, 'letan', rule)['enabled'] is False
     current['departments']['letan'] = {'enabled_since': at('08:00').isoformat()}
     assert hc.rule_switch(current, 'letan', current['rules'][0])['enabled'] is False
+
+
+def test_after_midnight_custom_overtime_stores_ca2_wage_bucket():
+    row = dict(main_start='17:30', main_end='01:30', shift_code='Ca 2',
+               overtime_shift='Từ giờ tới giờ', ot_start='01:00', ot_end='03:00')
+    config = dict(calculation_mode='hourly', rate_ca1=27000, rate_ca2_before_22=30000, rate_ca2_after_22=60000)
+    tomorrow = DAY + timedelta(days=1)
+    decision = dict(kind='late', start=at('01:30', tomorrow), end=at('02:00', tomorrow))
+    assert hc.decision_penalty(config, row, DAY, decision) == 60000
+    assert decision['wage_segments'] == [dict(start=at('01:30', tomorrow).isoformat(), end=at('02:00', tomorrow).isoformat(), shift='Ca 2')]
+    # Main/OT overlap is priced once; neither gap minutes nor late date rollover
+    # may cause a morning Ca 1 rate to replace the original workday's night rate.
+    decision.update(start=at('01:00', tomorrow))
+    assert hc.decision_penalty(config, row, DAY, decision) == 120000
+    row['main_end'] = '00:30'
+    decision.update(start=at('00:00', tomorrow))
+    # No date was provided for a disconnected custom interval: preserve the
+    # authoritative attendance same-day geometry, not a guessed continuation.
+    assert hc.decision_penalty(config, row, DAY, decision) == 60000
+    assert [(s['start'][11:16], s['end'][11:16]) for s in decision['wage_segments']] == [('00:00','00:30')]
+
+
+def test_same_day_early_custom_overtime_retains_ca1_rate():
+    row = dict(main_start='09:00', main_end='17:00', shift_code='Ca 1',
+               overtime_shift='Từ giờ tới giờ', ot_start='01:00', ot_end='03:00')
+    decision = dict(kind='late', start=at('01:30'), end=at('02:00'))
+    config = dict(calculation_mode='hourly', rate_ca1=27000, rate_ca2_before_22=30000, rate_ca2_after_22=60000)
+    assert hc.decision_penalty(config, row, DAY, decision) == 27000
+    assert decision['wage_segments'][0]['shift'] == 'Ca 1'
+
+
+@pytest.mark.parametrize('main_start,expected,shift', [('09:00',27000,'Ca 1'),('17:30',60000,'Ca 2')])
+def test_custom_main_bucket_stays_anchored_to_its_original_start(main_start, expected, shift):
+    row = dict(main_start=main_start, main_end='02:30', shift_code='Giờ làm', overtime_shift='')
+    decision = dict(kind='late', start=at('01:30', DAY+timedelta(days=1)), end=at('02:00', DAY+timedelta(days=1)))
+    config = dict(calculation_mode='hourly', rate_ca1=27000, rate_ca2_before_22=30000, rate_ca2_after_22=60000)
+    assert hc.decision_penalty(config, row, DAY, decision) == expected
+    assert decision['wage_segments'][0]['shift'] == shift

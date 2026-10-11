@@ -82,6 +82,10 @@ class FixtureConnection:
             return Result(value=self.engine.mappings if parameters['key'].startswith('mapping_') else None)
         if "category='shift'" in sql:
             return Result([{'setting_key': 'shift_definitions', 'value_json': self.engine.definitions}])
+        # HR-aware employee reads include settings subqueries. Match the outer
+        # roster query first so the transport double does not erase employees.
+        if 'FROM employees' in sql:
+            return Result(self.engine.employees)
         if 'FROM vera_app_setting' in sql:
             return Result()
         if "to_regclass('vera_facegate_event')" in sql:
@@ -105,8 +109,6 @@ class FixtureConnection:
             return Result(self.engine.events)
         if 'FROM vera_facegate_sync_day' in sql:
             return Result(self.engine.syncs)
-        if 'FROM employees' in sql:
-            return Result(self.engine.employees)
         if 'FROM vera_work_schedule' in sql or 'FROM leave_records' in sql:
             return Result()
         if 'FROM vera_dataset_cache' in sql:

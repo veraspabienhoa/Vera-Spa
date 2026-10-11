@@ -79,3 +79,22 @@ def test_morning_overtime_punch_is_accepted_and_midnight_exit_stays_previous_day
     assert alerts._faceid_employees(__import__("pandas").DataFrame(rows), {}) == {"locker test"}
     assert not alerts._alert_ready(has_leave=False, has_faceid=True,
         current=datetime(2026, 10, 3, 18, 0), shift_start=datetime(2026, 10, 3, 9, 30))
+
+
+def test_shared_wage_periods_preserve_continuation_and_ambiguous_clock_geometry():
+    from datetime import date
+    from vera_schedule_attendance_window import scheduled_periods
+    day = date(2026, 10, 6)
+    row = dict(shift_code='Ca 2', start_time='17:30', end_time='01:00', overtime_shift='Từ giờ tới giờ',
+               overtime_start_time='01:00', overtime_end_time='03:00')
+    periods = scheduled_periods(row, day)
+    assert periods[1][0].date().isoformat() == '2026-10-07' and periods[1][2] == 'ca2'
+    assert attendance_window(row) == ('17:30', '03:00')
+    row['end_time'] = '00:30'
+    periods = scheduled_periods(row, day)
+    assert periods[1][0].date() == day and periods[1][2] == 'ca1'
+    assert attendance_window(row) == ('01:00', '00:30')
+    row.update(end_time='01:30', overtime_start_time='08:00', overtime_end_time='10:00')
+    periods = scheduled_periods(row, day)
+    assert periods[1][0].date() == day and periods[1][2] == 'ca1'
+    assert attendance_window(row) == ('08:00', '01:30')

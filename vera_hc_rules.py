@@ -249,14 +249,15 @@ def penalty(config, start, end, shift):
 
 def decision_penalty(config, row, day, decision, rule=None):
     """Price missed scheduled time once; split main/OT rates and exclude gaps."""
-    periods = [(interval(day, row['main_start'], row['main_end']), row['shift_code'])]
-    ot = interval(day, row.get('ot_start'), row.get('ot_end')) if row.get('overtime_shift') else None
-    if decision['kind'] == 'late' and ot:
-        main = periods[0][0]
-        if row['overtime_shift'] == 'Từ giờ tới giờ' and main[1].date() > day and ot[0].hour < main[0].hour and ot[1].hour <= main[0].hour:
-            ot = tuple(t+timedelta(days=1) for t in ot)
-        shift = row['overtime_shift'].replace('TC ', '') if row['overtime_shift'].startswith('TC ') else 'Giờ làm'
-        periods.append((ot, shift))
+    from vera_schedule_attendance_window import scheduled_periods
+    schedule = dict(shift_code=row['shift_code'], start_time=row['main_start'], end_time=row['main_end'])
+    if decision['kind'] == 'late':
+        schedule.update(overtime_shift=row.get('overtime_shift'), overtime_start_time=row.get('ot_start'),
+                        overtime_end_time=row.get('ot_end'))
+    periods = [((start, end), 'Ca 1' if bucket == 'ca1' else 'Ca 2')
+               for start, end, bucket in scheduled_periods(schedule, day, tzinfo=VN_TZ)]
+    if not periods:
+        raise ValueError('missing_schedule_periods')
     left, right = decision['start'], decision['end']
     from vera_holiday_leave import local as holiday_local, uncovered
     holiday_periods = decision.get('holiday_periods', [])
@@ -268,6 +269,8 @@ def decision_penalty(config, row, day, decision, rule=None):
         shift = next((shift for period, shift in periods if period[0] <= a and b <= period[1]), None)
         if not shift or b <= a or not uncovered(a, b, holiday_periods):
             continue
+        # Each rate belongs to the original scheduled period, not the wall
+        # clock of a later split after midnight. Persist that explicit bucket.
         total += wage(config, a, b, shift, work_day=day)
         segments.append({'start': a.isoformat(), 'end': b.isoformat(), 'shift': shift})
     decision['wage_segments'] = segments

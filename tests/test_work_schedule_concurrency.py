@@ -44,6 +44,7 @@ def database(monkeypatch):
     try:
         with engine.begin() as conn:
             schedule._ensure_schema(conn)
+            conn.execute(text("CREATE TABLE vera_app_setting(category text, setting_key text, value_json jsonb)"))
         yield engine
     finally:
         engine.dispose()

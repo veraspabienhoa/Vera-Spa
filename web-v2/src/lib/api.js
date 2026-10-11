@@ -113,9 +113,11 @@ async function binaryResponseUnshared(path, options = {}, failureMessage = 'Khô
 }
 
 async function download(path, fallbackName, options = {}) {
-  const response = await binaryResponse(path, options, 'Không tải được file Excel sau 2 lần thử')
+  const { assertCurrent, ...requestOptions } = options
+  const response = await binaryResponse(path, requestOptions, 'Không tải được file Excel sau 2 lần thử')
   const blob = await response.blob()
   options.signal?.throwIfAborted()
+  assertCurrent?.()
   const disposition = response.headers.get('Content-Disposition') || ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   let filename = fallbackName
@@ -453,8 +455,8 @@ export const veraApi = {
     `/v2/work-schedule/combo-sales/export.xlsx?${new URLSearchParams({ start, end, department })}`,
     `VERA_Ban_Combo_${department}_${start}_${end}.xlsx`,
   ),
-  exportScheduleTable: body => download('/v2/work-schedule/table/export.xlsx', `VERA_${body.kind}_${body.department}_${body.start}_${body.end}.xlsx`, {
-    method: 'POST', body: JSON.stringify(body),
+  exportScheduleTable: (body, options = {}) => download('/v2/work-schedule/table/export.xlsx', `VERA_${body.kind}_${body.department}_${body.start}_${body.end}.xlsx`, {
+    ...options, method: 'POST', body: JSON.stringify(body),
   }),
   importComboSalesExcel: (file, department) => upload('/v2/work-schedule/combo-sales/import.xlsx', file, { department }),
   adminChanges: (days = 7) => request(`/v2/admin/changes?days=${encodeURIComponent(days)}`),

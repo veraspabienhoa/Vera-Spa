@@ -18,6 +18,7 @@ def route(monkeypatch, allowed=True):
         assert feature == 'payroll_save'
         if not allowed:
             raise HTTPException(403, 'Denied')
+    monkeypatch.setattr(dep, '_require_draft_revision', lambda conn, month, revision: ([], 3))
     monkeypatch.setattr(dep.payroll, '_put_setting', lambda conn, key, value, actor: writes.append((key, value, actor)))
     app = FastAPI()
     dep.install_department_payroll_routes(app, engine_instance=Database, current_identity=Identity,
@@ -27,15 +28,15 @@ def route(monkeypatch, allowed=True):
 
 def test_delete_only_selected_month_draft(monkeypatch):
     endpoint, writes = route(monkeypatch)
-    assert endpoint('2026-10', Identity())['ok']
+    assert endpoint('2026-10', 3, Identity())['ok']
     assert writes == [('department_payroll_combined_draft_2026-10', [], 'admin')]
     with pytest.raises(HTTPException):
-        endpoint('invalid', Identity())
+        endpoint('invalid', 3, Identity())
     assert len(writes) == 1
 
 def test_delete_requires_save_permission(monkeypatch):
     endpoint, writes = route(monkeypatch, False)
     with pytest.raises(HTTPException) as error:
-        endpoint('2026-10', Identity())
+        endpoint('2026-10', 3, Identity())
     assert error.value.status_code == 403
     assert writes == []

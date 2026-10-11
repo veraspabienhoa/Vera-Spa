@@ -90,3 +90,55 @@ def test_postgres_atomic_reference_migration_preserves_employee_id_and_money(dat
         assert state['employees'][0]['name'] == 'Gia An'
         assert revision == 8
         assert conn.execute(text('SELECT employee_name FROM rename_business')).scalar() == 'Gia An'
+
+
+def test_current_salary_map_owner_rename_preserves_rates_and_other_people():
+    from vera_employee_rename_sync import rename_salary_map
+    from fastapi import HTTPException
+    before = {'an': {'rate_ca1': 27000}, 'Bình': {'rate_ca1': 31000}}
+    assert rename_salary_map(before, 'An', 'Gia An') == {'Gia An': {'rate_ca1': 27000}, 'Bình': {'rate_ca1': 31000}}
+    assert before['an'] == {'rate_ca1': 27000}
+    assert rename_salary_map({'An':'attendance'}, 'An', 'Gia An') == {'Gia An':'attendance'}
+    with pytest.raises(HTTPException) as error:
+        rename_salary_map({'An':'attendance','Gia An':'schedule'}, 'An', 'Gia An')
+    assert error.value.status_code == 409
+
+
+@pytest.mark.parametrize('target_value', ['attendance', {'rate_ca1': 31000}])
+def test_rename_without_old_salary_override_cannot_inherit_occupied_target(target_value):
+    from vera_employee_rename_sync import rename_salary_map
+    from fastapi import HTTPException
+    before = {'gIa aN': target_value}
+    with pytest.raises(HTTPException) as error:
+        rename_salary_map(before, 'An', 'Gia An')
+    assert error.value.status_code == 409
+    assert before == {'gIa aN': target_value}
+
+
+def test_postgres_salary_source_and_rate_keys_follow_rename_atomically(database):
+    import json
+    with database.begin() as conn:
+        for key, value in [('department_employee_salary_configs', {'an':{'rate_ca1':27000}}),
+                           ('department_employee_salary_sources', {'An':'attendance','Bình':'schedule'})]:
+            conn.execute(text("INSERT INTO vera_app_setting VALUES ('payroll',:key,CAST(:value AS jsonb),3,NOW())"), {'key':key,'value':json.dumps(value)})
+        migrate_references(conn, 'An', 'Gia An', 'admin')
+    with database.connect() as conn:
+        settings = {row['setting_key']:row for row in conn.execute(text("SELECT * FROM vera_app_setting WHERE category='payroll'")).mappings()}
+        assert settings['department_employee_salary_configs']['value_json'] == {'Gia An':{'rate_ca1':27000}}
+        assert settings['department_employee_salary_sources']['value_json'] == {'Gia An':'attendance','Bình':'schedule'}
+        assert all(row['revision'] == 4 for row in settings.values())
+    with pytest.raises(RuntimeError):
+        with database.begin() as conn:
+            migrate_references(conn, 'Gia An', 'Other', 'admin')
+            raise RuntimeError('rollback')
+    with database.connect() as conn:
+        assert conn.execute(text("SELECT value_json FROM vera_app_setting WHERE setting_key='department_employee_salary_sources'")).scalar()['Gia An'] == 'attendance'
+
+
+def test_postgres_source_only_rename_invalidates_configuration_revision(database):
+    from vera_employee_rename_sync import migrate_salary_maps
+    with database.begin() as conn:
+        conn.execute(text("INSERT INTO vera_app_setting VALUES ('payroll','department_employee_salary_sources','{\"An\":\"attendance\"}',2,NOW())"))
+        assert migrate_salary_maps(conn, 'An', 'Gia An') == 1
+        result = conn.execute(text("SELECT revision,value_json FROM vera_app_setting WHERE setting_key='department_employee_salary_configs'")).mappings().one()
+        assert result['revision'] == 1 and result['value_json'] == {}

@@ -163,10 +163,10 @@ def test_saved_drafts_hide_excluded_without_rewriting_history_and_reject_stale_w
     assert len(visible)==1 and visible[0]['combo_sales']==123 and visible[0]['net_salary']==456
     with database.connect() as conn:
         assert payroll._setting(conn,'department_payroll_combined_draft_2026-09',[])==saved
-    opened=http.post('/v2/department-payroll/combined/history/historic/open').json()['rows']
+    opened=http.post('/v2/department-payroll/combined/history/historic/open?expected_revision=1').json()['rows']
     assert len(opened)==1 and opened[0]['combo_sales']==123
     for method,path in [('put','draft'),('post','complete'),('post','export.xlsx')]:
-        result=getattr(http,method)(f'/v2/department-payroll/combined/{path}',json={'month':'2026-09','rows':saved})
+        result=getattr(http,method)(f'/v2/department-payroll/combined/{path}',json={'month':'2026-09','rows':saved,'expected_revision':2,'expected_history_revision':1})
         assert result.status_code==400,result.text
     with database.connect() as conn:
         assert payroll._setting(conn,'department_payroll_combined_history',[])==history
@@ -174,3 +174,50 @@ def test_saved_drafts_hide_excluded_without_rewriting_history_and_reject_stale_w
     assert all(not r['employee_username'].startswith('excluded') for r in settings['salary_employee_catalog'])
     ident.allowed=False
     assert http.get('/v2/department-payroll/combined/calculate?month=2026-09').status_code==403
+
+
+def test_source_only_choices_patch_without_materializing_rates_and_use_cas(database,client):
+    http,ident=client
+    settings=http.get('/v2/department-payroll/settings').json()
+    revision=settings['employee_config_revision']
+    with database.connect() as conn:
+        original=payroll._setting(conn,dep.EMPLOYEE_CONFIG_KEY,{})
+    result=http.put('/v2/department-payroll/settings/employees',json={
+        'expected_revision':revision,'salary_sources':[{'employee_username':'a','salary_source':'attendance'}]})
+    assert result.status_code==200,result.text
+    assert next(r for r in result.json()['salary_employee_catalog'] if r['employee_username']=='a')['salary_source']=='attendance'
+    with database.connect() as conn:
+        assert payroll._setting(conn,dep.EMPLOYEE_CONFIG_KEY,{})==original
+        assert payroll._setting(conn,dep.EMPLOYEE_SOURCE_KEY,{})['a']=='attendance'
+    stale=http.put('/v2/department-payroll/settings/employees',json={
+        'expected_revision':revision,'salary_sources':[{'employee_username':'b','salary_source':'attendance'}]})
+    assert stale.status_code==409
+    revision=result.json()['employee_config_revision']
+    again=http.put('/v2/department-payroll/settings/employees',json={
+        'expected_revision':revision,'salary_sources':[{'employee_username':'b','salary_source':'attendance'}]})
+    assert again.status_code==200,again.text
+    with database.connect() as conn:
+        sources=payroll._setting(conn,dep.EMPLOYEE_SOURCE_KEY,{})
+        assert sources['a']==sources['b']=='attendance'
+    ident.role='letan'
+    assert http.put('/v2/department-payroll/settings/employees',json={
+        'expected_revision':again.json()['employee_config_revision'],'salary_sources':[]}).status_code==403
+
+
+def test_missing_and_stale_payroll_revisions_cannot_overwrite_draft_or_history(database,client):
+    http,_=client
+    calculation=http.get('/v2/department-payroll/combined/calculate?month=2026-09').json()
+    body={'month':'2026-09','rows':calculation['rows'],'expected_revision':calculation['draft_revision'],
+          'expected_history_revision':calculation['history_revision']}
+    assert http.put('/v2/department-payroll/combined/draft',json={k:v for k,v in body.items() if k!='expected_revision'}).status_code==409
+    saved=http.put('/v2/department-payroll/combined/draft',json=body)
+    assert saved.status_code==200,saved.text
+    assert http.put('/v2/department-payroll/combined/draft',json=body).status_code==409
+    body['expected_revision']=saved.json()['draft_revision']
+    complete=http.post('/v2/department-payroll/combined/complete',json=body)
+    assert complete.status_code==200,complete.text
+    assert http.post('/v2/department-payroll/combined/complete',json=body).status_code==409
+    assert http.delete('/v2/department-payroll/combined/draft?month=2026-09').status_code==409
+    assert http.delete(f"/v2/department-payroll/combined/draft?month=2026-09&expected_revision={complete.json()['draft_revision']}").status_code==200
+    with database.connect() as conn:
+        assert len(payroll._setting(conn,'department_payroll_combined_history',[]))==1

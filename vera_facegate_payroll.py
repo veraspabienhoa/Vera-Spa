@@ -79,6 +79,7 @@ def calculate_employee(records, username, config, start, end, report, today):
     elif config['default_base_salary'] <= 0:
         pending.add('unsupported_rate')
     calculated = payroll._recalculate({**hours, 'base_salary': config['default_base_salary'],
+        'payroll_time_basis': payroll._payroll_time_basis(totals, config, 'attendance'),
         'work_days': round(sum(hours.values()) / config['standard_day_hours'], 2)}, config)
     return {'employee_username': username, 'status': 'pending' if pending else 'estimated',
             'pending_reasons': [LABELS[k] for k in sorted(pending)],

@@ -51,7 +51,7 @@ def test_salary_configuration_is_split_into_two_employee_tables():
     backend = (ROOT / "vera_web_v2_department_payroll.py").read_text(encoding="utf-8")
     assert "BẢNG 1 · LƯƠNG GIỜ" in panel
     assert "BẢNG 2 · LƯƠNG THÁNG" in panel
-    assert "Mỗi nhân viên là một dòng" in panel
+    assert "salary_sources" in panel and "salarySource" in panel
     assert '"operations": [row for row in rows' in backend
     assert '"support": "Support"' in backend
     assert 'Object.entries(settings)' in panel
