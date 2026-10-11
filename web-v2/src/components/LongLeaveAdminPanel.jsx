@@ -4,15 +4,16 @@ import StableFeedback from './StableFeedback'
 import UiCustomText from './UiCustomText'
 import { formatVeraDate } from '../lib/veraDate'
 import { AlertTriangle, CalendarRange, CheckCircle2, Clock3, RefreshCw, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import VeraDateInput from './VeraDateInput'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 
-async function request(path, options = {}) {
+async function request(path, { canSend, ...options } = {}) {
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
   const session = await getCurrentSession()
+  if (options.signal?.aborted || (canSend && !canSend())) throw new DOMException('Đã hủy yêu cầu.', 'AbortError')
   const headers = new Headers(options.headers || {})
   headers.set('Content-Type', 'application/json')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
@@ -32,7 +33,14 @@ const isoToday = () => new Date().toISOString().slice(0, 10)
 const addDays = (value, days) => { const date = new Date(`${value}T12:00:00`); date.setDate(date.getDate() + days); return date.toISOString().slice(0, 10) }
 
 export default function LongLeaveAdminPanel({ user, onChanged }) {
-  usePageRefresh(() => Promise.all([load(), loadOverlap()]), () => Boolean(loading || busyId))
+  // A different account must never inherit another Admin's pending records or
+  // async results, even when both accounts have the same role.
+  const owner = JSON.stringify([user?.id, user?.employee_username, user?.role])
+  return <LongLeaveAdminContent key={owner} user={user} onChanged={onChanged} />
+}
+
+function LongLeaveAdminContent({ user, onChanged }) {
+  usePageRefresh(() => Promise.all([load(), loadOverlap()]), () => Boolean(loading || busyId || checking))
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
@@ -42,50 +50,88 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
   const [checks, setChecks] = useState({})
   const [checking, setChecking] = useState('')
   const [overlap, setOverlap] = useState(null)
+  const lifecycle = useRef({ active: false, pending: null, overview: null, check: null, decision: false })
+  useEffect(() => {
+    const state = lifecycle.current
+    state.active = true
+    return () => {
+      state.active = false
+      for (const key of ['pending', 'overview', 'check']) {
+        state[key]?.abort()
+        state[key] = null
+      }
+    }
+  }, [])
   const [overlapFilters, setOverlapFilters] = useState({ start: isoToday(), end: addDays(isoToday(), 14), department: '' })
 
   const load = useCallback(async () => {
-    if (!isAdmin) return
+    const state = lifecycle.current
+    if (!isAdmin || !state.active) return
+    state.pending?.abort()
+    state.check?.abort()
+    state.check = null
+    setChecking('')
+    setChecks({})
+    const controller = new AbortController()
+    state.pending = controller
+    const current = () => state.active && state.pending === controller
     setLoading(true)
     try {
-      const result = await request('/v2/long-leave/admin/pending')
-      setRows(result.requests || [])
+      const result = await request('/v2/long-leave/admin/pending', { signal: controller.signal })
+      if (current()) setRows(result.requests || [])
     } catch (error) {
-      setNotice({ status: 'error', message: error.message || 'Không tải được đơn chờ duyệt.' })
+      if (current() && error.name !== 'AbortError') setNotice({ status: 'error', message: error.message || 'Không tải được đơn chờ duyệt.' })
     } finally {
-      setLoading(false)
+      if (current()) { state.pending = null; setLoading(false) }
     }
   }, [isAdmin])
 
   useEffect(() => { void load() }, [load])
 
   const loadOverlap = useCallback(async () => {
-    if (!isAdmin) return
+    const state = lifecycle.current
+    if (!isAdmin || !state.active) return
+    state.overview?.abort()
+    const controller = new AbortController()
+    state.overview = controller
+    const current = () => state.active && state.overview === controller
     try {
       const params = new URLSearchParams({ start: overlapFilters.start, end: overlapFilters.end })
       if (overlapFilters.department) params.set('department_id', overlapFilters.department)
-      setOverlap(await request(`/v2/hr/leaves/overlap?${params}`))
+      const result = await request(`/v2/hr/leaves/overlap?${params}`, { signal: controller.signal })
+      if (current()) setOverlap(result)
     } catch (error) {
-      setNotice({ status: 'error', message: error.message || 'Không tải được tổng quan trùng lịch nghỉ.' })
+      if (current() && error.name !== 'AbortError') setNotice({ status: 'error', message: error.message || 'Không tải được tổng quan trùng lịch nghỉ.' })
+    } finally {
+      if (current()) state.overview = null
     }
   }, [isAdmin, overlapFilters])
 
   useEffect(() => { void loadOverlap() }, [loadOverlap])
 
   const checkRequest = async (item) => {
-    if (checking) return
+    const state = lifecycle.current
+    if (!isAdmin || !state.active || state.check || state.pending || state.decision) return
+    const controller = new AbortController()
+    state.check = controller
+    const current = () => state.active && state.check === controller
     setChecking(item.id)
-    setChecks(current => ({...current,[item.id]:null}))
+    setChecks(current => ({ ...current, [item.id]: null }))
     try {
-      const result = await request(`/v2/long-leave/admin/requests/${encodeURIComponent(item.id)}/overlap`)
-      setChecks(current => ({...current,[item.id]:result}))
-    } catch (error) { setChecks(current => ({...current,[item.id]:{error:error.message}})) }
-    finally { setChecking('') }
+      const result = await request(`/v2/long-leave/admin/requests/${encodeURIComponent(item.id)}/overlap`, { signal: controller.signal })
+      if (current()) setChecks(checks => ({ ...checks, [item.id]: result }))
+    } catch (error) {
+      if (current() && error.name !== 'AbortError') setChecks(checks => ({ ...checks, [item.id]: { error: error.message } }))
+    } finally {
+      if (current()) { state.check = null; setChecking('') }
+    }
   }
 
   if (!isAdmin) return null
 
   const decide = async (item, decision) => {
+    const state = lifecycle.current
+    if (!state.active || state.decision || state.check) return
     const approving = decision === 'approve'
     const reason = String(rejectReasons[item.id] || '').trim()
     if (!approving && !reason) {
@@ -93,14 +139,18 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
       return
     }
     const actionText = approving ? 'duyệt' : 'không duyệt'
-    if (!(await confirmDialog(`${actionText === 'duyệt' ? 'Duyệt' : 'Không duyệt'} ${item.request_type} của ${item.employee_name}?`))) return
+    state.decision = true
+    const confirmed = await confirmDialog(`${actionText === 'duyệt' ? 'Duyệt' : 'Không duyệt'} ${item.request_type} của ${item.employee_name}?`)
+    if (!confirmed || !state.active) { state.decision = false; return }
     setBusyId(item.id)
     setNotice(null)
     try {
       const result = await request(`/v2/long-leave/admin/requests/${encodeURIComponent(item.id)}/decision`, {
         method: 'POST',
+        canSend: () => state.active,
         body: JSON.stringify({ decision, rejection_reason: approving ? '' : reason }),
       })
+      if (!state.active) return
       setNotice({
         status: 'success',
         message: `${result.message}${result.annual_leave_rows_created ? ` Đã tạo ${result.annual_leave_rows_created} ngày Phép năm trong lịch nghỉ.` : ''}`,
@@ -109,11 +159,12 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
       setRejectReasons((current) => ({ ...current, [item.id]: '' }))
       await load()
       await loadOverlap()
-      onChanged?.()
+      if (state.active) onChanged?.()
     } catch (error) {
-      setNotice({ status: 'error', message: error.message || 'Không cập nhật được trạng thái đơn.' })
+      if (state.active) setNotice({ status: 'error', message: error.message || 'Không cập nhật được trạng thái đơn.' })
     } finally {
-      setBusyId('')
+      state.decision = false
+      if (state.active) setBusyId('')
     }
   }
 
@@ -142,7 +193,7 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
         {rows.length > 0 && <div className="long-leave-pending-count" role="status" aria-live="polite"><Clock3 size={17} aria-hidden="true" />{rows.length} đơn chờ Admin duyệt</div>}
         <p>Phép năm / Nghỉ làm đẹp / Nghỉ việc · hiển thị đầy đủ thông tin trước khi quyết định.</p>
       </div>
-      <button data-ui-key="u-bbacc6bc597e" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-bbacc6bc597e"> Làm mới</UiCustomText></button>
+      <button data-ui-key="u-bbacc6bc597e" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={loading || Boolean(checking) || Boolean(busyId)}><RefreshCw size={14} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-bbacc6bc597e"> Làm mới</UiCustomText></button>
     </div>
     <StableFeedback>{notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}</StableFeedback>
     <section data-ui-key="u-fc2038c8cf81" className="leave-overlap-panel">
@@ -160,7 +211,7 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
         return <article className="long-leave-pending-card" key={item.id}>
           <div className="long-leave-pending-head">
             <div><strong>{item.employee_name}</strong><small>{item.id} · gửi {formatVeraDate(item.submitted_date, '—')} {item.submitted_time || ''}</small></div>
-            {annual && <button type="button" className="secondary-button" onClick={() => checkRequest(item)} disabled={Boolean(checking) || Boolean(busyId)}>{checking === item.id ? 'Đang kiểm tra…' : 'Kiểm tra'}</button>}
+            {annual && <button type="button" className="secondary-button" onClick={() => checkRequest(item)} disabled={Boolean(checking) || Boolean(busyId) || loading}>{checking === item.id ? 'Đang kiểm tra…' : 'Kiểm tra'}</button>}
             <span className={`long-leave-request-type ${annual ? 'annual' : ''} ${resignation ? 'resignation' : ''}`}>{item.request_type}</span>
           </div>
           <div className="long-leave-pending-meta">
@@ -187,8 +238,8 @@ export default function LongLeaveAdminPanel({ user, onChanged }) {
             <label>Lý do không duyệt
               <input value={rejectReasons[item.id] || ''} onChange={(event) => setRejectReasons((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Chỉ cần nhập khi không duyệt" />
             </label>
-            <button data-ui-key="u-ce40dc821d5a" data-ui-label-default="Duyệt đơn" type="button" className="primary-button" onClick={() => decide(item, 'approve')} disabled={busyId === item.id}><CheckCircle2 size={15} /><UiCustomText uiKey="u-ce40dc821d5a"> Duyệt đơn</UiCustomText></button>
-            <button data-ui-key="u-41b7049b7e71" data-ui-label-default="Không duyệt" type="button" className="danger-button" onClick={() => decide(item, 'reject')} disabled={busyId === item.id}><XCircle size={15} /><UiCustomText uiKey="u-41b7049b7e71"> Không duyệt</UiCustomText></button>
+            <button data-ui-key="u-ce40dc821d5a" data-ui-label-default="Duyệt đơn" type="button" className="primary-button" onClick={() => decide(item, 'approve')} disabled={Boolean(busyId) || Boolean(checking)}><CheckCircle2 size={15} /><UiCustomText uiKey="u-ce40dc821d5a"> Duyệt đơn</UiCustomText></button>
+            <button data-ui-key="u-41b7049b7e71" data-ui-label-default="Không duyệt" type="button" className="danger-button" onClick={() => decide(item, 'reject')} disabled={Boolean(busyId) || Boolean(checking)}><XCircle size={15} /><UiCustomText uiKey="u-41b7049b7e71"> Không duyệt</UiCustomText></button>
           </div>
           {busyId === item.id && <div className="setup-note"><Clock3 size={14} /> Đang cập nhật và đồng bộ hệ thống cũ…</div>}
         </article>

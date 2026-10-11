@@ -452,7 +452,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
           {navigationToggle}
           <div><div className="topbar-kicker">VERA SPA</div><div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div></div>
           <UiToolbar data-ui-key="u-d08e23e02899" className="topbar-actions">
-            {!user?.must_change_password && <NotificationInbox key={user.id}/>}
+            {!user?.must_change_password && <NotificationInbox key={`system-inbox:${user?.id || user?.employee_username}`} user={user} onPageChange={page => choose(page, true)}/>}
             {currentPage !== 'tour' && currentPage !== 'live-tour' && <button data-ui-key="u-f10aa9b76c0d" data-ui-label-default="Mở tab mới" type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /><UiCustomText uiKey="u-f10aa9b76c0d"> Mở tab mới</UiCustomText></button>}
             <button data-ui-key="u-ae117d0698c3" data-ui-label-default="Làm mới" type="button" className="topbar-refresh-button" onClick={refreshPage} aria-label="Làm mới trang hiện tại" title="Làm mới trang hiện tại"><RefreshCw size={15} /><UiCustomText uiKey="u-ae117d0698c3"> Làm mới</UiCustomText></button>
           </UiToolbar>
@@ -495,7 +495,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       </main>
       <PageErrorBoundary page={currentPage} onRetry={() => LayoutDesigner.reset()}><Suspense fallback={null}><LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/></Suspense></PageErrorBoundary>
       <BackToTop/>
-      {showPageNotifications && !user?.must_change_password && <PopupNotifications key={`system-notifications:${user?.id || user?.employee_username}`} user={user}/>}
+      {showPageNotifications && !user?.must_change_password && <PopupNotifications key={`system-notifications:${user?.id || user?.employee_username}`} user={user} onPageChange={page => choose(page, true)}/>}
       {currentPage === 'live-tour' && <OnlineBookingPopup key={`online-booking:${user?.id || user?.employee_username}`} user={user} onOpen={() => choose('online-bookings', true)}/>}
       <BookingNotificationPopup key={user?.id || user?.username || user?.employee_username || ''} user={user} onOpen={() => choose('live-tour', true)}/>
       <MissingCheckinPopup key={`${user?.username || user?.employee_username || user?.id || ''}:${role}`} user={user}/>
