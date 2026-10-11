@@ -278,6 +278,9 @@ def install_work_schedule_permissions() -> None:
     group = permissions.FEATURE_GROUPS.setdefault("Lịch làm việc", {})
     group.update(WORK_SCHEDULE_PERMISSION_GROUP)
     permissions.FEATURES.update(WORK_SCHEDULE_PERMISSION_GROUP)
+    # New HR departments never inherit the four legacy department grants.
+    group["work_schedule_hc"] = "Lịch làm việc · Các bộ phận hành chánh khác"
+    permissions.FEATURES["work_schedule_hc"] = group["work_schedule_hc"]
 
     # Defaults: Quản lý can arrange all four groups; other departments can see
     # their own group. Admin already receives set(FEATURES) dynamically through

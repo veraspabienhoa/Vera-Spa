@@ -9,6 +9,8 @@ the same overtime choices: TC Ca 1, TC Ca 2, or an explicit time range.
 """
 from __future__ import annotations
 from vera_employee_names import canonical_username, load_identity_index, project_employee_rows
+import vera_web_v2_hr as hr
+from vera_hc_attendance import HC_CHECKOUT_SQL
 
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -69,6 +71,19 @@ SCHEDULE_DEPARTMENT_LABELS = {
     "quanly": "Quản lý", "locker": "Locker", "letan": "Lễ tân", "tapvu": "Tạp vụ",
 }
 
+def _daily_time_department(department):
+    return department not in DEFAULT_SHIFT_DEFINITIONS
+
+
+def _department_label(department):
+    return SCHEDULE_DEPARTMENT_LABELS.get(department, hr.DEFAULT_DEPARTMENTS.get(department, {}).get('name', department))
+
+
+def _schedule_departments(conn):
+    return {**{code: {'name': label} for code, label in SCHEDULE_DEPARTMENT_LABELS.items()},
+            **hr.admin_departments(conn)}
+
+
 SCHEDULE_TABLE_HEADERS = {
     'statistics': ('Nhân viên', 'Ngày làm việc', 'Ngày nghỉ', 'Ngày Ca 1', 'Ngày Ca 2', 'Giờ tăng ca', 'Vi phạm', 'Phạt vi phạm'),
     'violations': ('Nhân viên', 'Ngày vi phạm', 'Nội dung vi phạm', 'Tiền phạt', 'Ghi chú', 'Người nhập', 'Ngày ghi nhận'),
@@ -91,7 +106,7 @@ def _schedule_table_workbook(body: ScheduleTableExport):
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = 'Thống kê tháng' if body.kind == 'statistics' else 'Vi phạm'
-    label = SCHEDULE_DEPARTMENT_LABELS[body.department]
+    label = _department_label(body.department)
     sheet.append([f'{sheet.title.upper()} · {label}'])
     sheet.append([f'{body.start:%d-%m-%Y} – {body.end:%d-%m-%Y}'])
     sheet.append(headers)
@@ -124,7 +139,7 @@ class ScheduleRow(BaseModel):
     work_date: date
     employee_username: str = Field(min_length=1, max_length=200)
     employee_name: str = Field(default="", max_length=300)
-    department: Literal["quanly", "locker", "letan", "tapvu"]
+    department: str = Field(min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
     shift_code: str = Field(min_length=1, max_length=100)
     overtime_shift: str = Field(default="", max_length=100)
     start_time: str = Field(default="", max_length=5)
@@ -182,7 +197,7 @@ class ComboSaleSave(BaseModel):
 
 class ScheduleViolationCreate(BaseModel):
     request_id: uuid.UUID
-    department: Literal["quanly", "letan", "locker", "tapvu"]
+    department: str = Field(min_length=1, max_length=50, pattern=r'^[a-z][a-z0-9_]*$')
     employee_username: str = Field(min_length=1, max_length=200)
     violation_date: date
     reason: str = Field(min_length=1, max_length=300)
@@ -191,8 +206,12 @@ class ScheduleViolationCreate(BaseModel):
 
 
 class ScheduleViolationRevision(BaseModel):
-    department: Literal["quanly", "letan", "locker", "tapvu"]
+    department: str = Field(min_length=1, max_length=50, pattern=r'^[a-z][a-z0-9_]*$')
     expected_updated_at: datetime
+
+
+class ScheduleLateApproval(ScheduleViolationRevision):
+    approved: bool = Field(strict=True)
 
 
 class ScheduleViolationUpdate(ScheduleViolationRevision):
@@ -221,6 +240,11 @@ def _mutate_schedule_violation(conn, uid, body, ident, *, deleting=False):
         raise HTTPException(400, "Bản ghi không phải vi phạm có thể quản lý.")
     if row.get('updated_at') != body.expected_updated_at:
         raise HTTPException(409, "Vi phạm vừa được thay đổi. Hãy làm mới trước khi sửa/xóa.")
+    import vera_hc_late_approval as late_approval
+    if row['source_sheet_id'] == late_approval.SOURCE:
+        late_approval.assert_not_finalized(conn, row['leave_date'], row['employee_name'])
+        if not deleting and late_approval.payload_dict(payload.get(late_approval.KEY)) and body.amount != row['penalty']:
+            raise HTTPException(400, 'Dùng ô Đi trễ có phép để đổi mức phạt HC đã xác nhận.')
     manual = row['source_sheet_id'] == 'postgres:work_schedule_violation'
     now = datetime.now(ZoneInfo('Asia/Ho_Chi_Minh'))
     before = {key: str(row.get(key) or '') for key in ('leave_date','leave_reason','detail','penalty','updated_by','updated_at')}
@@ -249,6 +273,28 @@ def _mutate_schedule_violation(conn, uid, body, ident, *, deleting=False):
     return {'ok':True,'message':'Đã xóa vi phạm.' if deleting else 'Đã cập nhật vi phạm.'}
 
 
+
+def _approve_schedule_late(conn, uid, body, ident):
+    import vera_hc_late_approval as approval
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))"))
+    row = conn.execute(text('SELECT * FROM leave_records WHERE record_uid=:uid FOR UPDATE'), {'uid': uid}).mappings().first()
+    if not row:
+        raise HTTPException(404, 'Không tìm thấy vi phạm.')
+    people = _employee_catalog(conn, body.department)
+    if not any(str(p['username']).strip().casefold() == str(row['employee_name']).strip().casefold() for p in people):
+        raise HTTPException(403, 'Vi phạm không thuộc bộ phận đã chọn.')
+    if row['updated_at'] != body.expected_updated_at:
+        raise HTTPException(409, 'Vi phạm vừa được thay đổi. Hãy làm mới trước khi xác nhận đi trễ.')
+    now = datetime.now(ZoneInfo('Asia/Ho_Chi_Minh'))
+    payload, amount = approval.apply(conn, row, body.approved, _actor(ident), now)
+    conn.execute(text("""UPDATE leave_records SET penalty=:amount,payload=CAST(:payload AS jsonb),
+        updated_by=:actor,update_date=:udate,update_time=:utime,updated_at=NOW()
+        WHERE record_uid=:uid"""), {'uid': uid, 'amount': amount, 'payload': json.dumps(payload, ensure_ascii=False),
+        'actor': _actor(ident), 'udate': now.strftime('%d/%m/%Y'), 'utime': now.strftime('%H:%M:%S')})
+    return {'ok': True, 'amount': amount, 'approved': body.approved,
+            'message': 'Đã cập nhật Đi trễ có phép. Tính lại bảng lương nháp để lấy mức phạt mới.'}
+
+
 def _schedule_violations(conn, department, start, end, *, employee_username=None):
     employees = _employee_catalog(conn, department)
     if employee_username is not None:
@@ -264,7 +310,7 @@ def _employee_violations(conn, employees, start, end):
     rows = conn.execute(text("""
         SELECT record_uid AS id, employee_name AS employee_username,
                leave_date AS violation_date, leave_reason AS reason, detail AS note,
-               COALESCE(penalty,0) AS amount, updated_by, created_at, updated_at,
+               COALESCE(penalty,0) AS amount, updated_by, created_at, updated_at, source_sheet_id, payload,
                (source_sheet_id='postgres:work_schedule_violation') AS is_manual
         FROM leave_records WHERE leave_date BETWEEN :start AND :end
           AND (COALESCE(penalty,0)>0 OR leave_type='Vi phạm')
@@ -272,7 +318,9 @@ def _employee_violations(conn, employees, start, end):
           AND COALESCE(payload->>'__schedule_violation_deleted','false') <> 'true'
         ORDER BY leave_date DESC, created_at DESC
     """), {"start": start, "end": end, "employees": list(names)}).mappings().all()
-    return [dict(row, employee_name=names[str(row["employee_username"]).strip().casefold()]["full_name"])
+    from vera_hc_late_approval import metadata as late_metadata
+    return [dict({key: value for key, value in row.items() if key not in {'payload', 'source_sheet_id'}},
+                 employee_name=names[str(row["employee_username"]).strip().casefold()]["full_name"], **late_metadata(row))
             for row in rows if str(row["employee_username"]).strip().casefold() in names]
 
 
@@ -617,7 +665,7 @@ def _schedule_excel_bytes(
                 cursor,
                 username,
                 str(employee.get("full_name") or username),
-                SCHEDULE_DEPARTMENT_LABELS[department],
+                _department_label(department),
                 item.get("shift_code") or "",
                 item.get("start_time") or "",
                 item.get("end_time") or "",
@@ -639,7 +687,7 @@ def _schedule_excel_bytes(
     catalog = workbook.create_sheet("DanhMuc")
     catalog.append(["Tên đăng nhập", "Ca làm", "Tăng ca", "Bộ phận"])
     usernames = [str(item.get("username") or "").strip() for item in employees]
-    shifts = ["Giờ làm", "Nghỉ"] if department == "quanly" else [
+    shifts = ["Giờ làm", "Nghỉ"] if _daily_time_department(department) else [
         *(shift_definitions.get(department) or {}).keys(), "Nghỉ",
     ]
     overtime = ["TC Ca 1", "TC Ca 2", "Từ giờ tới giờ"]
@@ -649,7 +697,7 @@ def _schedule_excel_bytes(
             usernames[index] if index < len(usernames) else "",
             shifts[index] if index < len(shifts) else "",
             overtime[index] if index < len(overtime) else "",
-            SCHEDULE_DEPARTMENT_LABELS[department] if index == 0 else "",
+            _department_label(department) if index == 0 else "",
         ])
     catalog.sheet_state = "hidden"
 
@@ -703,7 +751,7 @@ def _schedule_import_rows(payload: bytes, department: str) -> list[dict[str, Any
             raise HTTPException(400, "File Excel thiếu cột Ngày, Tên đăng nhập hoặc Ca làm.")
         result: list[dict[str, Any]] = []
         seen: set[tuple[date, str]] = set()
-        expected_label = _normalize_excel_header(SCHEDULE_DEPARTMENT_LABELS[department])
+        expected_label = _normalize_excel_header(_department_label(department))
         for row_number, values in enumerate(worksheet.iter_rows(min_row=2, values_only=True), start=2):
             def value(field: str) -> Any:
                 index = indexes.get(field, -1)
@@ -748,25 +796,29 @@ def _schedule_import_rows(payload: bytes, department: str) -> list[dict[str, Any
 
 
 def _feature_for_department(department: str) -> str:
-    try:
-        return WORK_SCHEDULE_FEATURES[department]
-    except KeyError as exc:
-        raise HTTPException(400, "Bộ phận chỉ hỗ trợ Quản lý, Lễ tân, Locker hoặc Tạp vụ.") from exc
+    if not re.fullmatch(r'[a-z][a-z0-9_]{0,49}', department or ''):
+        raise HTTPException(400, "Bộ phận không hợp lệ.")
+    return WORK_SCHEDULE_FEATURES.get(department, 'work_schedule_hc')
 
 
 def _allowed_department(conn, ident, department: str, feature_allowed) -> bool:
-    return bool(feature_allowed(conn, ident, _feature_for_department(department)))
+    feature = _feature_for_department(department)
+    # Existing grants keep their original department scope. Additional HC groups
+    # require a new default-off grant; being a manager alone does not widen it.
+    if department not in WORK_SCHEDULE_FEATURES and department not in hr.admin_departments(conn):
+        return False
+    return bool(feature_allowed(conn, ident, feature))
 
 
 def _employee_catalog(conn, department: str) -> list[dict[str, Any]]:
-    """Schedule viewers do not need the broad staff_list permission."""
-    rows = conn.execute(text("""
+    """Use HR assignment, independent of authorization role, on caller connection."""
+    rows = conn.execute(text(f"""
         SELECT username,
                COALESCE(NULLIF(full_name,''), username) AS full_name,
                lower(COALESCE(role,'')) AS role,
                COALESCE(payload->>'Trạng thái làm việc','') AS employment_status
         FROM employees
-        WHERE lower(COALESCE(role,''))=:department
+        WHERE {hr.DEPARTMENT_SQL}=:department AND {HC_CHECKOUT_SQL}
           AND COALESCE(payload->>'__deleted','false') <> 'true'
         ORDER BY lower(COALESCE(NULLIF(full_name,''), username)), lower(username)
     """), {"department": department}).mappings().all()
@@ -840,9 +892,9 @@ def _validate_row(row: ScheduleRow, shift_definitions: dict[str, Any]) -> tuple[
     overtime_start_time = str(row.overtime_start_time or "").strip()
     overtime_end_time = str(row.overtime_end_time or "").strip()
 
-    if row.department == "quanly":
+    if _daily_time_department(row.department):
         if shift_code not in {"Giờ làm", "Nghỉ"}:
-            raise HTTPException(400, "Lịch Quản lý chỉ dùng Giờ làm hoặc Nghỉ.")
+            raise HTTPException(400, "Lịch theo giờ chỉ dùng Giờ làm hoặc Nghỉ.")
         if shift_code == "Nghỉ":
             if overtime_shift or overtime_start_time or overtime_end_time:
                 raise HTTPException(400, "Ngày nghỉ không thể đồng thời có tăng ca.")
@@ -850,8 +902,10 @@ def _validate_row(row: ScheduleRow, shift_definitions: dict[str, Any]) -> tuple[
         if not (_TIME_RE.fullmatch(start_time) and _TIME_RE.fullmatch(end_time)):
             raise HTTPException(
                 400,
-                f"Quản lý {row.employee_name or row.employee_username} ngày {row.work_date:%d/%m/%Y} cần đủ giờ bắt đầu và giờ kết thúc dạng HH:MM.",
+                f"Nhân viên {row.employee_name or row.employee_username} ngày {row.work_date:%d-%m-%Y} cần đủ giờ bắt đầu và giờ kết thúc dạng HH:MM.",
             )
+        if start_time == end_time:
+            raise HTTPException(400, "Giờ bắt đầu và kết thúc không được trùng nhau.")
     elif shift_code == "Nghỉ":
         if overtime_shift or overtime_start_time or overtime_end_time:
             raise HTTPException(400, "Ngày nghỉ không thể đồng thời có tăng ca.")
@@ -864,9 +918,11 @@ def _validate_row(row: ScheduleRow, shift_definitions: dict[str, Any]) -> tuple[
     has_overtime_times = bool(overtime_start_time or overtime_end_time)
     custom_overtime = overtime_shift == "Từ giờ tới giờ" or (not overtime_shift and has_overtime_times)
     if overtime_shift in {"TC Ca 1", "TC Ca 2"}:
+        if row.department != "quanly" and _daily_time_department(row.department):
+            raise HTTPException(400, "Bộ phận này cần nhập khoảng giờ tăng ca cụ thể.")
         if overtime_start_time or overtime_end_time:
             raise HTTPException(400, "TC Ca 1/TC Ca 2 không nhập thêm khoảng giờ tùy chỉnh.")
-        return start_time if row.department == "quanly" else "", end_time if row.department == "quanly" else "", overtime_shift, "", ""
+        return start_time if _daily_time_department(row.department) else "", end_time if _daily_time_department(row.department) else "", overtime_shift, "", ""
     if custom_overtime and not (_TIME_RE.fullmatch(overtime_start_time) and _TIME_RE.fullmatch(overtime_end_time)):
         raise HTTPException(
             400,
@@ -875,8 +931,8 @@ def _validate_row(row: ScheduleRow, shift_definitions: dict[str, Any]) -> tuple[
     if custom_overtime and overtime_start_time == overtime_end_time:
         raise HTTPException(400, "Giờ bắt đầu và kết thúc tăng ca không được trùng nhau.")
     return (
-        start_time if row.department == "quanly" else "",
-        end_time if row.department == "quanly" else "",
+        start_time if _daily_time_department(row.department) else "",
+        end_time if _daily_time_department(row.department) else "",
         "Từ giờ tới giờ" if custom_overtime else "",
         overtime_start_time if custom_overtime else "",
         overtime_end_time if custom_overtime else "",
@@ -925,6 +981,18 @@ def install_work_schedule_routes(
     if getattr(app.state, "work_schedule_installed", False):
         return
 
+    @app.get("/v2/work-schedule/departments")
+    def schedule_departments(ident=Depends(current_identity)):
+        with engine_instance().connect() as conn:
+            catalog = _schedule_departments(conn)
+            items = [{'code': code, 'label': item['name'],
+                      'mode': 'time' if _daily_time_department(code) else 'shift'}
+                     for code, item in catalog.items()
+                     if _allowed_department(conn, ident, code, feature_allowed)]
+        if not items:
+            raise HTTPException(403, "Bạn không có quyền xem Lịch làm việc.")
+        return {'ok': True, 'departments': items}
+
     @app.get("/v2/work-schedule")
     def get_work_schedule(
         start: date = Query(...),
@@ -937,13 +1005,11 @@ def install_work_schedule_routes(
         if (end - start).days > 62:
             raise HTTPException(400, "Chỉ xem tối đa 63 ngày mỗi lần.")
         dep = department.strip().lower()
-        if dep and dep not in WORK_SCHEDULE_FEATURES:
-            raise HTTPException(400, "Bộ phận chỉ hỗ trợ Quản lý, Locker, Lễ tân hoặc Tạp vụ.")
 
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
             allowed_departments = [
-                item for item in ("quanly", "letan", "tapvu", "locker")
+                item for item in _schedule_departments(conn)
                 if _allowed_department(conn, ident, item, feature_allowed)
             ]
             if dep and dep not in allowed_departments:
@@ -994,19 +1060,19 @@ def install_work_schedule_routes(
         if end < start or (end-start).days > 366:
             raise HTTPException(400, "Khoảng ngày không hợp lệ, tối đa 367 ngày.")
         with engine_instance().begin() as conn:
-            if department not in WORK_SCHEDULE_FEATURES or not _allowed_department(conn, ident, department, feature_allowed):
+            if not _allowed_department(conn, ident, department, feature_allowed):
                 raise HTTPException(403, "Bạn không có quyền xem vi phạm bộ phận này.")
             scope = None if _role(ident) in {"admin", "quanly", "giamdoc"} else str(getattr(ident, "employee_username", "") or "").strip()
             if scope == "":
                 raise HTTPException(403, "Tài khoản chưa liên kết với nhân viên.")
-            return {"ok": True, "rows": _schedule_violations(conn, department, start, end, employee_username=scope)}
+            return {"ok": True, "hc_late_approval_version": 1, "rows": _schedule_violations(conn, department, start, end, employee_username=scope)}
 
     @app.post('/v2/work-schedule/table/export.xlsx')
     def export_schedule_table(body: ScheduleTableExport, ident=Depends(current_identity)):
         if body.end < body.start or (body.end - body.start).days > 366:
             raise HTTPException(400, 'Khoảng ngày xuất Excel không hợp lệ.')
         with engine_instance().begin() as conn:
-            if body.department not in WORK_SCHEDULE_FEATURES or not _allowed_department(conn, ident, body.department, feature_allowed):
+            if not _allowed_department(conn, ident, body.department, feature_allowed):
                 raise HTTPException(403, 'Bạn không có quyền xuất bảng của bộ phận này.')
         output = _schedule_table_workbook(body)
         filename = f'VERA_{body.kind}_{body.department}_{body.start}_{body.end}.xlsx'
@@ -1028,7 +1094,7 @@ def install_work_schedule_routes(
                 FROM employees WHERE lower(btrim(username))=lower(btrim(:username))
                   AND COALESCE(payload->>'__deleted','false') <> 'true'
             """), {"username": username}).mappings().all()
-            return {"ok": True, "rows": _employee_violations(conn, employees, start, end)}
+            return {"ok": True, "hc_late_approval_version": 1, "rows": _employee_violations(conn, employees, start, end)}
 
     @app.post("/v2/work-schedule/violations")
     def create_schedule_violation(body: ScheduleViolationCreate, ident=Depends(current_identity)):
@@ -1089,6 +1155,15 @@ def install_work_schedule_routes(
     def delete_schedule_violation(violation_id: str, body: ScheduleViolationRevision, ident=Depends(current_identity)):
         return manage_violation(violation_id, body, ident, deleting=True)
 
+    @app.put('/v2/work-schedule/violations/{violation_id}/late-approval')
+    def approve_schedule_late(violation_id: str, body: ScheduleLateApproval, ident=Depends(current_identity)):
+        if _role(ident) != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được xác nhận đi trễ có phép.')
+        with engine_instance().begin() as conn:
+            if not _allowed_department(conn, ident, body.department, feature_allowed):
+                raise HTTPException(403, 'Bạn không có quyền quản lý vi phạm bộ phận này.')
+            return _approve_schedule_late(conn, violation_id, body, ident)
+
     @app.get("/v2/work-schedule/template.xlsx")
     def export_work_schedule_template(
         start: date = Query(...),
@@ -1097,8 +1172,6 @@ def install_work_schedule_routes(
         ident=Depends(current_identity),
     ):
         dep = department.strip().lower()
-        if dep not in WORK_SCHEDULE_FEATURES:
-            raise HTTPException(400, "Bộ phận không hợp lệ.")
         if end < start or (end - start).days > 62:
             raise HTTPException(400, "Khoảng xuất Excel phải từ 1 đến 63 ngày.")
         with engine_instance().begin() as conn:
@@ -1138,8 +1211,6 @@ def install_work_schedule_routes(
     ):
         dep = department.strip().lower()
         _require_schedule_editor(ident, dep)
-        if dep not in WORK_SCHEDULE_FEATURES:
-            raise HTTPException(400, "Bộ phận không hợp lệ.")
         if end < start or (end - start).days > 62:
             raise HTTPException(400, "Khoảng Import Excel phải từ 1 đến 63 ngày.")
         payload = await request.body()
@@ -1161,7 +1232,7 @@ def install_work_schedule_routes(
                     username = str(item.get("employee_username") or "").strip()
                     employee = employee_map.get(username.casefold())
                     if not employee:
-                        raise HTTPException(400, f"Nhân viên '{username}' không thuộc bộ phận {SCHEDULE_DEPARTMENT_LABELS[dep]}.")
+                        raise HTTPException(400, f"Nhân viên '{username}' không thuộc bộ phận {_department_label(dep)}.")
                     if work_date < start or work_date > end:
                         raise HTTPException(400, f"Ngày {work_date:%d/%m/%Y} nằm ngoài khoảng lịch đang xem.")
                     item["employee_username"] = str(employee.get("username") or username)
@@ -1540,7 +1611,11 @@ def install_work_schedule_routes(
         with engine_instance().begin() as conn:
             _ensure_schema(conn)
             shift_definitions = _load_shift_definitions(conn)
-            reception_employees = {str(item["username"]).strip() for item in _employee_catalog(conn, "letan")} if _role(ident) == "letan" else None
+            # Resolve HR ownership under the same registry lock used by staff
+            # reassignment. A caller cannot write a technician or another HC
+            # group's employee into a department it happens to be allowed to see.
+            conn.execute(text("SELECT pg_advisory_xact_lock_shared(hashtext('vera:hr:registry'))"))
+            employee_catalogs = {}
             # Consistent lock order keeps overlapping batches from deadlocking.
             for action, row in sorted(changes, key=lambda item: (item[1].work_date, item[1].employee_username.strip())):
                 if action == 'delete':
@@ -1548,14 +1623,18 @@ def install_work_schedule_routes(
                     continue
                 if not _allowed_department(conn, ident, row.department, feature_allowed):
                     raise HTTPException(403, f"Bạn không có quyền sửa lịch {row.department}.")
-                if reception_employees is not None and row.employee_username.strip() not in reception_employees:
-                    raise HTTPException(403, "Chỉ được sắp xếp lịch cho nhân viên thuộc bộ phận Lễ tân.")
+                if row.department not in employee_catalogs:
+                    employee_catalogs[row.department] = {str(item['username']).strip(): item
+                        for item in _employee_catalog(conn, row.department)}
+                employee = employee_catalogs[row.department].get(row.employee_username.strip())
+                if employee is None:
+                    raise HTTPException(403, "Chỉ được sắp xếp lịch cho nhân viên thuộc bộ phận hành chánh đã chọn.")
                 _check_schedule_revision(conn, row, ident, feature_allowed)
                 start_time, end_time, overtime_shift, overtime_start_time, overtime_end_time = _validate_row(row, shift_definitions)
                 params = {
                     "work_date": row.work_date,
                     "employee_username": row.employee_username.strip(),
-                    "employee_name": row.employee_name.strip(),
+                    "employee_name": str(employee.get("full_name") or employee["username"]).strip(),
                     "department": row.department,
                     "shift_code": str(row.shift_code or "").strip(),
                     "overtime_shift": overtime_shift,

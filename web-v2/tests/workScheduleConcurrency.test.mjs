@@ -35,7 +35,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const day = '2026-10-05'
 const row = (employee_username, shift_code = 'Ca 1', revision = 1, department = 'locker', work_date = day) => ({ employee_username, work_date, department, shift_code, revision })
 
-async function fixture(initial = [row('A'), row('B'), row('C')]) {
+async function fixture(initial = [row('A'), row('B'), row('C')], catalog = []) {
   const dom = new JSDOM('<body><div id="root"></div></body>', { pretendToBeVisual: true, url: 'https://vera.test' })
   dom.window.confirm = () => false
   const stopDialogs = answerDialogs(dom.window)
@@ -65,6 +65,7 @@ async function fixture(initial = [row('A'), row('B'), row('C')]) {
     return { ok: true, saved: payload.rows.length, deleted: payload.deletes.length, revisions }
   }
   const request = async (path, options = {}) => {
+    if (path === '/v2/work-schedule/departments') return { departments: catalog }
     if (path.includes('/violations') || path.includes('/combo-sales')) return { rows: [] }
     if (options.method === 'PUT') {
       const payload = JSON.parse(options.body)
@@ -303,7 +304,7 @@ test('returning to a scope while its save is pending postpones the read until th
     const reads = f.control.reads.length
     await f.click('Locker')
     assert.equal(f.control.reads.length, reads, 'GET must not race ahead of the still-running PUT')
-    assert.equal(f.editor('A').disabled, true)
+    assert.equal(f.editor('A')?.disabled ?? true, true)
     await act(async () => wait.resolve())
     assert.ok(f.control.reads.length > reads)
     assert.equal(f.editor('A').value, 'Ca 2')
@@ -335,5 +336,29 @@ test('blank Excel cells with leftover metadata cannot trigger recurring empty wr
     await f.autosave()
     await f.autosave()
     assert.equal(f.control.writes.length, 0)
+  } finally { await f.dispose() }
+})
+
+
+test('HR administrative departments render explicit daily-time editors and save the chosen department', async () => {
+  const f = await fixture([], [{ code: 'support', label: 'Support', mode: 'time' }])
+  try {
+    await f.click('Support')
+    const tr = [...f.dom.window.document.querySelectorAll('.schedule-grid tbody tr')].find(node => node.querySelector('strong')?.textContent === 'A')
+    const status = tr.querySelector('select.manager-status')
+    assert.ok(status, 'new HC department uses explicit daily times')
+    await act(() => { status.value = 'Giờ làm'; status.dispatchEvent(new f.dom.window.Event('change', { bubbles: true })) })
+    const inputs = tr.querySelectorAll('.manager-time-row input')
+    for (const [index, value] of ['09:00', '17:00'].entries()) {
+      await act(() => { const key = Object.keys(inputs[index]).find(name => name.startsWith('__reactProps$')); inputs[index][key].onChange({ target: { value } }) })
+    }
+    assert.deepEqual([...tr.querySelector('.ot-select').options].map(option => option.value), ['', 'Từ giờ tới giờ'])
+    await f.click('Lưu lịch')
+    assert.equal(f.control.writes.length, 1)
+    const payload = f.control.writes[0].rows[0]
+    assert.equal(payload.department, 'support')
+    assert.equal(payload.shift_code, 'Giờ làm')
+    assert.equal(payload.start_time, '09:00')
+    assert.equal(payload.end_time, '17:00')
   } finally { await f.dispose() }
 })

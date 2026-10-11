@@ -216,3 +216,18 @@ def test_staff_department_query_never_fetches_other_employees_penalties(monkeypa
     assert conn.executed[0][1]['employees'] == ['operator']
     assert schedule._schedule_violations(conn, 'letan', date(2026,10,1), date(2026,10,31), employee_username='missing') == []
     assert len(conn.executed) == 1
+
+
+def test_ledger_reads_advertise_explicit_late_approval_contract(monkeypatch):
+    app = FastAPI(); engine = Engine()
+    monkeypatch.setattr(schedule, '_allowed_department', lambda *args: True)
+    monkeypatch.setattr(schedule, '_schedule_violations', lambda *args, **kwargs: [{'id': 'department'}])
+    monkeypatch.setattr(schedule, '_employee_violations', lambda *args, **kwargs: [{'id': 'personal'}])
+    schedule.install_work_schedule_routes(app, engine_instance=lambda: engine, current_identity=lambda: None,
+                                         feature_allowed=lambda *args: True)
+    department = next(r.endpoint for r in app.routes if r.path == '/v2/work-schedule/violations' and 'GET' in r.methods)
+    personal = next(r.endpoint for r in app.routes if r.path == '/v2/work-schedule/violations/me')
+    for result, row_id in [(department(date(2026,10,1),date(2026,10,31),'support',actor('admin')), 'department'),
+                           (personal(date(2026,10,1),date(2026,10,31),actor('support')), 'personal')]:
+        assert result['hc_late_approval_version'] == 1
+        assert result['rows'] == [{'id': row_id}]

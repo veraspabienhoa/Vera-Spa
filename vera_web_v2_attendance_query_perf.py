@@ -18,6 +18,7 @@ import re
 from typing import Any
 
 from sqlalchemy import text
+from vera_hc_attendance import HC_CHECKOUT_SQL, checkout_eligible, daily_schedule_required
 
 import vera_web_v2_attendance_v42 as v42
 import vera_web_v2_department_attendance as department_attendance
@@ -96,15 +97,16 @@ def _datasets(conn, start: date, end: date):
 
 def _active_roster(conn) -> list[dict[str, Any]]:
     """Return every active employee, independent of whether TimeSoft saw them."""
-    rows = conn.execute(text("""
+    rows = conn.execute(text(f"""
         SELECT username,
                COALESCE(full_name,'') AS full_name,
                lower(COALESCE(role,'nhanvien')) AS role,
                COALESCE(work_shift,'') AS work_shift, shift_start_date, rotation_cycle,
                COALESCE(employment_start_date,'') AS employment_start_date,
-               COALESCE(payload,'{}'::jsonb) AS payload
+               COALESCE(payload,'{{}}'::jsonb) AS payload,
+               {HC_CHECKOUT_SQL} AS hc_checkout_eligible
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu','support')
+        WHERE (lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu','support') OR {HC_CHECKOUT_SQL})
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(
                 NULLIF(payload->>'Trạng thái làm việc',''),
@@ -200,7 +202,7 @@ def _definition_for_shift(
 def _vera_shift_fields(roster, work_day, definitions, schedule=None):
     """Resolve names and clock times without any TimeSoft schedule fallback."""
     role = str(roster.get('role') or '').lower()
-    if role in {'quanly', 'letan', 'locker', 'tapvu'} or schedule:
+    if daily_schedule_required(roster) or schedule:
         item = schedule or {}
         name = str(item.get('shift_code') or '')
         working = name and v42._norm(name) != 'nghi'
@@ -245,7 +247,7 @@ def _placeholder_record(
         if v42._norm(scheduled_shift) == "nghi":
             attendance_expected = False
             attendance_note = "Nghỉ theo Lịch làm việc"
-    elif role in {"quanly", "letan", "locker", "tapvu"}:
+    elif daily_schedule_required(roster):
         shift_name, shift_start, shift_end = "", "", ""
         attendance_expected = False
         attendance_note = "Chưa xếp Lịch làm việc trong ngày"
@@ -289,6 +291,7 @@ def _placeholder_record(
         "employee_name": username,
         "employee_full_name": str(roster.get("full_name") or "").strip(),
         "employee_role": role,
+        "hc_checkout_eligible": checkout_eligible(roster),
         "shift": shift_name,
         "shift_start": shift_start,
         "shift_end": shift_end,
@@ -378,8 +381,9 @@ def _records_v42_fast(conn, start: date, end: date, *, datasets=None) -> list[di
     schedules = _schedule_map(conn, start, end)
     profiles = {
         v42._norm(row['username']): dict(row)
-        for row in conn.execute(text("""
-            SELECT username, role, work_shift, shift_start_date, rotation_cycle
+        for row in conn.execute(text(f"""
+            SELECT username, role, work_shift, shift_start_date, rotation_cycle,
+                   {HC_CHECKOUT_SQL} AS hc_checkout_eligible
             FROM employees
         """)).mappings().all()
     }
@@ -457,6 +461,7 @@ def _records_v42_fast(conn, start: date, end: date, *, datasets=None) -> list[di
         base["date"] = work_day.strftime("%d/%m/%Y")
         base["employee_name"] = employee
         base["employee_role"] = role
+        base["hc_checkout_eligible"] = checkout_eligible(profile)
 
         # Employee role in PostgreSQL is the authoritative department source.
         # TimeSoft WorkTimeName can point at an old/legacy shift definition and
@@ -477,7 +482,7 @@ def _records_v42_fast(conn, start: date, end: date, *, datasets=None) -> list[di
                 base["shift_start"] = str(schedule.get("start_time") or base.get("shift_start") or "").strip()
                 base["shift_end"] = str(schedule.get("end_time") or base.get("shift_end") or "").strip()
 
-        if role in {"quanly", "letan", "locker", "tapvu"}:
+        if daily_schedule_required(profile):
             scheduled = bool(schedule and v42._norm(schedule.get("shift_code")) != "nghi")
             base["shift"] = str((schedule or {}).get("shift_code") or "")
             base["shift_start"] = str((schedule or {}).get("start_time") or "") if scheduled else ""
@@ -517,7 +522,7 @@ def _records_v42_fast(conn, start: date, end: date, *, datasets=None) -> list[di
             # No synthetic end-of-shift punch or guessed payable duration.
             # Payroll and approved early leave are checked in the cutover stage.
             base['payable_minutes_verified'] = False
-        base["attendance_expected"] = scheduled if role in {"quanly", "letan", "locker", "tapvu"} else bool(name)
+        base["attendance_expected"] = scheduled if daily_schedule_required(profile) else bool(name)
         if not name and role in {"leader", "nhanvien"}:
             base["attendance_note"] = "Chưa phân ca có hiệu lực trong Vera Spa"
         base["attendance_roster_only"] = False

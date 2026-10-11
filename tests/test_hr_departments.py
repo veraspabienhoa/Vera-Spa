@@ -99,7 +99,7 @@ def test_cannot_delete_occupied_department_and_stale_writes_are_rejected(setup):
 
 @pytest.mark.parametrize('mode', ['hourly', 'monthly', 'tip'])
 def test_new_department_supports_each_pay_mode(setup, mode):
-    client, _, _, _, conn = setup
+    client, saved, _, _, conn = setup
     assert save(client, 'new_team', mode, creating=True).status_code == 200
     assert hr.departments(conn)['new_team']['salary_mode'] == mode
     assert ('new_team' in hr.admin_departments(conn)) == (mode != 'tip')
@@ -108,9 +108,9 @@ def test_new_department_supports_each_pay_mode(setup, mode):
             department_payroll._settings(conn, 'new_team')
         assert exc.value.status_code == 400
     else:
+        saved['department_new_team_config'] = {'rate_ca1':30_000,'default_base_salary':7_800_000}
         cfg = department_payroll._settings(conn, 'new_team')['config']
         assert cfg['calculation_mode'] == mode
-        cfg.update(rate_ca1=30_000)
         result = department_payroll._recalculate({'base_salary':7_800_000, 'work_days':13, 'hours_ca1':8}, cfg)
         assert result['salary'] == (3_900_000 if mode == 'monthly' else 240_000)
 

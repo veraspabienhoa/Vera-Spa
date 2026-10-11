@@ -13,6 +13,7 @@ from sqlalchemy import text
 from vera_facegate_control_log import VN_TZ, mapping_device_id
 from vera_facegate_readiness import reference
 from vera_facegate_address_history import accepts_event
+from vera_hc_attendance import checkout_eligible
 
 MAX_EVENTS = 20000
 # Observed in the operator's two matching exports. This is a preview filter,
@@ -50,7 +51,7 @@ def business_day(instant, intervals, *, allow_checkout=False):
     """Assign a scan to the scheduled work day, including overnight checkout.
 
     Normal FaceGate evidence keeps the existing four-hour early / two-hour late
-    window.  Departments that actually punch out (reception, locker, cleaning)
+    window.  Eligible HR administrative departments that actually punch out
     get a narrow overnight-checkout fallback to yesterday's shift; this never
     applies to leader/nhanvien and never creates a calendar-day fallback.
     """
@@ -190,7 +191,7 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
                 username = mapping['username']
                 role = str(profiles[username].get('role') or '').strip().lower()
                 scope = scoped_issue(reason, username, instant, windows[username],
-                                     allow_checkout=role in {'letan', 'locker', 'tapvu'})
+                                     allow_checkout=checkout_eligible(profiles[username]))
             issues.append({'event_id': event_id, 'reason': reason,
                            'registration_ref': payload.get('registration_ref'),
                            'device_name': str(payload.get('device_name') or '')[:160], **scope})
@@ -198,11 +199,11 @@ def adapt_events(events, mappings, employees, address, start, end, resolve_shift
         username = mapping['username']
         role = str(profiles[username].get('role') or '').strip().lower()
         day, reason = business_day(instant, windows[username],
-                                   allow_checkout=role in {'letan', 'locker', 'tapvu'})
+                                   allow_checkout=checkout_eligible(profiles[username]))
         if reason:
             issues.append({'event_id': event_id, 'reason': reason, 'username': username,
                            **scoped_issue(reason, username, instant, windows[username],
-                                          allow_checkout=role in {'letan', 'locker', 'tapvu'})})
+                                          allow_checkout=checkout_eligible(profiles[username]))})
             continue
         if not start <= day <= end:
             continue
@@ -416,10 +417,8 @@ def finish_records(facegate, applied_reviews):
     # Only departments whose operating policy requires a final face punch may
     # expose the last clustered scan as checkout.  Leaders and therapists keep
     # checkout blank; their later scans are mid-shift break evidence only.
-    checkout_roles = {'letan', 'locker', 'tapvu'}
     for row in facegate:
-        role = str(row.get('employee_role') or '').strip().lower()
-        if role in checkout_roles:
+        if checkout_eligible(row):
             punches = row.get('punch_datetimes') or []
             if len(punches) >= 2:
                 try:

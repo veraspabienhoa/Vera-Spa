@@ -20,6 +20,7 @@ import unicodedata
 from typing import Any, Callable
 
 from sqlalchemy import text
+from vera_hc_attendance import HC_CHECKOUT_SQL
 
 from vera_attendance_rules import apply_break_restriction, departure_status_is_final
 import vera_web_v2_snapshot as snapshot
@@ -110,10 +111,10 @@ def _parse_date(value: Any) -> date | None:
 
 
 def _eligible_aliases(conn) -> tuple[dict[str, str], dict[str, str]]:
-    rows = conn.execute(text("""
-        SELECT username, COALESCE(full_name,'') AS full_name, lower(COALESCE(role,'')) AS role
+    rows = conn.execute(text(f"""
+        SELECT username, COALESCE(full_name,'') AS full_name, lower(COALESCE(role,'')) AS role, {HC_CHECKOUT_SQL} AS hc_checkout_eligible
         FROM employees
-        WHERE lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu','support')
+        WHERE (lower(COALESCE(role,'')) IN ('admin','quanly','nhanvien','leader','locker','letan','tapvu','support') OR {HC_CHECKOUT_SQL})
           AND COALESCE(payload->>'__deleted','false') <> 'true'
           AND lower(COALESCE(payload->>'Trạng thái làm việc','đang làm việc')) IN ('đang làm việc','thử việc')
     """)).mappings().all()
@@ -122,7 +123,7 @@ def _eligible_aliases(conn) -> tuple[dict[str, str], dict[str, str]]:
     for row in rows:
         username = str(row.get("username") or "").strip()
         role = str(row.get("role") or "").strip().lower()
-        if not username or role not in ALLOWED_ROLES:
+        if not username or (role not in ALLOWED_ROLES and not row.get('hc_checkout_eligible')):
             continue
         roles[_norm(username)] = role
         for value in (username, row.get("full_name")):

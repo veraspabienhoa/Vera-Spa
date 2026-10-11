@@ -30,3 +30,17 @@
  .department-payroll-panel .department-payroll-toolbar>.department-payroll-delete-draft{grid-column:1/-1}
  .department-payroll-panel .department-payroll-toolbar>label input,.department-payroll-top-actions .department-payroll-filter-fields :is(input,select){font-size:16px;min-height:44px}
 }
+
+/* Native exclusive radios, presented as the two requested tick choices. */
+.department-payroll-source-options{display:grid;gap:8px;min-width:190px;padding:4px}
+.department-payroll-source-options label{display:flex;align-items:center;gap:8px;white-space:normal;cursor:pointer;font-size:13px}
+.department-payroll-source-options input[type=radio]{appearance:none;display:grid;place-content:center;flex:0 0 18px;width:18px!important;height:18px!important;min-height:18px;margin:0;border:1px solid #536c60;border-radius:3px;background:#fff}
+.department-payroll-source-options input[type=radio]:checked{background:#166534;border-color:#166534}
+.department-payroll-source-options input[type=radio]:checked::after{content:'✓';color:#fff;font-size:15px;font-weight:800;line-height:1}
+.department-payroll-source-options input[type=radio]:focus-visible{outline:2px solid #2563eb;outline-offset:3px}
+.department-payroll-source-options input[type=radio]:disabled{opacity:.6;cursor:not-allowed}
+.department-payroll-late-credit{display:block;max-width:190px;white-space:normal;font-size:11px;color:#536c60;margin-top:4px}
+.department-payroll-source-table{max-width:900px;margin:12px 0}
+.department-payroll-source-table table{width:100%}
+.department-payroll-source-table td>small{display:block;color:#596e61}
+.department-payroll-source-section>label{display:grid;gap:4px;max-width:400px;margin-top:12px}

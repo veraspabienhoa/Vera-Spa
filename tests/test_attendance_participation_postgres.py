@@ -30,6 +30,7 @@ def test_september_support_calculates_drafts_exports_and_replaces_history_once(d
         payroll._put_setting(conn, 'department_support_config', {
             'rate_ca1':20000, 'rate_ca2_before_22':25000, 'rate_ca2_after_22':30000}, 'synthetic')
         payroll._put_setting(conn, 'department_employee_salary_configs', {'Ms Tuyết':{'rate_ca1':35000}}, 'synthetic')
+        payroll._put_setting(conn, dep.EMPLOYEE_SOURCE_KEY, {'letan':source,'Ms Tuyết':source}, 'synthetic')
         for name in ['letan', 'Ms Tuyết']:
             conn.execute(text("""INSERT INTO vera_work_schedule(work_date,employee_username,employee_name,department,shift_code)
                 VALUES('2026-09-28',:name,:name,'letan','Ca 1')"""), {'name':name})
@@ -55,16 +56,21 @@ def test_september_support_calculates_drafts_exports_and_replaces_history_once(d
         assert [tuple(r) for r in conn.execute(text('SELECT * FROM employees ORDER BY username'))] == profiles
     # A partial save must retain previously approved Support money until replaced.
     partial = http.post('/v2/department-payroll/combined/complete', json={
-        'month':'2026-09','rows':[dict(saved[0],calculation_source='schedule')]})
+        'month':'2026-09','rows':[by_name['a']], 'expected_revision':response.json()['draft_revision'],
+        'expected_history_revision':response.json()['history_revision']})
     assert partial.status_code == 200, partial.text
     with database.connect() as conn:
         kept = payroll._setting(conn,'department_payroll_combined_history',[])[0]['rows']
         assert next(r for r in kept if r['employee_username']=='Ms Tuyết') == saved[1]
-    assert http.put('/v2/department-payroll/combined/draft', json={'month':'2026-09','rows':rows}).status_code == 200
+    saved_draft = http.put('/v2/department-payroll/combined/draft', json={'month':'2026-09','rows':rows,'expected_revision':partial.json()['draft_revision']})
+    assert saved_draft.status_code == 200, saved_draft.text
+    draft_revision = saved_draft.json()['draft_revision']
+    history_revision = partial.json()['history_revision']
     assert http.post('/v2/department-payroll/combined/export.xlsx', json={'month':'2026-09','rows':rows}).status_code == 200
     for _ in range(2):
-        result = http.post('/v2/department-payroll/combined/complete', json={'month':'2026-09','rows':rows})
+        result = http.post('/v2/department-payroll/combined/complete', json={'month':'2026-09','rows':rows,'expected_revision':draft_revision,'expected_history_revision':history_revision})
         assert result.status_code == 200, result.text
+        draft_revision, history_revision = result.json()['draft_revision'], result.json()['history_revision']
     with database.connect() as conn:
         items = payroll._setting(conn,'department_payroll_combined_history',[])
         assert len(items) == 1 and items[0]['id'] == history[0]['id']
@@ -72,9 +78,11 @@ def test_september_support_calculates_drafts_exports_and_replaces_history_once(d
         assert len([r for r in completed if r['employee_username']=='Ms Tuyết']) == 1
         assert next(r for r in completed if r['employee_username']=='Ms Tuyết')['salary'] == by_name['Ms Tuyết']['salary']
     support_rows = [r for r in rows if r['department']=='support']
+    legacy_revision = 0
     for method, path in [('put','draft'),('post','save'),('post','export.xlsx')]:
-        result = getattr(http,method)(f'/v2/department-payroll/{path}', json={'month':'2026-09','department':'support','rows':support_rows})
+        result = getattr(http,method)(f'/v2/department-payroll/{path}', json={'month':'2026-09','department':'support','rows':support_rows,'expected_revision':legacy_revision,'expected_history_revision':0})
         assert result.status_code == 200, result.text
+        if path != 'export.xlsx': legacy_revision = result.json()['draft_revision']
     for month in ['2026-08','2026-10']:
         result = http.get(f'/v2/department-payroll/combined/calculate?month={month}&source={source}')
         assert result.status_code == 200, result.text

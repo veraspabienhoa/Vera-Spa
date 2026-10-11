@@ -77,6 +77,25 @@ def test_negative_net_is_displayed_without_clamping_or_rededuction():
     assert FirstTable(html).rows[-2] == ['Tổng lương', '5,800,000 VNĐ']
 
 
+def test_approved_late_email_distinguishes_current_recorded_reference_from_payroll_debit():
+    from copy import deepcopy
+    row = {**sample(), 'calculation_source': 'schedule', 'unpaid_late_wage': 7500,
+           'late_penalty': 15000, 'effective_late_penalty': 0, 'violation_penalty': 0}
+    violations = [dict(leave_date=date(2026, 9, 3), leave_reason='Đi trễ · Nội quy HC',
+                       detail='Mức gốc đã ghi nhận', penalty=15000)]
+    original = deepcopy((row, violations))
+    _, plain, html = dep._email_content(row, date(2026, 9, 1), date(2026, 9, 30), violations)
+    for content in (plain, html):
+        assert 'Vi phạm tham chiếu từ bản ghi hiện tại (không cộng thêm vào bảng lương):' in content
+        assert 'Tổng phạt thực trừ trong bảng lương: 0 VNĐ' in content
+        assert '15,000 VNĐ' in content
+        assert 'Lương thời gian trễ không được tính: 7.500' in content
+        assert 'Tổng vi phạm:' not in content
+    assert '>Mức ghi nhận</th>' in html and '>Phạt</th>' not in html
+    assert ['Phạt đi trễ', '0 VNĐ'] in FirstTable(html).rows
+    assert (row, violations) == original
+
+
 def test_email_route_uses_hc_layout_for_selected_employee_outside_database(monkeypatch):
     class Identity(BaseModel):
         employee_username: str = 'admin'
@@ -107,6 +126,7 @@ def test_email_route_uses_hc_layout_for_selected_employee_outside_database(monke
     monkeypatch.setattr(dep, '_settings', lambda *args: {'config': {}})
     monkeypatch.setattr(dep, '_clean_rows', lambda *args, **kwargs: [sample(), {**sample(), 'employee_username':'other', 'email':'other@example.test'}])
     monkeypatch.setattr(dep, '_require_complete_attendance', lambda *args: None)
+    monkeypatch.setattr(dep, '_resolve_payroll_email_rows', lambda conn, rows: rows)
     monkeypatch.setattr(dep.payroll, '_open_payroll_smtp', open_smtp)
     monkeypatch.setattr(dep, '_workbook', lambda rows, department, label: b'test-xlsx')
     dep.install_department_payroll_routes(app, engine_instance=lambda: database, current_identity=lambda: Identity(),

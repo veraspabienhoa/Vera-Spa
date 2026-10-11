@@ -30,7 +30,7 @@ const DEPARTMENT_PERMISSION = {
   tapvu: 'work_schedule_tapvu',
   quanly: 'work_schedule_quanly',
 }
-const DEPARTMENT_INFO = {
+const LEGACY_DEPARTMENT_INFO = {
   locker: { label: 'Locker', mode: 'shift' },
   letan: { label: 'Lễ tân', mode: 'shift' },
   tapvu: { label: 'Tạp vụ', mode: 'shift' },
@@ -47,6 +47,21 @@ const RANGE_FILTERS = [
   ['next_month', 'Tháng sau'],
   ['custom', 'Tùy chỉnh'],
 ]
+
+const EMPTY_SCOPED_ROWS = Object.freeze([])
+
+function useScopedRows(scope) {
+  const [state, setState] = useState({ scope, rows: [] })
+  const rows = state.scope === scope ? state.rows : EMPTY_SCOPED_ROWS
+  const setRows = value => setState(previous => ({ scope, rows: typeof value === 'function'
+    ? value(previous.scope === scope ? previous.rows : []) : value }))
+  return [rows, setRows]
+}
+
+function useScopedFlag(scope) {
+  const [flags, setFlags] = useState({})
+  return [Boolean(flags[scope]), value => setFlags(previous => ({ ...previous, [scope]: value }))]
+}
 
 function atNoon(value = new Date()) {
   const date = new Date(value)
@@ -187,10 +202,10 @@ function overtimeHours(value, definitions) {
   return 0
 }
 
-function compactCellLabel(value, department) {
+function compactCellLabel(value) {
   if (!value?.shift_code) return '—'
   if (value.shift_code === 'Nghỉ') return 'Nghỉ'
-  let label = department === 'quanly' ? `${value.start_time || '—'}→${value.end_time || '—'}` : value.shift_code.replace(/^Ca\s+/i, 'C')
+  let label = value.shift_code === 'Giờ làm' ? `${value.start_time || '—'}→${value.end_time || '—'}` : value.shift_code.replace(/^Ca\s+/i, 'C')
   const overtime = overtimeMode(value)
   if (overtime === 'TC Ca 1' || overtime === 'TC Ca 2') label += ` +${overtime.replace(/^TC\s+Ca\s+/i, 'TC')}`
   if (overtime === 'Từ giờ tới giờ') label += ' +TC'
@@ -326,24 +341,48 @@ export default function WorkSchedulePage({ user }) {
   const isWeekView = ['last_week', 'week', 'next_week'].includes(rangeMode) && days.length === 7
   const isMonthView = ['month', 'last_month', 'next_month', 'selected_month'].includes(rangeMode) && days.length >= 28
 
+  const scheduleIdentity = `${user?.id || ''}|${user?.employee_username || ''}|${user?.role || ''}|${JSON.stringify(user?.permissions || {})}`
+  const [departmentCatalog, setDepartmentCatalog] = useState({ identity: '', items: [] })
+  const [catalogError, setCatalogError] = useState('')
+  useEffect(() => {
+    const controller = new AbortController()
+    setCatalogError('')
+    scheduleRequest('/v2/work-schedule/departments', { signal: controller.signal })
+      .then(result => { if (!controller.signal.aborted) setDepartmentCatalog({ identity: scheduleIdentity, items: result.departments || [] }) })
+      .catch(error => { if (!controller.signal.aborted) setCatalogError(error.message || 'Không tải được bộ phận hành chánh.') })
+    return () => controller.abort()
+  }, [scheduleIdentity])
+  const catalogItems = departmentCatalog.identity === scheduleIdentity ? departmentCatalog.items : []
+  const DEPARTMENT_INFO = { ...LEGACY_DEPARTMENT_INFO, ...Object.fromEntries(catalogItems.map(item => [item.code, item])) }
   const availableDepartments = useMemo(() => {
-    if (String(user?.role || '').toLowerCase() === 'admin') return DEPARTMENTS
-    return DEPARTMENTS.filter((item) => user?.permissions?.[DEPARTMENT_PERMISSION[item]] === true)
-  }, [user?.permissions, user?.role])
+    const legacy = String(user?.role || '').toLowerCase() === 'admin' ? DEPARTMENTS
+      : DEPARTMENTS.filter(item => user?.permissions?.[DEPARTMENT_PERMISSION[item]] === true)
+    const extra = departmentCatalog.identity === scheduleIdentity ? departmentCatalog.items.map(item => item.code) : []
+    return [...new Set([...legacy, ...extra])]
+  }, [user?.permissions, user?.role, departmentCatalog, scheduleIdentity])
 
   const [department, setDepartment] = useState(() => preferredDepartment(user, availableDepartments))
-  const [employees, setEmployees] = useState([])
+  const isDailyTimeDepartment = !['letan', 'locker', 'tapvu'].includes(department)
   // Keep drafts for each visited view. Late requests update only their own view;
   // returning to it reloads and reconciles against the latest server baseline.
-  const scopeKey = `${department}|${rangeKey}|${month}|${user?.id || ''}|${user?.employee_username || ''}|${user?.role || ''}`
+  const scopeKey = `${department}|${rangeKey}|${month}|${scheduleIdentity}`
+  const [employees, setEmployees] = useScopedRows(scopeKey)
   const workspacesRef = useRef(new Map())
   const [, setWorkspaceVersion] = useState(0)
   const activeScopeRef = useRef(null)
-  if (activeScopeRef.current?.key !== scopeKey) activeScopeRef.current = { key: scopeKey }
+  if (activeScopeRef.current?.key !== scopeKey) activeScopeRef.current = { key: scopeKey, controller: new AbortController() }
   const scopeToken = activeScopeRef.current
+  useEffect(() => {
+    if (scopeToken.controller.signal.aborted) scopeToken.controller = new AbortController()
+    const controller = scopeToken.controller
+    return () => controller.abort()
+  }, [scopeToken])
   const mountedRef = useRef(true)
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
   const isCurrentScope = token => mountedRef.current && activeScopeRef.current === token
+  const exportScope = () => ({ signal: scopeToken.controller.signal, assertCurrent: () => {
+    if (!isCurrentScope(scopeToken)) throw new DOMException('Màn hình lịch đã thay đổi.', 'AbortError')
+  } })
   if (!workspacesRef.current.has(scopeKey)) workspacesRef.current.set(scopeKey, emptyScheduleWorkspace())
   const workspace = workspacesRef.current.get(scopeKey)
   const { saved, drafts, conflicts } = workspace
@@ -358,15 +397,15 @@ export default function WorkSchedulePage({ user }) {
     drafts: typeof update === 'function' ? update(current.drafts) : update }))
   const saveRequestRef = useRef(null)
 
-  const [monthlyRows, setMonthlyRows] = useState([])
-  const [monthlyViolations, setMonthlyViolations] = useState([])
+  const [monthlyRows, setMonthlyRows] = useScopedRows(scopeKey)
+  const [monthlyViolations, setMonthlyViolations] = useScopedRows(scopeKey)
   const [violationRevision, setViolationRevision] = useState(0)
   const [violationOpenSequence, setViolationOpenSequence] = useState(0)
   const [violationStatsError, setViolationStatsError] = useState('')
-  const [exportingStatistics, setExportingStatistics] = useState(false)
-  const [comboSales, setComboSales] = useState([])
+  const [exportingStatistics, setExportingStatistics] = useScopedFlag(scopeKey)
+  const [comboSales, setComboSales] = useScopedRows(scopeKey)
   const [comboFilterMonth, setComboFilterMonth] = useState('')
-  const [comboFilteredSales, setComboFilteredSales] = useState([])
+  const [comboFilteredSales, setComboFilteredSales] = useScopedRows(scopeKey)
   const [comboLoading, setComboLoading] = useState(false)
   const comboMonth = comboFilterMonth || month
   const comboDisplaySales = comboMonth === month ? comboSales : comboFilteredSales
@@ -381,7 +420,7 @@ export default function WorkSchedulePage({ user }) {
       .catch(error => { if (active) setNotice(error.message || 'Không tải được bán combo.') })
       .finally(() => { if (active) setComboLoading(false) })
     return () => { active = false }
-  }, [comboMonth, month, department, comboSales])
+  }, [comboMonth, month, department, comboSales, scopeKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const [comboCustomers, setComboCustomers] = useState([])
   const customerRead = useRef({ at: 0, department: '', pending: null })
   const loadComboCustomers = () => {
@@ -397,7 +436,7 @@ export default function WorkSchedulePage({ user }) {
   const autoSaveAttemptRef = useRef('')
   const [shiftDefinitions, setShiftDefinitions] = useState({ quanly: {}, letan: {}, locker: {}, tapvu: {} })
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useScopedFlag(scopeKey)
   const [notice, setNotice] = useState('')
   const [selectedCell, setSelectedCell] = useState(null)
   const [highlightedEmployee, setHighlightedEmployee] = useState('')
@@ -552,7 +591,7 @@ export default function WorkSchedulePage({ user }) {
         next.overtime_start_time = ''
         next.overtime_end_time = ''
       }
-      if (department !== 'quanly') {
+      if (!isDailyTimeDepartment) {
         next.start_time = ''
         next.end_time = ''
       }
@@ -686,7 +725,7 @@ export default function WorkSchedulePage({ user }) {
           if (before.shift_code) deletes.push({ work_date: day, employee_username: employee.username, expected_revision })
           continue
         }
-        if (department === 'quanly' && after.shift_code === 'Giờ làm' && (!after.start_time || !after.end_time)) {
+        if (isDailyTimeDepartment && after.shift_code === 'Giờ làm' && (!after.start_time || !after.end_time)) {
           throw new Error(`${systemName(employee)} · ${formatVeraDate(day)}: cần đủ giờ bắt đầu và giờ kết thúc.`)
         }
         if (overtimeMode(after) === 'Từ giờ tới giờ' && (!after.overtime_start_time || !after.overtime_end_time)) {
@@ -700,8 +739,8 @@ export default function WorkSchedulePage({ user }) {
           expected_revision,
           shift_code: after.shift_code,
           overtime_shift: overtimeMode(after),
-          start_time: department === 'quanly' ? (after.start_time || '') : '',
-          end_time: department === 'quanly' ? (after.end_time || '') : '',
+          start_time: isDailyTimeDepartment ? (after.start_time || '') : '',
+          end_time: isDailyTimeDepartment ? (after.end_time || '') : '',
           overtime_start_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_start_time || '') : '',
           overtime_end_time: overtimeMode(after) === 'Từ giờ tới giờ' ? (after.overtime_end_time || '') : '',
           note: after.note || '',
@@ -793,7 +832,8 @@ export default function WorkSchedulePage({ user }) {
     setNotice('')
     try {
       const path = `/v2/work-schedule/template.xlsx?${new URLSearchParams({ start: rangeStart, end: rangeEnd, department })}`
-      const blob = await scheduleFileRequest(path, { download: true })
+      const blob = await scheduleFileRequest(path, { download: true, signal: scopeToken.controller.signal })
+      if (!isCurrentScope(scopeToken)) return
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -802,9 +842,9 @@ export default function WorkSchedulePage({ user }) {
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
       setNotice('Đã xuất file mẫu Excel kèm đầy đủ danh sách chọn Nhân viên, Ca làm, Tăng ca và Bộ phận.')
     } catch (error) {
-      setNotice(error.message || 'Không xuất được file mẫu lịch làm việc.')
+      if (isCurrentScope(scopeToken)) setNotice(error.message || 'Không xuất được file mẫu lịch làm việc.')
     } finally {
-      setBusy(false)
+      if (mountedRef.current) setBusy(false)
     }
   }
 
@@ -851,7 +891,7 @@ export default function WorkSchedulePage({ user }) {
   const configuredShiftNames = Object.keys(activeShiftDefinitions)
 
   const shiftSummary = useMemo(() => {
-    if (department === 'quanly') return {}
+    if (isDailyTimeDepartment) return {}
     const definitions = shiftDefinitions?.[department] || {}
     const shiftNames = Object.keys(definitions)
     return Object.fromEntries(days.map((date) => {
@@ -873,7 +913,7 @@ export default function WorkSchedulePage({ user }) {
       Object.values(counts).forEach((item) => { item.total = item.regular + item.overtime })
       return [day, counts]
     }))
-  }, [days, department, drafts, employees, shiftDefinitions])
+  }, [days, department, drafts, employees, shiftDefinitions, isDailyTimeDepartment])
 
   useEffect(() => {
     let active = true
@@ -884,7 +924,7 @@ export default function WorkSchedulePage({ user }) {
       .then(result => { if (active) setMonthlyViolations(result.rows || []) })
       .catch(error => { if (active) setViolationStatsError(error.message) })
     return () => { active = false }
-  }, [department, month, violationRevision, availableDepartments])
+  }, [department, month, violationRevision, availableDepartments, scopeKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthlyStatistics = useMemo(() => {
     const definitions = shiftDefinitions?.[department] || {}
@@ -925,12 +965,18 @@ export default function WorkSchedulePage({ user }) {
     try {
       const range = monthRange(month)
       await veraApi.exportScheduleTable({ department, kind: 'statistics', ...range,
-        rows: monthlyStatisticsExportRows(monthlyStatistics, DEPARTMENT_INFO[department].label, canViewEmployeeViolations, canViewDepartmentViolations, Boolean(violationStatsError)) })
-    } catch (error) { setNotice(error.message || 'Không xuất được thống kê tháng.') }
-    finally { setExportingStatistics(false) }
+        rows: monthlyStatisticsExportRows(monthlyStatistics, (DEPARTMENT_INFO[department]?.label || department), canViewEmployeeViolations, canViewDepartmentViolations, Boolean(violationStatsError)) }, exportScope())
+    } catch (error) { if (isCurrentScope(scopeToken)) setNotice(error.message || 'Không xuất được thống kê tháng.') }
+    finally { if (mountedRef.current) setExportingStatistics(false) }
   }
 
-  const exportViolations = ({ range, rows }) => veraApi.exportScheduleTable({ department, kind: 'violations', ...range, rows: violationExportRows(rows) })
+  const exportViolations = ({ range, rows }, childScope = {}) => {
+    const parentScope = exportScope()
+    return veraApi.exportScheduleTable({ department, kind: 'violations', ...range, rows: violationExportRows(rows) }, {
+      signal: childScope.signal || parentScope.signal,
+      assertCurrent: () => { parentScope.assertCurrent(); childScope.assertCurrent?.() },
+    })
+  }
 
   const captureFullSchedule = async () => {
     if (loading || captureBusy) return
@@ -944,7 +990,7 @@ export default function WorkSchedulePage({ user }) {
       const titleHeight = 52
       const headerHeight = 48
       const rowHeight = 38
-      const summaryRows = department === 'quanly' ? [] : configuredShiftNames
+      const summaryRows = isDailyTimeDepartment ? [] : configuredShiftNames
       const logicalWidth = nameWidth + days.length * dayWidth
       const logicalHeight = titleHeight + headerHeight + (employees.length + summaryRows.length) * rowHeight
       const scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1))
@@ -978,7 +1024,7 @@ export default function WorkSchedulePage({ user }) {
       context.fillStyle = '#fff'
       context.textAlign = 'left'
       context.font = '700 18px Arial, sans-serif'
-      context.fillText(`VERA SPA · LỊCH LÀM VIỆC · ${DEPARTMENT_INFO[department].label.toUpperCase()}`, 12, 18)
+      context.fillText(`VERA SPA · LỊCH LÀM VIỆC · ${(DEPARTMENT_INFO[department]?.label || department).toUpperCase()}`, 12, 18)
       context.font = '500 11px Arial, sans-serif'
       context.fillText(rangeLabel, 12, 38)
 
@@ -1037,7 +1083,7 @@ export default function WorkSchedulePage({ user }) {
     const currentOvertimeMode = overtimeMode(value)
     const overtimeEditor = <div className="shared-overtime">
       <select className={`ot-select ${currentOvertimeMode ? 'active' : 'no-overtime'}`} value={currentOvertimeMode} disabled={!canEdit || loading || !workspace.ready || !value.shift_code || value.shift_code === 'Nghỉ'} onChange={(event) => setCell(employee.username, day, 'overtime_shift', event.target.value)}>
-        <option value="">Không TC</option><option>TC Ca 1</option><option>TC Ca 2</option><option>Từ giờ tới giờ</option>
+        <option value="">Không TC</option>{(!isDailyTimeDepartment || department === 'quanly') && <><option>TC Ca 1</option><option>TC Ca 2</option></>}<option>Từ giờ tới giờ</option>
       </select>
       {currentOvertimeMode === 'Từ giờ tới giờ' && <div className="overtime-time-row">
         <input className="letan-ot-time" aria-label="Tăng ca từ giờ" type="time" value={value.overtime_start_time || ''} disabled={!canEdit || loading || !workspace.ready} onChange={(event) => setCell(employee.username, day, 'overtime_start_time', event.target.value)} />
@@ -1046,7 +1092,7 @@ export default function WorkSchedulePage({ user }) {
       </div>}
     </div>
 
-    if (department === 'quanly') {
+    if (isDailyTimeDepartment) {
       return <div className="manager-cell">
         <select className={`manager-status ${value.shift_code === 'Nghỉ' ? 'off' : ''}`} value={value.shift_code || ''} disabled={!canEdit || loading || !workspace.ready} onChange={(event) => setCell(employee.username, day, 'shift_code', event.target.value)}>
           <option value="">—</option><option value="Giờ làm">Làm việc</option><option value="Nghỉ">Nghỉ</option>
@@ -1138,12 +1184,12 @@ export default function WorkSchedulePage({ user }) {
 
   const comboEditor = ['quanly', 'letan'].includes(department)
     ? <div className="combo-sale-editor">
-      <div className="combo-sale-head"><strong>BẢNG BÁN COMBO · {DEPARTMENT_INFO[department].label}</strong>{canEditCombo && <UiToolbar data-ui-key="u-f600ca113e5d" className="combo-excel-actions"><input ref={comboFileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => void importComboSales(event)} /><button data-ui-key="u-4fe327c22b3c" data-ui-label-default="Import Excel" type="button" className="schedule-copy-button" disabled={busy} onClick={() => comboFileInputRef.current?.click()}><Upload size={15}/><UiCustomText uiKey="u-4fe327c22b3c"> Import Excel</UiCustomText></button><button data-ui-key="u-be3d05eab551" data-ui-label-default="Xuất excel" type="button" className="schedule-copy-button" disabled={busy} onClick={() => void exportComboSales()}><Download size={15}/><UiCustomText uiKey="u-be3d05eab551"> Xuất excel</UiCustomText></button></UiToolbar>}</div>
+      <div className="combo-sale-head"><strong>BẢNG BÁN COMBO · {(DEPARTMENT_INFO[department]?.label || department)}</strong>{canEditCombo && <UiToolbar data-ui-key="u-f600ca113e5d" className="combo-excel-actions"><input ref={comboFileInputRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(event) => void importComboSales(event)} /><button data-ui-key="u-4fe327c22b3c" data-ui-label-default="Import Excel" type="button" className="schedule-copy-button" disabled={busy} onClick={() => comboFileInputRef.current?.click()}><Upload size={15}/><UiCustomText uiKey="u-4fe327c22b3c"> Import Excel</UiCustomText></button><button data-ui-key="u-be3d05eab551" data-ui-label-default="Xuất excel" type="button" className="schedule-copy-button" disabled={busy} onClick={() => void exportComboSales()}><Download size={15}/><UiCustomText uiKey="u-be3d05eab551"> Xuất excel</UiCustomText></button></UiToolbar>}</div>
       {comboLoading && <p role="status">Đang tải bán combo…</p>}<div className="combo-employee-sections">{comboEmployees.map((employee) => {
         const employeeRows = comboDisplaySales.filter((sale) => String(sale.employee_username || '').toLowerCase() === String(employee.username || '').toLowerCase())
         return <ComboEmployeeTable key={`${department}-${comboMonth}-${employee.username}`} employee={employee} rows={employeeRows} month={comboMonth} onMonthChange={setComboFilterMonth} defaultDate={comboDefaultDate} canEdit={canEditCombo} busy={busy || comboLoading} onSave={saveComboSale} onDelete={deleteComboSale} customers={comboCustomers} loadCustomers={loadComboCustomers} />
       })}</div>
-      {!comboEmployees.length && <div className="revenue-meta">Chưa có nhân viên {DEPARTMENT_INFO[department].label} để tạo bảng bán combo.</div>}
+      {!comboEmployees.length && <div className="revenue-meta">Chưa có nhân viên {(DEPARTMENT_INFO[department]?.label || department)} để tạo bảng bán combo.</div>}
     </div> : null
 
   if (!availableDepartments.length) return <section data-ui-key="u-2afe292ca0ca" className="work-schedule-page"><div className="warning-box">Tài khoản chưa được cấp quyền Lịch làm việc.</div></section>
@@ -1198,6 +1244,7 @@ export default function WorkSchedulePage({ user }) {
       <VeraDateInput aria-label="Đến ngày" min={customStart} value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} />
     </div>}
 
+    {catalogError && <p role="alert">{catalogError}</p>}
     <UiToolbar data-ui-key="u-8e8fa302b3e3" className="schedule-department-tabs">{availableDepartments.map((item) => <button data-ui-key="u-c72ddb608d35" type="button" key={item} className={department === item ? 'active' : ''} onClick={() => { setViolationOpenSequence(0); setDepartment(item) }}>{DEPARTMENT_INFO[item].label}</button>)}</UiToolbar>
 
     <div className="schedule-violation-launch date-search-toolbar">{['admin', 'quanly'].includes(role) && availableDepartments.includes(department) && <button type="button" className="primary-button" onClick={() => setViolationOpenSequence(value => value + 1)}>+ Nhập phạt vi phạm</button>}<DateSearchField ariaLabel="Ngày lịch làm việc" value={rangeMode === 'day' ? customStart : ''} onChange={date => { if (!date) { selectRange('week'); return }; setCustomStart(date); setCustomEnd(date); selectRange('day') }} /></div>
@@ -1244,7 +1291,7 @@ export default function WorkSchedulePage({ user }) {
           const isOwn = String(employee.username || '').toLowerCase() === ownUsername
           const isHighlightedEmployee = highlightedEmployee === employee.username
           const isHighlightedByTotal = Boolean(highlightedTotal && employeeMatchesTotal(employee, highlightedTotal.day, highlightedTotal.shift))
-          return <tr key={employee.username} className={isOwn ? 'own-row' : ''}><td className="employee-cell"><div className="employee-name-line"><button data-ui-key="u-bcf9b8f0884f" type="button" className={`employee-highlight-button ${isHighlightedEmployee || isHighlightedByTotal ? 'active' : ''}`.trim()} aria-pressed={isHighlightedEmployee || isHighlightedByTotal} title="Highlight các ngày nhân viên làm việc" onClick={() => { setHighlightedTotal(null); setHighlightedEmployee((current) => current === employee.username ? '' : employee.username) }}><strong>{systemName(employee)}</strong></button>{isAdmin && <button data-ui-key="u-4c2fd6ca7829" type="button" className="system-name-edit" title="Đổi tên hệ thống" onClick={() => void renameSystemName(employee)}><PencilLine size={13}/></button>}</div><span className="employee-role">{DEPARTMENT_INFO[department].label}</span></td>{days.map((date) => {
+          return <tr key={employee.username} className={isOwn ? 'own-row' : ''}><td className="employee-cell"><div className="employee-name-line"><button data-ui-key="u-bcf9b8f0884f" type="button" className={`employee-highlight-button ${isHighlightedEmployee || isHighlightedByTotal ? 'active' : ''}`.trim()} aria-pressed={isHighlightedEmployee || isHighlightedByTotal} title="Highlight các ngày nhân viên làm việc" onClick={() => { setHighlightedTotal(null); setHighlightedEmployee((current) => current === employee.username ? '' : employee.username) }}><strong>{systemName(employee)}</strong></button>{isAdmin && <button data-ui-key="u-4c2fd6ca7829" type="button" className="system-name-edit" title="Đổi tên hệ thống" onClick={() => void renameSystemName(employee)}><PencilLine size={13}/></button>}</div><span className="employee-role">{(DEPARTMENT_INFO[department]?.label || department)}</span></td>{days.map((date) => {
             const day = isoDate(date)
             const value = { ...emptyCell(), ...(drafts[keyFor(employee.username, day)] || {}) }
             const isSelected = selectedCell?.username === employee.username && selectedCell?.day === day
@@ -1254,17 +1301,17 @@ export default function WorkSchedulePage({ user }) {
             return <td key={day} className={tdClass} tabIndex={0} onFocus={() => setSelectedCell({ username: employee.username, day })} onClick={() => setSelectedCell({ username: employee.username, day })} onKeyDown={(event) => handleCellKeyDown(event, employee.username, day)}><div className="schedule-cell-editor">{editorFor(employee, day, value)}</div><div className={`mobile-cell-summary ${mobileShiftClass}`} title={compactCellLabel(value, department)}>{compactCellLabel(value, department)}</div></td>
           })}</tr>
         })}</tbody>
-        {department !== 'quanly' && configuredShiftNames.length > 0 && <tfoot>{configuredShiftNames.map((shift) => <tr key={`summary-${shift}`}><td className="summary-label">Tổng NV · {shift}</td>{days.map((date) => {
+        {!isDailyTimeDepartment && configuredShiftNames.length > 0 && <tfoot>{configuredShiftNames.map((shift) => <tr key={`summary-${shift}`}><td className="summary-label">Tổng NV · {shift}</td>{days.map((date) => {
           const day = isoDate(date)
           const counts = shiftSummary?.[day]?.[shift] || { regular: 0, overtime: 0, total: 0 }
           const active = highlightedTotal?.day === day && highlightedTotal?.shift === shift
           return <td key={`${shift}-${day}`} className={day === todayIso ? 'today' : ''}><button data-ui-key="u-cabe61b7ed0a" type="button" className={`shift-total-cell ${active ? 'active' : ''}`} title={`Highlight nhân viên ${shift} ngày ${displayFullDate(date)}`} onClick={() => { setHighlightedEmployee(''); setHighlightedTotal((current) => current?.day === day && current?.shift === shift ? null : { day, shift }) }}><b>{counts.total}</b><small>{counts.regular} chính + {counts.overtime} TC</small></button></td>
         })}</tr>)}</tfoot>}
       </table>
-      {!employees.length && <div className="revenue-meta">Không có nhân viên đang hiển thị trong nhóm {DEPARTMENT_INFO[department].label}.</div>}
+      {!employees.length && <div className="revenue-meta">Không có nhân viên đang hiển thị trong nhóm {(DEPARTMENT_INFO[department]?.label || department)}.</div>}
     </div></StableDataRegion>
     {!loading && <div className="schedule-scroll monthly-statistics">
-      <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · đến ngày hiện tại · {DEPARTMENT_INFO[department].label}</h3>
+      <h3>THỐNG KÊ THÁNG {month.split('-').reverse().join('/')} · đến ngày hiện tại · {(DEPARTMENT_INFO[department]?.label || department)}</h3>
       <div className="schedule-filter-bar statistics-month-filters" role="group" aria-label="Lọc bảng thống kê tháng">
         <button type="button" disabled={exportingStatistics || busy} onClick={() => void exportMonthlyStatistics()}><Download size={16}/>{exportingStatistics ? 'Đang xuất…' : 'Xuất excel'}</button>
         {[['month', 'Tháng này'], ['last_month', 'Tháng trước']].map(([mode, label]) => {
@@ -1276,10 +1323,10 @@ export default function WorkSchedulePage({ user }) {
       <table data-ui-key="u-8fdcd960382d">
         <thead><tr><th data-ui-key="u-aa04bfca6a93" data-ui-label-default="Nhân viên"><UiCustomText uiKey="u-aa04bfca6a93">Nhân viên</UiCustomText></th><th data-ui-key="u-60cb3725cefa" data-ui-label-default="Ngày làm việc"><UiCustomText uiKey="u-60cb3725cefa">Ngày làm việc</UiCustomText></th><th data-ui-key="u-633c4405c5b1" data-ui-label-default="Ngày nghỉ"><UiCustomText uiKey="u-633c4405c5b1">Ngày nghỉ</UiCustomText></th><th data-ui-key="u-1d9cca3c2396" data-ui-label-default="Ngày Ca 1"><UiCustomText uiKey="u-1d9cca3c2396">Ngày Ca 1</UiCustomText></th><th data-ui-key="u-6b76f996ba14" data-ui-label-default="Ngày Ca 2"><UiCustomText uiKey="u-6b76f996ba14">Ngày Ca 2</UiCustomText></th><th data-ui-key="u-3692d119b2c2" data-ui-label-default="Giờ tăng ca"><UiCustomText uiKey="u-3692d119b2c2">Giờ tăng ca</UiCustomText></th><th>Vi phạm</th><th>Phạt vi phạm</th></tr></thead>
         <tbody>{monthlyStatistics.rows.map((item) => <tr key={`month-${item.username}`}><td><strong>{item.name}</strong></td><td>{item.workDays}</td><td>{item.offDays}</td><td>{item.ca1Days}</td><td>{item.ca2Days}</td><td>{item.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{violationStatsError || !canViewEmployeeViolations(item.username) ? '—' : item.violations}</td><td>{violationStatsError || !canViewEmployeeViolations(item.username) ? '—' : `${item.penalty.toLocaleString('vi-VN')}đ`}</td></tr>)}</tbody>
-        <tfoot><tr><td>Tổng bộ phận {DEPARTMENT_INFO[department].label}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{violationStatsError || !canViewDepartmentViolations ? '—' : monthlyStatistics.departmentTotal.violations}</td><td>{violationStatsError || !canViewDepartmentViolations ? '—' : `${monthlyStatistics.departmentTotal.penalty.toLocaleString('vi-VN')}đ`}</td></tr></tfoot>
+        <tfoot><tr><td>Tổng bộ phận {(DEPARTMENT_INFO[department]?.label || department)}</td><td>{monthlyStatistics.departmentTotal.workDays}</td><td>{monthlyStatistics.departmentTotal.offDays}</td><td>{monthlyStatistics.departmentTotal.ca1Days}</td><td>{monthlyStatistics.departmentTotal.ca2Days}</td><td>{monthlyStatistics.departmentTotal.overtimeHours.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}</td><td>{violationStatsError || !canViewDepartmentViolations ? '—' : monthlyStatistics.departmentTotal.violations}</td><td>{violationStatsError || !canViewDepartmentViolations ? '—' : `${monthlyStatistics.departmentTotal.penalty.toLocaleString('vi-VN')}đ`}</td></tr></tfoot>
       </table>
     </div>}
-    <ScheduleViolations key={department} departmentLabel={DEPARTMENT_INFO[department].label} personal={!canViewDepartmentViolations} openSequence={violationOpenSequence} canManage={isAdmin} department={department} employees={employees} canEdit={['admin', 'quanly'].includes(role) && availableDepartments.includes(department)} request={scheduleRequest} onSaved={() => setViolationRevision(value => value + 1)} onExport={exportViolations} />
+    <ScheduleViolations key={`${scheduleIdentity}|${department}`} departmentLabel={(DEPARTMENT_INFO[department]?.label || department)} personal={!canViewDepartmentViolations} openSequence={violationOpenSequence} canManage={isAdmin} department={department} employees={employees} canEdit={['admin', 'quanly'].includes(role) && availableDepartments.includes(department)} request={scheduleRequest} onSaved={() => setViolationRevision(value => value + 1)} onExport={exportViolations} />
     {!loading && comboEditor}
   </section>
 }

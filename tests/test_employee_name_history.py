@@ -66,6 +66,7 @@ def database():
                            connect_args={'options': f'-csearch_path={schema}'})
     try:
         with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE vera_app_setting(category text, setting_key text, value_json jsonb, revision bigint NOT NULL DEFAULT 0, updated_at timestamptz DEFAULT now(), PRIMARY KEY(category,setting_key))"))
             conn.execute(text("CREATE TABLE employees(username text PRIMARY KEY, full_name text, role text, payload jsonb DEFAULT '{}'::jsonb)"))
             conn.execute(text("INSERT INTO employees VALUES('Gia Anh','Nguyễn Gia Anh','letan','{}')"))
             schedule._ensure_schema(conn)

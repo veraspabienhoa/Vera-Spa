@@ -27,7 +27,7 @@ const items = [
   { id: 'live-tour', label: 'Live Tour', icon: RadioTower, ready: true },
   { id: 'milk-tea', label: 'Trà sữa', icon: CircleDollarSign, ready: true, roles: ['leader', 'nhanvien'] },
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan', 'leader', 'nhanvien'] },
-  { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_tapvu'] },
+  { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_tapvu', 'work_schedule_hc'] },
   { id: 'online-bookings', label: 'Booking online', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan'] },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, anyPermission: ['snapshot_today', 'device_history_view'] },
   { id: 'payroll', label: 'Bảng Lương', icon: WalletCards, ready: true, anyPermission: ['payroll_history', 'payroll_calculate'] },
