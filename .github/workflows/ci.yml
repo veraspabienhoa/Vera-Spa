@@ -719,6 +719,28 @@ jobs:
           requirements = Path('requirements.txt').read_text(encoding='utf-8')
           delete_staff_route = staff_api.split('@app.delete("/v2/staff")', 1)[1].split('@app.get("/v2/staff/export.xlsx")', 1)[0]
 
+          from vera_database_runtime import pool_configuration
+          legacy_database = Path('vera_postgres.py').read_text(encoding='utf-8')
+          def pool_recycling_is_safe():
+              # Exercise the shared runtime contract, not its former inline spelling.
+              for role, source in (('api', api), ('background', legacy_database)):
+                  if (f"configuration = pool_configuration('{role}')" not in source
+                          or '**configuration.engine_kwargs()' not in source):
+                      return False
+                  defaults = pool_configuration(role, {}).engine_kwargs()
+                  if defaults['pool_recycle'] != 3600 or defaults['pool_pre_ping'] is not True:
+                      return False
+                  for seconds in (3600, 7200, 86400):
+                      if pool_configuration(role, {'DB_POOL_RECYCLE': str(seconds)}).engine_kwargs()['pool_recycle'] != seconds:
+                          return False
+                  for invalid in ('-1', '0', '3599', '86401', 'invalid'):
+                      try:
+                          pool_configuration(role, {'DB_POOL_RECYCLE': invalid})
+                      except ValueError:
+                          continue
+                      return False
+              return True
+
           for source in (staff_api, phase3, phase5, timesoft_job, auto_penalty_job, daily_ops_job):
               ast.parse(source)
           checks = {
@@ -735,7 +757,7 @@ jobs:
               'employee background directories read PostgreSQL': 'def load_employee_name_map()' in timesoft_job and 'FROM employees' in timesoft_job and 'Read employee email recipients from PostgreSQL only.' in auto_penalty_job and 'Hồ sơ nhân viên chỉ đọc từ PostgreSQL' in daily_ops_job,
               'leave reads avoid duplicate full-row pooler egress': 'SELECT * FROM leave_records" + where' not in phase3 and "payload->'__raw_values' AS raw_values" in phase3 and 'if "__record_uid" in base.columns:' in Path('vera_postgres_phase17.py').read_text(encoding='utf-8'),
               'feature permission reads are cached and batched': '_permission_payload(conn)' in api and 'permission_payload = _permission_payload(conn)' in api and 'permissions_changed=_clear_permission_cache' in api,
-              'pooler connections are reused to avoid timezone catalog churn': 'pool_recycle=max(3600' in api and 'recycle = max(3600' in Path('vera_postgres.py').read_text(encoding='utf-8'),
+              'pooler connections are reused to avoid timezone catalog churn': pool_recycling_is_safe(),
               'front desk role scope is enforced': 'FRONTDESK_ROLES = {"nhanvien", "locker", "tapvu", "support"}' in staff_api and 'ensure_manageable' in staff_api,
               'employee feature permissions are exposed': all(key in permissions for key in ('staff_list', 'staff_export', 'staff_import', 'shift_assignment_edit', 'account_lock_edit')),
               'React employees page is routed': "page === 'employees'" in app and 'EmployeePage' in app,
