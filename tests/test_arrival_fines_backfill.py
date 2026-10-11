@@ -52,3 +52,47 @@ def test_wrong_count_stays_blocked():
     data,day,now,window = sample()
     data['syncs'][0]['last_observed_count']=2
     assert 'incomplete_archive' in backfill.evidence_reasons(data,'Test',day,now,window)
+
+
+def allowance_fixture(monkeypatch):
+    monkeypatch.setattr(backfill.auto,'registered_late_for_day',lambda *_:([],0,''))
+    monkeypatch.setattr(backfill.auto,'late_support_for_day',lambda *_:([],0,''))
+    return {'employee_name':'Test','late_minutes':120.5,'check_in_at':'2026-10-10T12:00:30+07:00'}
+
+
+def test_support_fully_covers_lateness(monkeypatch):
+    row=allowance_fixture(monkeypatch)
+    monkeypatch.setattr(backfill.auto,'late_support_for_day',lambda *_:(['support'],180,'support'))
+    assert backfill.arrival_after_allowances(None,row,date(2026,10,10),[])==(0,'allowance_covered')
+
+
+def test_support_preserves_late_seconds(monkeypatch):
+    row=allowance_fixture(monkeypatch)
+    monkeypatch.setattr(backfill.auto,'late_support_for_day',lambda *_:(['support'],120,'support'))
+    assert backfill.arrival_after_allowances(None,row,date(2026,10,10),[])==(0.5,'chargeable')
+
+
+def test_unknown_support_blocks(monkeypatch):
+    row=allowance_fixture(monkeypatch)
+    monkeypatch.setattr(backfill.auto,'late_support_for_day',lambda *_:(['support'],None,'support'))
+    assert backfill.arrival_after_allowances(None,row,date(2026,10,10),[])==(None,'unknown_support_allowance')
+
+
+def test_existing_manual_fine_not_duplicated(monkeypatch):
+    row=allowance_fixture(monkeypatch)
+    leaves=[{'leave_reason':'Đi trễ KHÔNG phép','penalty':100}]
+    assert backfill.arrival_after_allowances(None,row,date(2026,10,10),leaves)==(None,'existing_positive_arrival_fine')
+
+
+def test_approved_leave_preserved(monkeypatch):
+    row=allowance_fixture(monkeypatch)
+    leaves=[{'leave_reason':'Nghỉ CÓ phép','penalty':0}]
+    assert backfill.arrival_after_allowances(None,row,date(2026,10,10),leaves)==(None,'other_leave_or_manual_decision')
+
+
+def test_registered_clock_overrides_support(monkeypatch):
+    row=allowance_fixture(monkeypatch)
+    monkeypatch.setattr(backfill.auto,'registered_late_for_day',lambda *_:(['registered'],720,'registered'))
+    monkeypatch.setattr(backfill.auto,'daily_clock',lambda *_:'12:00')
+    monkeypatch.setattr(backfill.auto,'late_support_for_day',lambda *_:(['support'],180,'support'))
+    assert backfill.arrival_after_allowances(None,row,date(2026,10,10),[])==(0.5,'chargeable')

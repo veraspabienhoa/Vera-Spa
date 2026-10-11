@@ -1,5 +1,6 @@
-"""Bounded production preflight. Logs contain aggregates only; no financial writes."""
+"""Bounded arrival reconciliation; writes require explicit apply mode."""
 import json
+import math
 import os
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -15,6 +16,7 @@ from vera_attendance_participation import suspended
 from vera_holiday_leave import intervals, uncovered
 from vera_resource_concurrency import lock_transition
 from vera_attendance_source import source_for
+from vera_attendance_rules import supported_late_minutes
 
 RELEASE = '8aa549d5ad56be2ea40cabe7fe34c47f0d32108d'
 START = date(2026, 10, 8)
@@ -40,6 +42,36 @@ def existing_arrival(conn, day, username):
     return any(auto._norm(r).startswith('di tre') for r in rows)
 
 
+def arrival_after_allowances(conn, row, day, leaves):
+    """Use official saved leave/late allowances; never infer an employee identity."""
+    username = row['employee_name']
+    minutes = float(row.get('late_minutes') or 0)
+    if not math.isfinite(minutes) or minutes <= 0:
+        return None, 'invalid_lateness'
+    if any(auto._norm(l['leave_reason']).startswith('di tre') and float(l['penalty'] or 0)>0 for l in leaves):
+        return None, 'existing_positive_arrival_fine'
+    registered, baseline, _ = auto.registered_late_for_day(conn,day,username)
+    support, allowance, _ = auto.late_support_for_day(conn,day,username)
+    permitted = set(auto.REGISTERED_LATE_REASONS)
+    if any('ho tro' not in auto._norm(l['leave_reason']) and auto._norm(l['leave_reason']) not in permitted for l in leaves):
+        return None, 'other_leave_or_manual_decision'
+    if registered:
+        clock = auto.daily_clock(conn,day,username,'late')
+        if not clock or not row.get('check_in_at'):
+            return None, 'unknown_registered_baseline'
+        instant = datetime.fromisoformat(str(row['check_in_at']))
+        if instant.tzinfo is None:
+            return None, 'invalid_checkin_timestamp'
+        instant = instant.astimezone(VN_TZ)
+        allowed = datetime.combine(day,datetime.min.time(),tzinfo=VN_TZ)+timedelta(minutes=baseline)
+        minutes = max(0.0,(instant-allowed).total_seconds()/60)
+    elif support:
+        minutes = supported_late_minutes(minutes,allowance)
+        if minutes is None:
+            return None, 'unknown_support_allowance'
+    return minutes, 'allowance_covered' if minutes <= 0 else 'chargeable'
+
+
 def main():
     verify_runtime(RELEASE)
     apply = os.environ.get('VERA_BACKFILL_MODE', 'readonly') == 'apply'
@@ -48,16 +80,16 @@ def main():
     try:
         with engine.begin() as conn:
             now = datetime.now(VN_TZ)
-            current = hc.policy(conn)
-            current['eligible_departments'] = set(hc.definitions(conn))
-            configs = pay._employee_config_map(conn)
-            paused = auto.penalties_paused(conn)
             if apply:
                 conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:hc-rules'))"))
                 owners = conn.execute(text('SELECT DISTINCT employee_username FROM vera_work_schedule WHERE work_date BETWEEN :start AND :end'),{'start':START,'end':END}).scalars().all()
                 lock_transition(conn,[('leave_employee',name) for name in owners],legacy_keys=['vera:phase4:leave_primary'])
-                if paused:
-                    raise RuntimeError('paused')
+            current = hc.policy(conn)
+            current['eligible_departments'] = set(hc.definitions(conn))
+            configs = pay._employee_config_map(conn)
+            paused = auto.penalties_paused(conn)
+            if apply and paused:
+                raise RuntimeError('paused')
             catalog = auto.load_catalog(conn)
             days = []
             for offset in range((END-START).days+1):
@@ -125,13 +157,11 @@ def main():
                             counts['ktv_existing_event'] += 1
                             continue
                         leaves = conn.execute(text('SELECT leave_reason,penalty FROM leave_records WHERE leave_date=:day AND lower(btrim(employee_name))=lower(btrim(:name))'),{'day':day,'name':username}).mappings().all()
-                        if leaves:
-                            positive_arrival = any(auto._norm(l['leave_reason']).startswith('di tre') and float(l['penalty'] or 0)>0 for l in leaves)
-                            counts['ktv_existing_positive_arrival_fine' if positive_arrival else 'ktv_other_leave_requires_review'] += 1
-                            # Preserve manual decisions and every approved leave;
-                            # never resurrect revoked fines or guess allowances.
-                            counts['ktv_existing_leave_or_manual_record'] += 1
+                        minutes, disposition = arrival_after_allowances(conn,row,day,leaves)
+                        if disposition != 'chargeable':
+                            counts['ktv_'+disposition] += 1
                             continue
+                        counts['ktv_chargeable_after_allowances'] += 1
                         if not auto.automatic_penalty_employee_eligible(conn,username,day):
                             counts['ktv_ineligible_assignment'] += 1
                             continue
@@ -148,12 +178,16 @@ def main():
                         if not item or item['days'] != 0 or item['penalty'] <= 0:
                             counts['ktv_invalid_catalog'] += 1
                             continue
-                        if intervals(conn,*window,[username]).get(username):
+                        checkin = datetime.fromisoformat(str(row['check_in_at']))
+                        if checkin.tzinfo is None:
+                            raise ValueError('invalid_checkin_timestamp')
+                        late_window = (checkin-timedelta(minutes=minutes),checkin)
+                        if intervals(conn,*late_window,[username]).get(username):
                             counts['ktv_holiday_covered'] += 1
                             continue
                         counts['ktv_ready'] += 1
                         if apply:
-                            ok, status = auto.save_violation(conn,work_date=day,employee=username,reason_item=item,detail='Đối soát FaceGate 08–11-10-2026 · Lịch VERA · check-in '+str(row['check_in']),source='VERA · ĐỐI SOÁT ĐI TRỄ 08–11-10-2026',minutes=float(row['late_minutes']),approved_window=window)
+                            ok, status = auto.save_violation(conn,work_date=day,employee=username,reason_item=item,detail='Đối soát FaceGate 08–11-10-2026 · Lịch VERA · check-in '+str(row['check_in']),source='VERA · ĐỐI SOÁT ĐI TRỄ 08–11-10-2026',minutes=minutes,approved_window=late_window)
                             if not ok or status != 'ADDED':
                                 raise RuntimeError('unexpected_writer_result')
                             event_key = f"{day.isoformat()}|{auto._norm(username)}|{auto._norm(item['name'])}"
