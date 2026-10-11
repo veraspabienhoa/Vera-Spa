@@ -77,6 +77,12 @@ def _backfill(conn) -> dict:
     mirrored = _backfill_live_tour(conn)
     from vera_live_tour_query import ensure_schema as ensure_query_schema
     ensure_query_schema(conn)
+    # Inert installation only. Number-registry activation requires all writers
+    # stopped and an explicit parity-checked maintenance command.
+    from vera_live_tour_bill_numbers import ensure_schema as ensure_bill_schema
+    ensure_bill_schema(conn)
+    from vera_worker_runtime import ensure_schema_conn as ensure_worker_schema
+    ensure_worker_schema(conn)
     conn.execute(text("""
         INSERT INTO vera_schema_version(component,version,updated_at)
         VALUES('system_resource_concurrency',1,NOW())

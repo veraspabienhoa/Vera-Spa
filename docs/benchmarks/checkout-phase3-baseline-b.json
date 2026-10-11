@@ -1,0 +1,908 @@
+{
+  "scope": "Synthetic in-process TestClient API + local PostgreSQL; no WAN/browser/production capacity claim",
+  "measurement": "Latency excludes byte probes; returned rows include scalar reads and RETURNING; decoded bytes are compact JSON UTF-8, not wire bytes",
+  "load": "Closed-loop callers; one attempt per unique payment; fail-fast 409/503 counted, no automatic retries",
+  "git_sha": "9c0260f48a42b9b911404b6da3569d0a342d85d8",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "executable": "/opt/codex/runtimes/codex-primary-runtime/dependencies/python/bin/python3.12",
+  "postgres": "16.2",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "harness_sha256": "2fec4f17d26ef67e25a79c9c62ef60dba38953b0ce2341202efdb1247a1b363f",
+  "core_sources_sha256": {
+    "vera_web_v2_live_tour.py": "396e6dd34b03002036bb16b12d48aa9b85064947cedaece7a01dd6811fad99e4",
+    "vera_live_tour_resource_store.py": "32263781e759eb6bcb522fa6a6e26e145522fcd42ba3da8bf7c54c17075223fb",
+    "vera_live_tour_relational.py": "382f035a1dd6abaa5c8352105421a2c7d83f63144309ba454aca96de452f804f",
+    "vera_live_tour_receipts.py": "dbe27ad9da55359be6c907df46f6d92a994c9763a1c3ce81ffee77f0bfd13425",
+    "vera_web_v2_api.py": "6fb5b231bf0bc3789ba87801dd6c67348d76c04ab48ffa0a2454cc21f3cabae6",
+    "vera_web_v2_local_auth.py": "6562db1994229f4f9990fa4a6adc181599a12cfed4c791a84d3f35246d9a729d"
+  },
+  "cpu_count": 9,
+  "cpu_quota": null,
+  "dependencies": {
+    "fastapi": "0.143.0",
+    "starlette": "1.7.0",
+    "httpx": "0.28.1",
+    "httpx2": "2.13.1",
+    "SQLAlchemy": "2.1.4",
+    "psycopg": "3.3.6"
+  },
+  "activation": null,
+  "background_workers": "disabled by identical isolated ASGI lifespan",
+  "cases": [
+    {
+      "attempts": 40,
+      "status_counts": {
+        "200": 40
+      },
+      "successes": 40,
+      "successful_latency_ms": {
+        "n": 40,
+        "p50": 23.852,
+        "p95": 25.7
+      },
+      "all_attempt_latency_ms": {
+        "n": 40,
+        "p50": 23.852,
+        "p95": 25.7
+      },
+      "successful_sql_count": {
+        "n": 40,
+        "p50": 26.0,
+        "p95": 28
+      },
+      "successful_returned_rows": {
+        "n": 40,
+        "p50": 349.5,
+        "p95": 361
+      },
+      "successful_sql_execute_ms": {
+        "n": 40,
+        "p50": 5.56,
+        "p95": 7.659
+      },
+      "ledger_hold_ms": {
+        "n": 40,
+        "p50": 15.814,
+        "p95": 17.004
+      },
+      "phases_ms": {
+        "authorize": {
+          "n": 40,
+          "p50": 0.72,
+          "p95": 0.91
+        },
+        "lock_read": {
+          "n": 40,
+          "p50": 11.335,
+          "p95": 12.86
+        },
+        "apply": {
+          "n": 40,
+          "p50": 3.245,
+          "p95": 3.72
+        },
+        "write": {
+          "n": 40,
+          "p50": 5.855,
+          "p95": 7.21
+        },
+        "commit": {
+          "n": 40,
+          "p50": 0.15,
+          "p95": 0.3
+        },
+        "response_read": {
+          "n": 40,
+          "p50": 0.01,
+          "p95": 0.01
+        },
+        "render": {
+          "n": 40,
+          "p50": 0.08,
+          "p95": 0.13
+        }
+      },
+      "scenarios": {
+        "auto": {
+          "200": 10
+        },
+        "manual": {
+          "200": 10
+        },
+        "pending": {
+          "200": 10
+        },
+        "combo": {
+          "200": 10
+        }
+      },
+      "history_invoices": 0,
+      "history_voids": 0,
+      "callers": 1,
+      "warmups": 4,
+      "dataset_sha256": "b06ed788c93d2372576177ff90816d77d92511d5279de2d3ace39d95e88b76c7",
+      "elapsed_seconds": 0.962448,
+      "successful_checkouts_per_second": 41.561,
+      "attempts_per_second": 41.561,
+      "auth": {
+        "samples": 46,
+        "status_counts": {
+          "200": 46
+        },
+        "latency_ms": {
+          "n": 46,
+          "p50": 8.873,
+          "p95": 13.895
+        }
+      },
+      "byte_probes": [
+        {
+          "scenario": "auto",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 329,
+          "decoded_result_bytes": 116520
+        },
+        {
+          "scenario": "manual",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 330,
+          "decoded_result_bytes": 117689
+        },
+        {
+          "scenario": "pending",
+          "status": 200,
+          "sql_count": 27,
+          "returned_rows": 343,
+          "decoded_result_bytes": 127472
+        },
+        {
+          "scenario": "combo",
+          "status": 200,
+          "sql_count": 28,
+          "returned_rows": 332,
+          "decoded_result_bytes": 118215
+        }
+      ],
+      "checks": {
+        "ledger_count": 48,
+        "unique_bill_numbers": true,
+        "replay": true,
+        "revoked_session_rejected": true
+      },
+      "repeat": 1
+    },
+    {
+      "attempts": 40,
+      "status_counts": {
+        "503": 33,
+        "200": 7
+      },
+      "successes": 7,
+      "successful_latency_ms": {
+        "n": 7,
+        "p50": 95.775,
+        "p95": 104.778
+      },
+      "all_attempt_latency_ms": {
+        "n": 40,
+        "p50": 44.129,
+        "p95": 97.457
+      },
+      "successful_sql_count": {
+        "n": 7,
+        "p50": 25,
+        "p95": 28
+      },
+      "successful_returned_rows": {
+        "n": 7,
+        "p50": 335,
+        "p95": 345
+      },
+      "successful_sql_execute_ms": {
+        "n": 7,
+        "p50": 51.713,
+        "p95": 54.398
+      },
+      "ledger_hold_ms": {
+        "n": 7,
+        "p50": 68.063,
+        "p95": 72.225
+      },
+      "phases_ms": {
+        "authorize": {
+          "n": 7,
+          "p50": 3.53,
+          "p95": 6.61
+        },
+        "lock_read": {
+          "n": 7,
+          "p50": 38.64,
+          "p95": 44.17
+        },
+        "apply": {
+          "n": 7,
+          "p50": 3.22,
+          "p95": 4.04
+        },
+        "write": {
+          "n": 7,
+          "p50": 41.62,
+          "p95": 47.18
+        },
+        "commit": {
+          "n": 7,
+          "p50": 1.1,
+          "p95": 3.49
+        },
+        "response_read": {
+          "n": 7,
+          "p50": 0.01,
+          "p95": 0.01
+        },
+        "render": {
+          "n": 7,
+          "p50": 0.1,
+          "p95": 0.12
+        }
+      },
+      "scenarios": {
+        "auto": {
+          "503": 8,
+          "200": 2
+        },
+        "manual": {
+          "200": 2,
+          "503": 8
+        },
+        "pending": {
+          "503": 9,
+          "200": 1
+        },
+        "combo": {
+          "503": 8,
+          "200": 2
+        }
+      },
+      "history_invoices": 0,
+      "history_voids": 0,
+      "callers": 4,
+      "warmups": 4,
+      "dataset_sha256": "b06ed788c93d2372576177ff90816d77d92511d5279de2d3ace39d95e88b76c7",
+      "elapsed_seconds": 0.511006,
+      "successful_checkouts_per_second": 13.698,
+      "attempts_per_second": 78.277,
+      "auth": {
+        "samples": 16,
+        "status_counts": {
+          "200": 16
+        },
+        "latency_ms": {
+          "n": 16,
+          "p50": 21.719,
+          "p95": 31.412
+        }
+      },
+      "byte_probes": [
+        {
+          "scenario": "auto",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 329,
+          "decoded_result_bytes": 116520
+        },
+        {
+          "scenario": "manual",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 330,
+          "decoded_result_bytes": 117689
+        },
+        {
+          "scenario": "pending",
+          "status": 200,
+          "sql_count": 27,
+          "returned_rows": 343,
+          "decoded_result_bytes": 127472
+        },
+        {
+          "scenario": "combo",
+          "status": 200,
+          "sql_count": 28,
+          "returned_rows": 332,
+          "decoded_result_bytes": 118215
+        }
+      ],
+      "checks": {
+        "ledger_count": 15,
+        "unique_bill_numbers": true,
+        "replay": true,
+        "revoked_session_rejected": true
+      },
+      "repeat": 1
+    },
+    {
+      "attempts": 40,
+      "status_counts": {
+        "200": 40
+      },
+      "successes": 40,
+      "successful_latency_ms": {
+        "n": 40,
+        "p50": 45.53,
+        "p95": 55.545
+      },
+      "all_attempt_latency_ms": {
+        "n": 40,
+        "p50": 45.53,
+        "p95": 55.545
+      },
+      "successful_sql_count": {
+        "n": 40,
+        "p50": 26.0,
+        "p95": 28
+      },
+      "successful_returned_rows": {
+        "n": 40,
+        "p50": 1449.5,
+        "p95": 1461
+      },
+      "successful_sql_execute_ms": {
+        "n": 40,
+        "p50": 8.535,
+        "p95": 11.755
+      },
+      "ledger_hold_ms": {
+        "n": 40,
+        "p50": 35.361,
+        "p95": 40.655
+      },
+      "phases_ms": {
+        "authorize": {
+          "n": 40,
+          "p50": 1.07,
+          "p95": 1.44
+        },
+        "lock_read": {
+          "n": 40,
+          "p50": 22.525,
+          "p95": 25.62
+        },
+        "apply": {
+          "n": 40,
+          "p50": 7.39,
+          "p95": 8.08
+        },
+        "write": {
+          "n": 40,
+          "p50": 11.17,
+          "p95": 12.73
+        },
+        "commit": {
+          "n": 40,
+          "p50": 0.19,
+          "p95": 0.27
+        },
+        "response_read": {
+          "n": 40,
+          "p50": 0.01,
+          "p95": 0.01
+        },
+        "render": {
+          "n": 40,
+          "p50": 0.655,
+          "p95": 0.81
+        }
+      },
+      "scenarios": {
+        "auto": {
+          "200": 10
+        },
+        "manual": {
+          "200": 10
+        },
+        "pending": {
+          "200": 10
+        },
+        "combo": {
+          "200": 10
+        }
+      },
+      "history_invoices": 1000,
+      "history_voids": 100,
+      "callers": 1,
+      "warmups": 4,
+      "dataset_sha256": "83500ac7f528a2a8b0e41e86e476abe8cca9cd1a4aeb6a7e5bf5e1acca374d99",
+      "elapsed_seconds": 2.078449,
+      "successful_checkouts_per_second": 19.245,
+      "attempts_per_second": 19.245,
+      "auth": {
+        "samples": 82,
+        "status_counts": {
+          "200": 82
+        },
+        "latency_ms": {
+          "n": 82,
+          "p50": 10.92,
+          "p95": 18.575
+        }
+      },
+      "byte_probes": [
+        {
+          "scenario": "auto",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 1429,
+          "decoded_result_bytes": 226477
+        },
+        {
+          "scenario": "manual",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 1430,
+          "decoded_result_bytes": 227649
+        },
+        {
+          "scenario": "pending",
+          "status": 200,
+          "sql_count": 27,
+          "returned_rows": 1443,
+          "decoded_result_bytes": 237435
+        },
+        {
+          "scenario": "combo",
+          "status": 200,
+          "sql_count": 28,
+          "returned_rows": 1432,
+          "decoded_result_bytes": 228181
+        }
+      ],
+      "checks": {
+        "ledger_count": 1048,
+        "unique_bill_numbers": true,
+        "replay": true,
+        "revoked_session_rejected": true
+      },
+      "repeat": 1
+    },
+    {
+      "attempts": 40,
+      "status_counts": {
+        "503": 37,
+        "200": 3
+      },
+      "successes": 3,
+      "successful_latency_ms": {
+        "n": 3,
+        "p50": 167.987,
+        "p95": 191.199
+      },
+      "all_attempt_latency_ms": {
+        "n": 40,
+        "p50": 36.229,
+        "p95": 156.545
+      },
+      "successful_sql_count": {
+        "n": 3,
+        "p50": 28,
+        "p95": 28
+      },
+      "successful_returned_rows": {
+        "n": 3,
+        "p50": 1434,
+        "p95": 1443
+      },
+      "successful_sql_execute_ms": {
+        "n": 3,
+        "p50": 43.036,
+        "p95": 51.979
+      },
+      "ledger_hold_ms": {
+        "n": 3,
+        "p50": 137.493,
+        "p95": 156.736
+      },
+      "phases_ms": {
+        "authorize": {
+          "n": 3,
+          "p50": 3.41,
+          "p95": 3.99
+        },
+        "lock_read": {
+          "n": 3,
+          "p50": 44.96,
+          "p95": 49.56
+        },
+        "apply": {
+          "n": 3,
+          "p50": 7.51,
+          "p95": 7.93
+        },
+        "write": {
+          "n": 3,
+          "p50": 102.15,
+          "p95": 117.17
+        },
+        "commit": {
+          "n": 3,
+          "p50": 0.82,
+          "p95": 1.13
+        },
+        "response_read": {
+          "n": 3,
+          "p50": 0.01,
+          "p95": 0.01
+        },
+        "render": {
+          "n": 3,
+          "p50": 0.81,
+          "p95": 0.95
+        }
+      },
+      "scenarios": {
+        "auto": {
+          "503": 10
+        },
+        "manual": {
+          "503": 9,
+          "200": 1
+        },
+        "pending": {
+          "200": 1,
+          "503": 9
+        },
+        "combo": {
+          "503": 9,
+          "200": 1
+        }
+      },
+      "history_invoices": 1000,
+      "history_voids": 100,
+      "callers": 4,
+      "warmups": 4,
+      "dataset_sha256": "83500ac7f528a2a8b0e41e86e476abe8cca9cd1a4aeb6a7e5bf5e1acca374d99",
+      "elapsed_seconds": 0.490192,
+      "successful_checkouts_per_second": 6.12,
+      "attempts_per_second": 81.601,
+      "auth": {
+        "samples": 17,
+        "status_counts": {
+          "200": 17
+        },
+        "latency_ms": {
+          "n": 17,
+          "p50": 16.393,
+          "p95": 41.858
+        }
+      },
+      "byte_probes": [
+        {
+          "scenario": "auto",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 1429,
+          "decoded_result_bytes": 226477
+        },
+        {
+          "scenario": "manual",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 1430,
+          "decoded_result_bytes": 227649
+        },
+        {
+          "scenario": "pending",
+          "status": 200,
+          "sql_count": 27,
+          "returned_rows": 1443,
+          "decoded_result_bytes": 237435
+        },
+        {
+          "scenario": "combo",
+          "status": 200,
+          "sql_count": 28,
+          "returned_rows": 1432,
+          "decoded_result_bytes": 228181
+        }
+      ],
+      "checks": {
+        "ledger_count": 1011,
+        "unique_bill_numbers": true,
+        "replay": true,
+        "revoked_session_rejected": true
+      },
+      "repeat": 1
+    },
+    {
+      "attempts": 40,
+      "status_counts": {
+        "200": 40
+      },
+      "successes": 40,
+      "successful_latency_ms": {
+        "n": 40,
+        "p50": 422.322,
+        "p95": 473.85
+      },
+      "all_attempt_latency_ms": {
+        "n": 40,
+        "p50": 422.322,
+        "p95": 473.85
+      },
+      "successful_sql_count": {
+        "n": 40,
+        "p50": 26.0,
+        "p95": 28
+      },
+      "successful_returned_rows": {
+        "n": 40,
+        "p50": 11349.5,
+        "p95": 11361
+      },
+      "successful_sql_execute_ms": {
+        "n": 40,
+        "p50": 25.087,
+        "p95": 34.468
+      },
+      "ledger_hold_ms": {
+        "n": 40,
+        "p50": 403.909,
+        "p95": 453.165
+      },
+      "phases_ms": {
+        "authorize": {
+          "n": 40,
+          "p50": 1.265,
+          "p95": 1.63
+        },
+        "lock_read": {
+          "n": 40,
+          "p50": 261.335,
+          "p95": 292.55
+        },
+        "apply": {
+          "n": 40,
+          "p50": 81.225,
+          "p95": 207.07
+        },
+        "write": {
+          "n": 40,
+          "p50": 64.33,
+          "p95": 74.67
+        },
+        "commit": {
+          "n": 40,
+          "p50": 0.25,
+          "p95": 0.37
+        },
+        "response_read": {
+          "n": 40,
+          "p50": 0.01,
+          "p95": 0.02
+        },
+        "render": {
+          "n": 40,
+          "p50": 6.64,
+          "p95": 7.35
+        }
+      },
+      "scenarios": {
+        "auto": {
+          "200": 10
+        },
+        "manual": {
+          "200": 10
+        },
+        "pending": {
+          "200": 10
+        },
+        "combo": {
+          "200": 10
+        }
+      },
+      "history_invoices": 10000,
+      "history_voids": 1000,
+      "callers": 1,
+      "warmups": 4,
+      "dataset_sha256": "96b9a185196d98d14f27091000c81547c65ab5634073d630715c6160e829b18c",
+      "elapsed_seconds": 17.056835,
+      "successful_checkouts_per_second": 2.345,
+      "attempts_per_second": 2.345,
+      "auth": {
+        "samples": 255,
+        "status_counts": {
+          "200": 255
+        },
+        "latency_ms": {
+          "n": 255,
+          "p50": 6.072,
+          "p95": 291.673
+        }
+      },
+      "byte_probes": [
+        {
+          "scenario": "auto",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 11329,
+          "decoded_result_bytes": 1249789
+        },
+        {
+          "scenario": "manual",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 11330,
+          "decoded_result_bytes": 1250963
+        },
+        {
+          "scenario": "pending",
+          "status": 200,
+          "sql_count": 27,
+          "returned_rows": 11343,
+          "decoded_result_bytes": 1260750
+        },
+        {
+          "scenario": "combo",
+          "status": 200,
+          "sql_count": 28,
+          "returned_rows": 11332,
+          "decoded_result_bytes": 1251498
+        }
+      ],
+      "checks": {
+        "ledger_count": 10048,
+        "unique_bill_numbers": true,
+        "replay": true,
+        "revoked_session_rejected": true
+      },
+      "repeat": 1
+    },
+    {
+      "attempts": 40,
+      "status_counts": {
+        "503": 39,
+        "200": 1
+      },
+      "successes": 1,
+      "successful_latency_ms": {
+        "n": 1,
+        "p50": 826.659,
+        "p95": 826.659
+      },
+      "all_attempt_latency_ms": {
+        "n": 40,
+        "p50": 34.838,
+        "p95": 359.629
+      },
+      "successful_sql_count": {
+        "n": 1,
+        "p50": 28,
+        "p95": 28
+      },
+      "successful_returned_rows": {
+        "n": 1,
+        "p50": 11333,
+        "p95": 11333
+      },
+      "successful_sql_execute_ms": {
+        "n": 1,
+        "p50": 35.5,
+        "p95": 35.5
+      },
+      "ledger_hold_ms": {
+        "n": 1,
+        "p50": 800.056,
+        "p95": 800.056
+      },
+      "phases_ms": {
+        "authorize": {
+          "n": 1,
+          "p50": 1.11,
+          "p95": 1.11
+        },
+        "lock_read": {
+          "n": 1,
+          "p50": 270.32,
+          "p95": 270.32
+        },
+        "apply": {
+          "n": 1,
+          "p50": 81.21,
+          "p95": 81.21
+        },
+        "write": {
+          "n": 1,
+          "p50": 460.69,
+          "p95": 460.69
+        },
+        "commit": {
+          "n": 1,
+          "p50": 0.28,
+          "p95": 0.28
+        },
+        "response_read": {
+          "n": 1,
+          "p50": 0.01,
+          "p95": 0.01
+        },
+        "render": {
+          "n": 1,
+          "p50": 6.41,
+          "p95": 6.41
+        }
+      },
+      "scenarios": {
+        "auto": {
+          "503": 10
+        },
+        "manual": {
+          "503": 10
+        },
+        "pending": {
+          "503": 10
+        },
+        "combo": {
+          "200": 1,
+          "503": 9
+        }
+      },
+      "history_invoices": 10000,
+      "history_voids": 1000,
+      "callers": 4,
+      "warmups": 4,
+      "dataset_sha256": "96b9a185196d98d14f27091000c81547c65ab5634073d630715c6160e829b18c",
+      "elapsed_seconds": 0.831824,
+      "successful_checkouts_per_second": 1.202,
+      "attempts_per_second": 48.087,
+      "auth": {
+        "samples": 21,
+        "status_counts": {
+          "200": 21
+        },
+        "latency_ms": {
+          "n": 21,
+          "p50": 13.847,
+          "p95": 28.706
+        }
+      },
+      "byte_probes": [
+        {
+          "scenario": "auto",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 11329,
+          "decoded_result_bytes": 1249789
+        },
+        {
+          "scenario": "manual",
+          "status": 200,
+          "sql_count": 25,
+          "returned_rows": 11330,
+          "decoded_result_bytes": 1250963
+        },
+        {
+          "scenario": "pending",
+          "status": 200,
+          "sql_count": 27,
+          "returned_rows": 11343,
+          "decoded_result_bytes": 1260750
+        },
+        {
+          "scenario": "combo",
+          "status": 200,
+          "sql_count": 28,
+          "returned_rows": 11332,
+          "decoded_result_bytes": 1251498
+        }
+      ],
+      "checks": {
+        "ledger_count": 10009,
+        "unique_bill_numbers": true,
+        "replay": true,
+        "revoked_session_rejected": true
+      },
+      "repeat": 1
+    }
+  ]
+}

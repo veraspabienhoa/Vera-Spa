@@ -9,10 +9,6 @@ _primary = None
 _engine = None
 
 
-def _seconds(name, default):
-    return max(1, min(60, int(os.getenv(name, str(default)))))
-
-
 def auth_engine(primary):
     """Use the same database/SSL policy with a separate, small connection pool.
 
@@ -27,19 +23,13 @@ def auth_engine(primary):
         sslmode = os.getenv('DB_SSLMODE', 'require').strip().lower() or 'require'
         if sslmode not in {'require', 'verify-ca', 'verify-full'}:
             sslmode = 'require'
+        from vera_database_runtime import pool_configuration, validate_runtime_configuration
+        validate_runtime_configuration(required_pool='auth')
+        configuration = pool_configuration('auth')
         engine = create_engine(
             primary.url,
-            pool_size=max(1, min(4, int(os.getenv('DB_AUTH_POOL_SIZE', '2')))),
-            max_overflow=0,
-            pool_timeout=_seconds('DB_AUTH_POOL_TIMEOUT', 5),
-            pool_pre_ping=True,
-            pool_recycle=max(3600, int(os.getenv('DB_POOL_RECYCLE', '3600'))),
-            connect_args={
-                'connect_timeout': max(3, int(os.getenv('DB_CONNECT_TIMEOUT', '10'))),
-                'sslmode': sslmode,
-                'options': '-c statement_timeout=10000 -c lock_timeout=3000 -c idle_in_transaction_session_timeout=15000',
-                'application_name': 'vera-web-v2-auth',
-            },
+            **configuration.engine_kwargs(),
+            connect_args={**configuration.connect_args(), 'sslmode': sslmode},
         )
         old = _engine
         _primary, _engine = primary, engine

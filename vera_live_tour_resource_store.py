@@ -14,6 +14,7 @@ import vera_live_tour_relational as relational
 import vera_resource_concurrency as concurrency
 import vera_live_tour_receipts as receipt_store
 import vera_live_tour_query as query_store
+import vera_live_tour_bill_numbers as bill_numbers
 
 FENCE = 'vera:live-tour:resource-fence:v1'
 INDEPENDENT = frozenset({'start', 'start_room', 'update_appointment', 'set_vip', 'add_minutes', 'booking', 'multi_booking', 'update_booking', 'cancel_booking', 'restart_booking', 'complete', 'set_shift', 'set_work_status', 'start_break', 'end_break', 'replace_service', 'add_service', 'move_pending', 'finish_to_pending', 'checkout', 'quick_checkout', 'pending_update', 'pending_delete', 'paid_invoice_update', 'paid_invoice_delete', 'combo_purchase', 'combo_import'})
@@ -53,8 +54,9 @@ class _AdjustmentSnapshot(_ScopedSnapshot):
 class _PaymentSnapshot(_ScopedSnapshot):
     """Internal checkout read set, never a full board or export snapshot.
 
-    Existing invoices/change history contain numbering headers only, except
-    the current replay's canonical invoice. Missing collections are untouched;
+    Before number-registry activation, invoice/change numbering headers remain.
+    After activation, only the current replay's canonical invoice is read.
+    Missing collections are untouched;
     new ledger rows are appended by write() under the publication row lock.
     """
     appends = PAYMENT_APPENDS
@@ -119,13 +121,24 @@ def read(conn, collections=None, *, payment_key=None, receipt_key=None, profile=
         if collections is not None and name not in collections:
             continue
         projection = 'payload'
+        number_filter = ''
         if payment_key is not None and name == 'invoices':
             projection = f"""CASE WHEN resource_id=(SELECT ({receipt_store.entry_sql('payment_key')})->'result'->'invoice'->>'id'
                 FROM {relational.META_TABLE} WHERE singleton=1) THEN payload
                 ELSE jsonb_build_object('id',resource_id,'bill_no',payload->'bill_no') END"""
+            # Separate UNION branches let PostgreSQL skip the entire legacy scan
+            # with a one-time gate and use the primary key for a current replay.
+            # An OR(active=false, resource_id=...) would still scan all invoices.
+            registry_active = f"COALESCE((SELECT payload->>'{bill_numbers.MARKER}' FROM {relational.META_TABLE} WHERE singleton=1),'false')='true'"
+            number_filter = f" AND NOT ({registry_active})"
+            arms.append(f"""SELECT '{name}' AS kind,resource_id,ordinal,payload,aggregate_revision
+                FROM {table} WHERE deleted_at IS NULL AND ({registry_active})
+                AND resource_id=(SELECT ({receipt_store.entry_sql('payment_key')})->'result'->'invoice'->>'id'
+                FROM {relational.META_TABLE} WHERE singleton=1)""")
         elif payment_key is not None and name == 'invoice_changes':
             projection = "jsonb_build_object('id',resource_id,'before',jsonb_build_object('bill_no',payload->'before'->'bill_no'))"
-        arms.append(f"SELECT '{name}' AS kind,resource_id,ordinal,{projection} AS payload,aggregate_revision FROM {table} WHERE deleted_at IS NULL")
+            number_filter = f" AND COALESCE((SELECT payload->>'{bill_numbers.MARKER}' FROM {relational.META_TABLE} WHERE singleton=1),'false') <> 'true'"
+        arms.append(f"SELECT '{name}' AS kind,resource_id,ordinal,{projection} AS payload,aggregate_revision FROM {table} WHERE deleted_at IS NULL{number_filter}")
     meta_payload = (f"CASE WHEN payload->>'{receipt_store.MARKER}'='true' THEN payload || jsonb_build_object('idempotency',{receipt_store.all_sql()}) ELSE payload END"
                     if collections is None else "payload - 'idempotency'")
     if receipt_key is not None:
@@ -317,31 +330,11 @@ def write(conn, before, after, actor):
     row_receipts = receipt_store.enabled_in(before_meta)
     receipt_patch = " || jsonb_build_object('idempotency',(COALESCE(payload->'idempotency','{}'::jsonb) - CAST(:removed_receipts AS text[])) || CAST(:receipts AS jsonb))" if not row_receipts and (receipts or removed_receipts) else ''
     configuration_patch = " || jsonb_build_object('_configuration_revision',aggregate_revision+1)" if conn.info.get('live_tour_exclusive', True) and not isinstance(before, _AreaSnapshot) else ''
-    revision = int(conn.execute(text(f"""
-        UPDATE {relational.META_TABLE}
-        SET payload=payload || CAST(:patch AS jsonb){business_day_patch}{receipt_patch}{configuration_patch},
-            aggregate_revision=aggregate_revision+1, updated_at=NOW(), payload_hash='active'
-        WHERE singleton=1 RETURNING aggregate_revision
-    """), {'patch': relational._json(changes), 'business_day': business_day,
-           'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
-    if row_receipts:
-        receipt_store.write_changes(conn, receipts, removed_receipts)
     query_ready = query_store.schema_ready(conn)
     ordinal_updates = {}
     deleted = {}
     upserts = {}
     employee_history = []
-    append_ordinals = {}
-    if scoped:
-        # The metadata row above serializes publication, including other
-        # writers of the audit log. Allocate positions after taking that lock.
-        for kind in sorted(appends):
-            entries = sorted(((key, value) for key, value in new.items() if key[0] == kind), key=lambda item: item[1][0])
-            if entries:
-                first_ordinal = int(conn.execute(text(
-                    f'SELECT COALESCE(MAX(ordinal),-1)+1 FROM {relational.RESOURCE_TABLES[kind]} WHERE deleted_at IS NULL'
-                )).scalar_one())
-                append_ordinals.update({key:first_ordinal+index for index,(key,_) in enumerate(entries)})
     for key in sorted(set(old) | set(new)):
         previous = old.get(key)
         current = new.get(key)
@@ -358,7 +351,6 @@ def write(conn, before, after, actor):
             if scoped and kind in appends:
                 if previous is not None:
                     raise RuntimeError('Checkout ledger writes must append')
-                ordinal = append_ordinals[key]
             upserts.setdefault(table, []).append({'resource_id': identifier, 'ordinal': ordinal,
                 'payload': payload, 'payload_hash': relational._digest(payload),
                 **({'query_data': query_store.project(kind, payload)} if query_ready else {})})
@@ -366,6 +358,31 @@ def write(conn, before, after, actor):
             employee_history.append({'position':len(employee_history),'id':identifier,'name':(current or previous)[1].get('name',''),
                  'bo':previous[0] if previous else None,'ao':current[0] if current else None,
                  'before_payload':previous[1] if previous else None,'after_payload':current[1] if current else None})
+    # CPU-only diffs, hashes and query projections above are prepared before
+    # taking the global publication row. Its commit-order semantics stay intact.
+    revision = int(conn.execute(text(f"""
+        UPDATE {relational.META_TABLE}
+        SET payload=payload || CAST(:patch AS jsonb){business_day_patch}{receipt_patch}{configuration_patch},
+            aggregate_revision=aggregate_revision+1, updated_at=NOW(), payload_hash='active'
+        WHERE singleton=1 RETURNING aggregate_revision
+    """), {'patch': relational._json(changes), 'business_day': business_day,
+           'receipts': relational._json(receipts), 'removed_receipts': removed_receipts}).scalar_one())
+    if row_receipts:
+        receipt_store.write_changes(conn, receipts, removed_receipts)
+    append_ordinals = {}
+    if scoped:
+        # The metadata row above serializes publication, including other
+        # writers of the audit log. Allocate positions after taking that lock.
+        for kind in sorted(appends):
+            entries = sorted(((key, value) for key, value in new.items() if key[0] == kind), key=lambda item: item[1][0])
+            if entries:
+                first_ordinal = int(conn.execute(text(
+                    f'SELECT COALESCE(MAX(ordinal),-1)+1 FROM {relational.RESOURCE_TABLES[kind]} WHERE deleted_at IS NULL'
+                )).scalar_one())
+                append_ordinals.update({key:first_ordinal+index for index,(key,_) in enumerate(entries)})
+        for kind in appends:
+            for entry in upserts.get(relational.RESOURCE_TABLES[kind], []):
+                entry['ordinal'] = append_ordinals[(kind, entry['resource_id'])]
     # A single business action can update several workers and append several
     # audit events (finish emits three). Send one statement per collection;
     # all rows and their history still commit in the caller's transaction.

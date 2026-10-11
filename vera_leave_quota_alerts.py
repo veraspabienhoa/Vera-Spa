@@ -1,13 +1,11 @@
 from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 """Admin monthly leave audit and retryable, per-device push delivery."""
-from contextlib import asynccontextmanager
 from datetime import date
 from calendar import monthrange
 from collections import defaultdict
 from hashlib import sha256
 import json
 import logging
-from threading import Event, Thread
 
 from fastapi import Depends, HTTPException, Query
 from sqlalchemy import text
@@ -192,22 +190,12 @@ def install(app, *, engine_instance, current_identity, identity_type, require_fe
         return {'items': items, 'limits': LIMITS, 'start': start.replace(day=1).isoformat(),
                 'end': end.replace(day=monthrange(end.year,end.month)[1]).isoformat()}
 
-    stop = Event()
-    def monitor():
+    from vera_worker_runtime import register_worker
+
+    def monitor(stop):
         while not stop.is_set():
             check_and_notify(engine_instance)
             stop.wait(60)
 
-    previous = app.router.lifespan_context
-    @asynccontextmanager
-    async def lifespan(application):
-        async with previous(application) as state:
-            stop.clear()
-            worker = Thread(target=monitor, name='leave-quota-monitor', daemon=True)
-            worker.start()
-            try:
-                yield state
-            finally:
-                stop.set()
-                worker.join(timeout=2)
-    app.router.lifespan_context = lifespan
+    register_worker(app, engine_instance=engine_instance,
+        name='leave-quota-monitor', target=monitor)

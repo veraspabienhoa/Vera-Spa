@@ -1,9 +1,12 @@
 """Durable PostgreSQL outbox for Web V2 leave -> Google Sheets mirroring."""
 from __future__ import annotations
 
-import threading
-import time
 from typing import Any, Callable
+from contextlib import contextmanager
+
+import gspread
+import requests
+from google.auth.transport.requests import AuthorizedSession, Request as GoogleAuthRequest
 
 from fastapi import Depends, HTTPException
 from sqlalchemy import text
@@ -11,8 +14,6 @@ import vera_resource_concurrency as resource_concurrency
 
 RELEASE = "leave-sync-queue-2026-09-02.1"
 QUEUE_TABLE = "vera_leave_sheet_sync_queue"
-_worker_started = False
-_worker_lock = threading.Lock()
 
 
 def _required_leave_type(record: dict[str, Any]) -> str:
@@ -111,6 +112,14 @@ def _insert_leave_and_queue(conn, *, api_module, record: dict, source_row: int) 
 
 def _claim_one(engine_instance):
     with engine_instance().begin() as conn:
+        # Recover a crashed process without touching a live/locked owner.
+        conn.execute(text(f"""WITH expired AS (
+            SELECT id FROM {QUEUE_TABLE} WHERE status='processing'
+              AND (locked_at IS NULL OR locked_at < NOW()-INTERVAL '10 minutes')
+            FOR UPDATE SKIP LOCKED
+        ) UPDATE {QUEUE_TABLE} q SET status='retry',locked_at=NULL,
+            next_attempt_at=NOW(),updated_at=NOW()
+            FROM expired e WHERE q.id=e.id"""))
         row = conn.execute(text(f"""
             SELECT id,record_uid,source_row,attempts FROM {QUEUE_TABLE}
             WHERE status IN ('pending','retry') AND next_attempt_at<=NOW()
@@ -118,8 +127,10 @@ def _claim_one(engine_instance):
         """)).mappings().first()
         if not row:
             return None
-        conn.execute(text(f"UPDATE {QUEUE_TABLE} SET status='processing',locked_at=NOW(),updated_at=NOW() WHERE id=:id"), {"id": row["id"]})
-        return dict(row)
+        lease = conn.execute(text(f"""UPDATE {QUEUE_TABLE}
+            SET status='processing',locked_at=clock_timestamp(),updated_at=NOW()
+            WHERE id=:id RETURNING locked_at"""), {"id": row["id"]}).scalar_one()
+        return {**dict(row), 'locked_at': lease}
 
 
 def _record_for_uid(engine_instance, uid: str):
@@ -132,12 +143,12 @@ def _record_for_uid(engine_instance, uid: str):
         return dict(row) if row else None
 
 
-def _mark_done(engine_instance, item_id: int) -> None:
+def _mark_done(engine_instance, item) -> None:
     with engine_instance().begin() as conn:
         conn.execute(text(f"""
             UPDATE {QUEUE_TABLE} SET status='done',completed_at=NOW(),last_error=NULL,locked_at=NULL,updated_at=NOW()
-            WHERE id=:id
-        """), {"id": item_id})
+            WHERE id=:id AND status='processing' AND locked_at=:locked_at
+        """), {"id": item['id'], "locked_at": item['locked_at']})
 
 
 def _mark_retry(engine_instance, item, exc: Exception) -> None:
@@ -148,8 +159,53 @@ def _mark_retry(engine_instance, item, exc: Exception) -> None:
         conn.execute(text(f"""
             UPDATE {QUEUE_TABLE}
             SET status=:status,attempts=:attempts,next_attempt_at=NOW()+(:delay*INTERVAL '1 second'),
-                last_error=:error,locked_at=NULL,updated_at=NOW() WHERE id=:id
-        """), {"id": item["id"], "status": status, "attempts": attempts, "delay": delay, "error": f"{type(exc).__name__}: {exc}"[:2000]})
+                last_error=:error,locked_at=NULL,updated_at=NOW()
+            WHERE id=:id AND status='processing' AND locked_at=:locked_at
+        """), {"id": item["id"], "locked_at": item['locked_at'], "status": status,
+                 "attempts": attempts, "delay": delay, "error": type(exc).__name__})
+
+
+class BoundedMirrorSession(AuthorizedSession):
+    def request(self, method, url, **kwargs):
+        # Bound both the actual Sheets request and credential refresh retries.
+        # A private session avoids changing the shared browser/API client.
+        kwargs['timeout'] = (5, 30)
+        kwargs['max_allowed_time'] = min(float(kwargs.get('max_allowed_time') or 45), 45)
+        return super().request(method, url, **kwargs)
+
+
+@contextmanager
+def _mirror_client(api_module):
+    credentials = api_module._google_client().http_client.auth
+    # Supply the public auth_request hook: google-auth's refresh_timeout field
+    # is not an enforced deadline in all supported versions. A plain requests
+    # session has no automatic retries; clamp the actual token request timeout.
+    auth_session = requests.Session()
+    auth_transport = GoogleAuthRequest(session=auth_session)
+    def auth_request(*args, **kwargs):
+        kwargs['timeout'] = (5, 10)
+        return auth_transport(*args, **kwargs)
+    session = BoundedMirrorSession(credentials, auth_request=auth_request, max_refresh_attempts=1)
+    try:
+        client = gspread.Client(auth=credentials, session=session)
+        client.http_client.set_timeout((5, 30))
+        yield client
+    finally:
+        session.close()
+        auth_session.close()
+
+
+def _renew_claim(engine_instance, item) -> bool:
+    with engine_instance().begin() as conn:
+        lease = conn.execute(text(f"""UPDATE {QUEUE_TABLE}
+            SET locked_at=clock_timestamp(),updated_at=NOW()
+            WHERE id=:id AND status='processing' AND locked_at=:locked_at
+            RETURNING locked_at"""),
+            {'id': item['id'], 'locked_at': item['locked_at']}).scalar_one_or_none()
+    if lease is None:
+        return False
+    item['locked_at'] = lease
+    return True
 
 
 def _process_one(*, engine_instance, api_module) -> bool:
@@ -159,55 +215,64 @@ def _process_one(*, engine_instance, api_module) -> bool:
     try:
         record = _record_for_uid(engine_instance, str(item["record_uid"]))
         if not record:
-            _mark_done(engine_instance, int(item["id"]))
+            _mark_done(engine_instance, item)
             return True
         source_row = int(record.get("source_row") or item["source_row"])
-        ws = api_module._google_client().open_by_key(api_module.LEAVE_SHEET_ID).worksheet("MainData")
-        values = ws.get_all_values()
-        headers = values[0][:13] if values else []
-        if not headers:
-            raise RuntimeError("MainData chưa có header A:M")
-        row_values = _sheet_values_with_required_leave_type(
-            api_module=api_module,
-            headers=headers,
-            record=record,
-            source_row=source_row,
-        )
-        ws.update(
-            range_name=f"A{source_row}:M{source_row}",
-            values=[row_values],
-            value_input_option="USER_ENTERED",
-        )
-        _mark_done(engine_instance, int(item["id"]))
+        # Renew the committed token before every outbound step. A near-expired
+        # claim gets a full lease; a detected stale owner cannot start the next
+        # remote step. Sheets cannot fence a request that is already in flight.
+        if not _renew_claim(engine_instance, item):
+            return True
+        with _mirror_client(api_module) as client:
+            spreadsheet = client.open_by_key(api_module.LEAVE_SHEET_ID)
+            if not _renew_claim(engine_instance, item):
+                return True
+            ws = spreadsheet.worksheet("MainData")
+            if not _renew_claim(engine_instance, item):
+                return True
+            values = ws.get_all_values()
+            headers = values[0][:13] if values else []
+            if not headers:
+                raise RuntimeError("MainData chưa có header A:M")
+            row_values = _sheet_values_with_required_leave_type(
+                api_module=api_module, headers=headers, record=record, source_row=source_row,
+            )
+            if not _renew_claim(engine_instance, item):
+                return True
+            ws.update(
+                range_name=f"A{source_row}:M{source_row}", values=[row_values],
+                value_input_option="USER_ENTERED",
+            )
+        _mark_done(engine_instance, item)
         return True
     except Exception as exc:
         _mark_retry(engine_instance, item, exc)
         return True
 
 
-def _worker_loop(*, engine_instance, api_module) -> None:
-    while True:
+def _lease_current(engine_instance, item) -> bool:
+    with engine_instance().connect() as conn:
+        return bool(conn.execute(text(f"""SELECT 1 FROM {QUEUE_TABLE}
+            WHERE id=:id AND status='processing' AND locked_at=:locked_at"""),
+            {'id': item['id'], 'locked_at': item['locked_at']}).scalar())
+
+
+def _worker_loop(stop, *, engine_instance, api_module) -> None:
+    while not stop.is_set():
         try:
             if not _process_one(engine_instance=engine_instance, api_module=api_module):
-                time.sleep(3)
+                stop.wait(3)
+            else:
+                # A busy queue still reports progress and honors graceful stop.
+                stop.wait(0)
         except Exception:
-            time.sleep(5)
-
-
-def _start_worker(*, engine_instance, api_module) -> None:
-    global _worker_started
-    with _worker_lock:
-        if _worker_started:
-            return
-        threading.Thread(target=_worker_loop, kwargs={"engine_instance": engine_instance, "api_module": api_module}, name="vera-leave-sheet-sync", daemon=True).start()
-        _worker_started = True
+            stop.wait(5)
 
 
 def install_leave_sync_queue(app, *, engine_instance, current_identity, require_feature, validate_and_prepare, identity_type, api_module) -> None:
     if getattr(app.state, "leave_sync_queue_installed", False):
         return
     globals().update({"identity_type": identity_type, "leave_create_type": api_module.LeaveCreate})
-    _ensure_schema(engine_instance)
     original = _remove_route(app, "/v2/leave/records", "POST")
     if not callable(original):
         raise RuntimeError("Không tìm thấy route đăng ký lịch nghỉ để cài hàng đợi đồng bộ.")
@@ -263,6 +328,9 @@ def install_leave_sync_queue(app, *, engine_instance, current_identity, require_
             counts = conn.execute(text(f"SELECT status,COUNT(*) AS n FROM {QUEUE_TABLE} GROUP BY status")).mappings().all()
         return {"ok": True, "release": RELEASE, "durable": True, "idempotency": "record_uid+source_row", "counts": {str(row["status"]): int(row["n"]) for row in counts}}
 
-    _start_worker(engine_instance=engine_instance, api_module=api_module)
+    from vera_worker_runtime import register_worker
+    register_worker(app, engine_instance=engine_instance, name='vera-leave-sheet-sync',
+        target=lambda stop: _worker_loop(stop, engine_instance=engine_instance, api_module=api_module),
+        prepare=lambda: _ensure_schema(engine_instance))
     app.state.leave_sync_queue_installed = True
     app.state.leave_sync_queue_release = RELEASE

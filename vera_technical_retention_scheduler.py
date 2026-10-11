@@ -1,7 +1,6 @@
 """Run the persisted cleanup schedule in the existing API service, without sudo."""
-from contextlib import asynccontextmanager
 import logging
-from threading import Event, Thread
+from vera_worker_runtime import register_worker
 
 from vera_technical_retention import run
 
@@ -23,21 +22,7 @@ def monitor(engine_instance, stop, *, initial_delay=30, interval=300):
 def install(app, engine_instance):
     if getattr(app.state, 'technical_retention_scheduler_installed', False):
         return
-    previous = app.router.lifespan_context
-
-    @asynccontextmanager
-    async def lifespan(application):
-        async with previous(application) as state:
-            stop = Event()
-            worker = Thread(target=monitor, args=(engine_instance, stop),
-                name='technical-retention-monitor', daemon=True)
-            worker.start()
-            app.state.technical_retention_worker = worker
-            try:
-                yield state
-            finally:
-                stop.set()
-                worker.join(timeout=2)
-
-    app.router.lifespan_context = lifespan
+    register_worker(app, engine_instance=engine_instance,
+        name='technical-retention-monitor',
+        target=lambda stop: monitor(engine_instance, stop), stale_after=400)
     app.state.technical_retention_scheduler_installed = True

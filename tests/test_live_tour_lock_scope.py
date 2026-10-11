@@ -7,10 +7,11 @@ def source(): return SOURCE.read_text(encoding="utf-8")
 def test_background_projection_reschedules_when_operator_holds_lock():
     body = source()
     apply = body[body.index("    def apply_projection"):body.index("    def scheduled_projection") ]
-    worker = body[body.index("    def projection_worker"):body.index("    def start_scheduler") ]
+    worker = body[body.index("    def projection_worker"):body.index("    def queue_alert_monitor") ]
     assert "if not try_state_lock(conn, STATE_LOCK):" in apply
     assert "acquire_state_lock(conn, STATE_LOCK)" not in apply
-    assert "job_queue.reschedule" in worker
+    assert "if not applied:" in worker
+    assert "job_queue.reschedule(engine_instance, item, delay_seconds=5)" in worker
 
 def test_permissions_are_resolved_before_mutation_lock():
     body = source()

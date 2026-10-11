@@ -122,9 +122,10 @@ def test_non_admin_cannot_read_or_change_cleanup_schedule(role):
     app = FastAPI()
     install_technical_retention_routes(app, engine_instance=unexpected_db,
         current_identity=lambda: SimpleNamespace(role=role))
-    with TestClient(app) as client:
-        assert client.get('/v2/settings/technical-retention').status_code == 403
-        assert client.put('/v2/settings/technical-retention', json={'days': 2, 'cleanup_interval_hours': 1}).status_code == 403
+    # This tests request authorization, not the separate application startup.
+    client = TestClient(app)
+    assert client.get('/v2/settings/technical-retention').status_code == 403
+    assert client.put('/v2/settings/technical-retention', json={'days': 2, 'cleanup_interval_hours': 1}).status_code == 403
 
 
 @pytest.mark.parametrize('hours', [0, -1, 169, 1.5, True, '2'])
@@ -134,5 +135,6 @@ def test_invalid_interval_is_rejected_before_database_access(hours):
     app = FastAPI()
     install_technical_retention_routes(app, engine_instance=unexpected_db,
         current_identity=lambda: SimpleNamespace(role='admin'))
-    with TestClient(app) as client:
-        assert client.put('/v2/settings/technical-retention', json={'days': 2, 'cleanup_interval_hours': hours}).status_code == 422
+    # Validation remains before request-time DB access; lifecycle is tested separately.
+    client = TestClient(app)
+    assert client.put('/v2/settings/technical-retention', json={'days': 2, 'cleanup_interval_hours': hours}).status_code == 422

@@ -188,6 +188,20 @@ def prune_expired_inbox(conn):
     ) DELETE FROM vera_notification_delivery d USING expired e WHERE d.id=e.id"""))
 
 
+def _refresh_claim(engine, row):
+    """Renew only our own claim before bounded external delivery, then commit."""
+    with engine.begin() as conn:
+        claimed_at = conn.execute(text("""UPDATE vera_notification_delivery
+            SET claimed_at=clock_timestamp()
+            WHERE id=:id AND claimed_at=:claimed_at AND sent_at IS NULL
+            RETURNING claimed_at"""),
+            {'id': row['id'], 'claimed_at': row['claimed_at']}).scalar_one_or_none()
+    if claimed_at is None:
+        return False
+    row['claimed_at'] = claimed_at
+    return True
+
+
 def dispatch_pending(engine, send, vault, limit=30):
     from vera_notification_audience import delivery_joins, delivery_access_sql, public_payload
     with engine.begin() as conn:
@@ -205,6 +219,8 @@ def dispatch_pending(engine, send, vault, limit=30):
         error = None
         sent_ids = set(row.get('sent_subscriptions') or [])
         try:
+            if not _refresh_claim(engine, row):
+                continue
             with engine.connect() as conn:
                 # Recheck current recipient/channel grants before delivering a queued notification.
                 allowed = conn.execute(text(f'''SELECT 1 {delivery_joins()}
@@ -227,6 +243,8 @@ def dispatch_pending(engine, send, vault, limit=30):
                         sid = subscription['subscription_id']
                         if sid in sent_ids:
                             continue
+                        if not _refresh_claim(engine, row):
+                            break  # A recovered claim belongs to another process.
                         ok, status, _ = send({**subscription, 'payload': {**public_payload(row['payload']),
                             'recipient_id': row['recipient'], 'notification_id': str(row['id']),
                             'url': APP_URL + '?notification=' + str(row['id'])}}, private_key, subject)
@@ -238,13 +256,14 @@ def dispatch_pending(engine, send, vault, limit=30):
                         with engine.begin() as conn:
                             if status in (404, 410):
                                 conn.execute(text('UPDATE vera_v2_push_subscription SET is_active=FALSE WHERE subscription_id::text=:id'), {'id': sid})
-                            conn.execute(text('UPDATE vera_notification_delivery SET sent_subscriptions=CAST(:ids AS jsonb) WHERE id=:id'), {'ids': json.dumps(sorted(sent_ids)), 'id': row['id']})
+                            conn.execute(text('UPDATE vera_notification_delivery SET sent_subscriptions=CAST(:ids AS jsonb) WHERE id=:id AND claimed_at=:claimed_at AND sent_at IS NULL'), {'ids': json.dumps(sorted(sent_ids)), 'id': row['id'], 'claimed_at': row['claimed_at']})
                     complete = all(s['subscription_id'] in sent_ids for s in subscriptions) and any(s['subscription_id'] not in dead_ids for s in subscriptions)
             with engine.begin() as conn:
                 conn.execute(text('''UPDATE vera_notification_delivery SET claimed_at=NULL,last_error=:error,
                     sent_at=CASE WHEN :complete THEN NOW() ELSE NULL END,
-                    next_attempt_at=NOW()+INTERVAL '1 minute' * LEAST(60, attempts * 2) WHERE id=:id'''),
-                    {'id': row['id'], 'error': error, 'complete': complete})
+                    next_attempt_at=NOW()+INTERVAL '1 minute' * LEAST(60, attempts * 2)
+                    WHERE id=:id AND claimed_at=:claimed_at AND sent_at IS NULL'''),
+                    {'id': row['id'], 'claimed_at': row['claimed_at'], 'error': error, 'complete': complete})
         except Exception:
             # Claims expire so another process can retry. Do not log delivery payloads/secrets.
             logging.getLogger(__name__).warning('Notification delivery deferred: id=%s', row['id'])

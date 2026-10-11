@@ -194,7 +194,7 @@ def test_stale_revision_and_inactive_recipient_rejected(monkeypatch):
 
 def test_push_network_outside_connections_and_partial_success_checkpointed(monkeypatch):
     monkeypatch.setattr(delivery,'ensure_schema',lambda conn:None)
-    row={'id':7,'rule_key':'birthday','recipient':'a','payload':{'title':'Hi'},'sent_subscriptions':['old']}
+    row={'id':7,'claimed_at':'synthetic-lease','rule_key':'birthday','recipient':'a','payload':{'title':'Hi'},'sent_subscriptions':['old']}
     queries=[]
     class Engine:
         active=0
@@ -207,6 +207,7 @@ def test_push_network_outside_connections_and_partial_success_checkpointed(monke
         def execute(self,query,params=None):
             query=str(query);queries.append((query,params))
             if 'WITH pending' in query:return Result([row])
+            if 'RETURNING claimed_at' in query:return Result(scalar='synthetic-lease')
             if 'SELECT 1 FROM vera_notification_route' in query:return Result(scalar=1)
             if 'SELECT subscription_id' in query:return Result([{'subscription_id':sid} for sid in ('old','new','bad')])
             return Result()
@@ -277,7 +278,8 @@ def test_removed_group_membership_is_rechecked_before_network_send(monkeypatch):
         connect=begin
         def execute(self,q,p=None):
             q=str(q);queries.append((q,p))
-            if 'WITH pending' in q:return Result([{'id':1,'rule_key':'leave_watch','recipient':'former','payload':{'watched_date':'2026-09-23'}}])
+            if 'WITH pending' in q:return Result([{'id':1,'claimed_at':'synthetic-lease','rule_key':'leave_watch','recipient':'former','payload':{'watched_date':'2026-09-23'}}])
+            if 'RETURNING claimed_at' in q:return Result(scalar='synthetic-lease')
             return Result()
     delivery.dispatch_pending(Engine(),lambda *_:pytest.fail('Removed recipient must not receive a push'),lambda *_:None)
     grant=[(q,p) for q,p in queries if 'SELECT 1 FROM vera_notification_route' in q][0]

@@ -82,7 +82,11 @@ def test_queued_push_rechecks_period_before_contacting_device(database, monkeypa
         def execute(self, sql, params=None):
             sql = str(sql)
             if 'WITH pending AS' in sql:
-                return Result([{'id': 1, 'rule_key': 'quota', 'recipient': 'test', 'payload': payload}])
+                return Result([{'id': 1, 'rule_key': 'quota', 'recipient': 'test', 'payload': payload,
+                                'claimed_at': 'synthetic-initial-claim'}])
+            if 'RETURNING claimed_at' in sql:
+                assert params == {'id': 1, 'claimed_at': 'synthetic-initial-claim'}
+                return Result(scalar='synthetic-renewed-claim')
             if sql.lstrip().startswith('SELECT 1 FROM vera_notification_delivery'):
                 assert "Asia/Ho_Chi_Minh" in sql and "quota_month" in sql
                 with database.begin() as conn:
@@ -92,6 +96,7 @@ def test_queued_push_rechecks_period_before_contacting_device(database, monkeypa
                 return Result(scalar=1 if allowed else None)
             if 'UPDATE vera_notification_delivery SET claimed_at=NULL' in sql:
                 assert params['complete'] is True
+                assert params['claimed_at'] == 'synthetic-renewed-claim'
             return Result()
     def forbidden(*args): raise AssertionError('Expired quota must never reach Web Push')
     monkeypatch.setattr(delivery, 'ensure_schema', lambda conn: None)
