@@ -191,6 +191,7 @@ def install_operations_v41(
     # Replace attendance routes so filters apply consistently to screen + export.
     _remove_route(app, "/v2/snapshot", "GET")
     _remove_route(app, "/v2/snapshot/export.xlsx", "GET")
+    _remove_route(app, "/v2/snapshot/export-summary.xlsx", "GET")
 
     @app.get("/v2/snapshot")
     def snapshot_filtered(
@@ -217,6 +218,7 @@ def install_operations_v41(
         }
 
     @app.get("/v2/snapshot/export.xlsx")
+    @app.get("/v2/snapshot/export-summary.xlsx")
     def snapshot_export_filtered(
         start: date = Query(...),
         end: date = Query(...),

@@ -140,6 +140,9 @@ async function downloadExcel(path, fallbackName, signal) {
   const response = await fetch(`${apiBase}${path}`, { headers, signal })
   if (signal.aborted) return
   if (!response.ok) {
+    if (response.status === 404 && path.startsWith('/v2/snapshot/export-summary.xlsx?')) {
+      throw new Error('Máy chủ chưa hỗ trợ xuất theo nhóm chấm công. Vui lòng thử lại sau khi cập nhật.')
+    }
     const payload = await response.json().catch(() => ({}))
     throw new Error(payload.detail || payload.message || `HTTP ${response.status}`)
   }
@@ -303,7 +306,8 @@ function SnapshotContent({ user, embedded }) {
     try {
       const params = new URLSearchParams(queryString())
       if (summaryFilter !== 'all') params.set('summary_filter', summaryFilter)
-      await downloadExcel(`/v2/snapshot/export.xlsx?${params}`, 'VERA_ChamCong.xlsx', controller.signal)
+      const path = summaryFilter === 'all' ? '/v2/snapshot/export.xlsx' : '/v2/snapshot/export-summary.xlsx'
+      await downloadExcel(`${path}?${params}`, 'VERA_ChamCong.xlsx', controller.signal)
     }
     catch (e) { if (!controller.signal.aborted) setError(e.message || 'Không export được Chấm công.') }
     finally { if (!controller.signal.aborted) setExporting(false) }

@@ -69,7 +69,7 @@ async function setup(fetchOverride) {
   w.fetch = async (url, options = {}) => {
     const u = new URL(url); calls.push({ url: u, options })
     if (fetchOverride) { const result = fetchOverride(u, options); if (result !== undefined) return result }
-    if (u.pathname.endsWith('export.xlsx')) return { ok: true, blob: async () => new w.Blob(['xlsx']), headers: new Headers() }
+    if (u.pathname.endsWith('.xlsx')) return { ok: true, blob: async () => new w.Blob(['xlsx']), headers: new Headers() }
     return response(records.filter(item => ['employee', 'department', 'shift'].every(key => {
       const value = u.searchParams.get(key)
       return !value || item[{ employee: 'employee_name', department: 'break_department', shift: 'shift' }[key]].includes(value)
@@ -137,7 +137,9 @@ test('card filter composes with name, department, shift and date; export uses sa
     assert.deepEqual(h.rows(), ['Complete late'])
     assert.deepEqual(h.cards().map(node => node.querySelector('strong').textContent), ['2', '2', '1', '0'])
     await h.w.act(async () => h.button('Xuất excel').click())
-    const exported = h.calls.findLast(call => call.url.pathname.endsWith('export.xlsx')).url.searchParams
+    const exportUrl = h.calls.findLast(call => call.url.pathname.endsWith('.xlsx')).url
+    assert.equal(exportUrl.pathname, '/v2/snapshot/export-summary.xlsx')
+    const exported = exportUrl.searchParams
     assert.deepEqual(Object.fromEntries(exported), { start: '2026-10-11', end: '2026-10-11', employee: 'Complete', department: 'Locker', shift: 'Ca 1', summary_filter: 'over' })
     assert.equal(h.w.downloaded, 'VERA_ChamCong.xlsx')
     await h.click(3); assert.deepEqual(h.rows(), [])
@@ -208,7 +210,7 @@ test('account and permission changes reset selection and reject prior account re
 test('account switch cancels an in-flight export before a private blob can download', async () => {
   let releaseBlob, exportSignal
   const h = await setup((url, options) => {
-    if (url.pathname.endsWith('export.xlsx')) {
+    if (url.pathname.endsWith('.xlsx')) {
       exportSignal = options.signal
       return { ok: true, headers: new Headers(), blob: () => new Promise(resolve => { releaseBlob = resolve }) }
     }
@@ -232,7 +234,7 @@ test('summary styles preserve mobile wrapping, selected border and focus', () =>
 test('changing group cancels the previous export without a delayed download', async () => {
   let releaseBlob, exportSignal
   const h = await setup((url, options) => {
-    if (url.pathname.endsWith('export.xlsx')) {
+    if (url.pathname.endsWith('.xlsx')) {
       exportSignal = options.signal
       return { ok: true, headers: new Headers(), blob: () => new Promise(resolve => { releaseBlob = resolve }) }
     }
@@ -243,5 +245,27 @@ test('changing group cancels the previous export without a delayed download', as
     assert.equal(h.button('Xuất excel').disabled, false)
     await h.w.act(async () => releaseBlob(new h.w.Blob(['old group'])))
     assert.equal(h.w.downloaded, undefined)
+  } finally { await h.cleanup() }
+})
+
+test('new frontend fails closed on old backend without falling back to unfiltered export', async () => {
+  let summaryRequests = 0, legacyRequests = 0
+  const h = await setup(url => {
+    if (url.pathname === '/v2/snapshot/export-summary.xlsx') {
+      summaryRequests += 1
+      return { ok: false, status: 404, json: async () => ({ detail: 'Not Found' }) }
+    }
+    if (url.pathname === '/v2/snapshot/export.xlsx') legacyRequests += 1
+  })
+  try {
+    await h.click(2)
+    await h.w.act(async () => h.button('Xuất excel').click())
+    assert.equal(summaryRequests, 1); assert.equal(legacyRequests, 0)
+    assert.equal(h.w.downloaded, undefined)
+    assert.match(h.w.document.querySelector('.error-box').textContent, /Máy chủ chưa hỗ trợ xuất theo nhóm chấm công/)
+    await h.click(0)
+    await h.w.act(async () => h.button('Xuất excel').click())
+    assert.equal(legacyRequests, 1)
+    assert.equal(h.w.downloaded, 'VERA_ChamCong.xlsx')
   } finally { await h.cleanup() }
 })

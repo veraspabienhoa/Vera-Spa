@@ -36,6 +36,10 @@ The validated `summary_filter` parameter accepts `all`, `breaks`, `over` or
 predicates match the card predicates, but records/time may have changed since the
 browser load. The export tooltip describes data at export time. The JSON snapshot
 still returns the full scoped result, and workbook columns remain unchanged.
+Selected groups use the dedicated `/v2/snapshot/export-summary.xlsx` route;
+all-record exports retain `/v2/snapshot/export.xlsx`. An older backend returns an
+explicit error for the new route. The browser never retries a filtered export on
+the old all-record endpoint, avoiding a silent unfiltered workbook during rollout.
 
 No attendance source, shift, penalty, financial record, department switch,
 permission grant or Phase 3 setting is changed. No production data was read or

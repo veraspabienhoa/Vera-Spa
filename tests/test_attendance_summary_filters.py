@@ -17,7 +17,6 @@ import vera_web_v2_operations_v41 as operations
 NOW = datetime(2026, 10, 11, 10, tzinfo=timezone.utc)  # 17:00 Vietnam
 DAY = date(2026, 10, 11)
 BASE_QUERY = {"start": DAY.isoformat(), "end": DAY.isoformat()}
-EXPORT = "/v2/snapshot/export.xlsx"
 
 
 def row(name, **extra):
@@ -131,8 +130,8 @@ def test_unknown_summary_filter_is_rejected_by_pure_helper(kind):
         summary.filter_attendance_summary(examples(), kind, now=NOW)
 
 
-@pytest.fixture
-def api(monkeypatch):
+@pytest.fixture(params=["/v2/snapshot/export.xlsx", "/v2/snapshot/export-summary.xlsx"])
+def api(monkeypatch, request):
     events = []
     state = {"rows": examples(), "grants": {"snapshot_today", "snapshot_export"},
              "authenticated": True, "transaction_open": False}
@@ -193,6 +192,7 @@ def api(monkeypatch):
                                      current_identity=current_identity,
                                      require_feature=require_feature, identity_type=SimpleNamespace)
     with TestClient(app) as client:
+        client.export_path = request.param
         yield client, state, events
 
 
@@ -211,7 +211,7 @@ def workbook_values(response):
 def test_export_contains_selected_group_and_preserves_workbook_columns(api, kind):
     client, state, events = api
     before = deepcopy(state["rows"])
-    values = workbook_values(client.get(EXPORT, params={**BASE_QUERY, "summary_filter": kind}))
+    values = workbook_values(client.get(client.export_path, params={**BASE_QUERY, "summary_filter": kind}))
     assert len(values[0]) == 25
     assert values[0][:5] == ("Ngày", "Mã nhân viên", "Nhân viên", "Bộ phận", "Ca")
     assert values[0][-5:] == ("Trạng thái ra", "Phút trễ", "Phút về sớm", "Tổng phút", "Số lần chấm")
@@ -224,8 +224,8 @@ def test_export_contains_selected_group_and_preserves_workbook_columns(api, kind
 
 def test_default_export_retains_all_rows_and_summary_does_not_filter_snapshot_json(api):
     client, _, events = api
-    default = workbook_values(client.get(EXPORT, params=BASE_QUERY))
-    explicit = workbook_values(client.get(EXPORT, params={**BASE_QUERY, "summary_filter": "all"}))
+    default = workbook_values(client.get(client.export_path, params=BASE_QUERY))
+    explicit = workbook_values(client.get(client.export_path, params={**BASE_QUERY, "summary_filter": "all"}))
     assert default == explicit
     events.clear()
     response = client.get("/v2/snapshot", params={**BASE_QUERY, "summary_filter": "breaks"})
@@ -247,7 +247,7 @@ def test_summary_composes_after_date_employee_department_and_shift_filters(api):
         row("An An", break_out="15:00", employee_code="incomplete"),
     ]
     query = {**BASE_QUERY, "employee": "an an", "department": "le tan", "shift": "ca 1", "summary_filter": "breaks"}
-    values = workbook_values(client.get(EXPORT, params=query))
+    values = workbook_values(client.get(client.export_path, params=query))
     assert len(values) == 2 and values[1][1:5] == ("An An", "An An", "Lễ tân", "Ca 1")
     assert events[-1] == ("summary", "breaks", ["An An", "An An"])
     response = client.get("/v2/snapshot", params=query)
@@ -257,7 +257,7 @@ def test_summary_composes_after_date_employee_department_and_shift_filters(api):
 @pytest.mark.parametrize("kind", ["", "unknown", "BREAKS", "all,breaks", "../all"])
 def test_unknown_export_group_fails_before_record_retrieval(api, kind):
     client, _, events = api
-    response = client.get(EXPORT, params={**BASE_QUERY, "summary_filter": kind})
+    response = client.get(client.export_path, params={**BASE_QUERY, "summary_filter": kind})
     assert response.status_code == 422
     assert events == []
 
@@ -266,7 +266,7 @@ def test_unknown_export_group_fails_before_record_retrieval(api, kind):
 def test_summary_filter_never_bypasses_existing_export_permission(api, kind):
     client, state, events = api
     state["grants"] = {"snapshot_today"}
-    response = client.get(EXPORT, params={**BASE_QUERY, "summary_filter": kind})
+    response = client.get(client.export_path, params={**BASE_QUERY, "summary_filter": kind})
     assert response.status_code == 403
     assert events == ["begin", "snapshot_export", "close"]
 
@@ -274,14 +274,14 @@ def test_summary_filter_never_bypasses_existing_export_permission(api, kind):
 def test_unauthenticated_export_still_fails_before_database_access(api):
     client, state, events = api
     state["authenticated"] = False
-    assert client.get(EXPORT, params={**BASE_QUERY, "summary_filter": "over"}).status_code == 401
+    assert client.get(client.export_path, params={**BASE_QUERY, "summary_filter": "over"}).status_code == 401
     assert events == []
 
 
 @pytest.mark.parametrize("start,end", [(DAY, DAY - timedelta(days=1)), (DAY, DAY + timedelta(days=63))])
 def test_existing_date_range_limits_still_precede_database_access(api, start, end):
     client, _, events = api
-    response = client.get(EXPORT, params={"start": start.isoformat(), "end": end.isoformat(), "summary_filter": "over"})
+    response = client.get(client.export_path, params={"start": start.isoformat(), "end": end.isoformat(), "summary_filter": "over"})
     assert response.status_code == 400
     assert events == []
 
@@ -289,5 +289,5 @@ def test_existing_date_range_limits_still_precede_database_access(api, start, en
 def test_empty_group_retains_a_valid_header_only_workbook(api):
     client, state, _ = api
     state["rows"] = [row("not-started")]
-    values = workbook_values(client.get(EXPORT, params={**BASE_QUERY, "summary_filter": "breaks"}))
+    values = workbook_values(client.get(client.export_path, params={**BASE_QUERY, "summary_filter": "breaks"}))
     assert len(values) == 1 and len(values[0]) == 25
