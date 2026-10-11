@@ -482,15 +482,18 @@ def test_connection_capacity_fields_are_numeric_without_connection_identities(da
 def test_rls_filtered_role_never_reports_empty_sources_as_parity(database):
     engine, url = database
     role = 'preflight_reader_' + uuid4().hex
+    # A disposable hex-only credential works with both local trust and CI SCRAM.
+    password = uuid4().hex
     schema = url.query['options'].split('=', 1)[1]
     insert_invoice(engine, 'hidden-owner', 'HIDDEN-NUMBER')
     with engine.begin() as conn:
-        conn.execute(text('CREATE ROLE ' + role + ' LOGIN'))
+        conn.execute(text(f"CREATE ROLE {role} LOGIN PASSWORD '{password}'"))
         conn.execute(text(f'GRANT USAGE ON SCHEMA {schema} TO {role}'))
         conn.execute(text(f'GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO {role}'))
         conn.execute(text('ALTER TABLE vera_live_tour_invoice ENABLE ROW LEVEL SECURITY'))
     try:
-        result = preflight.inspect_database(url.set(username=role))
+        result = preflight.inspect_database(url.set(username=role, password=password))
+        assert result['connection']['status'] == 'pass'
         assert result['tables']['vera_live_tour_invoice'] == {'present':True,'readable':False}
         assert result['sources']['status'] == 'unknown'
         assert result['activation_candidate']['status'] == 'unknown'
