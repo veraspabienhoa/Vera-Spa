@@ -130,6 +130,16 @@ function ensureStyles() {
     .department-payroll-panel .salary-advance-panel{display:none!important}
     @media(max-width:950px){#${PANEL_ID} .advance-ledger-form{grid-template-columns:1fr 1fr}#${PANEL_ID} .advance-ledger-form label:first-child,#${PANEL_ID} .advance-ledger-form label:nth-child(5){grid-column:1/-1}#${PANEL_ID} .advance-ledger-form button{grid-column:1/-1}}
     @media(max-width:620px){#${PANEL_ID} .advance-ledger-form{grid-template-columns:1fr}#${PANEL_ID} .advance-ledger-form>*{grid-column:1!important}#${PANEL_ID} .advance-ledger-summary span{flex:1;min-width:120px}}
+    @media(max-width:640px){
+      #${PANEL_ID}{min-width:0;max-width:100%;padding:12px;box-sizing:border-box}
+      #${PANEL_ID} .advance-ledger-title{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+      #${PANEL_ID} .advance-ledger-title>div{min-width:0;width:100%}
+      #${PANEL_ID} h3{font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+      #${PANEL_ID} .advance-period-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;align-items:stretch}
+      #${PANEL_ID} .advance-period-filters>label{grid-column:1/-1;min-width:0}
+      #${PANEL_ID} .advance-period-filters>button,#${PANEL_ID} .advance-ledger-controls>button{width:100%;min-width:0;max-width:100%;min-height:44px;margin:0;padding:8px 4px;font-size:13px;line-height:1.35;white-space:normal;overflow-wrap:anywhere;justify-content:center;box-sizing:border-box}
+      #${PANEL_ID} .advance-ledger-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+    }
   `
   document.head.appendChild(style)
 }

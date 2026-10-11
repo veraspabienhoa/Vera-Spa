@@ -24,23 +24,43 @@
 @media(max-width:640px){
  .department-payroll-panel .department-payroll-toolbar,.department-payroll-top-actions{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch;overflow:visible;padding-bottom:0;box-sizing:border-box}
  .department-payroll-panel .department-payroll-toolbar>label,.department-payroll-top-actions .department-payroll-filter-fields{grid-column:1/-1;width:100%;min-width:0}
+ .department-payroll-panel .department-payroll-toolbar>label{grid-template-columns:minmax(0,1fr)}
  .department-payroll-panel .department-payroll-toolbar>button,.department-payroll-top-actions>button{width:100%;max-width:100%;min-width:0;min-height:44px;height:auto;align-self:stretch;margin:0;gap:6px;flex-wrap:wrap;line-height:1.35;font-size:13px;white-space:normal;overflow-wrap:anywhere;box-sizing:border-box}
  .department-payroll-panel .department-payroll-toolbar>button span,.department-payroll-top-actions>button span{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
  .department-payroll-panel .department-payroll-toolbar>button svg,.department-payroll-top-actions>button svg{flex-shrink:0}
- .department-payroll-panel .department-payroll-toolbar>.department-payroll-delete-draft{grid-column:1/-1}
+ .department-payroll-panel .department-payroll-toolbar>.department-payroll-calculate,.department-payroll-panel .department-payroll-toolbar>.department-payroll-delete-draft{grid-column:1/-1}
  .department-payroll-panel .department-payroll-toolbar>label input,.department-payroll-top-actions .department-payroll-filter-fields :is(input,select){font-size:16px;min-height:44px}
+ /* Contain the native iOS month control and its date-value box. */
+ body .department-payroll-panel .department-payroll-toolbar>label input[type=month]{display:block;appearance:none;-webkit-appearance:none;width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+ body .department-payroll-panel .department-payroll-toolbar input[type=month]::-webkit-date-and-time-value{min-width:0;text-align:left}
 }
 
 /* Native exclusive radios, presented as the two requested tick choices. */
-.department-payroll-source-options{display:grid;gap:8px;min-width:190px;padding:4px}
-.department-payroll-source-options label{display:flex;align-items:center;gap:8px;white-space:normal;cursor:pointer;font-size:13px}
-.department-payroll-source-options input[type=radio]{appearance:none;display:grid;place-content:center;flex:0 0 18px;width:18px!important;height:18px!important;min-height:18px;margin:0;border:1px solid #536c60;border-radius:3px;background:#fff}
+.department-payroll-source-options{display:grid;gap:4px;min-width:0;padding:2px}
+.department-payroll-source-options label{display:flex;align-items:center;gap:8px;min-width:0;min-height:44px;white-space:normal;cursor:pointer;font-size:13px}
+.department-payroll-source-options label>span{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.department-payroll-source-options input[type=radio]{appearance:none;display:grid;place-content:center;flex:0 0 18px;width:18px!important;height:18px!important;min-height:18px;margin:0;padding:0;box-sizing:border-box;border:1px solid #536c60;border-radius:3px;background:#fff}
 .department-payroll-source-options input[type=radio]:checked{background:#166534;border-color:#166534}
 .department-payroll-source-options input[type=radio]:checked::after{content:'✓';color:#fff;font-size:15px;font-weight:800;line-height:1}
 .department-payroll-source-options input[type=radio]:focus-visible{outline:2px solid #2563eb;outline-offset:3px}
 .department-payroll-source-options input[type=radio]:disabled{opacity:.6;cursor:not-allowed}
 .department-payroll-late-credit{display:block;max-width:190px;white-space:normal;font-size:11px;color:#536c60;margin-top:4px}
 .department-payroll-source-table{max-width:900px;margin:12px 0}
-.department-payroll-source-table table{width:100%}
-.department-payroll-source-table td>small{display:block;color:#596e61}
+/* Override the shared responsive table's 680px mobile minimum, without zoom or clipping. */
+body .department-payroll-page .department-payroll-source-table{width:100%;min-width:0;max-width:900px;overflow:visible}
+body .department-payroll-page .department-payroll-source-table table{width:100%!important;min-width:0!important;max-width:100%;table-layout:fixed!important;box-sizing:border-box}
+.department-source-name-column{width:34%}
+.department-source-department-column{width:20%}
+.department-source-choice-column{width:46%}
+body .department-payroll-page .department-payroll-source-table :is(th,td){min-width:0;padding:8px;white-space:normal!important;overflow-wrap:anywhere;vertical-align:middle}
+body .department-payroll-page .department-payroll-source-identity{display:grid;gap:3px;min-width:0;line-height:1.4}
+body .department-payroll-page .department-payroll-source-identity :is(strong,small){display:block;min-width:0;white-space:normal;overflow-wrap:anywhere}
+body .department-payroll-page .department-payroll-source-identity small{margin:0;color:#596e61;font-size:12px}
 .department-payroll-source-section>label{display:grid;gap:4px;max-width:400px;margin-top:12px}
+@media(max-width:640px){
+ body .department-payroll-page .department-payroll-source-table :is(th,td){padding:6px 4px;font-size:12px;line-height:1.4;letter-spacing:0}
+ body .department-payroll-page .department-payroll-source-table th{font-size:11px}
+ .department-payroll-source-options{padding:0}
+ .department-payroll-source-options label{gap:5px;font-size:12px}
+}
+@media(forced-colors:active){.department-payroll-source-options input[type=radio]{appearance:auto}}
