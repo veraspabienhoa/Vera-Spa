@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 from vera_facegate_cutover import runtime_engine, verify_runtime
 from vera_facegate_control_log import facegate_endpoint, mapping_device_id, registration_ref, VN_TZ
-from vera_facegate_enrollment import FaceGateEnrollmentClient
+from vera_facegate_enrollment import FaceGateEnrollmentClient, EnrollmentError
 from vera_web_v2_facegate_enrollment import target, mappings
 from vera_employee_facegate_delete import deletion_pending
 from vera_employee_rename_sync import queue_device_rename, sync_device_names
@@ -87,6 +87,9 @@ def main():
                     queue_device_rename(conn,username,username)
         result=sync_device_names(engine,username)
         with facegate_endpoint('http://'+address):
+            # The canonical worker logs in separately; firmware invalidates the
+            # previous session. Renew ours before the independent read-back.
+            client.login()
             actual=client.profile_details(uid)
             if actual.get('uname')!=username or registration_ref(actual)!=profile['registration_ref'] or actual.get('utext')!=detail.get('utext'):
                 raise ValueError('rename_not_verified')
@@ -102,5 +105,5 @@ def main():
 if __name__=='__main__':
     try:main()
     except Exception as exc:
-        print(json.dumps({'ok':False,'error_type':type(exc).__name__,'error_code':str(exc) if isinstance(exc,ValueError) and str(exc) in {'event_count','event_time','event_references','directory_identity','profile_count','profile_identity','device_changed_or_deleting','evidence_changed','mapping_conflict','mapping_limit','rename_not_verified','mapping_not_verified'} else 'operation_failed','writes_may_have_committed':True}))
+        print(json.dumps({'ok':False,'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else str(exc) if isinstance(exc,ValueError) and str(exc) in {'event_count','event_time','event_references','directory_identity','profile_count','profile_identity','device_changed_or_deleting','evidence_changed','mapping_conflict','mapping_limit','rename_not_verified','mapping_not_verified'} else 'operation_failed','writes_may_have_committed':True}))
         raise SystemExit(1)
