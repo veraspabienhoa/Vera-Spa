@@ -14,6 +14,7 @@ import vera_web_v2_department_payroll as pay
 from vera_attendance_participation import suspended
 from vera_holiday_leave import intervals, uncovered
 from vera_resource_concurrency import lock_transition
+from vera_attendance_source import source_for
 
 RELEASE = '8aa549d5ad56be2ea40cabe7fe34c47f0d32108d'
 START = date(2026, 10, 8)
@@ -61,6 +62,8 @@ def main():
             days = []
             for offset in range((END-START).days+1):
                 day = START + timedelta(days=offset)
+                if source_for(day) != 'facegate':
+                    raise RuntimeError('unexpected_attendance_source')
                 data = fg.project_evidence(conn, day, day)
                 counts = Counter()
                 issues = Counter(i.get('reason', 'unknown') for i in runtime.blocking_issues(data, day))
@@ -123,6 +126,8 @@ def main():
                             continue
                         leaves = conn.execute(text('SELECT leave_reason,penalty FROM leave_records WHERE leave_date=:day AND lower(btrim(employee_name))=lower(btrim(:name))'),{'day':day,'name':username}).mappings().all()
                         if leaves:
+                            positive_arrival = any(auto._norm(l['leave_reason']).startswith('di tre') and float(l['penalty'] or 0)>0 for l in leaves)
+                            counts['ktv_existing_positive_arrival_fine' if positive_arrival else 'ktv_other_leave_requires_review'] += 1
                             # Preserve manual decisions and every approved leave;
                             # never resurrect revoked fines or guess allowances.
                             counts['ktv_existing_leave_or_manual_record'] += 1
