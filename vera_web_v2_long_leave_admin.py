@@ -30,7 +30,7 @@ from vera_web_v2_long_leave import (
 )
 
 
-LONG_LEAVE_ADMIN_RELEASE = "long-leave-admin-approval-v1"
+LONG_LEAVE_ADMIN_RELEASE = "long-leave-admin-overlap-text-dates-v2"
 STATUS_REJECTED = "Không duyệt"
 
 
@@ -134,33 +134,79 @@ def _pending_rows(conn) -> list[dict[str, Any]]:
     return output
 
 
+def _date_text_sql(expression: str) -> str:
+    # PostgreSQL's default btrim removes only U+0020; the canonical parser uses
+    # Python strip(), which also accepts pasted tabs/newlines and Unicode space.
+    whitespace = (9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760,
+                  *range(8192, 8203), 8232, 8233, 8239, 8287, 12288)
+    escaped = ''.join(f"\\{code:04x}" for code in whitespace)
+    return f"btrim(CAST({expression} AS text), U&'{escaped}')"
+
+
+def _date_sort_key_sql(expression: str) -> str:
+    """A non-throwing ISO sort key for Phase-14 TEXT dates (and DATE schemas).
+
+    Do not cast compatibility worksheet dates to PostgreSQL DATE: those values
+    are day-first, may be empty/malformed and must not depend on DateStyle.
+    The canonical Python parser below still validates actual calendar dates.
+    Expressions passed here are fixed source SQL, never caller input.
+    """
+    raw = _date_text_sql(expression)
+    normalized = f"replace({raw}, '/', '-')"
+    part = lambda index: f"split_part({normalized}, '-', {index})"
+    first, second, third = (part(index) for index in (1, 2, 3))
+    # Match _parse_vn_date's last-resort US slash format only when day-first
+    # cannot parse its month. Ambiguous slash dates remain day-first.
+    us_format = f"({raw} LIKE '%/%' AND CAST({second} AS integer)>12)"
+    month = f"CASE WHEN {us_format} THEN {first} ELSE {second} END"
+    day = f"CASE WHEN {us_format} THEN {second} ELSE {first} END"
+    return f"""CASE
+        WHEN {raw} ~ '^[0-9]{{4}}-[0-9]{{1,2}}-[0-9]{{1,2}}$'
+            THEN {first} || '-' || lpad({second},2,'0') || '-' || lpad({third},2,'0')
+        WHEN {raw} ~ '^([0-9]{{1,2}}/[0-9]{{1,2}}/[0-9]{{4}}|[0-9]{{1,2}}-[0-9]{{1,2}}-[0-9]{{4}})$'
+            THEN {third} || '-' || lpad(({month}),2,'0') || '-' || lpad(({day}),2,'0')
+        ELSE NULL END"""
+
+
 def _request_overlap(conn, target):
     """Read only the canonical requests intersecting this application's dates."""
-    start, end = _parse_vn_date(target.get('date_from')), _parse_vn_date(target.get('date_to'))
+    target_payload = _payload_value(target.get('payload'))
+    start = _parse_vn_date(str(target.get('date_from') or '').strip() or target_payload.get('Từ ngày'))
+    end = _parse_vn_date(str(target.get('date_to') or '').strip() or target_payload.get('Đến ngày'))
     if not start or not end or end < start or (end-start).days > 366:
         raise HTTPException(400, "Khoảng ngày của đơn không hợp lệ hoặc vượt quá 367 ngày.")
-    target_payload = _payload_value(target.get('payload'))
     employee = str(target_payload.get('Tên nhân viên') or target.get('employee_key') or '').strip()
-    rows = conn.execute(text("""SELECT r.logical_id,r.record_type,r.record_status,r.date_from,r.date_to,r.payload,
+    raw_start = _date_text_sql("r.date_from")
+    raw_end = _date_text_sql("r.date_to")
+    start_sql = _date_sort_key_sql(f"COALESCE(NULLIF({raw_start},''),r.payload->>'Từ ngày')")
+    end_sql = _date_sort_key_sql(f"COALESCE(NULLIF({raw_end},''),r.payload->>'Đến ngày')")
+    rows = conn.execute(text(f"""SELECT r.logical_id,r.record_type,r.record_status,r.date_from,r.date_to,r.payload,
         e.username,COALESCE(e.full_name,'') full_name,COALESCE(e.role,'') department
         FROM vera_phase14_record r
         JOIN employees e ON lower(btrim(e.username))=lower(btrim(COALESCE(r.payload->>'Tên nhân viên',r.employee_key)))
         WHERE r.dataset=:dataset AND r.logical_id<>:target
           AND r.record_status IN ('Chờ duyệt','Đã duyệt') AND COALESCE(r.record_type,'')<>:resignation
-          AND r.date_from<=:end AND r.date_to>=:start
+          AND ({start_sql})<=:end AND ({end_sql})>=:start
           AND COALESCE(r.payload->>'Trạng thái kỳ nghỉ','')<>'Đã kết thúc'
           AND COALESCE(e.payload->>'__deleted','false')<>'true'
           AND lower(COALESCE(e.payload->>'Trạng thái làm việc',e.payload->>'employment_status','Đang làm việc')) IN ('đang làm việc','active')
-        ORDER BY r.date_from,e.username,r.logical_id"""),
-        {'dataset':LONG_LEAVE_DATASET,'target':target['logical_id'],'resignation':REQUEST_TYPE_RESIGNATION,'start':start,'end':end}).mappings().all()
+        ORDER BY ({start_sql}),e.username,r.logical_id"""),
+        {'dataset':LONG_LEAVE_DATASET,'target':target['logical_id'],'resignation':REQUEST_TYPE_RESIGNATION,'start':start.isoformat(),'end':end.isoformat()}).mappings().all()
     requests = []
     for row in rows:
         if str(row['username']).strip().casefold() == employee.casefold():
             continue
-        first, last = max(start,_parse_vn_date(row['date_from'])), min(end,_parse_vn_date(row['date_to']))
-        returned = _parse_vn_date(_payload_value(row['payload']).get('Ngày quay lại làm việc'))
+        payload = _payload_value(row['payload'])
+        row_start = _parse_vn_date(str(row['date_from'] or '').strip() or payload.get('Từ ngày'))
+        row_end = _parse_vn_date(str(row['date_to'] or '').strip() or payload.get('Đến ngày'))
+        if not row_start or not row_end or row_start > row_end:
+            continue
+        first, last = max(start, row_start), min(end, row_end)
+        returned = _parse_vn_date(payload.get('Ngày quay lại làm việc'))
         if returned:
-            last = min(last, date.fromordinal(returned.toordinal()-1))
+            if returned <= first:
+                continue
+            last = min(last, returned - timedelta(days=1))
         if first > last:
             continue
         requests.append({'id':str(row['logical_id']).removeprefix('long:'), 'employee_name':row['username'],
@@ -213,6 +259,7 @@ def install_long_leave_admin_routes(
     def check_request_overlap(request_id: str, ident: identity_type = Depends(current_identity)):
         _require_admin(ident)
         with engine_instance().connect().execution_options(isolation_level="REPEATABLE READ") as conn:
+            conn.execute(text("SET TRANSACTION READ ONLY"))
             target = _request_row(conn, request_id)
             if not target:
                 raise HTTPException(404, "Không tìm thấy đơn nghỉ phép.")

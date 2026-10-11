@@ -7,16 +7,20 @@ import { BellRing, CheckCircle2, CircleAlert, Info, X } from 'lucide-react'
 import { veraApi } from '../lib/api'
 import { createVisiblePoller } from '../lib/visiblePoller'
 import { subscribeNotificationFeed, refreshNotificationFeed } from '../lib/notificationFeed'
+import { notificationPage } from '../lib/notificationNavigation'
 
 
-export default function PopupNotifications({ user }) {
+export default function PopupNotifications({ user, onPageChange }) {
   const [items, setItems] = useState([])
   const [trainingDetail, setTrainingDetail] = useState(null)
   const settings = useRef({})
   const seenTraining = useRef(new Set())
   const seenRouted = useRef(new Set())
+  const handled = useRef(new Set())
+  const lifecycle = useRef(0)
   useEffect(() => {
     let active = true
+    const generation = ++lifecycle.current
     const loadTrainingNotifications = () => veraApi.trainingNotifications('popup').then((result) => {
       if (!active) return
       if (settings.current.training_completed?.enabled === false || settings.current.training_completed?.channel_enabled?.popup === false) return
@@ -37,7 +41,7 @@ export default function PopupNotifications({ user }) {
       fresh.forEach(item => seenRouted.current.add(item.id))
       if (fresh.length) setItems(current => [...current, ...fresh.map(item => ({
         id: `route-${item.id}`, routeId: item.id, message: `${item.payload?.title || 'Thông báo'} · ${item.payload?.body || ''}`,
-        type:'info', category:'routed_popup', persistent:true,
+        type:'info', category:'routed_popup', persistent:true, payload: item.payload,
       }))])
     })
     const onSettingsChanged = (event) => {
@@ -53,6 +57,7 @@ export default function PopupNotifications({ user }) {
     window.addEventListener('vera-system-feedback', routeFeedback)
     return () => {
       active = false
+      if (lifecycle.current === generation) lifecycle.current += 1
       trainingPoller.stop()
       unsubscribeFeed()
       window.removeEventListener('vera-system-feedback', routeFeedback)
@@ -67,13 +72,26 @@ export default function PopupNotifications({ user }) {
     } catch { /* Leave the notification available to retry. */ }
   }
   const dismiss = item => {
+    if (handled.current.has(item.id)) return false
+    handled.current.add(item.id)
     setItems(current => current.filter(row => row.id !== item.id))
-    if (item.routeId) void veraApi.readNotification(item.routeId).catch(() => {})
+    const generation = lifecycle.current
+    if (item.routeId) void veraApi.readNotification(item.routeId).then(() => {
+      // Refresh unread state only after the server has acknowledged this account.
+      if (generation === lifecycle.current) void refreshNotificationFeed()
+    }).catch(() => {})
+    return true
+  }
+  const openNotification = item => {
+    const page = notificationPage(item, user)
+    if (!page || !onPageChange || !dismiss(item)) return
+    // Use the menu path immediately; acknowledgement must not delay navigation.
+    onPageChange(page)
   }
   if (!items.length && !trainingDetail) return null
   return <>
     {!!items.length && !trainingDetail && <NotificationModal key={items[0].id} onClose={() => dismiss(items[0])}><div className="popup-notification-stack" aria-label="Thông báo trên màn hình">{items.slice(0, 1).map(item => <div key={item.id} className={`popup-notification ${item.type}`} role="status">
-      {item.notificationId ? <BellRing size={19}/> : item.type === 'success' ? <CheckCircle2 size={19}/> : item.type === 'error' ? <CircleAlert size={19}/> : <Info size={19}/>} {item.notificationId ? <button data-ui-key="u-0455df928cb2" type="button" className="popup-notification-open" onClick={() => openTrainingDetail(item)}>{item.message}<small>Bấm để xem chi tiết</small></button> : <span>{item.message}</span>}<button data-ui-key="u-733434ac2d70" type="button" aria-label="Đóng thông báo" onClick={() => dismiss(item)}><X size={16}/></button>
+      {item.notificationId ? <BellRing size={19}/> : item.type === 'success' ? <CheckCircle2 size={19}/> : item.type === 'error' ? <CircleAlert size={19}/> : <Info size={19}/>} {item.notificationId ? <button data-ui-key="u-0455df928cb2" type="button" className="popup-notification-open" onClick={() => openTrainingDetail(item)}>{item.message}<small>Bấm để xem chi tiết</small></button> : notificationPage(item, user) && onPageChange ? <button type="button" className="popup-notification-open" onClick={() => openNotification(item)}>{item.message}<small>Mở Phép năm</small></button> : <span>{item.message}</span>}<button data-ui-key="u-733434ac2d70" type="button" aria-label="Đóng thông báo" onClick={() => dismiss(item)}><X size={16}/></button>
     </div>)}</div></NotificationModal>}
     {trainingDetail && <TrainingNoticeDetail notice={trainingDetail} onClose={() => setTrainingDetail(null)} />}
   </>
