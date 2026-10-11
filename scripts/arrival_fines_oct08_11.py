@@ -1,5 +1,6 @@
 """Bounded arrival reconciliation; writes require explicit apply mode."""
 import json
+import hashlib
 import math
 import os
 from collections import Counter
@@ -21,6 +22,66 @@ from vera_attendance_rules import supported_late_minutes
 RELEASE = '8aa549d5ad56be2ea40cabe7fe34c47f0d32108d'
 START = date(2026, 10, 8)
 END = date(2026, 10, 11)
+
+
+# Only these two operator-confirmed scans can receive this bounded metadata
+# review. Original events and every conflicting observation remain immutable.
+CONFIRMED_OWNER = 'Cậu Tưởng'
+CONFIRMED_EVENTS = {'80905':'2026-10-10T08:26:40+07:00', '81064':'2026-10-11T08:22:43+07:00'}
+RAW_READ_EVIDENCE = fg.read_evidence
+
+
+def verified_name_only_conflict(event, conflict, mapping, job, address):
+    try:
+        event_id = str(event['event_id'])
+        if (event_id not in CONFIRMED_EVENTS or str(event['occurred_at']) != CONFIRMED_EVENTS[event_id]
+                or str(conflict['event_id']) != event_id or conflict['occurred_at'] != event['occurred_at']):
+            return False
+        original, observed = event['payload_json'], conflict['observed_payload_json']
+        original = json.loads(original) if isinstance(original,str) else original
+        observed = json.loads(observed) if isinstance(observed,str) else observed
+        digest = lambda p: hashlib.sha256(json.dumps(p,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+        if (digest(original) != event['payload_sha256'] or digest(original) != conflict['stored_payload_sha256']
+                or digest(observed) != conflict['observed_payload_sha256']
+                or {k for k in set(original)|set(observed) if original.get(k)!=observed.get(k)} != {'device_name'}):
+            return False
+        ref = fg.reference(original.get('registration_ref'))
+        job_ref = job['registration_ref']
+        job_ref = json.loads(job_ref) if isinstance(job_ref,str) else job_ref
+        return bool(ref and fg.reference(observed.get('registration_ref')) == ref
+            and fg.reference(mapping.get('registration_ref')) == ref and fg.reference(job_ref) == ref
+            and mapping.get('confirmed_by') and mapping.get('device_address') == address
+            and original.get('device_address') == address and observed.get('device_address') == address
+            and auto._norm(mapping.get('username')) == auto._norm(CONFIRMED_OWNER)
+            and job['employee_username'] == mapping['username'] and job['status'] == 'verified'
+            and job['device_address'] == address and str(job['profile_id']) == str(mapping['profile_id'])
+            and job['old_name'] == original['device_name'] and job['new_name'] == observed['device_name']
+            and mapping['device_name'] == observed['device_name'])
+    except (KeyError,TypeError,ValueError):
+        return False
+
+
+def read_reviewed_evidence(conn, start, end, *, include_conflicts=False):
+    result = RAW_READ_EVIDENCE(conn,start,end,include_conflicts=include_conflicts)
+    if not include_conflicts or not result[4]:
+        return result
+    from vera_facegate_control_log import mapping_device_id
+    address, mappings, events, syncs, conflicts = result
+    device = mapping_device_id()
+    owners = [m for m in mappings if auto._norm(m.get('username')) == auto._norm(CONFIRMED_OWNER)]
+    if len(owners) != 1 or not conn.execute(text("SELECT 1 FROM employees WHERE username=:name AND COALESCE(payload->>'__deleted','false')<>'true'"),{'name':owners[0]['username']}).scalar():
+        return result
+    if not conn.execute(text("SELECT to_regclass('vera_facegate_rename_job')")).scalar():
+        return result
+    jobs = conn.execute(text("SELECT * FROM vera_facegate_rename_job WHERE device_id=:device AND employee_username=:name AND status='verified'"),{'device':device,'name':owners[0]['username']}).mappings().all()
+    observed = conn.execute(text("SELECT * FROM vera_facegate_event_conflict WHERE device_id=:device AND work_date BETWEEN :start AND :end"),{'device':device,'start':start.isoformat(),'end':(end+timedelta(days=1)).isoformat()}).mappings().all()
+    retained = []
+    for conflict in conflicts:
+        matching = [e for e in events if e['event_id']==conflict['event_id'] and e['occurred_at']==conflict['occurred_at']]
+        versions = [c for c in observed if c['event_id']==conflict['event_id'] and c['occurred_at']==conflict['occurred_at']]
+        if (len(matching)!=1 or not versions or not all(any(verified_name_only_conflict(matching[0],c,owners[0],j,address) for j in jobs) for c in versions)):
+            retained.append(conflict)
+    return address,mappings,events,syncs,retained
 
 
 def evidence_reasons(data, username, day, now, window):
@@ -74,6 +135,7 @@ def arrival_after_allowances(conn, row, day, leaves):
 
 def main():
     verify_runtime(RELEASE)
+    fg.read_evidence = read_reviewed_evidence
     apply = os.environ.get('VERA_BACKFILL_MODE', 'readonly') == 'apply'
     engine = runtime_engine(readonly=not apply)
     written = []
