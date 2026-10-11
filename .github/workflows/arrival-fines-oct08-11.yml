@@ -31,7 +31,7 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Repair confirmed owner mapping and verify device name
+      - name: Read-only confirmed Face ID owner inspection
         continue-on-error: true
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
             'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); test -n "$pid"; release_dir=$(readlink -f "/proc/${pid}/cwd"); cd "$release_dir"; export PYTHONPATH="$release_dir"; timeout 240 /opt/vera-spa/.venv/bin/python -' \
-            < scripts/repair_confirmed_face_owner.py
+            < scripts/inspect_confirmed_face_owner.py
       - name: Read-only bounded production reconciliation
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}

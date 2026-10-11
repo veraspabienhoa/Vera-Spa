@@ -4,6 +4,7 @@ No photo upload or raw attendance modification. Canonical name worker performs
 and verifies the device rename after the mapping transaction has committed.
 """
 import json
+import os
 from datetime import datetime, timezone
 from sqlalchemy import text
 from vera_facegate_cutover import runtime_engine, verify_runtime
@@ -40,6 +41,8 @@ def event_snapshot(conn, device):
 
 def main():
     global STAGE, MAPPING_COMMITTED
+    if os.environ.get("VERA_FACE_OWNER_MODE") != "apply":
+        raise ValueError("apply_mode_required")
     verify_runtime(RELEASE)
     engine=runtime_engine();client=None
     try:
@@ -116,5 +119,5 @@ def main():
 if __name__=='__main__':
     try:main()
     except Exception as exc:
-        print(json.dumps({'ok':False,'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else str(exc) if isinstance(exc,ValueError) and str(exc) in {'event_count','event_time','event_references','directory_identity','profile_count','profile_identity','device_changed_or_deleting','evidence_changed','mapping_conflict','mapping_limit','rename_not_verified','mapping_not_verified'} else 'operation_failed','stage':STAGE,'mapping_transaction_committed':MAPPING_COMMITTED}))
+        print(json.dumps({'ok':False,'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else str(exc) if isinstance(exc,ValueError) and str(exc) in {'apply_mode_required','event_count','event_time','event_references','directory_identity','profile_count','profile_identity','device_changed_or_deleting','evidence_changed','mapping_conflict','mapping_limit','rename_not_verified','mapping_not_verified'} else 'operation_failed','stage':STAGE,'mapping_transaction_committed':MAPPING_COMMITTED}))
         raise SystemExit(1)

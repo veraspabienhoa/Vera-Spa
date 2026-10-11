@@ -3,7 +3,7 @@ import json
 from sqlalchemy import text
 from vera_facegate_cutover import runtime_engine, verify_runtime
 from vera_facegate_control_log import facegate_endpoint, mapping_device_id, registration_ref
-from vera_facegate_enrollment import FaceGateEnrollmentClient
+from vera_facegate_enrollment import FaceGateEnrollmentClient, EnrollmentError
 from vera_web_v2_facegate_enrollment import target, mappings
 from vera_auto_check import _norm
 from vera_facegate_readiness import reference
@@ -61,5 +61,5 @@ def main():
 if __name__=='__main__':
     try: main()
     except Exception as exc:
-        print(json.dumps({'ok':False,'error_type':type(exc).__name__,'database_writes':False,'device_writes':False}))
+        print(json.dumps({'ok':False,'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else 'inspection_failed','database_writes':False,'device_writes':False}))
         raise SystemExit(1)
