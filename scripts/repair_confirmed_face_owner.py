@@ -17,6 +17,8 @@ from vera_facegate_readiness import reference
 
 OWNER = 'Cậu Tưởng'
 EVENTS = {'80905': '2026-10-10T08:26:40+07:00', '81064': '2026-10-11T08:22:43+07:00'}
+STAGE = 'runtime'
+MAPPING_COMMITTED = False
 RELEASE = '8aa549d5ad56be2ea40cabe7fe34c47f0d32108d'
 
 def event_snapshot(conn, device):
@@ -37,6 +39,7 @@ def event_snapshot(conn, device):
     return rows, refs[0]
 
 def main():
+    global STAGE, MAPPING_COMMITTED
     verify_runtime(RELEASE)
     engine=runtime_engine();client=None
     try:
@@ -49,17 +52,22 @@ def main():
             username,actor=owners[0]['username'],actors[0]['username']
             address,device=target(conn),mapping_device_id()
             snapshot,ref=event_snapshot(conn,device)
+        STAGE = 'device_login'
         with facegate_endpoint('http://'+address):
             client=FaceGateEnrollmentClient();client.login()
+            STAGE = 'device_profiles'
             profiles=[p for p in client.profiles() if reference(registration_ref(p))==ref]
             if len(profiles)!=1:
                 raise ValueError('profile_count')
-            listed=profiles[0];uid=int(listed['uid']);detail=client.profile_details(uid)
+            listed=profiles[0];uid=int(listed['uid'])
+            STAGE = 'device_detail'
+            detail=client.profile_details(uid)
             if (registration_ref(detail)!=registration_ref(listed) or detail.get('uname')!=listed.get('uname')
                 or detail.get('utext')!=listed.get('utext')
                 or _norm(detail.get('uname')).replace('_',' ') not in {'nhan vien',_norm(username)}):
                 raise ValueError('profile_identity')
             profile={'profile_id':uid,'device_name':detail['uname'],'registration_ref':registration_ref(detail)}
+        STAGE = 'mapping_transaction'
         with engine.begin() as conn:
             conn.execute(text('SELECT pg_advisory_xact_lock(723491, 1)'))
             if target(conn)!=address or mapping_device_id()!=device or deletion_pending(conn):
@@ -85,7 +93,10 @@ def main():
                 pending=pending and conn.execute(text("SELECT 1 FROM vera_facegate_rename_job WHERE employee_username=:name AND status='pending'"),{'name':username}).scalar()
                 if not pending:
                     queue_device_rename(conn,username,username)
+        MAPPING_COMMITTED = True
+        STAGE = 'canonical_name_worker'
         result=sync_device_names(engine,username)
+        STAGE = 'independent_readback'
         with facegate_endpoint('http://'+address):
             # The canonical worker logs in separately; firmware invalidates the
             # previous session. Renew ours before the independent read-back.
@@ -105,5 +116,5 @@ def main():
 if __name__=='__main__':
     try:main()
     except Exception as exc:
-        print(json.dumps({'ok':False,'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else str(exc) if isinstance(exc,ValueError) and str(exc) in {'event_count','event_time','event_references','directory_identity','profile_count','profile_identity','device_changed_or_deleting','evidence_changed','mapping_conflict','mapping_limit','rename_not_verified','mapping_not_verified'} else 'operation_failed','writes_may_have_committed':True}))
+        print(json.dumps({'ok':False,'error_type':type(exc).__name__,'error_code':exc.code if isinstance(exc,EnrollmentError) else str(exc) if isinstance(exc,ValueError) and str(exc) in {'event_count','event_time','event_references','directory_identity','profile_count','profile_identity','device_changed_or_deleting','evidence_changed','mapping_conflict','mapping_limit','rename_not_verified','mapping_not_verified'} else 'operation_failed','stage':STAGE,'mapping_transaction_committed':MAPPING_COMMITTED}))
         raise SystemExit(1)

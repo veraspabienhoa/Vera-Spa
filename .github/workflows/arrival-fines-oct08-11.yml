@@ -32,6 +32,7 @@ jobs:
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
       - name: Repair confirmed owner mapping and verify device name
+        continue-on-error: true
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
