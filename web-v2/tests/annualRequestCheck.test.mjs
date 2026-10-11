@@ -25,7 +25,10 @@ test('annual card checks its own future dates and shows people and counts withou
     const card=document.querySelector('.long-leave-pending-card')
     await act(async()=>[...card.querySelectorAll('button')].find(node=>node.textContent==='Kiểm tra').click())
     assert.equal(calls.filter(([url])=>url.endsWith('/requests/november/overlap')).length,1)
-    const result=card.querySelector('[aria-label="Kết quả kiểm tra november"]')
+    const result=document.querySelector('.system-dialog')
+    assert.equal(card.querySelector('.system-dialog'),null)
+    assert.equal(result.getAttribute('aria-modal'),'true')
+    assert.match(result.querySelector('h2').textContent,/Kết quả kiểm tra november/)
     assert.match(result.textContent,/1 nhân viên khác nghỉ trong 20-11-2026 – 26-11-2026/)
     assert.match(result.textContent,/Cao nhất 2 người/)
     assert.match(result.textContent,/Employee Test/)
@@ -54,12 +57,13 @@ test('rapid checks issue one read and failure can be retried without deciding th
     assert.equal(checkButton().disabled, true)
     assert.ok([...document.querySelectorAll('.long-leave-decision-row button')].every(button => button.disabled))
     await act(async () => wait.resolve(response({ detail: 'Khoảng ngày của đơn không hợp lệ.' }, 400)))
-    assert.match(document.querySelector('[role="alert"]').textContent, /Khoảng ngày/)
+    assert.match(document.querySelector('.system-dialog-error').textContent, /Khoảng ngày/)
     assert.equal(checkButton().disabled, false)
+    await act(async () => document.querySelector('.system-dialog-error button').click())
     await act(async () => checkButton().click())
     assert.equal(checks, 2)
-    assert.ok(!document.querySelector('[role="alert"]'))
-    assert.match(document.querySelector('[aria-label="Kết quả kiểm tra target"]').textContent, /Other/)
+    assert.ok(!document.querySelector('.system-dialog-error'))
+    assert.match(document.querySelector('.system-dialog').textContent, /Other/)
     assert.ok(calls.every(([, method]) => method === 'GET'))
   } finally { await act(() => root.unmount()); globalThis.fetch = original }
 })
@@ -142,6 +146,215 @@ test('confirmed decision cannot start under a switched account after delayed ses
     await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin', id: 'new' } })))
     await act(async () => session.resolve({ access_token: 'new-account-session' }))
     assert.ok(calls.every(([, method]) => method === 'GET'))
-    assert.equal(document.querySelector('[role="alert"]'), null)
+    assert.equal(document.querySelector('.system-dialog-error'), null)
   } finally { delete globalThis.__annualGetSession; await act(() => root.unmount()); globalThis.fetch = original }
+})
+
+const modal = () => document.querySelector('.system-dialog')
+const closeModal = async () => { await act(async () => modal().querySelector('.primary-button').click()) }
+const decisionButton = label => [...document.querySelectorAll('.long-leave-decision-row button')].find(node => node.textContent.includes(label))
+
+// All API calls in these mounted flows are isolated fixtures; no business data
+// or notification-read state is touched.
+test('empty overlap is an explicit modal, Close/Escape preserve the card and the check can reopen', async () => {
+  const original = globalThis.fetch, root = createRoot(document.querySelector('#root')), calls = []
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options.method || 'GET'])
+    return response(url.includes('/requests/') ? { ...checked(), employee_count: 0, peak_with_applicant: 1, requests: [] }
+      : url.endsWith('/pending') ? { requests: [pendingRow('empty')] } : { days: [] })
+  }
+  try {
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin', id: 'empty' } })))
+    assert.equal(modal(), null, 'normal dashboard state does not open a notice')
+    const opener = checkButton(); opener.focus()
+    await act(async () => opener.click())
+    assert.match(modal().textContent, /Không có nhân viên khác nghỉ trùng/)
+    assert.equal(modal().querySelector('button').textContent, 'Đóng')
+    assert.equal(document.body.style.overflow, 'hidden')
+    assert.ok(!document.querySelector('.long-leave-pending-card').textContent.includes('Không có nhân viên khác'))
+    await closeModal()
+    assert.equal(document.activeElement, opener)
+    assert.equal(document.body.style.overflow, '')
+    await act(async () => opener.click())
+    assert.ok(modal())
+    await act(async () => document.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    assert.equal(modal(), null)
+    assert.ok(document.querySelector('.long-leave-pending-card'))
+    assert.ok(calls.every(([, method]) => method === 'GET'))
+  } finally { await act(() => root.unmount()); globalThis.fetch = original }
+})
+
+test('overview check reports all results in a modal and rapid clicks issue one read', async () => {
+  const original = globalThis.fetch, root = createRoot(document.querySelector('#root')), wait = deferred()
+  let checks = 0
+  globalThis.fetch = async url => {
+    if (url.endsWith('/pending')) return response({ requests: [] })
+    checks++
+    return checks === 1 ? response({ days: [] }) : wait.promise
+  }
+  try {
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin' } })))
+    const button = [...document.querySelectorAll('.leave-overlap-controls button')].find(node => node.textContent === 'Kiểm tra')
+    await act(async () => { button.click(); button.click() })
+    assert.equal(checks, 2)
+    assert.equal(button.disabled, true)
+    await act(async () => wait.resolve(response({ has_alert: true, days: [{ date: '2026-12-01', leave_count: 3, pending_count: 2, departments: [{ department_id: 'nhanvien', leave_count: 3, headcount: 4, exceeds_threshold: true }] }] })))
+    assert.match(modal().textContent, /Có ngày từ 3 người nghỉ/)
+    assert.match(modal().textContent, /01-12-2026: 3 người nghỉ/)
+    assert.match(modal().textContent, /nhanvien: 3\/4 \(vượt ngưỡng\)/)
+    await closeModal()
+    assert.equal(button.disabled, false)
+  } finally { await act(() => root.unmount()); globalThis.fetch = original }
+})
+
+test('validation and approve/reject outcomes use scoped modals without changing confirmation choices', async () => {
+  const original = globalThis.fetch, root = createRoot(document.querySelector('#root')), writes = []
+  globalThis.fetch = async (url, options) => {
+    if (options.method === 'POST') { writes.push(JSON.parse(options.body)); return response({ message: 'Đã duyệt đơn.', annual_leave_rows_created: 7 }) }
+    return response(url.endsWith('/pending') ? { requests: [pendingRow('decision')] } : { days: [] })
+  }
+  try {
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin' } })))
+    await act(async () => { decisionButton('Không duyệt').click(); decisionButton('Không duyệt').click() })
+    assert.equal(document.querySelectorAll('.system-dialog').length, 1)
+    assert.match(modal().textContent, /Vui lòng nhập lý do/)
+    await closeModal()
+    const input = document.querySelector('.long-leave-decision-row input')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'Không đủ nhân sự')
+      input.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    await act(async () => decisionButton('Không duyệt').click())
+    assert.equal(modal().dataset.systemDialog, 'confirm')
+    assert.equal(document.activeElement.textContent, 'Hủy')
+    await act(async () => document.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    assert.equal(writes.length, 0)
+    assert.equal(input.value, 'Không đủ nhân sự')
+    await act(async () => { decisionButton('Duyệt đơn').click(); decisionButton('Duyệt đơn').click() })
+    assert.equal(document.querySelectorAll('.system-dialog-confirm').length, 1)
+    await closeModal()
+    assert.deepEqual(writes, [{ decision: 'approve', rejection_reason: '' }])
+    assert.equal(modal().dataset.systemDialog, 'success')
+    assert.match(modal().textContent, /Đã tạo 7 ngày Phép năm/)
+    await closeModal()
+    assert.equal(modal(), null)
+  } finally { await act(() => root.unmount()); globalThis.fetch = original }
+})
+
+test('network/HTTP failures queue without overwriting and account removal clears visible and queued feedback', async () => {
+  const original = globalThis.fetch, root = createRoot(document.querySelector('#root'))
+  globalThis.fetch = async url => {
+    if (url.endsWith('/pending')) throw new Error('Mất kết nối danh sách đơn')
+    return response({ detail: 'Không tải được tổng quan' }, 503)
+  }
+  try {
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin', id: 'old' } })))
+    assert.equal(document.querySelectorAll('.system-dialog').length, 1)
+    const first = modal().textContent
+    await closeModal()
+    assert.ok(modal())
+    assert.notEqual(modal().textContent, first)
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'letan', id: 'old' } })))
+    assert.equal(modal(), null)
+    assert.equal(document.body.style.overflow, '')
+  } finally { await act(() => root.unmount()); globalThis.fetch = original }
+})
+
+test('long result lists retain text safely and browser Back closes feedback without changing data', async () => {
+  const original = globalThis.fetch, root = createRoot(document.querySelector('#root')), writes = []
+  globalThis.fetch = async (url, options) => {
+    if (options.method) writes.push(options.method)
+    return response(url.includes('/requests/') ? { ...checked(), employee_count: 80, requests: Array.from({ length: 80 }, (_, i) => ({ ...checked().requests[0], id: `${i}`, employee_name: `Employee ${i} <img src=x>` })) }
+      : url.endsWith('/pending') ? { requests: [pendingRow('long')] } : { days: [] })
+  }
+  try {
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin' } })))
+    await act(async () => checkButton().click())
+    assert.match(modal().textContent, /Employee 79 <img src=x>/)
+    assert.equal(modal().querySelector('img'), null)
+    await act(async () => window.dispatchEvent(new window.PopStateEvent('popstate')))
+    assert.equal(modal(), null)
+    assert.equal(document.body.style.overflow, '')
+    assert.ok(document.querySelector('.long-leave-pending-card'))
+    assert.deepEqual(writes, [])
+  } finally { await act(() => root.unmount()); globalThis.fetch = original }
+})
+
+test('partial date drafts show scoped validation and never check the previous committed range', async () => {
+  const original = globalThis.fetch, root = createRoot(document.querySelector('#root')), calls = []
+  globalThis.fetch = async url => { calls.push(url); return response(url.endsWith('/pending') ? { requests: [] } : { days: [] }) }
+  try {
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin', id: 'draft' } })))
+    const input = document.querySelector('.leave-overlap-controls input[type="text"]')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, '12')
+      input.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    const before = calls.length
+    await act(async () => [...document.querySelectorAll('.leave-overlap-controls button')].find(node => node.textContent === 'Kiểm tra').click())
+    assert.equal(calls.length, before)
+    assert.equal(modal().dataset.systemDialog, 'warning')
+    assert.match(modal().textContent, /dd-mm-yyyy/)
+    await closeModal()
+    assert.equal(input.value, '12')
+    assert.equal(document.activeElement, input)
+    await act(async () => [...document.querySelectorAll('.leave-overlap-controls button')].find(node => node.textContent === 'Kiểm tra').click())
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'letan', id: 'draft' } })))
+    assert.equal(modal(), null)
+    assert.equal(document.body.style.overflow, '')
+  } finally { await act(() => root.unmount()); globalThis.fetch = original }
+})
+
+test('HTTP decision failures preserve the rejection draft and never report success', async () => {
+  const original = globalThis.fetch, root = createRoot(document.querySelector('#root')), writes = []
+  globalThis.fetch = async (url, options) => {
+    if (options.method === 'POST') { writes.push(JSON.parse(options.body)); return response({ detail: 'Đơn đã thay đổi. Vui lòng tải lại.' }, 409) }
+    return response(url.endsWith('/pending') ? { requests: [pendingRow('conflict')] } : { days: [] })
+  }
+  try {
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin' } })))
+    const input = document.querySelector('.long-leave-decision-row input')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'Chưa phù hợp')
+      input.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    await act(async () => decisionButton('Không duyệt').click())
+    await closeModal()
+    assert.deepEqual(writes, [{ decision: 'reject', rejection_reason: 'Chưa phù hợp' }])
+    assert.equal(modal().dataset.systemDialog, 'error')
+    assert.match(modal().textContent, /Đơn đã thay đổi/)
+    await closeModal()
+    assert.equal(input.value, 'Chưa phù hợp')
+    assert.equal(decisionButton('Không duyệt').disabled, false)
+    assert.equal(document.querySelector('.system-dialog-success'), null)
+  } finally { await act(() => root.unmount()); globalThis.fetch = original }
+})
+
+test('existing feedback categories route once while new check results and decisions do not add routing', async () => {
+  const original = globalThis.fetch, root = createRoot(document.querySelector('#root')), categories = []
+  const capture = event => categories.push(event.detail.category)
+  window.addEventListener('vera-system-feedback', capture)
+  let checkFails = true
+  globalThis.fetch = async (url, options) => {
+    if (url.includes('/overlap') && url.includes('/requests/')) return checkFails ? response({ detail: 'Không kiểm tra được đơn.' }, 500) : response(checked())
+    if (options.method === 'POST') return response({ message: 'Đã duyệt đơn.' })
+    return response(url.endsWith('/pending') ? { requests: [pendingRow('routing')] } : { days: [] })
+  }
+  try {
+    await act(async () => root.render(React.createElement(module.exports.default, { user: { role: 'admin' } })))
+    await act(async () => { decisionButton('Không duyệt').click(); decisionButton('Không duyệt').click() })
+    assert.deepEqual(categories, ['ui_guidance'])
+    await closeModal()
+    await act(async () => checkButton().click())
+    assert.deepEqual(categories, ['ui_guidance', 'ui_error'])
+    await closeModal(); checkFails = false
+    await act(async () => checkButton().click())
+    assert.equal(categories.length, 2)
+    await closeModal()
+    await act(async () => decisionButton('Duyệt đơn').click())
+    assert.equal(categories.length, 2)
+    await closeModal()
+    assert.deepEqual(categories, ['ui_guidance', 'ui_error', 'ui_success'])
+    await closeModal()
+  } finally { window.removeEventListener('vera-system-feedback', capture); await act(() => root.unmount()); globalThis.fetch = original }
 })
