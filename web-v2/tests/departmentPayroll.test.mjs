@@ -474,6 +474,37 @@ test('source choices cover unconfigured HC roster and filtered saves never mater
   assert.equal(saved.salary_sources.some(row => 'rate_ca1' in row || 'default_base_salary' in row), false)
 })
 
+test('source identities stack display and full names; long custom departments stay searchable and labels select exclusively', async t => {
+  const f = await fixture(t)
+  f.data.salary_employee_catalog = [
+    { employee_username: 'Gia Anh', employee_name: 'Nguyễn Gia Anh', department: 'letan', department_label: 'Lễ tân', salary_source: 'schedule' },
+    { employee_username: 'TênHiểnThịRấtDàiKhôngCóKhoảngTrắng', employee_name: 'Nguyễn Thị Tên Đầy Đủ Nhiều Thành Phần', department: 'custom', department_label: 'Bộ phận hành chánh mở rộng với tên rất dài', salary_source: 'attendance' },
+  ]
+  await f.render(h(Settings, { user: admin }))
+  const table = document.querySelector('.department-payroll-source-table table')
+  assert.equal(table.querySelectorAll('colgroup col').length, 3)
+  assert.equal(table.querySelectorAll('th[scope="col"]').length, 3)
+  const identities = [...table.querySelectorAll('.department-payroll-source-identity')]
+  assert.deepEqual([...identities[0].children].map(node => [node.tagName, node.textContent]), [['STRONG', 'Gia Anh'], ['SMALL', 'Nguyễn Gia Anh']])
+  assert.equal(identities[1].querySelector('small').textContent, f.data.salary_employee_catalog[1].employee_name)
+  const groups = [...table.querySelectorAll('[role="radiogroup"]')]
+  assert.equal(groups[0].getAttribute('aria-label'), 'Nguồn lương Nguyễn Gia Anh')
+  assert.deepEqual([...groups[0].querySelectorAll('label>span')].map(node => node.textContent), ['Tính lương từ Thống kê', 'Tính từ Chấm công'])
+  const radios = [...groups[0].querySelectorAll('input')]
+  assert.ok(radios.every(node => node.type === 'radio' && node.name === 'salary-source-Gia Anh' && !node.disabled))
+  radios[1].focus(); assert.equal(document.activeElement, radios[1])
+  await act(() => radios[1].closest('label').click())
+  assert.deepEqual(radios.map(node => node.checked), [false, true])
+  assert.equal(groups[1].querySelector('input[value="attendance"]').checked, true)
+  await f.change(document.querySelector('[aria-label="Tìm cấu hình nguồn lương"]'), 'hanh chanh mo rong')
+  assert.equal(table.querySelectorAll('tbody tr').length, 1)
+  assert.equal(table.querySelector('.department-payroll-source-identity strong').textContent, f.data.salary_employee_catalog[1].employee_username)
+  await f.change(document.querySelector('[aria-label="Tìm cấu hình nguồn lương"]'), 'Nguyễn Gia Anh')
+  assert.equal(table.querySelectorAll('tbody tr').length, 1)
+  assert.equal(table.querySelector('input[value="attendance"]').checked, true)
+  assert.equal(f.requests.filter(item => item.options.method && item.options.method !== 'GET').length, 0)
+})
+
 test('same-role canonical employee_username change clears old account payroll', async t => {
   const f = await fixture(t)
   await f.render(h(Panel, { user: { employee_username: 'admin-a', role: 'admin' } })); await f.click('Tính lương theo cấu hình')

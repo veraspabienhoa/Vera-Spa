@@ -530,11 +530,12 @@ function PayrollPanel({ user, identity, settingsOnly, mutation, mutationRef, upd
     <div className="panel-title-row"><div><h3>NGUỒN TÍNH LƯƠNG THEO NHÂN VIÊN</h3><p>Toàn bộ nhân viên hành chánh, kể cả người đang dùng mức lương chung của bộ phận. Chọn đúng một nguồn rồi Lưu cấu hình. Chưa chọn riêng sẽ dùng Thống kê; đổi nguồn không thay đổi mức lương.</p></div></div>
     <label>Tìm nhân viên theo nguồn lương<input aria-label="Tìm cấu hình nguồn lương" value={sourceSearch} disabled={mutationPending} onChange={event => setSourceSearch(event.target.value)} placeholder="Tên, tên đăng nhập hoặc bộ phận…" /></label>
     <div className="responsive-data-table department-payroll-source-table" role="region" aria-label="Nguồn lương toàn bộ nhân viên hành chánh" tabIndex={0}><table>
-      <thead><tr><th>Nhân viên</th><th>Bộ phận</th><th>Nguồn tính lương</th></tr></thead>
+      <colgroup><col className="department-source-name-column" /><col className="department-source-department-column" /><col className="department-source-choice-column" /></colgroup>
+      <thead><tr><th scope="col">Nhân viên</th><th scope="col">Bộ phận</th><th scope="col">Nguồn tính lương</th></tr></thead>
       <tbody>{sourceRows.map(row => <tr key={row.employee_username}>
-        <td><strong>{row.employee_name}</strong><small>{row.employee_username}</small></td><td>{row.department_label}</td>
+        <td><div className="department-payroll-source-identity"><strong>{row.employee_username}</strong><small>{row.employee_name}</small></div></td><td>{row.department_label}</td>
         <td><div className="department-payroll-source-options" role="radiogroup" aria-label={`Nguồn lương ${row.employee_name}`}>
-          {['schedule', 'attendance'].map(source => <label key={source}><input type="radio" name={`salary-source-${row.employee_username}`} value={source} checked={salarySource(row.salary_source) === source} disabled={!backendReady || !canConfig || Boolean(busy)} onChange={() => editEmployeeSource(row.employee_username, source)} />{source === 'schedule' ? 'Tính lương từ Thống kê' : 'Tính từ Chấm công'}</label>)}
+          {['schedule', 'attendance'].map(source => <label key={source}><input type="radio" name={`salary-source-${row.employee_username}`} value={source} checked={salarySource(row.salary_source) === source} disabled={!backendReady || !canConfig || Boolean(busy)} onChange={() => editEmployeeSource(row.employee_username, source)} /><span>{source === 'schedule' ? 'Tính lương từ Thống kê' : 'Tính từ Chấm công'}</span></label>)}
         </div></td>
       </tr>)}</tbody>
     </table></div>
@@ -566,7 +567,7 @@ function PayrollPanel({ user, identity, settingsOnly, mutation, mutationRef, upd
       {mutationUncertain && <div className="error-box" role="status">{mutation.conflict ? 'Bảng lương hoặc cấu hình đã được cập nhật ở nơi khác.' : 'Chưa xác nhận được kết quả thao tác trước.'} Hãy {settingsOnly ? 'Làm mới cấu hình' : 'Mở bảng nháp hoặc tính lại'} để kiểm tra phiên bản hiện tại trước khi lưu tiếp.</div>}
       <UiToolbar data-ui-key="u-f89a73ac8e61" className="department-payroll-toolbar">
         <label>Tháng lương<input type="month" value={month} disabled={busy === 'settings-load' || mutationPending} onChange={event => changeMonth(event.target.value)} /></label>
-        <button className="primary-button" disabled={!backendReady || Boolean(busy) || !canCalculate} onClick={calculate}><CalendarDays size={16} />Tính lương theo cấu hình</button>
+        <button className="primary-button department-payroll-calculate" disabled={!backendReady || Boolean(busy) || !canCalculate} onClick={calculate}><CalendarDays size={16} /><span>Tính lương theo cấu hình</span></button>
         <button data-ui-key="u-00757540fcc5" data-ui-label-default="Mở bảng nháp" className="secondary-button" disabled={Boolean(busy)} onClick={loadDraft}>{busy === 'draft-load' ? 'Đang mở…' : <UiCustomText uiKey="u-00757540fcc5">Mở bảng nháp</UiCustomText>}</button>
         <button type="button" className="secondary-button" disabled={!backendReady || Boolean(busy) || !rows.length || !canCalculate} onClick={recalculatePayroll}><RefreshCw size={16} />Tính lại lương</button>
         {canSave && <button type="button" className="danger-button department-payroll-delete-draft" disabled={Boolean(busy) || writeBlocked} onClick={deleteDraft}><Trash2 size={16} />{busy === 'draft-delete' ? 'Đang xóa…' : 'Xóa bảng lương nháp'}</button>}
