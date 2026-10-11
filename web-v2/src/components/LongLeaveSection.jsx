@@ -1,11 +1,9 @@
-import { confirmDialog, promptDialog } from '../lib/systemDialogs'
-import ActionSuccessDialog from './ActionSuccessDialog'
-import StableFeedback from './StableFeedback'
+import useLeaveFeedback from '../lib/useLeaveFeedback'
 import usePageRefresh from '../lib/usePageRefresh'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
-import { CalendarDays, CheckCircle2, Clock3, RefreshCw, Send, UserRoundCheck } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CalendarDays, RefreshCw, Send, UserRoundCheck } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { APPROVED_LEAVE_FILTERS, approvedLeaveStatus, filterApprovedLeaveItems, vietnamToday } from '../lib/approvedLeaveFilters'
 import VeraDateInput from './VeraDateInput'
@@ -50,6 +48,14 @@ const emptyForm = () => ({
 })
 
 export default function LongLeaveSection({ user, refreshRevision = 0 }) {
+  // Account and permission changes discard private drafts, decisions and late
+  // results, including switches between users with the same role.
+  const owner = JSON.stringify([user?.id, user?.employee_username, user?.role,
+    ...['long_leave', 'long_leave_form', 'long_leave_stats', 'resignation_form'].map(key => user?.permissions?.[key] === true)])
+  return <LongLeaveContent key={owner} user={user} refreshRevision={refreshRevision} />
+}
+
+function LongLeaveContent({ user, refreshRevision }) {
   usePageRefresh(() => load(), () => Boolean(loading || saving || returnBusyId || approvedBusy || approvedEditor))
   const role = String(user?.role || '').toLowerCase()
   const canOpen = role === 'admin'
@@ -64,30 +70,49 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
   const [form, setForm] = useState(emptyForm)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState(null)
+  const notify = useLeaveFeedback('errors')
   const [approvedEditor, setApprovedEditor] = useState(null)
   const [approvedBusy, setApprovedBusy] = useState(false)
   const [pendingSync, setPendingSync] = useState('')
   const [approvedSearch, setApprovedSearch] = useState('')
   const [approvedFilter, setApprovedFilter] = useState('all')
 
+  const lifecycle = useRef({ active: false, load: null, operation: null })
+  useEffect(() => {
+    const state = lifecycle.current
+    state.active = true
+    return () => {
+      state.active = false
+      state.load?.abort()
+      state.operation?.abort()
+      state.load = null
+      state.operation = null
+    }
+  }, [])
+
   const load = useCallback(async () => {
-    if (!canOpen || !isApiConfigured) return
+    const state = lifecycle.current
+    if (!canOpen || !isApiConfigured || !state.active) return
+    state.load?.abort()
+    const controller = new AbortController()
+    state.load = controller
+    const current = () => state.active && state.load === controller && !controller.signal.aborted
+    const options = { signal: controller.signal, canSend: current }
     setLoading(true)
     try {
-      const result = await veraApi.longLeaveOverview()
+      const result = await veraApi.longLeaveOverview(options)
+      if (!current()) return
       setOverview(result)
       if (role === 'admin') {
-        const pending = await veraApi.pendingApprovedLongLeave()
-        setPendingSync(pending.request_ids[0] || '')
+        const pending = await veraApi.pendingApprovedLongLeave(options)
+        if (current()) setPendingSync(pending.request_ids?.[0] || '')
       }
-      setNotice((current) => current?.status === 'success' ? current : null)
     } catch (error) {
-      setNotice({ status: 'error', message: error.message || 'Không tải được dữ liệu Phép năm / Nghỉ làm đẹp.' })
+      if (current() && error.name !== 'AbortError') void notify({ status: 'error', message: error.message || 'Không tải được dữ liệu Phép năm / Nghỉ làm đẹp.' })
     } finally {
-      setLoading(false)
+      if (current()) { state.load = null; setLoading(false) }
     }
-  }, [canOpen, role])
+  }, [canOpen, role, notify])
 
   useEffect(() => { void load() }, [load, refreshRevision])
   useEffect(() => {
@@ -112,14 +137,13 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
   const approvedToday = vietnamToday()
   const [returnDrafts, setReturnDrafts] = useState({})
   const [returnBusyId, setReturnBusyId] = useState('')
-  const canSubmit = !saving && (isResignation
+  const canSubmit = !loading && !saving && (isResignation
     ? canUseResignation && overview?.can_submit_resignation === true
     : canUseForm && overview?.can_submit === true)
 
   if (!canOpen) return null
 
   const changeRequestType = (requestType) => {
-    setNotice(null)
     setForm((current) => {
       const startDate = requestType === RESIGNATION && current.start_date < resignationMinDate
         ? resignationMinDate
@@ -146,83 +170,135 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
     })
   }
 
-  const submit = async (event) => {
-    event.preventDefault()
-    if (!canSubmit) return
-    setSaving(true)
-    setNotice(null)
-    try {
-      const result = await veraApi.createLongLeaveRequest(form)
-      setNotice({
-        status: 'success',
-        message: `${result.message} Mã yêu cầu: ${result.request_id}.${(result.warnings || []).length ? ` ${result.warnings.join(' ')}` : ''}`,
-      })
-      setForm(emptyForm())
-      await load()
-    } catch (error) {
-      setNotice({ status: 'error', message: `KHÔNG THÀNH CÔNG (${error.message || 'Không gửi được đơn.'})` })
-    } finally {
-      setSaving(false)
+  const beginOperation = () => {
+    const state = lifecycle.current
+    if (!state.active || state.operation || state.load) return null
+    const controller = new AbortController()
+    state.operation = controller
+    const current = () => state.active && state.operation === controller && !controller.signal.aborted
+    return {
+      current,
+      options: { signal: controller.signal, canSend: current },
+      finish: () => { if (state.operation === controller) state.operation = null },
     }
   }
 
-  const markReturned = async (item) => {
+  const submit = async (event) => {
+    event.preventDefault()
+    if (!canSubmit || !notify.validate(event.currentTarget)) return
+    const operation = beginOperation()
+    if (!operation) return
+    setSaving(true)
+    try {
+      const result = await veraApi.createLongLeaveRequest(form, operation.options)
+      if (!operation.current()) return
+      void notify({
+        status: 'success',
+        message: `${result.message} Mã yêu cầu: ${result.request_id}.${(result.warnings || []).length ? ` ${result.warnings.join(' ')}` : ''}`,
+      })
+      setForm(!canUseForm && canUseResignation
+        ? { ...emptyForm(), request_type: RESIGNATION, start_date: resignationMinDate, end_date: resignationMinDate }
+        : emptyForm())
+      await load()
+    } catch (error) {
+      if (operation.current() && error.name !== 'AbortError') void notify({ status: 'error', message: `KHÔNG THÀNH CÔNG (${error.message || 'Không gửi được đơn.'})` })
+    } finally {
+      if (operation.current()) setSaving(false)
+      operation.finish()
+    }
+  }
+
+  const markReturned = async (item, event) => {
+    if (role !== 'admin' || lifecycle.current.operation) return
     const draft = returnDrafts[item.id] || {}
-    if (!draft.return_date || !String(draft.note || '').trim()) {
-      setNotice({ status: 'error', message: 'Vui lòng nhập ngày quay lại và ghi chú.' })
+    const dateField = event.currentTarget.closest('.long-leave-return-cell, .long-leave-return-mobile')?.querySelector('input[aria-label="Ngày quay lại làm việc"]')
+    if (!draft.return_date || !String(draft.note || '').trim() || dateField?.validity.valid === false) {
+      void notify({ status: 'warning', message: 'Vui lòng nhập ngày quay lại hợp lệ và ghi chú.' })
       return
     }
-    if (!(await confirmDialog(`Xác nhận ${shortEmployeeName(item.employee_name)} đã quay lại làm việc và kết thúc kỳ nghỉ?`))) return
-    setReturnBusyId(item.id); setNotice(null)
+    const operation = beginOperation()
+    if (!operation) return
+    setReturnBusyId(item.id)
     try {
-      const result = await veraApi.markLongLeaveReturned(item.id, draft)
-      setNotice({ status: 'success', message: result.message })
+      if (!(await notify.confirm(`Xác nhận ${shortEmployeeName(item.employee_name)} đã quay lại làm việc và kết thúc kỳ nghỉ?`)) || !operation.current()) return
+      const result = await veraApi.markLongLeaveReturned(item.id, draft, operation.options)
+      if (!operation.current()) return
+      void notify({ status: 'success', message: result.message })
       setReturnDrafts((current) => ({ ...current, [item.id]: {} }))
       await load()
     } catch (error) {
-      setNotice({ status: 'error', message: error.message || 'Không cập nhật được ngày quay lại.' })
-    } finally { setReturnBusyId('') }
+      if (operation.current() && error.name !== 'AbortError') void notify({ status: 'error', message: error.message || 'Không cập nhật được ngày quay lại.' })
+    } finally {
+      if (operation.current()) setReturnBusyId('')
+      operation.finish()
+    }
   }
 
   const saveApproved = async event => {
     event.preventDefault()
+    if (role !== 'admin' || !approvedEditor || !notify.validate(event.currentTarget)) return
+    const operation = beginOperation()
+    if (!operation) return
     setApprovedBusy(true)
     try {
       const { id, revision, start_date, end_date, reason, detail } = approvedEditor
-      const result = await veraApi.editApprovedLongLeave(id, { revision, start_date, end_date, reason, detail })
+      const result = await veraApi.editApprovedLongLeave(id, { revision, start_date, end_date, reason, detail }, operation.options)
+      if (!operation.current()) return
       setPendingSync(result.mirror_pending ? id : '')
-      setNotice({ status: 'success', message: result.message })
+      void notify({ status: 'success', message: result.message })
       setApprovedEditor(null)
       await load()
-    } catch (error) { setNotice({ status: 'error', message: error.message }) }
-    finally { setApprovedBusy(false) }
+    } catch (error) {
+      if (operation.current() && error.name !== 'AbortError') void notify({ status: 'error', message: error.message || 'Không lưu được thay đổi đơn.' })
+    } finally {
+      if (operation.current()) setApprovedBusy(false)
+      operation.finish()
+    }
   }
   const cancelApproved = async item => {
-    const note = (await promptDialog(`Hủy đơn ${item.id} của ${shortEmployeeName(item.employee_name)}. Nhập lý do hủy:`))
-    if (!note?.trim()) return
+    if (role !== 'admin') return
+    const operation = beginOperation()
+    if (!operation) return
     setApprovedBusy(true)
     try {
-      const result = await veraApi.cancelApprovedLongLeave(item.id, { revision: item.revision, note: note.trim() })
+      const note = await notify.prompt(`Hủy đơn ${item.id} của ${shortEmployeeName(item.employee_name)}. Nhập lý do hủy:`)
+      if (!note?.trim() || !operation.current()) return
+      const result = await veraApi.cancelApprovedLongLeave(item.id, { revision: item.revision, note: note.trim() }, operation.options)
+      if (!operation.current()) return
       setPendingSync(result.mirror_pending ? item.id : '')
-      setNotice({ status: 'success', message: result.message })
+      void notify({ status: 'success', message: result.message })
       await load()
-    } catch (error) { setNotice({ status: 'error', message: error.message }) }
-    finally { setApprovedBusy(false) }
+    } catch (error) {
+      if (operation.current() && error.name !== 'AbortError') void notify({ status: 'error', message: error.message || 'Không hủy được đơn.' })
+    } finally {
+      if (operation.current()) setApprovedBusy(false)
+      operation.finish()
+    }
   }
   const approvedActions = item => role === 'admin' && <div className="approved-request-actions">
-    <button type="button" className="secondary-button compact" disabled={approvedBusy || loading}
+    <button type="button" className="secondary-button compact" disabled={approvedBusy || loading || Boolean(returnBusyId)}
       onClick={() => setApprovedEditor({ ...item, end_date: item.end_date || item.start_date })}>Sửa đơn</button>
-    <button type="button" className="danger-button compact" disabled={approvedBusy || loading}
+    <button type="button" className="danger-button compact" disabled={approvedBusy || loading || Boolean(returnBusyId)}
       onClick={() => cancelApproved(item)}>Hủy đơn</button>
   </div>
   const retrySync = async () => {
+    if (role !== 'admin' || !pendingSync) return
+    const operation = beginOperation()
+    if (!operation) return
     setApprovedBusy(true)
     try {
-      const result = await veraApi.syncApprovedLongLeave(pendingSync)
-      if (!result.mirror_pending) { setPendingSync(''); setNotice({ status: 'success', message: 'Đã đồng bộ bảng dữ liệu cũ.' }) }
-      else setNotice({ status: 'error', message: 'Chưa đồng bộ được bảng dữ liệu cũ. Dữ liệu máy chủ đã được lưu.' })
-    } catch (error) { setNotice({ status: 'error', message: error.message }) }
-    finally { setApprovedBusy(false) }
+      const result = await veraApi.syncApprovedLongLeave(pendingSync, operation.options)
+      if (!operation.current()) return
+      if (!result.mirror_pending) {
+        setPendingSync('')
+        void notify({ status: 'success', message: 'Đã đồng bộ bảng dữ liệu cũ.' })
+      } else void notify({ status: 'warning', routeCategory: 'ui_error', message: 'Chưa đồng bộ được bảng dữ liệu cũ. Dữ liệu máy chủ đã được lưu.' })
+    } catch (error) {
+      if (operation.current() && error.name !== 'AbortError') void notify({ status: 'error', message: error.message || 'Không đồng bộ được bảng dữ liệu cũ.' })
+    } finally {
+      if (operation.current()) setApprovedBusy(false)
+      operation.finish()
+    }
   }
 
   return (
@@ -237,15 +313,6 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
           <RefreshCw size={15} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-914b7aa7a213"> Làm mới
         </UiCustomText></button>
       </div>
-
-      {notice?.status === 'success' && <ActionSuccessDialog message={notice.message} onClose={() => setNotice(null)} />}
-      <StableFeedback>{notice?.status === 'error' && (
-        <div className={`long-leave-notice ${notice.status}`} role={notice.status === 'error' ? 'alert' : 'status'}>
-          {notice.status === 'success' ? <CheckCircle2 size={17} /> : <Clock3 size={17} />}
-          <span>{notice.message}</span>
-          <button data-ui-key="u-611f824d1c77" data-ui-label-default="×" type="button" onClick={() => setNotice(null)} aria-label="Đóng thông báo"><UiCustomText uiKey="u-611f824d1c77">×</UiCustomText></button>
-        </div>
-      )}</StableFeedback>
 
       {role !== 'admin' && (canUseForm || canUseResignation) && (
         <section data-ui-key="u-93da09a1ad4e" className="panel long-leave-form-panel">
@@ -274,19 +341,19 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
             ))}
           </UiToolbar>
 
-          {!isResignation && overview?.paused && <div className="warning-box long-leave-gate"><strong>Đang tạm dừng nhận đơn.</strong> {overview.pause_message}</div>}
+          {!isResignation && overview?.paused && <div data-feedback-inline className="warning-box long-leave-gate"><strong>Đang tạm dừng nhận đơn.</strong> {overview.pause_message}</div>}
           {!isResignation && overview?.eligibility && (
-            <div className={`${overview.eligibility.allowed ? 'success-box' : 'warning-box'} long-leave-gate`}>
+            <div data-feedback-inline className={`${overview.eligibility.allowed ? 'success-box' : 'warning-box'} long-leave-gate`}>
               {overview.eligibility.message}
             </div>
           )}
           {isResignation && overview?.resignation_eligibility && (
-            <div className={`${overview.resignation_eligibility.allowed ? 'success-box' : 'warning-box'} long-leave-gate`}>
+            <div data-feedback-inline className={`${overview.resignation_eligibility.allowed ? 'success-box' : 'warning-box'} long-leave-gate`}>
               {overview.resignation_eligibility.message}
             </div>
           )}
 
-          <form className="long-leave-form" onSubmit={submit}>
+          <form className="long-leave-form" noValidate onSubmit={submit}>
             <label className="long-leave-employee-field">
               <span>Tên nhân viên</span>
               <input value={shortEmployeeName(user?.employee_username)} readOnly />
@@ -336,10 +403,10 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
         </section>
       )}
 
-      {pendingSync && role === 'admin' && <button type="button" className="secondary-button" disabled={approvedBusy} onClick={retrySync}>Đồng bộ lại đơn {pendingSync}</button>}
+      {pendingSync && role === 'admin' && <button type="button" className="secondary-button" disabled={approvedBusy || loading || Boolean(returnBusyId)} onClick={retrySync}>Đồng bộ lại đơn {pendingSync}</button>}
       {approvedEditor && role === 'admin' && <section className="panel approved-request-editor">
         <h3>Sửa đơn đã duyệt · {approvedEditor.employee_name} · {approvedEditor.request_type}</h3>
-        <form onSubmit={saveApproved}>
+        <form noValidate onSubmit={saveApproved}>
           <label>Từ ngày<VeraDateInput required disabled={approvedBusy} value={approvedEditor.start_date}
             onChange={event => setApprovedEditor(current => ({ ...current, start_date: event.target.value,
               end_date: current.request_type === RESIGNATION ? event.target.value : current.end_date }))} /></label>
@@ -405,7 +472,7 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
                           ? null
                           : item.leave_completed
                             ? <><strong>{formatDateDisplay(item.return_date)}</strong><small>{item.return_note}</small><em>Đã kết thúc kỳ nghỉ</em></>
-                            : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button data-ui-key="u-560863cab625" data-ui-label-default="Kết thúc kỳ nghỉ" type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}><UiCustomText uiKey="u-560863cab625">Kết thúc kỳ nghỉ</UiCustomText></button></>}
+                            : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button data-ui-key="u-560863cab625" data-ui-label-default="Kết thúc kỳ nghỉ" type="button" className="secondary-button compact" disabled={Boolean(returnBusyId) || approvedBusy || loading} onClick={event => markReturned(item, event)}><UiCustomText uiKey="u-560863cab625">Kết thúc kỳ nghỉ</UiCustomText></button></>}
                         </td>}
                       </tr>
                     )})}
@@ -435,7 +502,7 @@ export default function LongLeaveSection({ user, refreshRevision = 0 }) {
                       ? null
                       : item.leave_completed
                         ? <p><strong>Đã quay lại:</strong> {formatDateDisplay(item.return_date)} · {item.return_note}</p>
-                        : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button data-ui-key="u-ad93a1e80149" data-ui-label-default="Kết thúc kỳ nghỉ" type="button" className="secondary-button compact" disabled={returnBusyId === item.id} onClick={() => markReturned(item)}><UiCustomText uiKey="u-ad93a1e80149">Kết thúc kỳ nghỉ</UiCustomText></button></>}
+                        : <><VeraDateInput value={returnDrafts[item.id]?.return_date || ''} min={item.start_date} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], return_date: event.target.value } }))} aria-label="Ngày quay lại làm việc"/><input value={returnDrafts[item.id]?.note || ''} onChange={(event) => setReturnDrafts((current) => ({ ...current, [item.id]: { ...current[item.id], note: event.target.value } }))} placeholder="Ghi chú đã quay lại"/><button data-ui-key="u-ad93a1e80149" data-ui-label-default="Kết thúc kỳ nghỉ" type="button" className="secondary-button compact" disabled={Boolean(returnBusyId) || approvedBusy || loading} onClick={event => markReturned(item, event)}><UiCustomText uiKey="u-ad93a1e80149">Kết thúc kỳ nghỉ</UiCustomText></button></>}
                     </div>}
                   </article>
                   )

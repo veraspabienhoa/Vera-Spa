@@ -86,7 +86,7 @@ export function showSystemDialog(options = {}) {
       button(action.label, () => { close(); action.run?.() }).disabled = Boolean(action.disabled)
     }
     const cancel = interactive ? button('Hủy', () => dismiss()) : null
-    const accept = button(interactive ? 'Xác nhận' : 'Đã hiểu', () => dismiss(input ? input.value : true), true)
+    const accept = button(interactive ? 'Xác nhận' : (options.dismissLabel || 'Đã hiểu'), () => dismiss(input ? input.value : true), true)
     dialog.append(footer)
     doc.body.append(dialog)
     const onKeyDown = event => {

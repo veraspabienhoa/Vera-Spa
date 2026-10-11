@@ -18,10 +18,15 @@ async function request(path, options = {}) {
   finally { if (write) invalidateSharedReads() }
 }
 
-async function requestUnshared(path, options = {}) {
+async function requestUnshared(path, { canSend, ...options } = {}) {
+  const assertCurrent = () => {
+    options.signal?.throwIfAborted()
+    if (canSend && !canSend()) throw new DOMException('Đã hủy yêu cầu.', 'AbortError')
+  }
   if (!apiBase) throw new Error('Python API V2 chưa được cấu hình.')
 
   let session = await getCurrentSession()
+  assertCurrent()
   const headers = new Headers(options.headers || {})
   headers.set('Content-Type', 'application/json')
   if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`)
@@ -34,14 +39,17 @@ async function requestUnshared(path, options = {}) {
     ? 3
     : path === '/v2/payroll/save' ? 2 : 1
   const send = async () => {
+    assertCurrent()
     if (method === 'GET' && path !== '/v2/me') return readJsonRequest(`${apiBase}${path}`, { ...options, headers })
     let lastError
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
+        assertCurrent()
         if (path === '/v2/me') return await authJsonRequest(`${apiBase}${path}`, { ...options, headers })
         const response = await fetch(`${apiBase}${path}`, { ...options, headers })
         return { response, payload: await response.json().catch(() => ({})) }
       } catch (error) {
+        if (options.signal?.aborted || error.name === 'AbortError') throw error
         lastError = error
         if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 1200))
       }
@@ -50,10 +58,12 @@ async function requestUnshared(path, options = {}) {
     throw new Error(`Không kết nối được máy chủ VERA sau ${attempts} lần thử. Vui lòng bấm Làm mới. (${lastError?.message || 'Lỗi mạng'})`)
   }
   let { response, payload } = await send()
+  assertCurrent()
   if (response.status === 401 && session?.refresh_token) {
     // Keep refresh outside transport retries: its 503/timeout must propagate,
     // not be replaced by the original 401 and trigger a false logout in App.
     session = await refreshCurrentSession(session)
+    assertCurrent()
     if (session?.access_token) {
       headers.set('Authorization', `Bearer ${session.access_token}`)
       ;({ response, payload } = await send())
@@ -334,17 +344,18 @@ export const veraApi = {
   saveLetanLeavePolicy: (body) => request('/v2/rules/letan-leave-policy', { method: 'PUT', body: JSON.stringify(body) }),
   exportRulesExcel: () => download('/v2/rules/export.xlsx', 'NoiQuy_VeraSpa.xlsx'),
   importRulesExcel: (file) => upload('/v2/rules/import.xlsx', file),
-  pendingApprovedLongLeave: () => request('/v2/long-leave/admin/pending-changes'),
-  longLeaveOverview: () => request('/v2/long-leave/overview'),
-  createLongLeaveRequest: (body) => request('/v2/long-leave/requests', {
+  pendingApprovedLongLeave: (options = {}) => request('/v2/long-leave/admin/pending-changes', options),
+  longLeaveOverview: (options = {}) => request('/v2/long-leave/overview', options),
+  createLongLeaveRequest: (body, options = {}) => request('/v2/long-leave/requests', {
+    ...options,
     method: 'POST',
     body: JSON.stringify(body),
   }),
-  editApprovedLongLeave: (id, body) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
-  cancelApprovedLongLeave: (id, body) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify(body) }),
-  syncApprovedLongLeave: (id) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(id)}/sync`, { method: 'POST' }),
-  markLongLeaveReturned: (requestId, body) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(requestId)}/return-to-work`, {
-    method: 'POST', body: JSON.stringify(body),
+  editApprovedLongLeave: (id, body, options = {}) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(id)}`, { ...options, method: 'PUT', body: JSON.stringify(body) }),
+  cancelApprovedLongLeave: (id, body, options = {}) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(id)}`, { ...options, method: 'DELETE', body: JSON.stringify(body) }),
+  syncApprovedLongLeave: (id, options = {}) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(id)}/sync`, { ...options, method: 'POST' }),
+  markLongLeaveReturned: (requestId, body, options = {}) => request(`/v2/long-leave/admin/requests/${encodeURIComponent(requestId)}/return-to-work`, {
+    ...options, method: 'POST', body: JSON.stringify(body),
   }),
   profile: () => request('/v2/profile'),
   profileReferenceData: (provinceCode = '') => request(`/v2/profile/reference-data${provinceCode === '' ? '' : `?province_code=${encodeURIComponent(provinceCode)}`}`),
