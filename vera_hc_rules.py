@@ -13,7 +13,8 @@ from vera_facegate_control_log import VN_TZ
 import vera_web_v2_hr as hr
 
 KEY = 'hc_rules'
-EXCLUDED = frozenset({'leader', 'nhanvien', 'admin', 'giamdoc'})
+EXCLUDED = frozenset({'admin', 'giamdoc', 'quanly', 'support'})
+KTV_DEPARTMENTS = frozenset({'leader', 'nhanvien'})
 SOURCE = 'VERA · NỘI QUY HC'
 
 
@@ -52,7 +53,7 @@ def persist(conn, current, actor):
 
 
 def definitions(conn):
-    return {k: v for k, v in hr.departments(conn).items() if k not in EXCLUDED}
+    return {k: v for k, v in hr.departments(conn).items() if k not in EXCLUDED | KTV_DEPARTMENTS}
 
 
 def policy(conn):
@@ -307,7 +308,7 @@ def candidate(row, day, data, current, now, leaves):
         switches = [rule_switch(current, department, r) for r in current.get('rules', default_rules()) if r['enabled'] and r['kind'] != 'manual']
         active = [v for v in switches if v.get('enabled') and v.get('enabled_since')]
         cfg = {'enabled': bool(active), 'enabled_since': min((v['enabled_since'] for v in active), default=None)}
-    if department in EXCLUDED or str(row.get('employee_role') or '').strip().lower() in EXCLUDED:
+    if department in EXCLUDED | KTV_DEPARTMENTS or str(row.get('employee_role') or '').strip().lower() in EXCLUDED:
         return None
     if not cfg.get('enabled') or row.get('department') != department or row.get('hc_department') not in current.get('eligible_departments', {department}):
         return None
@@ -385,13 +386,15 @@ def write_penalty(conn, row, day, decision, amount, revision, config):
     return True
 
 
-def fresh_evidence(data, day, now):
-    from vera_facegate_runtime import archive_complete
+def fresh_evidence(data, day, now, username=None):
+    from vera_facegate_runtime import archive_complete, blocking_issues, issue_scope, future_evidence
     try:
+        issues = blocking_issues(data, day, username)
+        blocked = bool(issues) if username is not None else any(issue_scope(i, data) is None for i in issues)
         saved = next((s for s in data['syncs'] if str(s['work_date']) == now.date().isoformat()), None)
         return bool(saved and data['events'] and archive_complete(data, day) and
             archive_complete(data, now.date()) and
-            not any(i.get('reason') != 'no_vera_shift' for i in data['issues']) and
+            not blocked and not future_evidence(data, now) and
             0 <= (now-datetime.fromisoformat(str(saved['last_synced_at'])).astimezone(VN_TZ)).total_seconds() <= 300)
     except (ValueError, TypeError, KeyError):
         return False
@@ -410,6 +413,9 @@ def process(conn, *, now=None):
     if not any(rule_switch(current, d, r).get('enabled') and r['enabled'] and r['kind'] != 'manual'
                for d in current['departments'] for r in current.get('rules', default_rules())):
         return {**result, 'reason': 'disabled'}
+    from vera_auto_check import penalties_paused
+    if penalties_paused(conn):
+        return {**result, 'reason': 'auto_penalty_paused'}
     ensure_schema(conn)
     current['eligible_departments'] = set(definitions(conn))
     configs = pay._employee_config_map(conn)
@@ -430,7 +436,7 @@ def process(conn, *, now=None):
                 continue
             leaves = [dict(l) for l in conn.execute(text('SELECT leave_reason,penalty FROM leave_records WHERE leave_date=:day AND lower(btrim(employee_name))=lower(btrim(:name))'), {'day': day, 'name': username}).mappings()]
             latest = fg.project_evidence(conn, day, day)
-            if not fresh_evidence(latest, day, now):
+            if not fresh_evidence(latest, day, now, username):
                 result['pending'] += 1
                 continue
             decision = candidate(row, day, latest, current, now, leaves)

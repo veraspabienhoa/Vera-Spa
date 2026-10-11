@@ -41,7 +41,7 @@ export default function HcRulesPage({ user }) {
   }
   const changeRule = (index, values) => setDraft(rows => rows.map((row, i) => i === index ? { ...row, ...values } : row))
   return <section className="hc-rules-page">
-    <div className="page-heading"><div><h1>Nội quy HC</h1><p>Áp dụng các bộ phận ngoài Leader, Nhân viên, Admin và Giám đốc.</p></div><button type="button" className="secondary-button" onClick={load} disabled={Boolean(busy || draft)}><RefreshCw size={16} /> Làm mới</button></div>
+    <div className="page-heading"><div><h1>Nội quy HC</h1><p>Phạt theo ca làm của các bộ phận HC; loại trừ Giám đốc, Admin, Quản lý và Support. Bộ phận KTV dùng Nội quy KTV.</p></div><button type="button" className="secondary-button" onClick={load} disabled={Boolean(busy || draft)}><RefreshCw size={16} /> Làm mới</button></div>
     {error && <p className="error-box" role="alert">{error}</p>}
     {notice && <p className="success-box" role="status">{notice}</p>}
     <article className="panel hc-rule-description"><h2><ShieldAlert size={22} /> Hạng mục và mức phạt</h2>

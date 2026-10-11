@@ -1,6 +1,7 @@
 """PostgreSQL-only Auto Check core shared by the background job and Web V2."""
 from __future__ import annotations
 
+import math
 import json
 import re
 import unicodedata
@@ -201,11 +202,14 @@ def is_automatic_late_reason(reason: str) -> bool:
 
 
 def automatic_late_penalty_eligible(reason: str, minutes) -> bool:
-    """Never penalize a timed late event during minutes 1 through 4."""
+    """Arrival lateness is immediate; existing return-from-break grace remains."""
     if not is_automatic_late_reason(reason):
         return True
     try:
-        return float(minutes or 0) >= MIN_AUTOMATIC_LATE_PENALTY_MINUTES
+        value = float(minutes or 0)
+        if _norm(reason).startswith("di tre"):
+            return math.isfinite(value) and value > 0
+        return math.isfinite(value) and value >= MIN_AUTOMATIC_LATE_PENALTY_MINUTES
     except (TypeError, ValueError):
         return False
 
@@ -302,7 +306,7 @@ def revoke_wrong_late_penalty(conn, *, work_date: date, employee: str, support_r
 
 
 def revoke_grace_period_penalties(conn) -> int:
-    """Remove old system-created 1-4 minute late penalties, never manual rows."""
+    """Remove old system-created 1-4 minute return penalties; retain immediate arrival fines."""
     ensure_schema(conn)
     rows = conn.execute(text("""
         SELECT id,reason,minutes,leave_record_uid
@@ -312,7 +316,8 @@ def revoke_grace_period_penalties(conn) -> int:
     """), {"minimum": MIN_AUTOMATIC_LATE_PENALTY_MINUTES}).mappings().all()
     revoked = 0
     for row in rows:
-        if not is_automatic_late_reason(str(row.get("reason") or "")):
+        if (not is_automatic_late_reason(str(row.get("reason") or ""))
+                or _norm(row.get("reason")).startswith("di tre")):
             continue
         uid = str(row.get("leave_record_uid") or "").strip()
         if uid:
