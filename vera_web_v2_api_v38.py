@@ -8,6 +8,9 @@ from vera_web_v2_runtime_env import load_managed_runtime_environment, load_live_
 load_managed_runtime_environment()
 load_live_tour_mode_override()
 
+from vera_database_runtime import validate_runtime_configuration
+validate_runtime_configuration()
+
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import text
 
@@ -240,3 +243,8 @@ install_online_booking_routes(_shared.app, engine_instance=_api._engine_instance
 # One request scope includes authentication dependencies and response serialization.
 from vera_request_metrics import RequestMetricsMiddleware
 _shared.app.add_middleware(RequestMetricsMiddleware)
+
+# Explicit roles are opt-in: the existing command defaults to combined mode.
+from vera_worker_runtime import install_health_routes, runtime_for, require_complete_registration
+require_complete_registration(runtime_for(app, _api._engine_instance))
+install_health_routes(app, runtime_for(app, _api._engine_instance))

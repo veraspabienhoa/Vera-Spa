@@ -28,7 +28,7 @@ def test_auth_queries_work_while_business_pool_is_exhausted(tmp_path, monkeypatc
     def factory(url, **kwargs):
         captured.append((url, kwargs))
         kwargs.pop('connect_args')
-        return create_engine(url, poolclass=QueuePool, **kwargs)
+        return create_engine(url, **kwargs)
     monkeypatch.setattr(pools, 'create_engine', factory)
     try:
         with primary.connect():

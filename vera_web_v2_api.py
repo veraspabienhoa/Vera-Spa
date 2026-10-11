@@ -105,6 +105,7 @@ app.add_middleware(
 )
 
 _engine = None
+_engine_lock = threading.Lock()
 _gspread = None
 _AUTH_HTTP = requests.Session()
 _AUTH_HTTP.mount("https://", requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=20))
@@ -116,7 +117,9 @@ _VERIFIED_TOKENS = VerifiedTokenCache(
 
 def _engine_instance():
     global _engine
-    if _engine is None:
+    with _engine_lock:
+        if _engine is not None:
+            return _engine
         host = os.getenv("DB_HOST", "").strip()
         user = os.getenv("DB_USER", "").strip()
         password = os.getenv("DB_PASS", "")
@@ -131,18 +134,13 @@ def _engine_instance():
         sslmode = os.getenv("DB_SSLMODE", "require").strip().lower() or "require"
         if sslmode not in {"require", "verify-ca", "verify-full"}:
             sslmode = "require"
+        from vera_database_runtime import pool_configuration, validate_runtime_configuration
+        validate_runtime_configuration(required_pool='api')
+        configuration = pool_configuration('api')
         _engine = create_engine(
             url,
-            pool_pre_ping=True,
-            pool_size=int(os.getenv("DB_POOL_SIZE", "2")),
-            max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "0")),
-            connect_args={
-                "connect_timeout": max(3, int(os.getenv("DB_CONNECT_TIMEOUT", "10"))),
-                "sslmode": sslmode,
-            },
-            # Keep healthy pooler connections longer.  Recreating a connection
-            # repeatedly triggers PostgreSQL timezone-catalog discovery.
-            pool_recycle=max(3600, int(os.getenv("DB_POOL_RECYCLE", "3600"))),
+            **configuration.engine_kwargs(),
+            connect_args={**configuration.connect_args(), 'sslmode': sslmode},
         )
     return _engine
 
@@ -1650,15 +1648,26 @@ def _restore_sheet_updates(ws, backups: dict[int, list[Any]]) -> None:
 def health():
     import vera_live_tour_relational as storage
     import vera_live_tour_receipts as receipts
-    with _engine_instance().connect() as conn:
-        conn.execute(text("SELECT 1"))
-        ready = storage.resource_ready(conn)
-        receipt_rows = receipts.ready(conn) if ready else False
+    from vera_database_runtime import connection_budget, connection_deadlines, pool_observation
+    try:
+        budget = connection_budget()
+        engine = _engine_instance()
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            ready = storage.resource_ready(conn)
+            receipt_rows = receipts.ready(conn) if ready else False
+            deadlines = connection_deadlines(conn)
+    except Exception:
+        # Health must not leak driver errors, database addresses or SQL parameters.
+        raise HTTPException(503, "Business database is unavailable") from None
     if ready != (storage.mode() == "active"):
         raise HTTPException(503, "Live Tour storage mode does not match the database")
     return {
         "ok": True,
         "service": "vera-web-v2-api",
+        "database_pool": pool_observation(engine),
+        "database_budget": budget,
+        "database_deadlines_ms": deadlines,
         "version": "3.8-payroll-export-settings",
         "resource_lock_mode": resource_concurrency.lock_mode(),
         "live_tour_relational_mode": storage.mode(),

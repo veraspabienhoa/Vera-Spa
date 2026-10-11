@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from threading import Event
+from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -39,12 +40,14 @@ def test_scheduler_chains_lifespan_once_and_stops_its_worker(monkeypatch):
         events.append('monitor-stop')
     monkeypatch.setattr(scheduler, 'monitor', monitor)
     app = FastAPI(lifespan=previous)
-    scheduler.install(app, lambda: None)
+    scheduler.install(app, lambda: MagicMock())
     installed = app.router.lifespan_context
     scheduler.install(app, lambda: None)
     assert app.router.lifespan_context is installed
+    runtime = app.state.worker_runtime
+    monkeypatch.setattr(runtime, 'heartbeat', lambda: None)
     with TestClient(app):
         assert running.wait(1)
-        assert app.state.technical_retention_worker.is_alive()
-    assert not app.state.technical_retention_worker.is_alive()
+        assert runtime.workers['technical-retention-monitor'].thread.is_alive()
+    assert not runtime.workers['technical-retention-monitor'].thread.is_alive()
     assert events == ['previous-start', 'monitor-start', 'monitor-stop', 'previous-stop']

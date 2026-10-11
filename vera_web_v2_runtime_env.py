@@ -13,6 +13,8 @@ import shlex
 import stat
 from pathlib import Path
 
+from vera_database_runtime import POOL_ENV_KEYS, validate_runtime_configuration
+
 
 RUNTIME_ENV_RELATIVE_PATH = Path(".config/vera-spa/web-v2-api.env")
 LIVE_TOUR_MODE_RELATIVE_PATH = Path(".config/vera-spa/live-tour-storage.env")
@@ -28,7 +30,7 @@ REQUIRED_RUNTIME_ENV_KEYS = frozenset({
     "DB_CONNECT_TIMEOUT",
     "VERA_AUTH_PROVIDER",
 })
-RUNTIME_ENV_KEYS = REQUIRED_RUNTIME_ENV_KEYS | {"VERA_LIVE_TOUR_RELATIONAL_MODE"}
+RUNTIME_ENV_KEYS = REQUIRED_RUNTIME_ENV_KEYS | POOL_ENV_KEYS | {"VERA_LIVE_TOUR_RELATIONAL_MODE", "VERA_SERVICE_ROLE", "VERA_WORKER_DB_MODE"}
 MAX_RUNTIME_ENV_BYTES = 64 * 1024
 
 
@@ -50,6 +52,9 @@ def _validate_settings(settings: dict[str, str]) -> None:
         raise ValueError("managed runtime environment is incomplete")
     if settings.get("VERA_LIVE_TOUR_RELATIONAL_MODE", "shadow") not in {"off", "shadow", "verify", "active"}:
         raise ValueError("managed Live Tour storage mode is invalid")
+    validate_runtime_configuration(settings)
+    if settings.get('VERA_WORKER_DB_MODE', 'unknown') not in {'unknown', 'direct', 'session', 'transaction'}:
+        raise ValueError('managed worker database mode is invalid')
     expected = {
         "VERA_DB_ENABLED": "1",
         "VERA_DATA_BACKEND": "postgres",
@@ -114,7 +119,13 @@ def load_managed_runtime_environment() -> bool:
             if key in parsed:
                 raise ValueError("managed runtime key is duplicated")
             parsed[key] = _decode_value(raw_value.strip())
+        # The entrypoint chooses its own role even when API and worker services
+        # share one managed database file. Invalid process roles still fail closed.
+        for key in ('VERA_SERVICE_ROLE', 'VERA_WORKER_DB_MODE'):
+            if key in os.environ:
+                parsed[key] = os.environ[key]
         _validate_settings(parsed)
+        validate_runtime_configuration({**os.environ, **parsed})
     except ValueError as exc:
         raise RuntimeError("Web V2 managed runtime environment file is invalid") from exc
 

@@ -475,21 +475,16 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
 
     app.add_middleware(TaskNotificationMiddleware, owner=app, engine_instance=engine_instance)
     if api_module is not None:
-        from threading import Event, Thread
-        from contextlib import asynccontextmanager
+        from vera_worker_runtime import register_worker
         from vera_notification_delivery import dispatch_pending
-        original_lifespan=app.router.lifespan_context
-        @asynccontextmanager
-        async def lifespan(application):
-            stop=Event()
-            def work():
-                while not stop.wait(15):
-                    try: dispatch_pending(engine_instance(),api_module._send_web_push,api_module._vault_secret)
-                    except Exception: pass
-            async with original_lifespan(application):
-                thread=Thread(target=work,name='vera-notification-delivery',daemon=True);thread.start()
-                try: yield
-                finally: stop.set();thread.join(timeout=2)
-        app.router.lifespan_context=lifespan
+        def work(stop):
+            while not stop.wait(15):
+                try:
+                    dispatch_pending(engine_instance(), api_module._send_web_push, api_module._vault_secret)
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).warning('Notification delivery deferred: %s', type(exc).__name__)
+        register_worker(app, engine_instance=engine_instance,
+            name='vera-notification-delivery', target=work)
     app.state.notification_settings_installed=True
     app.state.notification_settings_release=RELEASE

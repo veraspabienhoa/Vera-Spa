@@ -1,5 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
+from threading import Event
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -20,33 +22,46 @@ def test_scheduler_preserves_lifespan_and_stops_on_error(monkeypatch, fail):
         finally:
             events.append('app-stop')
 
-    class FakeThread:
-        def __init__(self, **kwargs):
-            assert kwargs['daemon']
-
-        def start(self):
-            events.append('scheduler-start')
-
-        def join(self, timeout):
-            events.append('scheduler-stop')
-
-    monkeypatch.setattr(live, 'Thread', FakeThread)
+    monkeypatch.setenv('VERA_SERVICE_ROLE', 'combined')
+    monkeypatch.setenv('VERA_WORKER_DB_MODE', 'direct')
     monkeypatch.setattr(live.job_queue, 'ensure_schema', lambda engine_instance: events.append('queue-schema-ready'))
     app = FastAPI(lifespan=original)
     # Reject use of the removed API even when testing an older FastAPI.
     def removed(*args, **kwargs):
         raise AssertionError('removed event API used')
     monkeypatch.setattr(app, 'add_event_handler', removed, raising=False)
-    kwargs = dict(engine_instance=lambda: None, current_identity=lambda: RouteIdentity(),
+    kwargs = dict(engine_instance=lambda: MagicMock(), current_identity=lambda: RouteIdentity(),
                   require_feature=lambda *args: None, feature_allowed=lambda *args: True,
                   identity_type=RouteIdentity)
     live.install_live_tour_routes(app, **kwargs)
+    installed = app.router.lifespan_context
     live.install_live_tour_routes(app, **kwargs)
+    assert app.router.lifespan_context is installed
+    runtime = app.state.worker_runtime
+    expected = {'live-tour-projection-scheduler', 'live-tour-projection-worker',
+                'live-tour-queue-alert-monitor'}
+    assert set(runtime.workers) == expected
+    # Exercise the real supervisor/lifespan and real threads. Only the loop
+    # bodies and heartbeat transport are synthetic in this unit test.
+    started = {name: Event() for name in expected}
+    def work(name):
+        def loop(stop):
+            events.append(('worker-start', name))
+            started[name].set()
+            stop.wait(10)
+            events.append(('worker-stop', name))
+        return loop
+    for name, worker in runtime.workers.items():
+        worker.target = work(name)
+    monkeypatch.setattr(runtime, 'heartbeat', lambda: None)
 
     async def run():
         async with app.router.lifespan_context(app) as state:
             assert state == {'shared': 'preserved'}
-            assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start', 'scheduler-start']
+            assert events[:2] == ['app-start', 'queue-schema-ready']
+            assert all(event.wait(1) for event in started.values())
+            assert {item[1] for item in events[2:]} == expected
+            assert all(worker.thread.is_alive() for worker in runtime.workers.values())
             if fail:
                 raise RuntimeError('test shutdown')
 
@@ -55,7 +70,15 @@ def test_scheduler_preserves_lifespan_and_stops_on_error(monkeypatch, fail):
             asyncio.run(run())
     else:
         asyncio.run(run())
-    assert events == ['app-start', 'queue-schema-ready', 'scheduler-start', 'scheduler-start', 'scheduler-start', 'scheduler-stop', 'scheduler-stop', 'scheduler-stop', 'app-stop']
+    assert events[0] == 'app-start' and events[-1] == 'app-stop'
+    assert events.count('queue-schema-ready') == 1
+    starts = [item[1] for item in events if isinstance(item, tuple) and item[0] == 'worker-start']
+    stops = [item[1] for item in events if isinstance(item, tuple) and item[0] == 'worker-stop']
+    assert len(starts) == len(stops) == 3
+    assert set(starts) == set(stops) == expected
+    assert runtime.state == 'stopped'
+    assert all(not worker.thread.is_alive() and worker.stop.is_set() for worker in runtime.workers.values())
+    assert not runtime.monitor_thread.is_alive()
 
 
 def test_projection_queue_health_exposes_operational_metrics(monkeypatch):

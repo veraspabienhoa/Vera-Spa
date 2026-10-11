@@ -12,12 +12,13 @@ from pathlib import Path
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import URL
 
+from vera_database_runtime import POOL_ENV_KEYS
 from vera_web_v2_local_auth import local_auth_enabled
 from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS, load_managed_runtime_environment
 
 
 API_MARKER = "vera_web_v2_api_v38:app"
-SAFE_ENV_KEYS = {
+SAFE_ENV_KEYS = POOL_ENV_KEYS | {"VERA_SERVICE_ROLE"} | {
     "VERA_LIVE_TOUR_RELATIONAL_MODE",
     "DB_HOST",
     "DB_PORT",

@@ -18,6 +18,10 @@ def run(conn, rollback=False):
     conn.execute(text('SELECT pg_advisory_xact_lock(hashtext(:key))'), {'key':'vera:v2:live_tour:state'})
     resources.lock(conn)
     if rollback:
+        import vera_live_tour_bill_numbers as bill_numbers
+        if bill_numbers.enabled_in(resources.read(conn)[0]):
+            # Old aggregate writers cannot safely discard durable tombstones.
+            bill_numbers.deactivate(conn)
         import vera_live_tour_receipts as receipts
         if receipts.ready(conn):
             receipts.migrate(conn, rollback=True)

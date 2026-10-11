@@ -39,6 +39,26 @@ def safe_log_summary(message: str) -> list[str]:
                 f'live_tour_timing action={timing[1]} outcome={timing[2]} total_ms={timing[3]} '
                 f'sql_count={timing[4]} sql_ms={timing[5]}'
                 + ''.join(f' {name}_ms={value}' for name, value in phases))
+        pool_metrics = re.search(r'VERA_POOL_METRICS (\{.{1,4000}\})$', line)
+        if pool_metrics:
+            try:
+                metrics = json.loads(pool_metrics[1])
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(metrics, dict) or metrics.get('pool') not in {'api_business', 'background', 'auth'}:
+                continue
+            values = []
+            for key in ('size', 'overflow_limit', 'checked_in', 'checked_out', 'overflow',
+                        'acquiring', 'acquired', 'timeouts', 'errors'):
+                value = metrics.get(key)
+                if type(value) is int and 0 <= value <= 10**15:
+                    values.append(f'{key}={value}')
+            for key in ('acquire_ms', 'max_acquire_ms'):
+                value = metrics.get(key)
+                if type(value) in {int, float} and 0 <= value <= 10**15:
+                    values.append(f'{key}={value:.2f}')
+            if values:
+                output.append('pool_metrics pool=' + metrics['pool'] + ' ' + ' '.join(values))
     return output
 
 
@@ -87,7 +107,9 @@ def report_journal() -> None:
 ACTIVITY_DETAIL_SQL = """
     SELECT pid AS backend_pid, state, wait_event_type, wait_event,
            client_addr IS NOT DISTINCT FROM inet_client_addr() AS same_client_as_diagnostic,
-           CASE WHEN application_name='vera-web-v2-auth' THEN 'auth' ELSE 'other' END AS pool,
+           CASE WHEN application_name='vera-web-v2-auth' THEN 'auth'
+                WHEN application_name='vera-web-v2-business' THEN 'business'
+                WHEN application_name='vera-background' THEN 'background' ELSE 'other' END AS pool,
            CASE WHEN query ~* '^\\s*BEGIN' THEN 'begin'
                 WHEN query ~* '^\\s*COMMIT' THEN 'commit'
                 WHEN query ~* '^\\s*ROLLBACK' THEN 'rollback'
@@ -117,6 +139,31 @@ ACTIVITY_DETAIL_SQL = """
 """
 
 
+# These describe the server and explicit database/role overrides, not the
+# diagnostic session's own short read-only deadlines or live app-pool settings.
+CAPACITY_SQL = """
+    SELECT current_setting('max_connections')::int AS max_connections,
+           current_setting('superuser_reserved_connections')::int AS superuser_reserved,
+           COALESCE(current_setting('reserved_connections', true), '0')::int AS reserved,
+           (SELECT rolconnlimit FROM pg_roles WHERE rolname=current_user) AS role_connection_limit,
+           (SELECT COUNT(*) FROM pg_stat_activity WHERE backend_type='client backend') AS client_connections,
+           (SELECT COUNT(*) FROM pg_stat_activity WHERE usename=current_user) AS role_connections
+"""
+ROLE_DEADLINE_SQL = """
+    SELECT CASE WHEN setdatabase=0 THEN 'role'
+                WHEN setrole=0 THEN 'database' ELSE 'database_role' END AS source,
+           split_part(value, '=', 1) AS setting,
+           CASE WHEN split_part(value, '=', 2) ~ '^[0-9]{1,9}(ms|s|min|h|d)?$'
+                THEN split_part(value, '=', 2) ELSE 'configured' END AS value
+    FROM pg_db_role_setting CROSS JOIN LATERAL unnest(setconfig) AS value
+    WHERE setdatabase IN (0, (SELECT oid FROM pg_database WHERE datname=current_database()))
+      AND setrole IN (0, (SELECT oid FROM pg_roles WHERE rolname=current_user))
+      AND split_part(value, '=', 1) IN
+          ('statement_timeout', 'lock_timeout', 'idle_in_transaction_session_timeout')
+    ORDER BY 1,2 LIMIT 9
+"""
+
+
 def report_database() -> None:
     from sqlalchemy import create_engine, text
     from sqlalchemy.pool import NullPool
@@ -124,9 +171,11 @@ def report_database() -> None:
     from vera_web_v2_runtime_env import RUNTIME_ENV_KEYS, load_managed_runtime_environment
 
     environment = (
-        {key: os.environ.get(key, '') for key in RUNTIME_ENV_KEYS}
+        {key: os.environ[key] for key in RUNTIME_ENV_KEYS if key in os.environ}
         if load_managed_runtime_environment() else _running_api_environment()
     )
+    from vera_database_runtime import connection_budget
+    print('RUNTIME_BUDGET: ' + json.dumps(connection_budget(environment), sort_keys=True))
     sslmode = environment.get('DB_SSLMODE', 'require')
     if sslmode not in {'require', 'verify-ca', 'verify-full'}:
         sslmode = 'require'
@@ -137,9 +186,13 @@ def report_database() -> None:
     })
     try:
         with engine.connect() as conn:
+            capacity = conn.execute(text(CAPACITY_SQL)).mappings().one()
+            deadlines = conn.execute(text(ROLE_DEADLINE_SQL)).mappings().all()
             rows = conn.execute(text("""
                 SELECT state, wait_event_type, wait_event,
-                       CASE WHEN application_name='vera-web-v2-auth' THEN 'auth' ELSE 'other' END AS pool,
+                       CASE WHEN application_name='vera-web-v2-auth' THEN 'auth'
+                WHEN application_name='vera-web-v2-business' THEN 'business'
+                WHEN application_name='vera-background' THEN 'background' ELSE 'other' END AS pool,
                        CASE WHEN query ILIKE '%pg_advisory_xact_lock%' THEN 'advisory_lock'
                             WHEN query ILIKE '%vera_auto_check_event%' THEN 'auto_check'
                             WHEN query ILIKE '%leave_records%' THEN 'leave'
@@ -156,6 +209,9 @@ def report_database() -> None:
             # query text, usernames, addresses, parameters or arbitrary application names.
             details = conn.execute(text(ACTIVITY_DETAIL_SQL)).mappings().all()
         print('RUNTIME: database_read_only_check=OK')
+        print('RUNTIME_CAPACITY: ' + json.dumps(dict(capacity), sort_keys=True))
+        for row in deadlines:
+            print('RUNTIME_ROLE_DEADLINE: ' + json.dumps(dict(row), sort_keys=True))
         for row in rows:
             print('RUNTIME: ' + json.dumps(dict(row), sort_keys=True))
         for row in details:

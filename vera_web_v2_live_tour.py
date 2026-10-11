@@ -24,11 +24,9 @@ import hashlib
 import json
 import math
 import logging
-from threading import Event, Thread
 import re
 import unicodedata
 from collections.abc import Callable
-from contextlib import asynccontextmanager
 from copy import deepcopy
 from functools import lru_cache
 from datetime import date, datetime, time, timedelta
@@ -1525,8 +1523,13 @@ def _customer(
     return found
 
 
-def _next_bill_no(state: dict[str, Any], payload: dict[str, Any], now: datetime, *, calendar_day: bool = False) -> str:
+def _next_bill_no(state: dict[str, Any], payload: dict[str, Any], now: datetime, *, calendar_day: bool = False, invoice_id: str = "") -> str:
     manual = str(payload.get("bill_no") or "").strip()
+    from vera_live_tour_bill_numbers import current_connection, allocate
+    connection = current_connection()
+    if connection is not None:
+        day = (now.astimezone(VN_TZ).date() if calendar_day else _business_date(now)).isoformat()
+        return allocate(connection, state, manual, day, invoice_id)
     # Voiding never frees a document number, including manually supplied bills.
     issued = state["invoices"] + [row["before"] for row in state.get("invoice_changes", []) if isinstance(row.get("before"), dict)]
     existing = {_norm(item.get("bill_no")) for item in issued if item.get("bill_no")}
@@ -1817,7 +1820,7 @@ def _checkout_mutating(
         "actor": actor, "customer_id": (customer or {}).get("id", ""),
         "customer_name": (customer or {}).get("name", customer_payload.get("customer_name", "")),
         "customer_phone": (customer or {}).get("phone", customer_payload.get("customer_phone", "")),
-        "bill_no": _next_bill_no(state, payload, timing["effective_datetime"], calendar_day=True),
+        "bill_no": _next_bill_no(state, payload, timing["effective_datetime"], calendar_day=True, invoice_id=invoice_id),
         "ticket_no": str(payload.get("ticket_no") or ""),
         "payment_method": payment_method,
         "subtotal": subtotal, "discount": discount, "tip": tip, "total": total, **payment_details,
@@ -2906,8 +2909,9 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             "note": str(payload.get("note") or ""),
         }
         customer["combo_purchases"].append(purchase)
+        invoice_id = str(uuid4())
         invoice = {
-            "id": str(uuid4()), "business_date": financial_timing["business_date"],
+            "id": invoice_id, "business_date": financial_timing["business_date"],
             "created_at": financial_timing["recorded_at"],
             "recorded_at": financial_timing["recorded_at"],
             "effective_at": financial_timing["effective_at"],
@@ -2915,7 +2919,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             "correction_reason": financial_timing["correction_reason"],
             "actor": actor, "customer_id": customer.get("id"), "customer_name": customer.get("name", ""),
             "customer_phone": customer.get("phone", ""),
-            "bill_no": _next_bill_no(state, payload, financial_timing["effective_datetime"]),
+            "bill_no": _next_bill_no(state, payload, financial_timing["effective_datetime"], invoice_id=invoice_id),
             "ticket_no": "", "payment_method": payment_method,
             "subtotal": purchase["price"], "discount": 0, "tip": 0, "total": purchase["price"],
             "combo_purchase_id": "", "combo_units": 0,
@@ -4589,11 +4593,6 @@ def install_live_tour_routes(
     attendance = AttendanceBreakReader(attendance_reader, ttl=PROJECTION_REFRESH_SECONDS) if attendance_reader else None
     _ATTENDANCE_UNSET = object()
 
-    scheduler_stop = Event()
-    scheduler_thread = None
-    worker_thread = None
-    alert_thread = None
-
     def projection_job_key(now):
         bucket = int(now.timestamp()) // PROJECTION_REFRESH_SECONDS
         return f"{now.astimezone(timezone).date().isoformat()}:{bucket}"
@@ -4642,16 +4641,16 @@ def install_live_tour_routes(
             )
         return True
 
-    def scheduled_projection():
-        while not scheduler_stop.is_set():
+    def scheduled_projection(scheduler_stop):
+        while not scheduler_stop.wait(0):
             try:
                 enqueue_projection(reason="scheduled")
             except Exception:
                 logging.getLogger(__name__).exception("Live Tour projection enqueue failed")
             scheduler_stop.wait(leave_return.scheduler_delay(datetime.now(timezone), PROJECTION_REFRESH_SECONDS))
 
-    def projection_worker():
-        while not scheduler_stop.is_set():
+    def projection_worker(scheduler_stop):
+        while not scheduler_stop.wait(0):
             item = None
             try:
                 item = job_queue.claim_one(engine_instance, PROJECTION_QUEUE)
@@ -4679,8 +4678,8 @@ def install_live_tour_routes(
                     logging.getLogger(__name__).exception("Live Tour projection worker failed before claim")
                 scheduler_stop.wait(2)
 
-    def queue_alert_monitor():
-        while not scheduler_stop.is_set():
+    def queue_alert_monitor(scheduler_stop):
+        while not scheduler_stop.wait(0):
             try:
                 metrics = job_queue.health_metrics(engine_instance, PROJECTION_QUEUE)
                 queue_alerts.monitor_once(engine_instance, PROJECTION_QUEUE, metrics)
@@ -4688,38 +4687,14 @@ def install_live_tour_routes(
                 logging.getLogger(__name__).exception("Live Tour queue alert monitor failed")
             scheduler_stop.wait(queue_alerts.MONITOR_SECONDS)
 
-    def start_scheduler():
-        nonlocal scheduler_thread, worker_thread, alert_thread
-        # Fail startup before any background thread can touch a missing queue table.
-        job_queue.ensure_schema(engine_instance)
-        scheduler_stop.clear()
-        scheduler_thread = Thread(target=scheduled_projection, name="live-tour-projection-scheduler", daemon=True)
-        worker_thread = Thread(target=projection_worker, name="live-tour-projection-worker", daemon=True)
-        alert_thread = Thread(target=queue_alert_monitor, name="live-tour-queue-alert-monitor", daemon=True)
-        scheduler_thread.start()
-        worker_thread.start()
-        alert_thread.start()
-
-    def stop_scheduler():
-        scheduler_stop.set()
-        for thread in (scheduler_thread, worker_thread, alert_thread):
-            if thread:
-                thread.join(timeout=2)
-
-    previous_lifespan = app.router.lifespan_context
-
-    @asynccontextmanager
-    async def live_tour_lifespan(application):
-        # Preserve the application's existing startup/shutdown and shared state.
-        # FastAPI/Starlette no longer expose app.add_event_handler.
-        async with previous_lifespan(application) as state:
-            start_scheduler()
-            try:
-                yield state
-            finally:
-                stop_scheduler()
-
-    app.router.lifespan_context = live_tour_lifespan
+    from vera_worker_runtime import register_worker
+    register_worker(app, engine_instance=engine_instance,
+        name='live-tour-projection-scheduler', target=scheduled_projection,
+        prepare=lambda: job_queue.ensure_schema(engine_instance))
+    register_worker(app, engine_instance=engine_instance,
+        name='live-tour-projection-worker', target=projection_worker)
+    register_worker(app, engine_instance=engine_instance,
+        name='live-tour-queue-alert-monitor', target=queue_alert_monitor)
 
     def read_state(conn, now, *, for_update=False, attendance_records=_ATTENDANCE_UNSET, directory_records=None, leave_records=None):
         # Runtime callback uses the same installed policy chain as Chấm công.
@@ -5457,8 +5432,10 @@ def install_live_tour_routes(
                 payload["_actor_role"] = str(getattr(ident, "role", "") or "").strip().lower()
             # Authority comes exclusively from the authenticated identity, never
             # from a payload flag, an account name or a delegated feature grant.
-            result = _apply_action(working, action, payload, actor, now,
-                                   admin_invoice_override=str(getattr(ident, "role", "") or "").strip().lower() == "admin")
+            from vera_live_tour_bill_numbers import allocation_scope
+            with allocation_scope(conn, state):
+                result = _apply_action(working, action, payload, actor, now,
+                                       admin_invoice_override=str(getattr(ident, "role", "") or "").strip().lower() == "admin")
             if commission_context and result.get('invoice'):
                 from vera_web_v2_commission import record_commission
                 invoice = next(row for row in working['invoices'] if row['id'] == result['invoice']['id'])

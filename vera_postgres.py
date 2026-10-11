@@ -16,6 +16,7 @@ import hashlib
 import json
 import math
 import os
+import threading
 import time
 from datetime import date, datetime
 from functools import lru_cache
@@ -86,18 +87,25 @@ def _build_database_url() -> str:
     return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db_name}"
 
 
-@lru_cache(maxsize=1)
+_engine_creation_lock = threading.Lock()
+
+
 def get_engine() -> Engine:
+    # functools.lru_cache alone permits concurrent cache misses to create extra
+    # pools. Serialize first initialization so the declared instance count holds.
+    with _engine_creation_lock:
+        return _cached_engine()
+
+
+@lru_cache(maxsize=1)
+def _cached_engine() -> Engine:
     if not is_enabled():
         raise RuntimeError("PostgreSQL is disabled. Set VERA_DB_ENABLED=1 and DB settings.")
 
-    pool_size = max(2, int(os.getenv("DB_POOL_SIZE", "8")))
-    max_overflow = max(0, int(os.getenv("DB_MAX_OVERFLOW", "12")))
-    timeout = max(5, int(os.getenv("DB_POOL_TIMEOUT", "20")))
-    recycle = max(3600, int(os.getenv("DB_POOL_RECYCLE", "3600")))
-    connect_timeout = max(3, int(os.getenv("DB_CONNECT_TIMEOUT", "10")))
-
-    connect_args: dict[str, Any] = {"connect_timeout": connect_timeout}
+    from vera_database_runtime import pool_configuration, validate_runtime_configuration
+    validate_runtime_configuration(required_pool='background')
+    configuration = pool_configuration('background')
+    connect_args: dict[str, Any] = configuration.connect_args()
     # Cloud SQL Unix sockets handle transport security outside libpq. Every
     # normal TCP connection must use TLS; callers may tighten this further with
     # verify-ca/verify-full through DB_SSLMODE.
@@ -109,16 +117,21 @@ def get_engine() -> Engine:
 
     engine = create_engine(
         _build_database_url(),
-        pool_pre_ping=True,
-        pool_size=pool_size,
-        max_overflow=max_overflow,
-        pool_timeout=timeout,
-        pool_recycle=recycle,
+        **configuration.engine_kwargs(),
         connect_args=connect_args,
         future=True,
     )
-    ensure_schema(engine)
+    try:
+        ensure_schema(engine)
+    except Exception:
+        engine.dispose()
+        raise
     return engine
+
+
+# Retain the existing cache-inspection/reset hooks for maintenance callers.
+get_engine.cache_clear = _cached_engine.cache_clear
+get_engine.cache_info = _cached_engine.cache_info
 
 
 def ensure_schema(engine: Optional[Engine] = None) -> None:
