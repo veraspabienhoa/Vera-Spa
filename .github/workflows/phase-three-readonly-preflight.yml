@@ -1,0 +1,78 @@
+name: Phase Three Read-only VPS Preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: 'Full reviewed current main SHA; diagnostics only, no activation'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# This excludes the usual deploy/storage workflow only. Other deployment groups
+# exist: the diagnostic remains read-only and invalidates changed observations.
+concurrency:
+  group: vera-vps-production
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact requested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require reviewed current main SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_main_sha }}
+          SOURCE_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_REF" = refs/heads/main
+          test "$SOURCE_SHA" = "$EXPECTED_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$EXPECTED_SHA"
+          python -m py_compile scripts/phase_three_host_preflight.py scripts/phase_three_db_preflight.py scripts/run_phase_three_preflight.py
+
+      - name: Configure existing deployment SSH on ephemeral runner
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/vera-preflight-ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$RUNNER_TEMP/vera-preflight-ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$RUNNER_TEMP/vera-preflight-ssh/known_hosts"
+
+      - name: Read bounded sanitized host and database findings
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          EXPECTED_SHA: ${{ inputs.expected_main_sha }}
+        run: python scripts/run_phase_three_preflight.py --expected-sha "$EXPECTED_SHA"
+
+      - name: Recheck source main has not moved
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_main_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$EXPECTED_SHA" || {
+            echo '::error::Main changed during inspection; findings are inconclusive.'
+            exit 1
+          }
+
+      - name: Remove ephemeral runner SSH material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/vera-preflight-ssh/id_ed25519" "$RUNNER_TEMP/vera-preflight-ssh/known_hosts"
