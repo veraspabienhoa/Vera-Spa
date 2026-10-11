@@ -340,3 +340,34 @@ def test_custom_main_bucket_stays_anchored_to_its_original_start(main_start, exp
     config = dict(calculation_mode='hourly', rate_ca1=27000, rate_ca2_before_22=30000, rate_ca2_after_22=60000)
     assert hc.decision_penalty(config, row, DAY, decision) == expected
     assert decision['wage_segments'][0]['shift'] == shift
+
+
+def test_hc_scoped_conflict_does_not_block_other_employee_or_day():
+    row, data, current = fixture()
+    data['index']['2'] = {'username': 'Other'}
+    data['events'] = [{'occurred_at': at('09:15').isoformat()}]
+    data['syncs'][0].update(last_synced_at=at('09:16'), last_observed_count=1)
+    data['issues'] = [{'reason': 'unverified_status_type', 'scope': 'employee_days',
+        'username': 'Other', 'work_dates': [DAY.isoformat()]}]
+    assert hc.fresh_evidence(data, DAY, at('09:17'))
+    assert hc.fresh_evidence(data, DAY, at('09:17'), 'Lan')
+    assert not hc.fresh_evidence(data, DAY, at('09:17'), 'Other')
+    data['issues'][0]['work_dates'] = [(DAY-timedelta(days=1)).isoformat()]
+    assert hc.fresh_evidence(data, DAY, at('09:17'), 'Other')
+    data['issues'][0].pop('scope')
+    assert not hc.fresh_evidence(data, DAY, at('09:17'), 'Lan')
+
+
+@pytest.mark.parametrize('role', ['nhanvien', 'leader', 'locker', 'letan', 'tapvu', 'thungan', 'custom_staff'])
+def test_hc_uses_scheduled_department_for_every_non_excluded_role(role):
+    row, data, current = fixture()
+    row['employee_role'] = role
+    assert hc.candidate(row, DAY, data, current, at('09:16'), [])['kind'] == 'late'
+
+
+@pytest.mark.parametrize('department', ['admin', 'giamdoc', 'quanly', 'support'])
+def test_hc_excluded_department_cannot_be_bypassed_by_role(department):
+    row, data, current = fixture()
+    row.update(hc_department=department, department=department)
+    current['departments'][department] = current['departments']['locker']
+    assert hc.candidate(row, DAY, data, current, at('09:16'), []) is None

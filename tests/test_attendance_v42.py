@@ -137,7 +137,7 @@ class SupportedLatePenaltyThresholdTests(unittest.TestCase):
         self.assertIsNone(supported_late_minutes(200, None))
         self.assertFalse(late_penalty_eligible(200, 5, None))
 
-    def test_every_automatic_late_reason_has_four_minute_grace(self):
+    def test_arrival_is_immediate_and_return_rules_keep_four_minute_grace(self):
         reasons = (
             "Đi trễ không phép",
             "Đi trễ nhỏ hơn hoặc bằng 30 phút",
@@ -146,7 +146,7 @@ class SupportedLatePenaltyThresholdTests(unittest.TestCase):
         )
         for reason in reasons:
             for minute in range(1, 5):
-                self.assertFalse(auto_check.automatic_late_penalty_eligible(reason, minute))
+                self.assertEqual(auto_check.automatic_late_penalty_eligible(reason, minute), reason.startswith("Đi trễ"))
             self.assertTrue(auto_check.automatic_late_penalty_eligible(reason, 5))
 
     def test_shared_writer_refuses_four_minute_penalty_before_database_write(self):
@@ -166,3 +166,24 @@ class SupportedLatePenaltyThresholdTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_grace_cleanup_retains_new_subminute_arrival_fine(monkeypatch):
+    from types import SimpleNamespace
+    statements = []
+    rows = [dict(id=1, reason='Đi trễ không phép', minutes=34/60, leave_record_uid='arrival'),
+            dict(id=2, reason='Ra ngoài vào muộn', minutes=3, leave_record_uid='return')]
+    class Connection:
+        def execute(self, sql, params=None):
+            statements.append((str(sql), params))
+            return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: rows))
+    monkeypatch.setattr(auto_check, 'ensure_schema', lambda _: None)
+    assert auto_check.revoke_grace_period_penalties(Connection()) == 1
+    mutations = [params for sql, params in statements if sql.lstrip().startswith(('DELETE', 'UPDATE'))]
+    assert mutations == [{'uid': 'return'}, {'id': 2}]
+
+
+def test_immediate_arrival_rejects_zero_negative_and_nonfinite_minutes():
+    for value in [0, -1, float('nan'), float('inf'), 'invalid', None]:
+        assert not auto_check.automatic_late_penalty_eligible('Đi trễ không phép', value)
+    assert auto_check.automatic_late_penalty_eligible('Đi trễ không phép', 1/60)

@@ -408,7 +408,7 @@ export default function RulesPage() {
             {busy === 'late-threshold' ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />} Áp dụng ngưỡng mới
           </button>}
         </div>
-        <p className="page-subtitle" style={{ marginTop: 10 }}>Ví dụ: ngưỡng 5 phút thì trễ 4 phút không phạt; trễ từ 5 phút trở lên mới phạt.</p>
+        <p className="page-subtitle" style={{ marginTop: 10 }}>Đi trễ đầu ca theo Face ID được ghi phạt ngay khi có check-in hợp lệ sau giờ bắt đầu ca. Ngưỡng ân hạn vẫn áp dụng cho các quy tắc vào lại trễ.</p>
       </section>
 
       {data?.missing_checkin_absence_policy && <MissingCheckinAbsenceRules key={data.missing_checkin_absence_policy.revision}

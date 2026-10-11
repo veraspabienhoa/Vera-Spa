@@ -31,8 +31,9 @@ def current():
         'shift_start': '10:00', 'late_minutes': 10}
 
 
+@pytest.mark.parametrize('delay_seconds', [600, 34])
 @pytest.mark.parametrize('change', ['none', 'stale', 'conflict', 'earlier_arrival', 'shift', 'identity', 'missing', 'duplicate', 'pause', 'source_marker'])
-def test_arrival_rechecks_same_write_connection_and_defers_changed_basis(monkeypatch, change):
+def test_arrival_rechecks_same_write_connection_and_defers_changed_basis(monkeypatch, change, delay_seconds):
     conn = object(); calls = []; writes = []; reads = []
     @contextmanager
     def begin():
@@ -46,6 +47,10 @@ def test_arrival_rechecks_same_write_connection_and_defers_changed_basis(monkeyp
     monkeypatch.setattr(job.auto_check, 'late_support_for_day', lambda *_: ([], 0, ''))
     monkeypatch.setattr(job, '_log', lambda *_: None)
     saved = current(); row = frame()
+    if delay_seconds == 34:
+        row.update(MachineTimeCheckInStr='10/10/2026 10:00:34', TotalMinuteInGoLate=34/60,
+            _vera_checkin_at='2026-10-10T10:00:34+07:00')
+        saved.update(check_in='10:00:34', check_in_at=row['_vera_checkin_at'], late_minutes=34/60)
     if change in {'stale', 'conflict'}: saved['attendance_fine_evidence_ready'] = False
     if change == 'earlier_arrival': saved['check_in_at'] = '2026-10-10T09:50:00+07:00'
     if change == 'shift': saved['shift_start'] = '11:00'

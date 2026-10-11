@@ -41,6 +41,25 @@ def sync_employee_deletions():
             engine.dispose()
 
 
+def process_arrival_penalties(engine, today):
+    """Use the canonical arrival writer immediately after archive publication."""
+    import io
+    from contextlib import redirect_stdout
+    import timesoft_sync_job as ts
+    from vera_facegate_runtime import worker_frames
+    with engine.begin() as conn:
+        cfg = ts.auto_check.load_config(conn)
+        if cfg['status'] == 'PAUSED':
+            return {'added': 0, 'skipped': 'auto_penalty_paused'}
+        frames = worker_frames(conn, [today])
+        catalog = ts.auto_check.load_catalog(conn)
+    employees = {ts._employee_key(name): name for _, frame in frames
+                 for name in frame.get('employeeInfo.Name', [])}
+    # The minute job reports aggregate counts only, never employee/device data.
+    with redirect_stdout(io.StringIO()):
+        return ts.process_timesoft_penalties(engine, cfg, employees, catalog, frames)
+
+
 def archive_days():
     today = datetime.now(VN_TZ).date()
     failures = []
@@ -73,6 +92,8 @@ def archive_days():
         try:
             with engine.begin() as conn:
                 reports = publish(conn, today - timedelta(days=1), today)
+            arrival_result = process_arrival_penalties(engine, today)
+            print(json.dumps({'arrival_rule': arrival_result}))
             from vera_missing_checkin_absence import process as process_absences
             with engine.begin() as conn:
                 absence_result = process_absences(conn)

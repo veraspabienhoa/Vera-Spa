@@ -18,6 +18,7 @@ không được ghi lại cùng vi phạm vào Google Sheet.
 from __future__ import annotations
 
 import io
+import math
 import json
 import os
 import re
@@ -1449,6 +1450,14 @@ def process_timesoft_penalties(
         result["errors"] += 1
         return result
     threshold = max(AUTO_PENALTY_MINUTES, int(cfg.get("threshold_minutes", AUTO_PENALTY_MINUTES)))
+    def arrival_eligible(minutes, work_date):
+        # Any positive, canonical FaceGate arrival delay is immediately eligible.
+        from vera_attendance_source import source_for
+        try:
+            value = float(minutes)
+            return math.isfinite(value) and (value > 0 if source_for(work_date) == 'facegate' else value >= threshold)
+        except (TypeError, ValueError):
+            return False
     today = datetime.now(VN_TZ).date()
 
     for target_date, df in checkin_by_date:
@@ -1501,7 +1510,7 @@ def process_timesoft_penalties(
                     raw_minutes = department_attendance.schedule_late_minutes(checkin_time, shift_start)
                 else:
                     raw_minutes = _parse_minutes_late(row)
-                if raw_minutes is None or raw_minutes < threshold:
+                if not arrival_eligible(raw_minutes, work_date):
                     continue
                 minutes = float(raw_minutes)
                 registered_reasons, registered_baseline, registered_reason = auto_check.registered_late_for_day(
@@ -1515,7 +1524,7 @@ def process_timesoft_penalties(
                         registered_covered = True
                     else:
                         minutes = max(0.0, float(checkin_minutes) - float(registered_baseline))
-                        registered_covered = minutes < threshold
+                        registered_covered = not arrival_eligible(minutes, work_date)
                     if registered_covered:
                         registered_revoked = auto_check.revoke_auto_late_penalty(
                             conn,
@@ -1534,7 +1543,7 @@ def process_timesoft_penalties(
                     )
                 adjusted_minutes = supported_late_minutes(minutes, allowance) if support_reasons else float(minutes)
                 covered = bool(support_reasons) and (
-                    adjusted_minutes is None or adjusted_minutes < threshold
+                    not arrival_eligible(adjusted_minutes, work_date)
                 )
                 if covered:
                     revoked = auto_check.revoke_wrong_late_penalty(
