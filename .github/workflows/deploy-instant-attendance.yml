@@ -1,0 +1,184 @@
+name: Deploy verified instant attendance release
+
+on:
+  push:
+    branches: [ops/arrival-fines-oct08-11]
+    paths: [.github/workflows/deploy-instant-attendance.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vera-vps-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Checkout requested commit
+        uses: actions/checkout@v4
+        with:
+          ref: 5827c4423f2b5293bfd239b684db09ffc9e1dbce
+          fetch-depth: 0
+
+      - name: Require exact commit on origin/main
+        env:
+          DEPLOY_SHA: 5827c4423f2b5293bfd239b684db09ffc9e1dbce
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          test "$(git rev-parse "$DEPLOY_SHA")" = "$DEPLOY_SHA"
+          test "$(git rev-parse origin/main)" = "$DEPLOY_SHA" || {
+            echo "::error::Dispatch the current origin/main commit. Refusing non-main or stale commit $DEPLOY_SHA."
+            exit 1
+          }
+
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Pre-deploy smoke gate on current production
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "set -e; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; curl -fsS http://127.0.0.1:8000/v2/health >/dev/null"
+
+      - name: Deploy exact commit
+        id: deploy_commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: 5827c4423f2b5293bfd239b684db09ffc9e1dbce
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "timeout 420 /opt/vera-spa/deploy.sh '$DEPLOY_SHA'"
+
+      - name: Verify active release and production schemas
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: 5827c4423f2b5293bfd239b684db09ffc9e1dbce
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "set -euo pipefail; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); test -n \"\$pid\"; release_dir=\$(readlink -f \"/proc/\$pid/cwd\"); test \"\$(git -C \"\$release_dir\" rev-parse HEAD)\" = '$DEPLOY_SHA'; test -f \"\${release_dir}/configure_vps_database.sh\"; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_concurrency_schema.py\" --apply --verify; /opt/vera-spa/.venv/bin/python \"\${release_dir}/vera_vps_data_check.py\""
+
+      - name: Install FaceGate archive schedule as the deployment account
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; cd /opt/vera-spa/current; bash configure_facegate_sync.sh'
+
+      - name: Activate FaceGate source when explicitly selected
+        if: ${{ inputs.retire_timesoft }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: 5827c4423f2b5293bfd239b684db09ffc9e1dbce
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "set -e; cd /opt/vera-spa/current; timeout 460 /opt/vera-spa/.venv/bin/python -B vera_facegate_cutover.py --apply --expected-commit '$DEPLOY_SHA'"
+
+      - name: Verify attendance source after deployment
+        if: ${{ !inputs.defer_attendance_freshness || inputs.retire_timesoft }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -e; cd /opt/vera-spa/current; timeout 45 /opt/vera-spa/.venv/bin/python -B vera_facegate_cutover.py'
+
+      - name: Verify preserved FaceGate policy with freshness explicitly deferred
+        if: ${{ inputs.defer_attendance_freshness && !inputs.retire_timesoft }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            'set -e; cd /opt/vera-spa/current; timeout 15 /opt/vera-spa/.venv/bin/python -B vera_vps_deferred_attendance_check.py'
+          echo "::warning::Attendance freshness was explicitly deferred. This deployment does not verify attendance or payroll readiness."
+
+      - name: Verify configured Live Tour background cleanup
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" 'set -e; pid=$(pgrep -n -f "[v]era_web_v2_api_v38:app"); test -n "$pid"; release_dir=$(readlink -f "/proc/${pid}/cwd"); cd "$release_dir"; timeout 15 /opt/vera-spa/.venv/bin/python vera_technical_retention.py; timeout 30 /opt/vera-spa/.venv/bin/python vera_technical_retention.py --apply --scheduled'
+
+      - name: Verify production Auth through browser edge policy
+        if: ${{ !cancelled() && steps.deploy_commit.outcome == 'success' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          request = urllib.request.Request(
+              "https://api.veraspa.vn/v2/auth/health",
+              headers={
+                  "Accept": "application/json",
+                  "Cache-Control": "no-cache",
+                  "Origin": "https://app.veraspa.vn",
+                  "User-Agent": (
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/140.0.0.0 Safari/537.36"
+                  ),
+              },
+          )
+          last_error = None
+          for _ in range(6):
+              try:
+                  with urllib.request.urlopen(request, timeout=10) as response:
+                      payload = json.load(response)
+                  if payload.get("ok") is True and payload.get("provider") == "postgres-local":
+                      print("PRODUCTION AUTH CHECK: PostgreSQL local Auth ready")
+                      break
+                  last_error = RuntimeError(f"unexpected health payload: {payload!r}")
+              except Exception as exc:
+                  last_error = exc
+              time.sleep(3)
+          else:
+              raise SystemExit(f"Production local Auth health check failed: {last_error}")
+          PY
+
+      - name: Verify exact production commit and health
+        if: ${{ !cancelled() && steps.deploy_commit.outcome == 'success' }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_SHA: 5827c4423f2b5293bfd239b684db09ffc9e1dbce
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "${VPS_USER}@${VPS_HOST}" \
+            "set -e; pid=\$(pgrep -n -f '[v]era_web_v2_api_v38:app'); test -n \"\$pid\"; release_dir=\$(readlink -f /proc/\$pid/cwd); live_sha=\$(git -C \"\$release_dir\" rev-parse HEAD); test \"\$live_sha\" = '$DEPLOY_SHA'; curl -fsS http://127.0.0.1:8000/v2/auth/health >/dev/null; curl -fsS http://127.0.0.1:8000/v2/health >/dev/null"
+
+      - name: Verify public frontend commit and entry document
+        if: ${{ !cancelled() && steps.deploy_commit.outcome == 'success' }}
+        env:
+          DEPLOY_SHA: 5827c4423f2b5293bfd239b684db09ffc9e1dbce
+        run: python vera_web_release_check.py --revision "$DEPLOY_SHA"
+
