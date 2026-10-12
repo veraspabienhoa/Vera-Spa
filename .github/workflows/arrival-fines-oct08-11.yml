@@ -1,4 +1,4 @@
-name: Bounded arrival fines 08-11 October preflight
+name: Read-only attendance runtime verification
 on:
   push:
     branches: [ops/arrival-fines-oct08-11]
