@@ -57,14 +57,53 @@ def process_arrival_penalties(engine, today):
                  for name in frame.get('employeeInfo.Name', [])}
     # The minute job reports aggregate counts only, never employee/device data.
     with redirect_stdout(io.StringIO()):
-        return ts.process_timesoft_penalties(engine, cfg, employees, catalog, frames)
+        return ts.process_timesoft_penalties(engine, cfg, employees, catalog, frames, include_synced_history=True)
+
+
+def reconcile_day(day):
+    """Commit one successful archive projection before its canonical writers."""
+    from vera_attendance_source import enabled
+    if not enabled():
+        return []
+    from vera_facegate_runtime import publish
+    from vera_facegate_cutover import runtime_engine
+    from vera_missing_checkin_absence import process as process_absences
+    from vera_hc_rules import process as process_hc_rules
+    engine = runtime_engine()
+    failures = []
+    try:
+        # These own separate transactions. A failed rule cannot roll back or
+        # suppress the independently committed arrival/HC work.
+        def publication():
+            with engine.begin() as conn:
+                return publish(conn, day, day)
+        def transactional(rule):
+            with engine.begin() as conn:
+                return rule(conn)
+        for name, operation in (
+            ('published', publication),
+            ('arrival_rule', lambda: process_arrival_penalties(engine, day)),
+            ('hc_rules', lambda: transactional(process_hc_rules)),
+            ('absence_rule', lambda: transactional(process_absences)),
+        ):
+            try:
+                result = operation()
+                print(json.dumps({'date': day.isoformat(), name: result}))
+                if isinstance(result, dict) and result.get('errors', 0):
+                    failures.append({'date': day.isoformat(), 'stage': name, 'reason': 'rule_errors'})
+            except Exception as exc:
+                failures.append({'date': day.isoformat(), 'stage': name, 'reason': type(exc).__name__})
+    finally:
+        engine.dispose()
+    return failures
 
 
 def archive_days():
     today = datetime.now(VN_TZ).date()
     failures = []
-    for day in (today - timedelta(days=1), today):
-        # Each invocation has its own bounded deadline and database connection.
+    # Publish today's arrivals before potentially slow historical device reads.
+    # Yesterday still runs every pass for overnight shifts and delayed scans.
+    for day in (today, today - timedelta(days=1)):
         try:
             result = subprocess.run([sys.executable, 'vera_facegate_sync.py',
                                      '--date', day.isoformat(), '--apply'],
@@ -78,34 +117,15 @@ def archive_days():
             summary = {'ok': False, 'reason': 'invalid_sync_response'}
         if result.returncode or not summary.get('ok'):
             failures.append({'date': day.isoformat(), 'reason': summary.get('reason', 'sync_failed')})
-        else:
-            print(json.dumps({'date': day.isoformat(), 'inserted_count': summary['inserted_count'],
-                              'stored_day_count': summary['stored_day_count']}))
-    if failures:
-        print(json.dumps({'ok': False, 'failures': failures}))
-        return 1
-    from vera_attendance_source import enabled
-    if enabled():
-        from vera_facegate_runtime import publish
-        from vera_facegate_cutover import runtime_engine
-        engine = runtime_engine()
+            continue
+        print(json.dumps({'date': day.isoformat(), 'inserted_count': summary['inserted_count'],
+                          'stored_day_count': summary['stored_day_count']}))
         try:
-            with engine.begin() as conn:
-                reports = publish(conn, today - timedelta(days=1), today)
-            arrival_result = process_arrival_penalties(engine, today)
-            print(json.dumps({'arrival_rule': arrival_result}))
-            from vera_missing_checkin_absence import process as process_absences
-            with engine.begin() as conn:
-                absence_result = process_absences(conn)
-            print(json.dumps({'absence_rule': absence_result}))
-            from vera_hc_rules import process as process_hc_rules
-            with engine.begin() as conn:
-                hc_result = process_hc_rules(conn)
-            print(json.dumps({'hc_rules': hc_result}))
-        finally:
-            engine.dispose()
-        print(json.dumps({'ok': True, 'source': 'facegate', 'published': reports}))
-    return 0
+            failures.extend(reconcile_day(day))
+        except Exception as exc:
+            failures.append({'date': day.isoformat(), 'stage': 'reconciliation', 'reason': type(exc).__name__})
+    print(json.dumps({'ok': not failures, 'source': 'facegate', 'failures': failures}))
+    return int(bool(failures))
 
 
 def main():

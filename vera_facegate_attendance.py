@@ -247,7 +247,8 @@ def read_evidence(conn, start, end, *, include_conflicts=False):
         available = conn.execute(text("SELECT to_regclass('vera_facegate_event_conflict') IS NOT NULL")).scalar()
         if not available:
             raise EvidenceError('conflict_archive_unavailable')
-        conflicts = conn.execute(text('''SELECT event_id,occurred_at,work_date
+        conflicts = conn.execute(text('''SELECT event_id,occurred_at,work_date,stored_payload_sha256,
+                   observed_payload_sha256,observed_payload_json
             FROM vera_facegate_event_conflict
             WHERE device_id=:device AND work_date BETWEEN :start AND :end
             ORDER BY occurred_at,event_id LIMIT 20001'''), params).mappings().all()
@@ -394,6 +395,14 @@ def project_evidence(conn, start, end, *, checkout_reviews_override=None):
     invalid_ids = {i['event_id'] for i in identity_issues}
     rows = [r for r in rows if r['_vera_event_id'] not in invalid_ids]
     issues.extend(identity_issues)
+    rename_reviews = []
+    if conflicts and conn.execute(text("SELECT to_regclass('vera_facegate_rename_job')")).scalar():
+        from vera_facegate_rename_evidence import review_conflicts
+        jobs = conn.execute(text("""SELECT employee_username,device_address,profile_id,
+            old_name,new_name,registration_ref,status FROM vera_facegate_rename_job
+            WHERE device_id=:device AND status='verified'"""),
+            {'device': review_device_id}).mappings().all()
+        conflicts, rename_reviews = review_conflicts(events, conflicts, index, address, jobs)
     # The archive primary key retains the first payload. Conflicting captures
     # live separately, so adapting only retained events cannot detect them.
     issues.extend({'event_id': str(c['event_id']), 'reason': 'conflicting_duplicate'}
@@ -409,7 +418,7 @@ def project_evidence(conn, start, end, *, checkout_reviews_override=None):
     return {'rows': rows, 'raw_rows': raw_rows, 'issues': issues, 'index': index,
             'employees': employees, 'address': address, 'events': events, 'syncs': syncs,
             'applied_reviews': applied_reviews, 'test_scan_reviews': test_scan_reviews,
-            'identity_reviews': identity_reviews}
+            'identity_reviews': identity_reviews, 'rename_reviews': rename_reviews}
 
 
 def finish_records(facegate, applied_reviews):

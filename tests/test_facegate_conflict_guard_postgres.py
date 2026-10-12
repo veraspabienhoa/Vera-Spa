@@ -54,3 +54,27 @@ def test_missing_conflict_ledger_fails_closed_without_creating_schema(database):
         with pytest.raises(fg.EvidenceError, match='conflict_archive_unavailable'):
             fg.project_evidence(conn, DAY, DAY)
         assert conn.execute(text("SELECT to_regclass('vera_facegate_event_conflict')")).scalar() is None
+
+
+def test_verified_device_name_drift_is_reviewed_without_rewriting_archive(database):
+    from vera_employee_rename_sync import ensure_jobs
+    from test_facegate_attendance import ADDRESS, REF, MAP
+    seed_preview(database)
+    changed=deepcopy(batch(1))
+    old=json.loads(changed[0]['payload_json'])
+    new={**old,'device_name':'Ánh Thử'}
+    changed[0]['payload_json']=json.dumps(new,sort_keys=True,ensure_ascii=False,separators=(',',':'))
+    changed[0]['payload_sha256']=hashlib.sha256(changed[0]['payload_json'].encode()).hexdigest()
+    with database.begin() as conn:
+        ensure_jobs(conn)
+        mappings=deepcopy(MAP);mappings[0]['device_name']='Ánh Thử'
+        conn.execute(text("UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb) WHERE category='facegate' AND setting_key='mapping_synthetic-device'"),{'value':json.dumps(mappings)})
+        conn.execute(text("INSERT INTO vera_facegate_rename_job(employee_username,device_id,device_address,profile_id,old_name,new_name,registration_ref,status) VALUES (:name,'synthetic-device',:address,:uid,:old,:name,CAST(:ref AS jsonb),'verified')"),{'name':mappings[0]['username'],'address':ADDRESS,'uid':mappings[0]['profile_id'],'old':old['device_name'],'ref':json.dumps(REF)})
+        sync.persist_batch(conn,'synthetic-device',DAY.isoformat(),changed)
+    with database.begin() as conn:
+        conn.execute(text('SET TRANSACTION READ ONLY'))
+        data=fg.project_evidence(conn,DAY,DAY)
+        assert data['issues']==[] and len(data['rename_reviews'])==1
+        stored=conn.execute(text("SELECT payload_json FROM vera_facegate_event WHERE event_id='0'")).scalar_one()
+        assert json.loads(stored)['device_name']==old['device_name']
+        assert conn.execute(text('SELECT count(*) FROM vera_facegate_event_conflict')).scalar_one()==1

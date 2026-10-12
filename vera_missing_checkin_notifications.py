@@ -47,7 +47,7 @@ def _alert_ready(*, has_leave: bool, has_faceid: bool, current: datetime, shift_
     return (
         not has_leave
         and not has_faceid
-        and current > shift_start + timedelta(minutes=THRESHOLD_MINUTES)
+        and current >= shift_start + timedelta(minutes=THRESHOLD_MINUTES)
     )
 
 
