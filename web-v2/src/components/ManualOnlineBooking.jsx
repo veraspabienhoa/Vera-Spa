@@ -8,6 +8,17 @@ import { catalogIsAvailable, orderedCatalog } from '../lib/serviceCatalog'
 
 export default function ManualOnlineBooking({ services = [], booking, onClose, onSaved }) {
   const [draft, setDraft] = useState({ service: '', guests: 1, appointment_date: bookingDateRange('today').date_from, appointment_time: '', customer_name: '', phone: '', requested_staff: '', message: '', ...(booking ? Object.fromEntries(['service', 'guests', 'appointment_date', 'appointment_time', 'customer_name', 'phone', 'requested_staff', 'message'].map(key => [key, booking[key] ?? ''])) : {}) })
+  const [loadedServices, setLoadedServices] = useState([])
+  const [catalogError, setCatalogError] = useState('')
+  const hasServices = services.length > 0
+  useEffect(() => {
+    if (hasServices) return undefined
+    let active = true
+    veraApi.liveTour(false, false, null, 'board').then(result => {
+      if (active) setLoadedServices(result.services || [])
+    }).catch(() => { if (active) setCatalogError('Chưa tải được danh sách dịch vụ. Dịch vụ đã lưu vẫn được giữ nguyên.') })
+    return () => { active = false }
+  }, [hasServices])
   const [staff, setStaff] = useState([])
   const [staffError, setStaffError] = useState('')
   const [staffLoading, setStaffLoading] = useState(true)
@@ -53,7 +64,7 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
     } catch (err) { setError(err.message) }
     finally { submitting.current = false; setBusy(false) }
   }
-  const catalog = orderedCatalog(services).filter(row => catalogIsAvailable(row))
+  const catalog = orderedCatalog(hasServices ? services : loadedServices).filter(row => catalogIsAvailable(row))
   const serviceOptions = catalog.map(row => {
     const label = `${row.name}${row.duration ? ` · ${row.duration} phút` : ''}${row.price != null ? ` · ${Number(row.price).toLocaleString('vi-VN')}đ` : ''}`
     return { value: label, label }
@@ -64,6 +75,7 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
     <form className="manual-booking-form" onSubmit={save}>
       <div className="manual-booking-fields">
         <LiveTourSearchSelect className="wide manual-booking-services" label="Dịch vụ" placeholder="Chưa chọn dịch vụ" emptyLabel="Chưa chọn dịch vụ" inlineOptions disabled={busy} value={draft.service} options={serviceOptions} onChange={value => set('service', value)}/>
+        {catalogError && <p className="wide" role="status">{catalogError}</p>}
         <label className="wide">Số khách *<input aria-label="Số khách" type="number" required min="1" max="50" step="1" disabled={busy} value={draft.guests} onChange={event => set('guests', event.target.value === '' ? '' : Number(event.target.value))}/></label>
         <label>Ngày đến *<VeraDateInput aria-label="Ngày đến" required disabled={busy} min={booking ? undefined : bookingDateRange('today').date_from} value={draft.appointment_date} onChange={event => set('appointment_date', event.target.value)}/></label>
         <label>Giờ đến mong muốn *<input aria-label="Giờ đến mong muốn" type="time" step="900" required disabled={busy} value={draft.appointment_time} onChange={event => set('appointment_time', event.target.value)}/></label>

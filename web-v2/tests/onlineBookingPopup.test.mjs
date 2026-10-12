@@ -13,7 +13,7 @@ const built = await build({
   bundle:true, write:false, format:'iife', jsx:'automatic', loader:{'.css':'empty'},
   plugins:[{name:'mock-api',setup(b){
     b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}))
-    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={onlineBookingStaff:async()=>({employees:[{value:'AN AN',label:'An An'}]}),deleteOnlineBooking:async(id,revision)=>{if(window.fail)throw Error('Xung đột xóa');window.deleted={id,revision};window.rows=[];return {ok:true}},liveTourCollection:async(panel,params)=>{window.lookup=params.search;return {data:{customers:[{id:'c1',name:'Khách Mẫu',phone:'0900000001'}]}}},createOnlineBooking:async body=>{window.sent.push(body);if(window.fail)throw Error('Mất kết nối');return {ok:true}},updateOnlineBooking:async(id,body)=>{if(window.fail)throw Error('Xung đột cập nhật');window.updated={id,...body};window.rows=[];return {ok:true}},onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
+    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={liveTour:async()=>({services:[{id:'test-service',name:'Test service',duration:60,price:200000}]}),onlineBookingStaff:async()=>({employees:[{value:'AN AN',label:'An An'}]}),deleteOnlineBooking:async(id,revision)=>{if(window.fail)throw Error('Xung đột xóa');window.deleted={id,revision};window.rows=[];return {ok:true}},liveTourCollection:async(panel,params)=>{window.lookup=params.search;return {data:{customers:[{id:'c1',name:'Khách Mẫu',phone:'0900000001'}]}}},createOnlineBooking:async body=>{window.sent.push(body);if(window.fail)throw Error('Mất kết nối');return {ok:true}},updateOnlineBooking:async(id,body)=>{if(window.fail)throw Error('Xung đột cập nhật');window.updated={id,...body};window.rows=[];return {ok:true}},onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
   }}],
 })
 async function mount(role='letan', prepare = () => {}) {
@@ -250,5 +250,30 @@ test('switching accounts closes a previous account upcoming reminder', async () 
     await w.mount({ id: 'other-account', role: 'admin' })
     assert.equal(w.document.querySelector('[role="dialog"]'), null)
     assert.equal(w.document.querySelector('aside'), null)
+  } finally { await w.unmount(); w.close() }
+})
+
+for (const role of ['admin', 'letan', 'quanly']) test(`${role} edits directly from the new-booking popup`, async () => {
+  const dom = await mount(role), w = dom.window
+  try {
+    const button = [...w.document.querySelectorAll('button')].find(b => b.textContent === 'Sửa lịch hẹn')
+    assert.ok(button)
+    await w.act(async () => button.click())
+    assert.ok(w.document.querySelector('.manual-booking-form'))
+    assert.equal(w.document.querySelectorAll('[role="dialog"]').length, 1)
+    assert.equal(w.seen.length, 0)
+  } finally { await w.unmount(); w.close() }
+})
+test('locker receives popup and reads details but cannot edit, delete or create', async () => {
+  const dom = await mount('locker'), w = dom.window
+  try {
+    assert.match(w.document.body.textContent, /Booking online mới/)
+    assert.ok(!w.document.body.textContent.includes('Sửa lịch hẹn'))
+    await w.mountUpcoming({role:'locker'})
+    assert.ok(!w.document.body.textContent.includes('Thêm Lịch đặt Booking'))
+    await w.act(async () => [...w.document.querySelectorAll('button')].find(b => b.textContent === 'Chi tiết').click())
+    assert.equal(w.document.querySelector('.online-booking-detail-actions'), null)
+    assert.ok(w.document.querySelector('select').disabled)
+    assert.ok(w.document.querySelector('textarea').disabled)
   } finally { await w.unmount(); w.close() }
 })

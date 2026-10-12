@@ -9,8 +9,9 @@ Implementation prepared for deployment; installing the code alone does not activ
 - A short signed server-to-server POST forwards the request to Vera. No key or customer data is placed in browser JavaScript, a URL or logs.
 - API stores each event UUID once. Same UUID/different content is rejected; retry after timeout cannot create another record. Two independent customer submissions intentionally remain separate requests.
 - Separate PostgreSQL rows, indexed inbox, SQL pagination (25/page), optimistic per-row updates. A same-day staff request writes `YC HH:MM` to the selected staff row's Lịch hẹn field under the Live Tour lock; later-day requests stay in the inbox without changing Live Tour.
-- Admin/Quản lý/Lễ tân can view and process. Other roles and accounts requiring password changes are denied by the API.
-- On visible Live Tour, poll unread requests every **5 seconds**, no overlapping requests or hidden-tab polling. Acknowledgement is per account and persists across devices. Popup is not an OS notification and does not run while the app is closed.
+- Admin/Quản lý/Lễ tân can view and process. Locker can view and acknowledge only; mutation APIs reject Locker. Other roles and accounts requiring password changes are denied by the API.
+- On all visible application pages, poll unread requests every **5 seconds**, no overlapping requests or hidden-tab polling. Acknowledgement is per account and persists across devices. New bookings also commit an in-app/Web Push outbox for active Admin/Lễ tân/Quản lý/Locker accounts. The existing worker handles delivery/retries outside the booking transaction; duplicate webhook events do not enqueue twice. Device notification permission and a valid subscription are required for lock-screen delivery.
+- The popup includes **Sửa lịch hẹn** for Admin/Lễ tân/Quản lý, reusing the revision-checked editor and keeping only one modal open.
 - Menu **Booking online** retains booking and contact history, search by name/phone, status/type filters, processing notes. The employee request is a preference recorded in Lịch hẹn; it does not allocate a room, create an invoice or charge the customer.
 - Contact form has only name, phone and message. Missing appointment fields display **Chưa cung cấp**; no inferred appointment.
 

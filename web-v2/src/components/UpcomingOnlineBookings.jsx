@@ -2,7 +2,7 @@ import ManualOnlineBooking from './ManualOnlineBooking'
 import { useEffect, useState } from 'react'
 import EmployeeProfileModal from './EmployeeProfileModal'
 import { RequestCard } from '../pages/OnlineBookingPage'
-import { canViewOnlineBookings } from '../lib/onlineBookings'
+import { canViewOnlineBookings, canEditOnlineBookings } from '../lib/onlineBookings'
 import { veraApi } from '../lib/api'
 import { formatVeraDate } from '../lib/veraDate'
 
@@ -30,15 +30,15 @@ export default function UpcomingOnlineBookings({ user, onClose, services = [] })
   }, [allowed, page, version])
   if (!allowed) return null
   // Only one focus trap is mounted; returning from details restores the list.
-  if (creating) return <ManualOnlineBooking services={services} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setPage(1); reload() }}/>
-  if (selected) return <RequestCard key={`${selected.id}:${selected.revision}`} row={selected} services={services} reload={reload} onClose={() => setSelected(null)}/>
+  if (creating && canEditOnlineBookings(user)) return <ManualOnlineBooking services={services} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); setPage(1); reload() }}/>
+  if (selected) return <RequestCard key={`${selected.id}:${selected.revision}`} row={selected} user={user} services={services} reload={reload} onClose={() => setSelected(null)}/>
   return <EmployeeProfileModal labelledBy="upcoming-booking-title" className="upcoming-booking-modal" onClose={onClose}>
     <header>
       <h2 id="upcoming-booking-title">Booking online sắp tới</h2>
       <button onClick={onClose}>Đóng</button>
     </header>
     <div className="upcoming-booking-toolbar">
-      <button aria-haspopup="dialog" onClick={() => setCreating(true)}>Thêm Lịch đặt Booking</button>
+      {canEditOnlineBookings(user) && <button aria-haspopup="dialog" onClick={() => setCreating(true)}>Thêm Lịch đặt Booking</button>}
       <button disabled={busy} onClick={reload}>Làm mới</button>
     </div>
     {error && <p role="alert">{error}</p>}

@@ -28,7 +28,7 @@ const items = [
   { id: 'milk-tea', label: 'Trà sữa', icon: CircleDollarSign, ready: true, roles: ['leader', 'nhanvien'] },
   { id: 'leave', label: 'Đăng ký nghỉ', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan', 'leader', 'nhanvien'] },
   { id: 'schedule', label: 'Lịch làm việc', icon: CalendarDays, ready: true, anyPermission: ['work_schedule_quanly', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_tapvu', 'work_schedule_hc'] },
-  { id: 'online-bookings', label: 'Booking online', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan'] },
+  { id: 'online-bookings', label: 'Booking online', icon: CalendarDays, ready: true, roles: ['admin', 'quanly', 'letan', 'locker'] },
   { id: 'snapshot', label: 'Chấm công', icon: ScanLine, ready: true, anyPermission: ['snapshot_today', 'device_history_view'] },
   { id: 'payroll', label: 'Bảng Lương', icon: WalletCards, ready: true, anyPermission: ['payroll_history', 'payroll_calculate'] },
   { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
@@ -496,7 +496,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       <PageErrorBoundary page={currentPage} onRetry={() => LayoutDesigner.reset()}><Suspense fallback={null}><LayoutDesigner user={user} page={currentPage} initialTab={currentPage === 'appearance' ? 'rooms' : undefined} open={layoutDesignerOpen && !user?.must_change_password} onClose={() => { setLayoutDesignerOpen(false); layoutTrigger.current?.focus({ preventScroll: true }) }}/></Suspense></PageErrorBoundary>
       <BackToTop/>
       {showPageNotifications && !user?.must_change_password && <PopupNotifications key={`system-notifications:${user?.id || user?.employee_username}`} user={user} onPageChange={page => choose(page, true)}/>}
-      {currentPage === 'live-tour' && <OnlineBookingPopup key={`online-booking:${user?.id || user?.employee_username}`} user={user} onOpen={() => choose('online-bookings', true)}/>}
+      {<OnlineBookingPopup key={`online-booking:${user?.id || user?.employee_username}`} user={user} onOpen={() => choose('online-bookings', true)}/>}
       <BookingNotificationPopup key={user?.id || user?.username || user?.employee_username || ''} user={user} onOpen={() => choose('live-tour', true)}/>
       <MissingCheckinPopup key={`${user?.username || user?.employee_username || user?.id || ''}:${role}`} user={user}/>
     </div>
