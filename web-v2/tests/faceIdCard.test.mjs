@@ -306,3 +306,17 @@ test('capture continuation keeps loaded photos and retries an individual failed 
   assert.equal(button(dom,'Tải thêm ảnh từ máy'),undefined)
  } finally {await dom.window.unmount();dom.window.close()}
 })
+
+test('capture employee-name search ignores accents and does not assign unnamed images', async () => {
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null}),captures:async()=>({records:[{event_id:1,device_name:'Cậu Tưởng',occurred_at:'2026-10-12T10:00:00+07:00'},{event_id:2,device_name:'An An',occurred_at:'2026-10-12T11:00:00+07:00'},{event_id:3,occurred_at:'2026-10-12T12:00:00+07:00'}]})})
+ const w=dom.window
+ try {
+  await tick()
+  const input=w.document.querySelector('input[aria-label="Tìm tên nhân viên trong ảnh Face ID"]')
+  await w.act(async()=>{Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(input,'cau tuong');input.dispatchEvent(new w.Event('input',{bubbles:true}))})
+  assert.equal(w.document.querySelectorAll('.face-id-capture-preview').length,1)
+  assert.match(w.document.querySelector('.face-id-capture-preview figcaption').textContent,/Cậu Tưởng/)
+  await w.act(async()=>{Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(input,'');input.dispatchEvent(new w.Event('input',{bubbles:true}))})
+  assert.equal(w.document.querySelectorAll('.face-id-capture-preview').length,3)
+ } finally {await w.unmount();w.close()}
+})

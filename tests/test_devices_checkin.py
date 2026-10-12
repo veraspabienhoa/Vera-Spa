@@ -200,3 +200,10 @@ def test_invalid_attendance_policy_does_not_claim_a_source_or_break_history():
         response = client.get('/v2/devices/checkin-history?' + BASE + '&source=timesoft')
     assert response.status_code == 200
     assert response.json()['attendance_policy'] == {'source': 'unknown', 'effective_date': None}
+
+
+def test_history_newest_first_across_days_and_timezones_without_mutating_input():
+    rows = [{'occurred_at':'2026-10-12T10:00:00+07:00'}, {'occurred_at':'2026-10-12T15:00:00+07:00'}, {'occurred_at':'2026-10-11T23:00:00+07:00'}, {'occurred_at':'2026-10-12T09:00:00Z'}]
+    assert devices.newest_checkins(rows) == [rows[3],rows[1],rows[0],rows[2]]
+    timesoft = [{'date':'2026-10-12','check_in':'10:00'}, {'date':'2026-10-12','check_in':'15:00'}, {'date':'2026-10-11','check_in':'23:00'}]
+    assert devices.newest_checkins(timesoft) == [timesoft[1],timesoft[0],timesoft[2]]

@@ -103,6 +103,7 @@ root.ERR.des=ok
 
     self.assertEqual(result["records"], [{
       "event_id": 16338,
+      "device_name": "",
       "occurred_at": "2026-09-23T18:16:43+07:00",
       "image_ref": {
         "file_type": 2, "file_index": 9, "file_position": 32571392,
@@ -560,3 +561,8 @@ def test_capture_offset_beyond_2000_and_last_page_closes_session():
     assert result['records'][0]['page_offset'] == 2000
     assert result['next_offset'] is None and not result['truncated']
     assert len(closed) == 1
+
+
+def test_capture_retains_device_name_without_inventing_identity():
+    body = 'root.CAPTURE.totalcount=1 root.CAPTURE.rspcount=1 root.CAPTURE.ITEM0.uid=1 root.CAPTURE.ITEM0.utime=2026-10-12/15:00:00 root.CAPTURE.ITEM0.dwfiletype=2 root.CAPTURE.ITEM0.dwfileindex=1 root.CAPTURE.ITEM0.dwfilepos=100 root.CAPTURE.ITEM0.uname=Cậu Tưởng root.ERR.no=0'
+    assert facegate._parse_capture_log_response(body)['records'][0]['device_name'] == 'Cậu Tưởng'
