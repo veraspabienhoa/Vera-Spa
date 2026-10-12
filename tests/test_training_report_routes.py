@@ -308,7 +308,7 @@ def test_untrained_roster_is_all_time_disjoint_active_authorized_and_read_only(r
     data = get(client, "/v2/training/report-employees", date_from="2026-12-01", date_to="2026-12-31")
     assert data["employees"] == []
     assert data["untrained_scope"] == "all_time"
-    assert {person["username"] for person in data["untrained_employees"]} == {"admin", "leader", "leader2", "manager", "draft"}
+    assert {person["username"] for person in data["untrained_employees"]} == {"draft"}
     assert all(sql.lstrip().upper().startswith("SELECT") for sql in state["sql"])
     all_time = get(client, "/v2/training/report-employees")
     assert data["untrained_employees"] == all_time["untrained_employees"]

@@ -149,16 +149,18 @@ test('Vietnamese report filenames match the server rule and reject unsafe respon
 })
 
 test('untrained table is last, read-only and searchable without removed helper text',async()=>{
- const f=await fixture({trainingReportEmployees:async()=>({employees:[{username:'Linh Đan',full_name:'Linh Đan',role:'nhanvien'}],untrained_employees:[{username:'new-staff',full_name:'Thảo Linh',department:'Chăm sóc',role:'nhanvien'}]})})
+ const f=await fixture({trainingReportEmployees:async()=>({employees:[{username:'Linh Đan',full_name:'Linh Đan',role:'nhanvien'}],untrained_employees:[{username:'new-staff',full_name:'Thảo Linh',department:'Nhân viên',department_code:'nhanvien',role:'nhanvien'},{username:'not-ktv',department:'Support',department_code:'support',role:'nhanvien'}]})})
  try{
   await f.open()
   const table=document.querySelector('.training-untrained-roster')
   assert.ok(table);assert.match(table.textContent,/Nhân viên chưa được đào tạo \/ đánh giá/);assert.match(table.textContent,/Toàn bộ thời gian/)
-  assert.match(table.textContent,/Thảo Linh/);assert.equal(table.querySelector('button'),null)
+  assert.match(table.textContent,/Thảo Linh/);assert.equal(table.querySelector('tbody button'),null)
   assert.doesNotMatch(document.body.textContent,/Chọn tên để xem báo cáo|Nhật ký theo ngày đào tạo;|nhân viên\./)
   assert.equal(table.nextElementSibling,null)
-  await f.type(document.querySelector('[role=combobox]'),'thao linh');assert.equal(table.querySelectorAll('tbody tr').length,1)
-  assert.equal(document.querySelector('.training-employee-roster > table tbody').children.length,0)
+  await f.type(table.querySelector('[role=combobox]'),'thao linh');assert.equal(table.querySelectorAll('tbody tr').length,1)
+  assert.equal(document.querySelector('.training-employee-roster > table tbody').children.length,1)
+  await f.type(table.querySelector('[role=combobox]'),'khong co');assert.equal(table.querySelectorAll('tbody tr').length,0)
+  await f.type(table.querySelector('[role=combobox]'),'');assert.equal(table.querySelectorAll('tbody tr').length,1)
   await f.render({...user,id:'new-account',permissions:{training_view:false}});assert.equal(document.querySelector('.training-untrained-roster'),null)
  }finally{await f.dispose()}
 })
