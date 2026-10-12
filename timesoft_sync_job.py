@@ -5,7 +5,7 @@ Mỗi lần Cloud Scheduler gọi:
 2) Đọc trạng thái Auto Check và Nội quy từ PostgreSQL.
 3) Nếu PAUSED: không ghi phạt.
 4) Nếu RUNNING:
-   - TimeSoft: Đi trễ không phép khi trễ >= 5 phút.
+   - Chấm công: chọn mức đi trễ theo số phút trong Nội quy; FaceGate phạt khi trễ > 0.
    - Nghỉ giữa ca: Ra ngoài vào muộn ngay khi có FaceID vào lại trễ.
    - Bảng tour: Ra ngoài vào muộn khi cột Vào trễ >= 5 phút.
    - Cẩm Nhung * được đối chiếu như Cẩm Nhung.
@@ -1444,11 +1444,6 @@ def process_timesoft_penalties(
     include_synced_history: bool = False,
 ) -> dict:
     result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
-    reason_item = _catalog_item(catalog, "Đi trễ không phép")
-    if not reason_item:
-        _log("AUTO TIMESOFT ERROR: LoaiNghi chưa có 'Đi trễ không phép'.")
-        result["errors"] += 1
-        return result
     threshold = max(AUTO_PENALTY_MINUTES, int(cfg.get("threshold_minutes", AUTO_PENALTY_MINUTES)))
     def arrival_eligible(minutes, work_date):
         # Any positive, canonical FaceGate arrival delay is immediately eligible.
@@ -1569,6 +1564,11 @@ def process_timesoft_penalties(
                     f"AUTO TIMESOFT SKIP SUPPORT: {employee} · trễ gốc {minutes:.0f} phút · "
                     f"cho phép {allowance_text} · còn {adjusted_text}/{threshold} phút · revoked={revoked}"
                 )
+                continue
+            reason_item = auto_check.arrival_reason(catalog, penalty_minutes)
+            if not reason_item:
+                result['errors'] += 1
+                _log('AUTO ARRIVAL ERROR: Nội quy thiếu mức phạt đi trễ theo số phút.')
                 continue
             result["eligible"] += 1
             detail = f"Đồng bộ TimeSoft trực tiếp · check-in muộn {int(round(minutes))} phút"

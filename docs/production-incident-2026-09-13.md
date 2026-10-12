@@ -1,3 +1,23 @@
+## 12-10-2026 — Automatic arrival fines use official minute bands (source only)
+
+FaceGate and the shared arrival worker now select the exact official arrival
+reason for positive delay up to 30, up to 60, up to 120, or over 120 minutes.
+Select after approved late-start and support adjustments; read amounts/days from
+the official catalog without guessing or falling back to the old flat fine.
+Missing selected bands stop that write and report an error. The four named
+violation bands do not receive the unpaid-leave ordinal surcharge.
+
+All four bands retain the legacy arrival event key, preventing a second fine
+when upgrading an already processed arrival or retrying a changed projection.
+Existing financial rows are not repriced. Approved support revocation includes
+old automatic arrival fines and all four bands, preserving manual and break
+return rows. Reactivating a revoked event updates its displayed reason too.
+Keep FaceGate evidence rechecks, caller connections, role scope, daily date
+scope, pause handling and committed notification delivery unchanged.
+Local tests verify boundaries, fractional delays, catalog amounts, write-time
+rechecks and duplicate identity. PostgreSQL duplicate/revocation tests require
+CI's isolated database. Merge and deployment are not verified by this change.
+
 ## 12-10-2026 — Live Tour leave labels without terminal periods (source only)
 
 The requested 16 lines reduce to 10 distinct labels after removing terminal

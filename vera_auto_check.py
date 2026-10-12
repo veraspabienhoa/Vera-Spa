@@ -178,6 +178,25 @@ def catalog_item(catalog: dict, name: str):
     return catalog.get(_norm(name))
 
 
+ARRIVAL_BAND_REASONS = (
+    'Đi trễ nhỏ hơn hoặc bằng 30 phút',
+    'Đi trễ nhỏ hơn hoặc bằng 60 phút',
+    'Đi trễ nhỏ hơn hoặc bằng 120 phút',
+    'Đi trễ lớn hơn 120 phút',
+)
+
+
+def arrival_reason(catalog: dict, minutes: float):
+    try:
+        value = float(minutes)
+    except (ValueError, TypeError):
+        return None
+    if not math.isfinite(value) or value <= 0:
+        return None
+    index = 0 if value <= 30 else 1 if value <= 60 else 2 if value <= 120 else 3
+    return catalog_item(catalog, ARRIVAL_BAND_REASONS[index])
+
+
 def outside_reason(catalog: dict, minutes: float):
     candidates = ([
         "Ra ngoài vào muộn nhỏ hơn hoặc bằng 30 phút",
@@ -281,17 +300,17 @@ def revoke_auto_late_penalty(conn, *, work_date: date, employee: str, basis: str
         WHERE source_sheet_id='postgres:auto_check'
           AND leave_date=:day
           AND lower(employee_name)=lower(:employee)
-          AND lower(leave_reason)=lower(:reason)
+          AND lower(leave_reason) = ANY(:reasons)
         RETURNING record_uid
-    """), {"day": work_date, "employee": employee, "reason": "Đi trễ không phép"}).scalars().all()
+    """), {"day": work_date, "employee": employee, "reasons": [name.lower() for name in ('Đi trễ không phép', *ARRIVAL_BAND_REASONS)]}).scalars().all()
     if deleted:
         conn.execute(text("""
             UPDATE vera_auto_check_event
             SET status='revoked', leave_record_uid=NULL,
                 detail=CONCAT(COALESCE(detail,''),' · Thu hồi vì có ',:basis)
             WHERE work_date=:day AND lower(employee_name)=lower(:employee)
-              AND lower(reason)=lower(:reason) AND status='added'
-        """), {"day": work_date, "employee": employee, "reason": "Đi trễ không phép", "basis": basis})
+              AND lower(reason) = ANY(:reasons) AND status='added'
+        """), {"day": work_date, "employee": employee, "reasons": [name.lower() for name in ('Đi trễ không phép', *ARRIVAL_BAND_REASONS)], "basis": basis})
     return len(deleted)
 
 
@@ -404,12 +423,15 @@ def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, d
             or (_norm(reason).startswith('nghi ') and holiday_approved_day(conn, employee, work_date))):
         return True, "SKIP_APPROVED_HOLIDAY"
     ensure_schema(conn)
-    event_key = f"{work_date.isoformat()}|{_norm(employee)}|{_norm(reason)}"
+    # All arrival bands share the legacy event identity: no second fine on
+    # rollout or when a later projection changes the measured delay.
+    event_reason = 'Đi trễ không phép' if _norm(reason) in {_norm(name) for name in ARRIVAL_BAND_REASONS} else reason
+    event_key = f"{work_date.isoformat()}|{_norm(employee)}|{_norm(event_reason)}"
     inserted = conn.execute(text("""
         INSERT INTO vera_auto_check_event(event_key,work_date,employee_name,reason,source,minutes,status,detail,employee_notified_at)
         VALUES (:key,:day,:employee,:reason,:source,:minutes,'processing',:detail,NULL)
         ON CONFLICT(event_key) DO UPDATE SET
-          status='processing', source=EXCLUDED.source, minutes=EXCLUDED.minutes,
+          status='processing', reason=EXCLUDED.reason, source=EXCLUDED.source, minutes=EXCLUDED.minutes,
           detail=EXCLUDED.detail, created_at=NOW(), employee_notify_claimed_at=NULL,
           employee_notify_attempted_at=NULL, employee_notified_at=NULL,
           employee_notify_error=NULL
