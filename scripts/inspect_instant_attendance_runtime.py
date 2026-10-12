@@ -20,7 +20,7 @@ e=runtime_engine(readonly=True)
 try:
  with e.begin() as c:
   now=datetime.now(VN_TZ);day=now.date()
-  cfg=auto.load_config(c)
+  paused=auto.penalties_paused(c)
   def switch(table, extra='', params=None):
    if not c.execute(text('SELECT to_regclass(:table)'),{'table':table}).scalar():return None
    value=c.execute(text('SELECT enabled FROM '+table+" WHERE notification_key='missing_checkin'"+extra),params or {}).scalar()
@@ -29,7 +29,7 @@ try:
   family=switch('vera_v2_notification_setting')
   data=fg.project_evidence(c,day,day)
   eligible=runtime.alert_eligible_users(c,day)
-  result={'ok':True,'database_writes':False,'revision_verified':True,'facegate_selected':source_for(day)=='facegate','auto_penalty_running':cfg['status']!='PAUSED','missing_checkin_enabled':family,'missing_checkin_popup_enabled':popup,'archive_complete':runtime.archive_complete(data,day),'archive_fresh':runtime.archive_fresh(data,day,now),'blocking_issue_counts':dict(__import__('collections').Counter(i.get('reason','unknown') for i in runtime.blocking_issues(data,day))),'popup_eligible_employee_count':len(eligible)}
+  result={'ok':True,'database_writes':False,'revision_verified':True,'facegate_selected':source_for(day)=='facegate','auto_penalty_running':not paused,'missing_checkin_enabled':family,'missing_checkin_popup_enabled':popup,'archive_complete':runtime.archive_complete(data,day),'archive_fresh':runtime.archive_fresh(data,day,now),'blocking_issue_counts':dict(__import__('collections').Counter(i.get('reason','unknown') for i in runtime.blocking_issues(data,day))),'popup_eligible_employee_count':len(eligible)}
  cron=subprocess.run(['crontab','-l'],capture_output=True,text=True,timeout=5)
  result['minute_cron_verified']=cron.returncode==0 and any(re.match(r'^\s*\*\s+\*\s+\*\s+\*\s+\*\s+',line) and 'vera_facegate_auto_sync.py' in line for line in cron.stdout.splitlines())
  timer=subprocess.run(['systemctl','is-active','--quiet','vera-facegate-sync.timer'],capture_output=True,timeout=5)
