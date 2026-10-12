@@ -386,7 +386,7 @@ def _close_query_session(base_url: str, path: str, auth: tuple[str, str],
         pass
 
 
-def fetch_capture_log(start: str, end: str, *, get=requests.get, post=requests.post) -> dict[str, Any]:
+def fetch_capture_log(start: str, end: str, *, offset=0, limit=MAX_RECORDS, get=requests.get, post=requests.post) -> dict[str, Any]:
     """Fetch bounded Capture Log metadata. This endpoint does not fetch images."""
     base_url, path, auth = _facegate_config("VERA_FACEGATE_CAPTURE_LOG_PATH", DEFAULT_CAPTURE_PATH)
     begin_date = datetime.strptime(start, "%Y-%m-%d").date()
@@ -396,16 +396,18 @@ def fetch_capture_log(start: str, end: str, *, get=requests.get, post=requests.p
 
     records: list[dict[str, Any]] = []
     seen_ids: set[int] = set()
-    begin_no = 0
+    if not isinstance(offset, int) or not 0 <= offset <= 1_000_000 or not isinstance(limit, int) or not 1 <= limit <= MAX_RECORDS:
+        raise ValueError('Khoảng trang Capture Log không hợp lệ.')
+    begin_no = offset
     session_id = 0
     total_count = None
     truncated = False
     try:
-      while begin_no < MAX_RECORDS:
+      while begin_no < offset + limit:
         params = {
             "action": "list", "group": "CAPTURE", "begintime": f"{begin_date.isoformat()}/00:00:00",
             "endtime": f"{end_date.isoformat()}/23:59:59", "utype": "0", "sequence": "1",
-            "beginno": str(begin_no), "reqcount": str(MAX_PAGE_SIZE), "sessionid": str(session_id),
+            "beginno": str(begin_no), "reqcount": str(min(MAX_PAGE_SIZE, offset + limit - begin_no)), "sessionid": str(session_id),
             "RanId": str(secrets.randbelow(90_000_000) + 10_000_000),
         }
         try:
@@ -423,7 +425,7 @@ def fetch_capture_log(start: str, end: str, *, get=requests.get, post=requests.p
         for record in page["records"]:
             if record["event_id"] not in seen_ids:
                 seen_ids.add(record["event_id"])
-                records.append(record)
+                records.append({**record, 'page_offset': begin_no})
         received = page["response_count"] or len(page["records"])
         if received > MAX_PAGE_SIZE:
             raise ValueError("FaceGate trả số bản ghi vượt giới hạn mỗi trang.")
@@ -433,12 +435,13 @@ def fetch_capture_log(start: str, end: str, *, get=requests.get, post=requests.p
         if begin_no >= total_count:
             break
       else:
-        truncated = total_count is not None and total_count > MAX_RECORDS
+        truncated = total_count is not None and total_count > offset + limit
     finally:
       _close_query_session(base_url, path, auth, "CAPTURE", session_id, post)
     return {
         "source": "facegate_capture_log", "records": records, "count": len(records),
-        "total_count": int(total_count or 0), "truncated": truncated or len(records) < int(total_count or 0),
+        "total_count": int(total_count or 0), "truncated": truncated or offset + len(records) < int(total_count or 0),
+        "next_offset": begin_no if begin_no > offset and begin_no < int(total_count or 0) else None,
         "employee_mapping_verified": False,
     }
 

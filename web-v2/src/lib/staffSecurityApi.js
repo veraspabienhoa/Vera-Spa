@@ -183,6 +183,6 @@ export const faceIdApi = {
   uploadIdentity: (username, _side, blob) => faceRequest(username, '/image', {method: 'PUT', headers: {'Content-Type': blob.type}, body: blob}),
   deleteIdentity: (username) => faceRequest(username, '/image', {method: 'DELETE'}),
   portrait: (username) => faceRequest(username, '/portrait-source', {}, true),
-  captures: (username, day) => faceRequest(username, `/captures?day=${encodeURIComponent(day)}`),
-  capture: (username, day, eventId) => faceRequest(username, `/capture-image?day=${encodeURIComponent(day)}&event_id=${encodeURIComponent(eventId)}`, {}, true),
+  captures: (username, day, offset = 0) => faceRequest(username, `/captures?day=${encodeURIComponent(day)}&offset=${offset}`),
+  capture: (username, day, eventId, offset) => faceRequest(username, `/capture-image?day=${encodeURIComponent(day)}&event_id=${encodeURIComponent(eventId)}${offset == null ? '' : `&offset=${offset}`}`, {}, true),
 }

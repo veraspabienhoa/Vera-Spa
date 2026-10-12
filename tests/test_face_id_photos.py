@@ -100,7 +100,7 @@ def test_reject_invalid_images_and_missing_employee():
 def test_device_io_releases_connection_and_requires_unique_event(monkeypatch, role):
     import vera_facegate_control_log as device
     db, api = client({'employee_face_id_view', 'employee_face_id_manage'}, role=role)
-    def read(*args):
+    def read(*args, **kwargs):
         assert not db.active
         return {'records': [{'event_id': 2, 'occurred_at':'2026-09-24T10:00:00+07:00', 'image_available':True, 'image_ref':{}}]}
     def image(*args):
@@ -226,3 +226,26 @@ def test_device_capture_tools_reject_other_roles_even_with_feature_grants(role):
     assert api.get(path).json()['can_view_device_tools'] is False
     assert api.get(path+'/captures?day=2026-09-24').status_code == 403
     assert api.get(path+'/capture-image?day=2026-09-24&event_id=2').status_code == 403
+
+
+def test_capture_page_and_image_only_fetch_bounded_device_page(monkeypatch):
+    import vera_facegate_control_log as device
+    db, api = client({'employee_face_id_view', 'employee_face_id_manage'}, role='admin')
+    calls = []
+    def read(*args, **kwargs):
+        assert not db.active
+        calls.append(kwargs)
+        return {'records': [{'event_id': 2501, 'occurred_at':'2026-09-24T10:00:00+07:00', 'image_available':True, 'image_ref':{}, 'page_offset':2500}], 'next_offset':2600, 'total_count':3000, 'truncated':True}
+    monkeypatch.setattr(device, 'fetch_capture_log', read)
+    monkeypatch.setattr(device, 'fetch_capture_image', lambda ref: (png(), 'image/png'))
+    path = '/v2/staff/worker/face-id'
+    result = api.get(path+'/captures?day=2026-09-24&offset=2500')
+    assert result.status_code == 200
+    assert result.json()['next_offset'] == 2600
+    assert result.json()['records'][0]['page_offset'] == 2500
+    assert calls == [{'offset':2500, 'limit':100}]
+    assert api.get(path+'/capture-image?day=2026-09-24&event_id=2501&offset=2500').status_code == 200
+    assert calls[-1] == {'offset':2500, 'limit':20}
+    before = len(calls)
+    assert api.get(path+'/captures?day=2026-09-24&offset=-1').status_code == 422
+    assert len(calls) == before
