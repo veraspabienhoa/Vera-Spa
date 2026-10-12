@@ -1,3 +1,4 @@
+import { RequestCard } from '../pages/OnlineBookingPage'
 import NotificationModal from './NotificationModal'
 import { useEffect, useRef, useState } from 'react'
 import { clampPopupPosition } from '../lib/popupPosition'
@@ -7,9 +8,10 @@ import UpcomingOnlineBookings from './UpcomingOnlineBookings'
 import { startQuarterHourBookingReminder } from '../lib/quarterHourBookingReminder'
 import '../pages/OnlineBookingPage.css'
 
-import { canViewOnlineBookings } from '../lib/onlineBookings'
+import { canViewOnlineBookings, canEditOnlineBookings } from '../lib/onlineBookings'
 
 export default function OnlineBookingPopup({ user, onOpen }) {
+  const [editing, setEditing] = useState(null)
   const panel = useRef(null)
   const drag = useRef(null)
   const [position, setPosition] = useState(null)
@@ -23,6 +25,7 @@ export default function OnlineBookingPopup({ user, onOpen }) {
   const account = user?.id || user?.username || user?.employee_username
   useEffect(() => {
     setRows([])
+    setEditing(null)
     setShowUpcomingReminder(false)
     seen.current = new Set()
     if (!allowed) return undefined
@@ -98,6 +101,7 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
+  if (editing && canEditOnlineBookings(user)) return <RequestCard key={`${editing.id}:${editing.revision}`} user={user} row={editing} initialEditing onClose={() => setEditing(null)} reload={() => window.dispatchEvent(new Event('vera-online-bookings-changed'))}/>
   return <>{showUpcomingReminder && <UpcomingOnlineBookings user={user} onClose={() => setShowUpcomingReminder(false)}/>}
   {!rows.length || showUpcomingReminder ? null : <NotificationModal key={row.id} title="Yêu cầu từ website" onClose={() => { if (!busy) void dismiss() }}><aside ref={panel} className={`online-booking-popup${hidden ? ' is-minimized' : ''}`} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} role="region" aria-label="Yêu cầu từ website">
     <div className="online-booking-popup-header">
@@ -109,7 +113,7 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     </div>
     {!hidden && <>
       <OnlineBookingDetails row={row}/>
-      <div className="online-booking-actions"><button disabled={busy} onClick={() => dismiss()}>Đã xem</button><button disabled={busy} onClick={() => dismiss(true)}>Mở Booking online</button></div>
+      <div className="online-booking-actions">{row.kind === 'booking' && canEditOnlineBookings(user) && <button disabled={busy} onClick={() => setEditing(row)}>Sửa lịch hẹn</button>}<button disabled={busy} onClick={() => dismiss()}>Đã xem</button><button disabled={busy} onClick={() => dismiss(true)}>Mở Booking online</button></div>
     </>}
     {error && <p role="alert">{error}</p>}
   </aside></NotificationModal>}

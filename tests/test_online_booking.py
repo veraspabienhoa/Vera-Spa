@@ -156,3 +156,13 @@ def test_booking_mutations_sync_only_after_their_transaction_commits(monkeypatch
     assert api.patch('/v2/online-bookings/1',json={'status':'confirmed','revision':0}).status_code == 200
     assert api.request('DELETE','/v2/online-bookings/1',json={'revision':0}).status_code == 200
     assert calls == ['sync','sync','sync']
+
+
+@pytest.mark.parametrize('method,path,body', [
+    ('POST', '/v2/online-bookings', payload()),
+    ('PATCH', '/v2/online-bookings/1', {'status':'handled','revision':0}),
+    ('DELETE', '/v2/online-bookings/1', {'revision':0}),
+    ('GET', '/v2/online-bookings/staff', None),
+])
+def test_locker_cannot_mutate_or_load_editor_data(method, path, body):
+    assert client('locker').request(method, path, json=body).status_code == 403

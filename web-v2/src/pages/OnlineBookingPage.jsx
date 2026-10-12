@@ -8,12 +8,13 @@ import EmployeeProfileModal from '../components/EmployeeProfileModal'
 import VeraDateInput from '../components/VeraDateInput'
 import { bookingDateRange } from '../lib/bookingDateRange'
 import OnlineBookingDetails from '../components/OnlineBookingDetails'
-import { canViewOnlineBookings } from '../lib/onlineBookings'
+import { canViewOnlineBookings, canEditOnlineBookings } from '../lib/onlineBookings'
 import './OnlineBookingPage.css'
 
 const statuses = { new: 'Mới nhận', confirmed: 'Đã xác nhận', handled: 'Đã xử lý', cancelled: 'Đã hủy' }
-export function RequestCard({ row, reload, onClose, services = [] }) {
-  const [editing, setEditing] = useState(false)
+export function RequestCard({ row, reload, onClose, services = [], user, initialEditing = false }) {
+  const [editing, setEditing] = useState(initialEditing && canEditOnlineBookings(user))
+  const editable = canEditOnlineBookings(user)
   const remove = async () => {
     if (!(await confirmDialog('Xóa lịch hẹn online này?'))) return
     setBusy(true); setError('')
@@ -33,19 +34,19 @@ export function RequestCard({ row, reload, onClose, services = [] }) {
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
-  if (editing) return <ManualOnlineBooking services={services} booking={row} onClose={() => setEditing(false)} onSaved={() => { onClose(); reload() }} />
+  if (editable && editing) return <ManualOnlineBooking services={services} booking={row} onClose={() => setEditing(false)} onSaved={() => { onClose(); reload() }} />
   return <EmployeeProfileModal labelledBy="online-booking-modal-title" className="online-booking-modal" busy={busy} onClose={onClose}><article className="online-booking-card">
     <header><h2 id="online-booking-modal-title">Đặt lịch</h2><button disabled={busy} onClick={onClose} aria-label="Đóng Đặt lịch">Đóng</button></header>
     <header><strong>#{row.id} · {row.kind === 'booking' ? 'Đặt lịch' : 'Liên hệ'}</strong><span>{formatVeraDateTime(row.created_at)}</span></header>
     <OnlineBookingDetails row={row}/>
-    <div className="online-booking-actions"><label>Trạng thái<select value={status} onChange={e => setStatus(e.target.value)}>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>
-    <label>Ghi chú xử lý<textarea value={note} maxLength={2000} onChange={e => setNote(e.target.value)}/></label>
+    <div className="online-booking-actions"><label>Trạng thái<select disabled={!editable || busy} value={status} onChange={e => setStatus(e.target.value)}>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>
+    <label>Ghi chú xử lý<textarea disabled={!editable || busy} value={note} maxLength={2000} onChange={e => setNote(e.target.value)}/></label>
     {row.updated_by && <small>Cập nhật: {row.updated_by} · {formatVeraDateTime(row.updated_at)}</small>}
     {error && <p role="alert">{error}</p>}
-    <footer className="online-booking-detail-actions">
+    {editable && <footer className="online-booking-detail-actions">
       {row.kind === 'booking' && <><button type="button" disabled={busy} onClick={() => setEditing(true)}>Sửa lịch hẹn</button><button type="button" className="danger-button" disabled={busy} onClick={remove}>Xóa lịch hẹn</button></>}
       <button type="button" disabled={busy || (status === row.status && note === row.note)} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button>
-    </footer>
+    </footer>}
   </article></EmployeeProfileModal>
 }
 
@@ -72,7 +73,7 @@ export default function OnlineBookingPage({ user }) {
     veraApi.onlineBookings({ page, status, kind, q, ...Object.fromEntries(Object.entries(range).filter(([, value]) => value)) }).then(data => { if (active) setResult(data) }).catch(err => { if (active) setError(err.message) }).finally(() => { if (active) setBusy(false) })
     return () => { active = false }
   }, [allowed, page, status, kind, q, version, range])
-  if (!allowed) return <p role="alert">Chỉ Admin, Quản lý và Lễ tân được xem Booking online.</p>
+  if (!allowed) return <p role="alert">Chỉ Admin, Quản lý, Lễ tân và Locker được xem Booking online.</p>
   return <section className="online-booking-page">
     <h1>Booking online</h1><p>Yêu cầu đặt lịch và lời nhắn từ website. Lễ tân xác nhận với khách trước khi xếp phòng và nhân viên trên Live Tour.</p>
     <form className="online-booking-filters" onSubmit={e => { e.preventDefault(); setPage(1); setQ(search.trim()); reload() }}>
@@ -97,7 +98,7 @@ export default function OnlineBookingPage({ user }) {
       ['Tiếp nhận',formatVeraDateTime(row.created_at)],
       ['Xử lý',<button aria-haspopup="dialog" onClick={()=>setSelected(row)}>Chi tiết</button>],
     ].map(([label,value])=><td key={label} data-label={label} className={label==='Lời nhắn'?'online-booking-message':undefined}><span>{value}</span></td>)}</tr>)}</tbody></table></div>{!result.rows.length && <p>Không có yêu cầu phù hợp.</p>}</>}
-    {selected && <RequestCard key={`${selected.id}:${selected.revision}`} row={selected} reload={reload} onClose={()=>setSelected(null)}/>}
+    {selected && <RequestCard key={`${selected.id}:${selected.revision}`} row={selected} user={user} reload={reload} onClose={()=>setSelected(null)}/>}
     <nav className="online-booking-actions" aria-label="Phân trang booking"><button disabled={busy || page <= 1} onClick={() => setPage(p => p-1)}>Trước</button><span>Trang {page} / {Math.max(1, Math.ceil(result.total / 25))}</span><button disabled={busy || page * 25 >= result.total} onClick={() => setPage(p => p+1)}>Sau</button></nav>
   </section>
 }

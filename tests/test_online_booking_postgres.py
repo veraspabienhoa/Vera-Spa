@@ -4,8 +4,17 @@ import pytest
 from sqlalchemy import text
 from fastapi import HTTPException
 import vera_online_booking as booking
-from test_live_tour_resource_postgres import database
+from test_live_tour_resource_postgres import database as base_database
 from test_online_booking import payload, client, signature, SECRET
+
+
+@pytest.fixture
+def database(base_database):
+    from vera_notification_delivery import ensure_schema
+    with base_database.begin() as conn:
+        conn.execute(text("CREATE TABLE vera_v2_user_profile(auth_user_id uuid PRIMARY KEY,employee_username text,role text,is_active boolean)"))
+        ensure_schema(conn)
+    return base_database
 
 
 def test_durable_dedup_and_conflicting_replay(database):

@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from sqlalchemy import text
 
 ROLES = {'admin', 'quanly', 'letan'}
+VIEW_ROLES = ROLES | {'locker'}
 VN_TZ = ZoneInfo('Asia/Ho_Chi_Minh')
 MAX_BODY = 32768
 # Keep the same bounded window for count and rows, before pagination. Compare
@@ -124,11 +125,26 @@ def ingest(conn, payload):
       VALUES(CAST(:event_id AS uuid),:fingerprint,:kind,:customer_name,:phone,CAST(:appointment_date AS date),
       :appointment_time,:service,:guests,:requested_staff,:message) ON CONFLICT(event_id) DO NOTHING RETURNING id'''), values).scalar_one_or_none()
     if row is not None:
+        enqueue_booking_notice(conn, row, payload)
         return {'ok': True, 'id': row, 'duplicate': False}
     prior = conn.execute(text('SELECT id,fingerprint FROM vera_online_booking WHERE event_id=CAST(:event_id AS uuid)'), values).mappings().one()
     if prior['fingerprint'] != fingerprint:
         raise HTTPException(409, 'Mã yêu cầu đã được dùng cho nội dung khác.')
     return {'ok': True, 'id': prior['id'], 'duplicate': True}
+
+
+def enqueue_booking_notice(conn, booking_id, payload):
+    """Commit the booking and its deduplicated push outbox together; no network I/O."""
+    if payload.kind != 'booking':
+        return
+    from vera_notification_delivery import enqueue
+    recipients = [str(row['id']) for row in conn.execute(text("""SELECT auth_user_id::text AS id
+        FROM vera_v2_user_profile WHERE is_active AND role IN ('admin','letan','quanly','locker')""")).mappings()]
+    enqueue(conn, 'online_booking', {
+        'title': 'Booking online mới',
+        'body': f"{payload.customer_name} · {payload.appointment_date.strftime('%d-%m-%Y')} {payload.appointment_time} · {payload.guests} khách · {payload.service or 'Chưa chọn dịch vụ'}",
+        'kind': 'online_booking', 'tag': f'vera-online-booking-{booking_id}',
+    }, event_key=f'online-booking:{booking_id}', default_accounts=recipients)
 
 
 PUBLIC_COLUMNS = 'b.id,b.kind,b.customer_name,b.phone,b.appointment_date,b.appointment_time,b.service,b.guests,b.requested_staff,b.message,b.status,b.note,b.revision,b.created_at,b.updated_at,b.updated_by'
@@ -141,9 +157,14 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
     working_staff_provider = working_staff_provider or getattr(app.state, 'website_booking_staff_provider', None)
     appointment_writer = appointment_writer or getattr(app.state, 'website_booking_appointment_writer', None)
 
-    def authorized(ident=Depends(current_identity)):
-        if ident.role not in ROLES or ident.must_change_password:
-            raise HTTPException(403, 'Chỉ Admin, Quản lý và Lễ tân được xem Booking online.')
+    def viewer(ident=Depends(current_identity)):
+        if ident.role not in VIEW_ROLES or ident.must_change_password:
+            raise HTTPException(403, 'Chỉ Admin, Quản lý, Lễ tân và Locker được xem Booking online.')
+        return ident
+
+    def authorized(ident=Depends(viewer)):
+        if ident.role not in ROLES:
+            raise HTTPException(403, 'Chỉ Admin, Quản lý và Lễ tân được sửa lịch hẹn.')
         return ident
 
     def validate_staff(payload):
@@ -227,7 +248,7 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
                 status: Literal['', 'new', 'confirmed', 'handled', 'cancelled'] = '',
                 kind: Literal['', 'booking', 'contact'] = '', q: str = Query('', max_length=100),
                 date_from: date | None = None, date_to: date | None = None, upcoming: bool = False,
-                ident=Depends(authorized)):
+                ident=Depends(viewer)):
         if date_from and date_to and date_from > date_to:
             raise HTTPException(422, 'Ngày kết thúc phải từ ngày bắt đầu trở đi.')
         where = "WHERE NOT b.deleted AND (:status='' OR b.status=:status) AND (:kind='' OR b.kind=:kind) AND (:q='' OR b.customer_name ILIKE :search OR b.phone ILIKE :search)"
@@ -243,7 +264,7 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
         return {'rows': [dict(row) for row in rows], 'total': total, 'page': page, 'limit': limit}
 
     @app.get('/v2/online-bookings/unread')
-    def unread(ident=Depends(authorized)):
+    def unread(ident=Depends(viewer)):
         with engine_instance().begin() as conn:
             ensure_schema(conn)
             rows = conn.execute(text(f'''SELECT {PUBLIC_COLUMNS} FROM vera_online_booking b
@@ -253,7 +274,7 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
         return {'rows': [dict(row) for row in rows]}
 
     @app.post('/v2/online-bookings/{booking_id}/seen')
-    def seen(booking_id: int, ident=Depends(authorized)):
+    def seen(booking_id: int, ident=Depends(viewer)):
         with engine_instance().begin() as conn:
             ensure_schema(conn)
             conn.execute(text('''INSERT INTO vera_online_booking_seen(booking_id,actor)
