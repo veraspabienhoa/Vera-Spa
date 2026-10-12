@@ -19,6 +19,7 @@ export default function LeaveQueuePolicyRules({ policy, canEdit }) {
   return <section className="panel leave-queue-policy-panel" aria-labelledby="leave-queue-policy-title">
     <h2 id="leave-queue-policy-title">XẾP CUỐI BẢNG TUA · 03:00</h2>
     <p>Mỗi ngày chỉ sắp xếp một lần lúc 03:00 giờ Việt Nam, theo lý do ngày hôm trước được bật bên dưới. Sau đó bảng tua vận hành bình thường; check-in không xếp lại.</p>
+    <p>Danh sách đã bỏ dấu chấm và gộp các tên trùng. Hai cách viết lý do Leader cùng áp dụng cho một trường hợp; mỗi nhân viên chỉ xếp cuối một lần.</p>
     <p>Đang bật {selected.length}/{current.available_reasons.length} lý do. Thay đổi được tự động lưu và áp dụng tại lượt 03:00 kế tiếp.</p>
     {canEdit && <div className="leave-queue-policy-actions">
       <button type="button" disabled={busy || selected.length === current.available_reasons.length} onClick={() => save(current.available_reasons)}>Kích hoạt tất cả</button>

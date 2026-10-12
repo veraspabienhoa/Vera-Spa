@@ -45,3 +45,15 @@ def test_admin_save_readback_conflict_and_invalid_reason(database):
     assert off.status_code == 200 and off.json()['enabled'] is False and off.json()['revision'] == 2
     all_on = client.put('/v2/rules/live-tour-leave-queue', json={'enabled': True, 'reasons': list(REASONS), 'expected_revision': 2})
     assert all_on.status_code == 200 and all_on.json()['reasons'] == list(REASONS)
+
+
+def test_legacy_saved_policy_expands_aliases_without_enabling_disabled_reasons():
+    class Connection:
+        def execute(self, *args): return self
+        def mappings(self): return self
+        def first(self):
+            return {'value_json': {'enabled': True, 'reasons': ['Về sớm CÓ phép', 'Nghỉ KHÔNG phép']}, 'revision': 7}
+    result = load_policy(Connection())
+    assert result['reasons'] == ['Về sớm CÓ phép', 'Nghỉ KHÔNG phép']
+    assert len(result['available_reasons']) == 10
+    assert result['revision'] == 7

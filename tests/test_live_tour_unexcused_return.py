@@ -7,6 +7,7 @@ import subprocess
 import pytest
 
 import vera_live_tour_leave_return as returns
+from vera_live_tour_leave_queue_policy import REASONS
 import vera_web_v2_live_tour as live
 from test_live_tour_backend import NOW, employee, state_with
 
@@ -54,7 +55,7 @@ def order(state, now):
 
 
 @pytest.mark.parametrize('manual', [False, True])
-@pytest.mark.parametrize('reason', UNEXCUSED_REASONS)
+@pytest.mark.parametrize('reason', list(dict.fromkeys(UNEXCUSED_REASONS + list(REASONS))))
 def test_batch_at_0300_without_checkin_and_never_repeated(manual, reason):
     state = fixture()
     for worker in state['employees']:
@@ -220,3 +221,14 @@ def test_admin_policy_selects_individual_reasons_without_reapplying(enabled):
     returns.sync_returns(state, directory(now), records, now, DAY.date(), live._ordered_employees, live._employee_time_key,
         policy={'enabled': True, 'reasons': UNEXCUSED_REASONS, 'revision': 8})
     assert state == before
+
+
+@pytest.mark.parametrize('reason', list(REASONS) + [reason + '.' for reason in REASONS])
+def test_all_labels_with_saved_policy(reason):
+    state = fixture()
+    project(state, DAY)
+    now = DAY + timedelta(days=1)
+    returns.sync_returns(state, directory(now), leaves(reason), now, DAY.date(),
+                         live._ordered_employees, live._employee_time_key,
+                         policy={'enabled': True, 'reasons': list(REASONS), 'revision': 1})
+    assert order(state, now) == ['e4', 'e5', 'e1', 'e2', 'e3']
