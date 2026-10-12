@@ -12,7 +12,7 @@ import unicodedata
 from collections import Counter
 from pydantic import BaseModel, Field
 
-from fastapi import Depends, HTTPException, Request, Response
+from fastapi import Depends, HTTPException, Query, Request, Response
 from PIL import Image, ImageOps
 from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
@@ -341,7 +341,7 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
         return {'ok': True, 'message': 'Đã xóa ẢNH FACE ID trong VERA SPA.'}
 
     @app.get('/v2/staff/{username}/face-id/captures')
-    def captures(username: str, day: date, ident: identity_type = Depends(current_identity)):
+    def captures(username: str, day: date, offset: int = Query(0, ge=0, le=1_000_000), ident: identity_type = Depends(current_identity)):
         if str(getattr(ident, 'role', '')).lower() not in {'admin', 'quanly'}:
             raise HTTPException(403, 'Chỉ Admin và Quản lý được xem ảnh chụp thiết bị.')
         with engine_instance().begin() as conn:
@@ -350,14 +350,15 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
         from vera_web_v2_devices import use_registered_facegate
         try:
             with use_registered_facegate(engine_instance):
-                result = fetch_capture_log(day.isoformat(), day.isoformat())
+                result = fetch_capture_log(day.isoformat(), day.isoformat(), offset=offset, limit=100)
         except (RuntimeError, ValueError, ConnectionError) as exc:
             raise HTTPException(503, 'Không đọc được ảnh chụp từ thiết bị FaceID.') from exc
-        return {'records': [{'event_id': r['event_id'], 'occurred_at': r['occurred_at']} for r in result['records'] if r.get('image_available')],
-                'identity_verified': False, 'truncated': bool(result.get('truncated'))}
+        return {'records': [{'event_id': r['event_id'], 'occurred_at': r['occurred_at'], 'page_offset': r.get('page_offset', offset)} for r in result['records'] if r.get('image_available')],
+                'identity_verified': False, 'truncated': bool(result.get('truncated')),
+                'next_offset': result.get('next_offset'), 'total_count': result.get('total_count', len(result['records']))}
 
     @app.get('/v2/staff/{username}/face-id/capture-image')
-    def capture_image(username: str, day: date, event_id: int, ident: identity_type = Depends(current_identity)):
+    def capture_image(username: str, day: date, event_id: int, offset: int | None = Query(None, ge=0, le=1_000_000), ident: identity_type = Depends(current_identity)):
         if str(getattr(ident, 'role', '')).lower() not in {'admin', 'quanly'}:
             raise HTTPException(403, 'Chỉ Admin và Quản lý được xem ảnh chụp thiết bị.')
         with engine_instance().begin() as conn:
@@ -366,7 +367,7 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
         from vera_web_v2_devices import use_registered_facegate
         try:
             with use_registered_facegate(engine_instance):
-                records = fetch_capture_log(day.isoformat(), day.isoformat())['records']
+                records = fetch_capture_log(day.isoformat(), day.isoformat(), **({'offset': offset, 'limit': 20} if offset is not None else {}))['records']
                 matches = [r for r in records if r['event_id'] == event_id and r.get('image_available')]
                 if len(matches) != 1:
                     raise HTTPException(409, 'Ảnh không còn duy nhất trong danh sách. Hãy tải lại.')

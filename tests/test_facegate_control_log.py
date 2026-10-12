@@ -547,3 +547,16 @@ class FaceGateMappingRouteTests(unittest.TestCase):
 
 if __name__ == "__main__":
   unittest.main()
+
+
+def test_capture_offset_beyond_2000_and_last_page_closes_session():
+    calls, closed = [], []
+    def get(url, *, params, **kwargs):
+        calls.append(params)
+        return _response("root.CAPTURE.sessionid=33 root.CAPTURE.totalcount=2001 root.CAPTURE.rspcount=1 root.CAPTURE.ITEM0.uid=3000 root.CAPTURE.ITEM0.utime=2026-09-23/18:16:43 root.CAPTURE.ITEM0.dwfiletype=2 root.CAPTURE.ITEM0.dwfileindex=9 root.CAPTURE.ITEM0.dwfilepos=32571392 root.ERR.no=0")
+    with patch.dict('os.environ', {'VERA_FACEGATE_BASE_URL':'http://127.0.0.1:18080','VERA_FACEGATE_USERNAME':'test','VERA_FACEGATE_PASSWORD':'test'}):
+        result = facegate.fetch_capture_log('2026-09-23','2026-09-23',offset=2000,limit=20,get=get,post=lambda *a, **kw: closed.append(kw) or _response('root.ERR.no=0'))
+    assert len(calls) == 1 and calls[0]['beginno'] == '2000'
+    assert result['records'][0]['page_offset'] == 2000
+    assert result['next_offset'] is None and not result['truncated']
+    assert len(closed) == 1

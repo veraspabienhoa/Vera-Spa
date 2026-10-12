@@ -287,3 +287,22 @@ test('capture filters use Vietnam time, accept open bounds, retain filters on re
   assert.equal(loads,3)
  }finally{await dom.window.unmount();dom.window.close()}
 })
+
+test('capture continuation keeps loaded photos and retries an individual failed image', async () => {
+ const offsets=[], reads=[];let fail=true
+ const dom=await mount({metadata:async()=>({can_manage:true,can_view_device_tools:true,photo:null}),
+  captures:async(u,d,offset=0)=>{offsets.push(offset);return offset===0?{records:[{event_id:1,occurred_at:'2026-09-27T10:00:00+07:00',page_offset:0}],next_offset:2000,truncated:true}:{records:[{event_id:2,occurred_at:'2026-09-27T11:00:00+07:00',page_offset:2000}],next_offset:null,truncated:false}},
+  capture:async(u,d,id,offset)=>{reads.push({id,offset});if(id===2&&fail)throw Error('temporary');return new Blob(['photo'],{type:'image/jpeg'})}})
+ try {
+  await tick()
+  await dom.window.act(async()=>button(dom,'Tải thêm ảnh từ máy').click())
+  assert.deepEqual(offsets,[0,2000])
+  assert.ok(dom.window.document.querySelector('img[alt="Ảnh chụp FaceID #1"]'))
+  assert.ok(reads.some(r=>r.id===2&&r.offset===2000))
+  fail=false
+  await dom.window.act(async()=>button(dom,'Thử tải lại ảnh').click())
+  assert.equal(dom.window.document.querySelectorAll('.face-id-capture-preview img').length,2)
+  assert.deepEqual(offsets,[0,2000])
+  assert.equal(button(dom,'Tải thêm ảnh từ máy'),undefined)
+ } finally {await dom.window.unmount();dom.window.close()}
+})
