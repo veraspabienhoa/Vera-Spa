@@ -1,9 +1,7 @@
 name: Deploy verified instant attendance release
 
 on:
-  push:
-    branches: [ops/arrival-fines-oct08-11]
-    paths: [.github/workflows/deploy-instant-attendance.yml]
+  workflow_dispatch:
 
 permissions:
   contents: read
