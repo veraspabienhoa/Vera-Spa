@@ -10,15 +10,20 @@ SETTING_KEY = 'live_tour_leave_queue_0300'
 REASONS = (
     'Về sớm CÓ phép', 'Về sớm KHÔNG phép', 'Về sớm CUỐI TUẦN CÓ phép',
     'Về sớm CUỐI TUẦN KHÔNG phép', 'Về sớm phát sinh',
-    'Leader về sớm về sớm theo chính sách',
     'Về sớm bệnh có giấy khám hoặc được quản lý duyệt',
+    'Leader về sớm về sớm theo chính sách', 'Leader về sớm theo chính sách',
     'Nghỉ KHÔNG phép', 'Nghỉ CUỐI TUẦN KHÔNG phép',
 )
 
 
+def legacy_reason(reason):
+    value = reason.rstrip('.')
+    return 'Leader về sớm về sớm theo chính sách' if value == 'Leader về sớm theo chính sách' else value
+
+
 class PolicyUpdate(BaseModel):
     enabled: bool
-    reasons: list[str] = Field(max_length=9)
+    reasons: list[str] = Field(max_length=10)
     expected_revision: int = Field(ge=0)
 
 
@@ -26,8 +31,10 @@ def load_policy(conn):
     row = conn.execute(text('SELECT value_json, revision FROM vera_app_setting WHERE category=:category AND setting_key=:key'),
                        {'category': CATEGORY, 'key': SETTING_KEY}).mappings().first()
     value = row['value_json'] if row else {'enabled': True, 'reasons': list(REASONS)}
+    selected_keys = {legacy_reason(reason) for reason in value.get('reasons', [])}
+    selected = [reason for reason in REASONS if legacy_reason(reason) in selected_keys]
     return {'enabled': value.get('enabled') is True,
-            'reasons': [reason for reason in REASONS if reason in value.get('reasons', [])],
+            'reasons': [reason for reason in REASONS if reason in selected],
             'available_reasons': list(REASONS), 'revision': int(row['revision'] or 0) if row else 0}
 
 
@@ -44,7 +51,7 @@ def install_routes(app, *, engine_instance, current_identity, require_feature, i
             current = load_policy(conn)
             if current['revision'] != body.expected_revision:
                 raise HTTPException(409, 'Nội quy đã thay đổi. Hãy làm mới trước khi lưu lại.')
-            value = {'enabled': body.enabled, 'reasons': [reason for reason in REASONS if reason in body.reasons]}
+            value = {'enabled': body.enabled, 'reasons': [reason for reason in REASONS if reason in body.reasons], 'reason_catalog_version': 2}
             conn.execute(text('''
                 INSERT INTO vera_app_setting(category, setting_key, value_json, revision, source, updated_by, created_at, updated_at)
                 VALUES(:category,:key,CAST(:value AS jsonb),1,'web_v2_rules',:actor,NOW(),NOW())

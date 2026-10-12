@@ -14,8 +14,13 @@ UNEXCUSED = {'nghi khong phep', 'nghi cuoi tuan khong phep'}
 
 
 def return_kind(reason):
-    value = key(reason)
+    value = reason_key(reason)
     return 'early' if value in EARLY else 'unexcused' if value in UNEXCUSED else ''
+
+
+def reason_key(reason):
+    value = key(reason).rstrip('.')
+    return 'leader ve som ve som theo chinh sach' if value == 'leader ve som theo chinh sach' else value
 
 
 def queue_clock(worker):
@@ -57,7 +62,7 @@ def prepare_daily(state, now):
 
 
 def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, time_key, history_leaves=None, *, policy=None):
-    """Apply yesterday's nine reasons once, without waiting for a check-in.
+    """Apply yesterday's supported reasons once, without waiting for a check-in.
 
     The scheduler targets 03:00. A delayed/retried worker catches up once under
     the existing transaction lock. There is no per-employee return trigger.
@@ -71,14 +76,14 @@ def sync_returns(state, directory, leaves, now, leave_day, ordered_employees, ti
         owners.setdefault(key(row.get('full_name')), set()).add(username)
     enabled_reasons = EARLY | UNEXCUSED
     if policy is not None:
-        enabled_reasons = {key(reason) for reason in policy['reasons']} if policy['enabled'] else set()
+        enabled_reasons = {reason_key(reason) for reason in policy['reasons']} if policy['enabled'] else set()
     candidates = {}
     indexed = sorted(enumerate(leaves), key=lambda pair: (
         pair[1].get('source_row') is None, pair[1].get('source_row') or 0,
         pair[1].get('id') or pair[0]))
     for ordinal, (_, row) in enumerate(indexed, 1):
         kind = return_kind(row.get('leave_reason') or row.get('leave_type'))
-        if not kind or key(row.get('leave_reason') or row.get('leave_type')) not in enabled_reasons or str(row.get('leave_date')) != yesterday:
+        if not kind or reason_key(row.get('leave_reason') or row.get('leave_type')) not in enabled_reasons or str(row.get('leave_date')) != yesterday:
             continue
         name = key(row.get('employee_name'))
         matches = owners.get(name, set())

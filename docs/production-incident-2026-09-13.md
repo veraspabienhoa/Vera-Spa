@@ -1,3 +1,14 @@
+## 12-10-2026 — Live Tour leave labels without terminal periods (source only)
+
+The requested 16 lines reduce to 10 distinct labels after removing terminal
+periods and duplicates, including both Leader spellings. The policy catalog
+exposes those 10 labels. Queue matching and saved-policy reads accept historical
+terminal periods and treat both Leader spellings as equivalent. Disabled reasons
+and the global switch remain disabled. Each employee still moves once at the
+03:00 Vietnam cutoff using only prior-day records. Preserve roster/service
+safeguards, transactions and financial records. Production deployment and active
+policy readback are unverified.
+
 ## 10-10-2026 — Schedule CAS, bounded OCR and Live Tour catch-up (source only)
 
 Source audit at 590806e confirms daily schedule writes lacked a caller revision,
