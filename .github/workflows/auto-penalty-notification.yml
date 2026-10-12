@@ -126,7 +126,7 @@ jobs:
                   'def _alert_ready' in sources['vera_missing_checkin_notifications.py']
                   and 'not has_leave' in sources['vera_missing_checkin_notifications.py']
                   and 'not has_faceid' in sources['vera_missing_checkin_notifications.py']
-                  and 'current > shift_start + timedelta(minutes=THRESHOLD_MINUTES)'
+                  and 'current >= shift_start + timedelta(minutes=THRESHOLD_MINUTES)'
                   in sources['vera_missing_checkin_notifications.py'],
               'missing FaceID alert targets employee reception manager and Admin':
                   'REQUIRED_AUDIENCES = frozenset({"employee", "letan", "quanly", "admin"})'

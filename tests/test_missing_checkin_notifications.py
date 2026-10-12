@@ -102,7 +102,7 @@ def test_alert_requires_all_three_if_conditions_at_the_same_time():
     assert not alerts._alert_ready(
         has_leave=False, has_faceid=True, current=after_deadline, shift_start=start,
     )
-    assert not alerts._alert_ready(
+    assert alerts._alert_ready(
         has_leave=False, has_faceid=False,
         current=datetime(2026, 9, 8, 9, 45), shift_start=start,
     )
@@ -131,7 +131,7 @@ def test_alert_is_wired_into_the_single_five_minute_timesoft_sync():
     assert "notifications_enabled" not in alert_source
     assert "REQUIRED_AUDIENCES = frozenset" in alert_source
     assert '{"employee", "letan", "quanly", "admin"}' in alert_source
-    assert "current > shift_start + timedelta(minutes=THRESHOLD_MINUTES)" in alert_source
+    assert "current >= shift_start + timedelta(minutes=THRESHOLD_MINUTES)" in alert_source
     assert "https://app.veraspa.vn/" in alert_source
 
 
