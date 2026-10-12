@@ -307,7 +307,7 @@ def revoke_auto_late_penalty(conn, *, work_date: date, employee: str, basis: str
         conn.execute(text("""
             UPDATE vera_auto_check_event
             SET status='revoked', leave_record_uid=NULL,
-                detail=CONCAT(COALESCE(detail,''),' · Thu hồi vì có ',:basis)
+                detail=CONCAT(COALESCE(detail,''),' · Thu hồi vì có ',CAST(:basis AS text))
             WHERE work_date=:day AND lower(employee_name)=lower(:employee)
               AND lower(reason) = ANY(:reasons) AND status='added'
         """), {"day": work_date, "employee": employee, "reasons": [name.lower() for name in ('Đi trễ không phép', *ARRIVAL_BAND_REASONS)], "basis": basis})
