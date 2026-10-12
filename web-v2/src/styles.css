@@ -1312,3 +1312,23 @@ body .date-search-field>.vera-date-input{min-width:0;flex:1}
 body .date-search-field input[type="text"]{height:40px;min-width:0;width:100%;box-sizing:border-box;margin:0;font-size:14px;padding:6px 38px 6px 8px!important}
 body .date-search-field .vera-date-picker-button{padding:0}
 @media(max-width:680px){body .date-search-toolbar{gap:5px}body .date-search-toolbar>button{font-size:12px;padding:7px 9px}body .date-search-toolbar>.date-search-field{flex-basis:170px}}
+
+/* Keep personnel names legible at every viewport size. */
+.staff-page .staff-readable-name {
+  color: var(--green-950);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.staff-page .staff-mobile-head > label { width: 100%; align-items: flex-start; }
+.staff-page .staff-mobile-head strong.staff-readable-name { font-size: 20px; }
+.staff-page .staff-mobile-head small {
+  max-width: none;
+  color: var(--green-950);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
