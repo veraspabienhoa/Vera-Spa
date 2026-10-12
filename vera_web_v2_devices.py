@@ -169,6 +169,20 @@ def filtered_records(records, source, employee='', event_id='', event_date=None,
             and (not event_type or record_type(r, source) == event_type)]
 
 
+def newest_checkins(records):
+    def key(row):
+        value = row.get('occurred_at')
+        if not value:
+            day = record_day(row)
+            value = f"{day}T{row.get('check_in') or '00:00:00'}"
+        try:
+            stamp = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+            return stamp.replace(tzinfo=stamp.tzinfo or VN).timestamp()
+        except (ValueError, TypeError):
+            return float('-inf')
+    return sorted(records, key=key, reverse=True)
+
+
 def display_time(value):
     try:
         dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
@@ -380,7 +394,7 @@ def install_device_routes(app, *, engine_instance, current_identity, require_fea
             attendance_policy = {'source': 'unknown', 'effective_date': None}
         return {**data, 'source': source, 'start': start.isoformat(), 'end': end.isoformat(),
                 'attendance_policy': attendance_policy,
-                'records': filtered_records(records, source, employee, event_id, event_date, status, event_type),
+                'records': newest_checkins(filtered_records(records, source, employee, event_id, event_date, status, event_type)),
                 'filters': {'employee': employee, 'event_id': event_id, 'event_date': event_date.isoformat() if event_date else '', 'status': status, 'event_type': event_type},
                 'options': {'statuses': sorted({record_status(r, source) for r in records} - {''}),
                             'types': sorted({record_type(r, source) for r in records} - {''})}}

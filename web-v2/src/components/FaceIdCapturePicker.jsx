@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { searchTextMatches } from '../lib/searchText'
 import { faceIdApi } from '../lib/staffSecurityApi'
 import { formatVeraDateTime } from '../lib/veraDate'
 
@@ -18,7 +19,7 @@ function CaptureImage({ username, day, record, busy, onSelect }) {
   return <figure className="face-id-capture-preview">
     {preview ? <img src={preview.url} alt={`Ảnh chụp FaceID #${record.event_id}`} /> : <p role="status">{error || 'Đang tải ảnh…'}</p>}
     {error && <button type="button" disabled={Boolean(busy)} onClick={() => setRetry(value => value + 1)}>Thử tải lại ảnh</button>}
-    <figcaption>{formatVeraDateTime(record.occurred_at)}</figcaption>
+    <figcaption><strong>{record.device_name || 'Chưa có tên'}</strong> · {formatVeraDateTime(record.occurred_at)}</figcaption>
     <button type="button" className="primary-button compact" disabled={Boolean(busy) || !preview} onClick={() => onSelect(new File([preview.blob], 'FaceID.jpg', { type: preview.blob.type }))}>Chọn ảnh này</button>
   </figure>
 }
@@ -29,6 +30,7 @@ export default function FaceIdCapturePicker({ username, day, busy, onSelect, com
   const [loadingMore, setLoadingMore] = useState(false)
   const [revision, setRevision] = useState(0)
   const [page, setPage] = useState(0)
+  const [nameSearch, setNameSearch] = useState('')
   const [fromTime, setFromTime] = useState('')
   const [toTime, setToTime] = useState('')
   const pageSize = 4
@@ -39,13 +41,14 @@ export default function FaceIdCapturePicker({ username, day, busy, onSelect, com
   const hasTimeFilter = Boolean(fromTime || toTime)
   const records = useMemo(() => {
     if (invalidRange) return []
-    if (!hasTimeFilter) return data?.records || []
     return (data?.records || []).filter(record => {
+      if (!searchTextMatches(record.device_name || '', nameSearch)) return false
+      if (!hasTimeFilter) return true
       // Match the Vietnam time shown on each photo, including the entire end minute.
       const time = formatVeraDateTime(record.occurred_at, '').slice(11, 16)
       return time && (!fromTime || time >= fromTime) && (!toTime || time <= toTime)
     })
-  }, [data, fromTime, toTime, invalidRange, hasTimeFilter])
+  }, [data, fromTime, toTime, invalidRange, hasTimeFilter, nameSearch])
   useEffect(() => {
     let active = true
     generation.current += 1
@@ -79,6 +82,7 @@ export default function FaceIdCapturePicker({ username, day, busy, onSelect, com
   }
   return <div className="face-id-capture-picker">
     <div className="face-id-capture-toolbar">
+      <label>Tìm tên nhân viên<input type="search" aria-label="Tìm tên nhân viên trong ảnh Face ID" placeholder="Nhập tên nhân viên…" value={nameSearch} disabled={Boolean(busy)} onChange={event => { setNameSearch(event.target.value); setPage(0) }}/></label>
       {dateControl && <div className="face-id-capture-date"><span>Ngày</span>{dateControl}</div>}
       <label className="face-id-capture-time">Từ giờ<input type="time" step="60" aria-label="Ảnh FaceID · Từ giờ" value={fromTime} disabled={Boolean(busy)} aria-invalid={invalidRange} onChange={event => { setFromTime(event.target.value); setPage(0) }}/></label>
       <label className="face-id-capture-time">Đến giờ<input type="time" step="60" aria-label="Ảnh FaceID · Đến giờ" value={toTime} disabled={Boolean(busy)} aria-invalid={invalidRange} onChange={event => { setToTime(event.target.value); setPage(0) }}/></label>
@@ -92,8 +96,9 @@ export default function FaceIdCapturePicker({ username, day, busy, onSelect, com
     {error && <p role="status">Không tải được ảnh FaceID: {error}. Bấm Làm mới để thử lại.</p>}
     {data && <>
       <p>Kiểm tra đúng nhân viên trước khi chọn ảnh; ảnh thiết bị chưa được xác minh danh tính.</p>
-      {data.next_offset != null ? <div><p>Đã tải {data.records.length} ảnh; máy còn dữ liệu. Bộ lọc giờ áp dụng cho phần đã tải.</p><button type="button" className="secondary-button compact" disabled={Boolean(busy) || loadingMore} onClick={loadMore}>{loadingMore ? 'Đang tải thêm…' : 'Tải thêm ảnh từ máy'}</button></div> : data.truncated && <p>Máy trả thiếu dữ liệu. Bấm Làm mới để đọc lại.</p>}
-      {!invalidRange && !records.length && <p>{hasTimeFilter ? 'Không có ảnh chụp trong khoảng giờ đã chọn.' : 'Không có ảnh chụp trong ngày đã chọn.'}</p>}
+      {nameSearch && <p>Tìm theo tên máy gửi kèm ảnh, có hỗ trợ không dấu. Ảnh chưa có tên không xuất hiện khi lọc tên.</p>}
+      {data.next_offset != null ? <div><p>Đã tải {data.records.length} ảnh; máy còn dữ liệu. Bộ lọc tên và giờ áp dụng cho phần đã tải.</p><button type="button" className="secondary-button compact" disabled={Boolean(busy) || loadingMore} onClick={loadMore}>{loadingMore ? 'Đang tải thêm…' : 'Tải thêm ảnh từ máy'}</button></div> : data.truncated && <p>Máy trả thiếu dữ liệu. Bấm Làm mới để đọc lại.</p>}
+      {!invalidRange && !records.length && <p>{nameSearch ? 'Không có ảnh khớp tên trong phần đã tải.' : hasTimeFilter ? 'Không có ảnh chụp trong khoảng giờ đã chọn.' : 'Không có ảnh chụp trong ngày đã chọn.'}</p>}
       <div className="face-id-capture-gallery" aria-label="Ảnh chụp FaceID · 4 ảnh mỗi trang">
         {records.slice(page * pageSize, (page + 1) * pageSize).map(record => <CaptureImage key={`${revision}:${record.event_id}`} username={username} day={day} record={record} busy={busy} onSelect={onSelect}/>)}
       </div>

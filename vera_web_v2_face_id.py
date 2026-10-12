@@ -353,7 +353,7 @@ def install_face_id_routes(app, *, engine_instance, current_identity, require_fe
                 result = fetch_capture_log(day.isoformat(), day.isoformat(), offset=offset, limit=100)
         except (RuntimeError, ValueError, ConnectionError) as exc:
             raise HTTPException(503, 'Không đọc được ảnh chụp từ thiết bị FaceID.') from exc
-        return {'records': [{'event_id': r['event_id'], 'occurred_at': r['occurred_at'], 'page_offset': r.get('page_offset', offset)} for r in result['records'] if r.get('image_available')],
+        return {'records': [{'event_id': r['event_id'], 'occurred_at': r['occurred_at'], 'device_name': r.get('device_name', ''), 'page_offset': r.get('page_offset', offset)} for r in result['records'] if r.get('image_available')],
                 'identity_verified': False, 'truncated': bool(result.get('truncated')),
                 'next_offset': result.get('next_offset'), 'total_count': result.get('total_count', len(result['records']))}
 

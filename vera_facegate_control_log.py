@@ -347,6 +347,7 @@ def _parse_capture_log_response(body: str) -> dict[str, Any]:
             continue
         records.append({
             "event_id": event_id,
+            "device_name": item.get("uname", "").strip()[:160],
             "occurred_at": occurred.isoformat(),
             "image_ref": {
                 "file_type": file_type,
