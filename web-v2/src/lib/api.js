@@ -502,6 +502,12 @@ export const veraApi = {
   deleteStorageData: (body) => request('/v2/storage', { method: 'DELETE', body: JSON.stringify(body) }),
   trainingBootstrap: (options = {}) => request('/v2/training/bootstrap', options),
   trainingReportEmployees: (filters = {}, options = {}) => request(`/v2/training/report-employees?${new URLSearchParams(filters)}`, options),
+  readTrainingOverviewExport: async (format, options = {}) => {
+    const response = await binaryResponse(`/v2/training/progress-export?${new URLSearchParams({ format })}`, options)
+    const blob = await response.blob()
+    options.signal?.throwIfAborted()
+    return { blob, filename: `VERA_TienDoDaoTao_ToanBoNhanVien.${format}` }
+  },
   readTrainingReportExport: async (employee, format, filters = {}, options = {}) => {
     const params = new URLSearchParams({ ...filters, format })
     const response = await binaryResponse(`/v2/training/reports/${encodeURIComponent(employee)}/export?${params}`, options)

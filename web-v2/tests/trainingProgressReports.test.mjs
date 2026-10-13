@@ -193,3 +193,20 @@ test('binary transport retains server filename, exact employee filters and cance
  assert.equal(calls[0][1].signal,controller.signal)
  controller.abort();await assert.rejects(read('Thảo Linh','png',{}, {signal:controller.signal}),error=>error.name==='AbortError')
 })
+
+test('whole-roster share ignores name/date filters, prepares both files and revokes URLs on close', async()=>{
+ const f=await fixture({readTrainingOverviewExport:async(format)=>({blob:new Blob([format],{type:format==='pdf'?'application/pdf':'image/png'}),filename:`VERA_TienDoDaoTao_ToanBoNhanVien.${format}`})})
+ try{
+  await f.open();await f.select('day');await f.type(document.querySelector('[role=combobox]'),'Linh')
+  await f.click(document.querySelector('.training-overview-action button'))
+  const calls=f.calls.filter(c=>c.method==='readTrainingOverviewExport')
+  assert.equal(calls.length,2);assert.deepEqual(calls.map(c=>c.args[0]).sort(),['pdf','png'])
+  assert.ok(calls.every(c=>Object.keys(c.args[1]).join() === 'signal'))
+  assert.ok(document.querySelector('[role=dialog]').textContent.includes('Toàn bộ thời gian'))
+  for(const label of ['Xem PDF','Tải PDF','Tải PNG'])assert.ok([...document.querySelectorAll('a')].some(a=>a.textContent===label))
+  await f.click(f.button('Chia sẻ PNG qua Zalo / ứng dụng khác'))
+  assert.equal(f.shares[0].files[0].type,'image/png')
+  await f.click(document.querySelector('[aria-label="Đóng chia sẻ báo cáo"]'))
+  assert.deepEqual(f.revoked,f.urls.map(x=>x.url))
+ }finally{await f.dispose()}
+})

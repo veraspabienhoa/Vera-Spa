@@ -348,3 +348,42 @@ def test_no_record_bucket_stays_disjoint_if_a_record_disappears_between_reads(re
     monkeypatch.setattr(training, "_report_employees", changing_read)
     data = get(client, "/v2/training/report-employees", date_from="2026-10-10", date_to="2026-10-10")
     assert not ({p["username"] for p in data["employees"]} & {p["username"] for p in data["untrained_employees"]})
+
+
+def test_overview_export_is_all_time_scoped_and_bulk(report_client, monkeypatch):
+    import vera_web_v2_training_overview as overview
+    client, _, state = report_client
+    captured = []
+    monkeypatch.setattr(overview, 'render_overview', lambda report, fmt: captured.append((report, fmt)) or b'file')
+    state['sql'].clear()
+    response = client.get('/v2/training/progress-export?format=pdf')
+    assert response.status_code == 200
+    assert response.headers['cache-control'] == 'no-store'
+    report, fmt = captured[-1]
+    assert fmt == 'pdf'
+    employees = {item['employee']['username']: item for item in report['employees']}
+    assert set(employees) == {'alice', 'betty', 'only-evaluated'}
+    assert employees['alice']['session_count'] == 5
+    assert employees['alice']['seconds'] == 5 * 3600
+    assert employees['only-evaluated']['seconds'] == 0
+    assert {item['username'] for item in report['untrained']} == {'empty', 'draft'}
+    assert len([sql for sql in state['sql'] if 'FROM vera_training_session' in sql]) == 1
+    state['identity'] = Identity(employee_username='leader', role='leader')
+    assert client.get('/v2/training/progress-export?format=png').status_code == 200
+    assert 'betty' not in {item['employee']['username'] for item in captured[-1][0]['employees']}
+    state['features'].clear()
+    assert client.get('/v2/training/progress-export').status_code == 403
+    state['active'] = False
+    assert client.get('/v2/training/progress-export').status_code == 401
+    assert len(captured) == 2
+
+
+def test_overview_rejects_bad_format_and_reports_size_error(report_client, monkeypatch):
+    import vera_web_v2_training_overview as overview
+    from vera_web_v2_training_report_export import ReportExportTooLarge
+    client, _, _ = report_client
+    assert client.get('/v2/training/progress-export?format=html').status_code == 422
+    def oversized(*args):
+        raise ReportExportTooLarge('Chọn PDF để giữ toàn bộ dữ liệu')
+    monkeypatch.setattr(overview, 'render_overview', oversized)
+    assert client.get('/v2/training/progress-export?format=png').status_code == 413
