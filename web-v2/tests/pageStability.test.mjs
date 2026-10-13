@@ -154,6 +154,7 @@ test('profile and notification dialogs enter and restore focus without scrolling
 const app = await bundle("export { default } from './src/App';", [{ name: 'app-boundaries', setup(b) {
   b.onResolve({ filter: /^\.\// }, args => args.path === './src/App' || /\/(systemDialogs|usePageRefresh|sharedRead|pageModuleLoader|recoverablePage|PageErrorBoundary)(\.js)?$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'fixture' }))
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ loader: 'jsx', resolveDir: process.cwd(), contents:
+    path.endsWith('/PagePermissionActions') ? 'export const PagePermissionProvider = ({children}) => children; export default function Actions() { return null; }' :
     path.endsWith('/api') ? 'export const veraApi={me:async()=>({employee_username:"synthetic",role:"admin"})};' :
     path.endsWith('/supabase') ? 'export const isAuthConfigured=true;export const getCurrentSession=async()=>({access_token:"synthetic",user:{id:"u"}});export const onVeraAuthStateChange=()=>()=>{};export const signOutVera=async()=>{};' :
     path.endsWith('/pushNotifications') ? 'export const ensureGrantedPushSubscription=async()=>{}; export const setPushAccount=async()=>{};' :

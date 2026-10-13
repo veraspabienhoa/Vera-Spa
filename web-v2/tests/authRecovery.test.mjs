@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url)
 const built = await build({ entryPoints: ['src/App.jsx'], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime'], plugins: [{ name: 'fixtures', setup(b) {
   b.onResolve({ filter: /^\.\// }, args => args.kind === 'entry-point' || /\/(systemDialogs|usePageRefresh|sharedRead|pageModuleLoader|recoverablePage|PageErrorBoundary)(\.js)?$/.test(args.path) ? undefined : ({ path: args.path, namespace: 'fixture' }))
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ loader: 'js', contents:
+    args.path.endsWith('/PagePermissionActions') ? 'export const PagePermissionProvider = ({children}) => children; export default function Actions() { return null; }' :
     args.path.endsWith('/api') ? 'export const veraApi = { me: () => globalThis.authFixture.me() };' :
     args.path.endsWith('/supabase') ? `
       export const isAuthConfigured = true;

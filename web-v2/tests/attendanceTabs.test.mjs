@@ -5,8 +5,10 @@ import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
 const built = await build({
   stdin: { contents: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Page from './src/pages/AttendancePage';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=(permissions,initialTab)=>act(async()=>root.render(<Page user={{permissions}} initialTab={initialTab}/>));window.unmount=()=>act(async()=>root.unmount());`, resolveDir: process.cwd(), loader: 'jsx' },
-  bundle: true, write: false, format: 'iife', jsx: 'automatic',
+  bundle: true, write: false, format: 'iife', jsx: 'automatic', loader: { '.css': 'empty' },
   plugins: [{ name: 'pages', setup(b) {
+    b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'api-mock' }))
+    b.onLoad({ filter: /.*/, namespace: 'api-mock' }, () => ({ contents: 'export const veraApi = {}' }))
     b.onResolve({ filter: /^\.\/(SnapshotPage|CheckinHistoryPage)$/ }, args => ({ path: args.path, namespace: 'mock' }))
     b.onLoad({ filter: /.*/, namespace: 'mock' }, args => ({ contents: `import React,{useEffect} from 'react';export default function Page(){useEffect(()=>{window.loaded.push('${args.path}')},[]);return <div data-page="${args.path}">Loaded</div>}`, loader: 'jsx', resolveDir: process.cwd() }))
   } }],
