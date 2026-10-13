@@ -28,6 +28,10 @@ test('scoped account save preserves unrelated permissions and checks revision',a
  assert.deepEqual([...writes[0][2].allowed_features].sort(),['profile','training_session_create','training_view'])
  assert.equal(writes[0][2].preserve_unchanged,true)
  assert.match(w.document.body.textContent,/Đã lưu phân quyền/)
+ assert.equal(w.document.querySelector('[data-system-dialog=success] p').textContent,'Đã lưu thành công.')
+ await click(w,'Đã hiểu')
+ assert.equal(w.document.querySelector('[data-system-dialog=success]'),null)
+ assert.ok(w.document.querySelector('.page-permission-modal'))
 }finally{await close(w)}})
 test('conflict remains in modal and never claims success',async()=>{const{w}=await setup();try{await click(w,'Phân quyền');await w.act(async()=>w.document.querySelector('.permission-account-results button').click());w.conflict=true;await w.act(async()=>w.document.querySelectorAll('fieldset input')[1].click());await click(w,'Lưu phân quyền');assert.match(w.document.querySelector('[role=alert]').textContent,/đã thay đổi/);assert.doesNotMatch(w.document.body.textContent,/Đã lưu phân quyền/)}finally{await close(w)}})
 
@@ -46,6 +50,7 @@ test('performance tab permits scoped grant to a non-admin and lists the granted 
   assert.ok(writes[0][2].allowed_features.includes('live_tour_reports_view'))
   assert.ok(writes[0][2].allowed_features.includes('live_tour_view'))
   assert.match(w.document.body.textContent,/Đã lưu phân quyền/)
+  await click(w,'Đã hiểu')
   await click(w,'Đóng');await click(w,'Tài khoản đã được phân quyền · Thời gian thực hiện')
   assert.match(w.document.querySelector('.permission-account-results').textContent,/An/)
   assert.doesNotMatch(w.document.querySelector('.permission-account-results').textContent,/Binh/)
