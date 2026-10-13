@@ -26,3 +26,20 @@ def test_scoped_save_rejects_missing_revision_and_stale_revision():
         response=client.put('/v2/permissions/account/operator',json={'allowed_features':['training_view'],'edited_features':['training_view'],'expected_revision':revision,'preserve_unchanged':True})
         assert response.status_code==status,response.text
     assert store['writes']==0
+
+
+def test_performance_tab_grant_can_be_saved_and_revoked_without_other_changes():
+    client, store = permission_client({'roles': [], 'accounts': [grant('profile_edit', False)]})
+    response = client.put('/v2/permissions/account/operator', json={
+        'allowed_features': ['live_tour_performance_view'], 'edited_features': ['live_tour_performance_view'],
+        'expected_revision': 12, 'preserve_unchanged': True})
+    assert response.status_code == 200, response.text
+    rows = {row['feature']: row['allowed'] for row in store['payload']['accounts']}
+    assert rows == {'profile_edit': False, 'live_tour_view': True, 'live_tour_reports_view': True, 'live_tour_performance_view': True}
+    assert _feature_allowed(None, identity(), 'live_tour_performance_view', store['payload'])
+    response = client.put('/v2/permissions/account/operator', json={
+        'allowed_features': ['live_tour_view', 'live_tour_reports_view'], 'edited_features': ['live_tour_performance_view'],
+        'expected_revision': response.json()['revision'], 'preserve_unchanged': True})
+    assert response.status_code == 200, response.text
+    assert not _feature_allowed(None, identity(), 'live_tour_performance_view', store['payload'])
+    assert _feature_allowed(None, identity(), 'live_tour_reports_view', store['payload'])

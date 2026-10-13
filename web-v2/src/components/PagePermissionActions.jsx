@@ -49,6 +49,7 @@ function PermissionDialog({ page, label, features, viewFeatures, adminOnly, mode
   const pages = scopedPermissionPages(data, page, features)
   const keys = pages.flatMap(item => Object.keys(item.features))
   const required = viewFeatures || pages.flatMap(item => item.view_feature && Object.hasOwn(item.features, item.view_feature) ? [item.view_feature] : Object.keys(item.features))
+  const missingView = viewFeatures?.some(key => !(data?.pages || []).some(item => Object.hasOwn(item.features || {}, key)))
   const fixed = adminOnly ? 'Tab này chỉ dành cho Admin theo quy tắc máy chủ.' : fixedPages[page]
   const accounts = (data?.accounts || []).filter(account => searchTextMatches([account.username, account.full_name, account.role], query))
   const canView = account => fixed ? (adminOnly || !['online-bookings', 'milk-tea'].includes(page) ? account.role === 'admin' : (page === 'online-bookings' ? ['admin', 'quanly', 'letan', 'locker'] : ['leader', 'nhanvien']).includes(account.role)) : required.some(key => catalogFeatureAllowed(key, account.role, account.username, data))
@@ -73,13 +74,14 @@ function PermissionDialog({ page, label, features, viewFeatures, adminOnly, mode
   }
   return <EmployeeProfileModal labelledBy="page-permission-title" busy={busy} onClose={onClose} className="page-permission-modal"><section>
     <header><h2 id="page-permission-title">{mode === 'list' ? 'Tài khoản đã được phân quyền' : 'Phân quyền'} · {label || pages.map(item => item.label).join(' / ') || page}</h2><button type="button" disabled={busy} onClick={onClose}>Đóng</button></header>
+    {data && missingView && <p role="alert">Máy chủ chưa có quyền riêng cho tab này. Cần cập nhật máy chủ rồi tải lại phân quyền.</p>}
     {fixed && <p>{fixed}. Các quyền khác không thay đổi giới hạn này.</p>}
     <p>Các tab dùng chung quyền sẽ cùng chịu tác động khi thay đổi quyền đó.</p>
     <label>Tìm tài khoản<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Tên tài khoản, họ tên hoặc nhóm"/></label>
     {busy && <p role="status">Đang xử lý…</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     <div className="permission-account-results">{accounts.filter(item => mode !== 'list' || canView(item)).map(item => <button type="button" key={item.username} disabled={busy || mode === 'list'} aria-pressed={target === item.username} onClick={() => choose(item)}><strong>{item.username}</strong> · {item.full_name} · {item.role}<small>{item.role === 'admin' ? 'Admin' : Object.keys(data.account_overrides?.[item.username] || {}).length ? 'Quyền riêng tài khoản' : 'Kế thừa nhóm'}</small></button>)}</div>
     {data && !accounts.filter(item => mode !== 'list' || canView(item)).length && <p>Không có tài khoản phù hợp.</p>}
-    {mode === 'edit' && account && <fieldset disabled={busy || account.role === 'admin' || Boolean(fixed)}><legend>Quyền của {target}</legend>{pages.map(item => <div key={item.id}><h3>{item.label}</h3>{Object.entries(item.features).map(([key, text]) => <label className="context-permission-check" key={key}><input type="checkbox" checked={allowed.includes(key)} disabled={!hasAnyDateParent(key, allowed, data)} onChange={() => setAllowed(current => toggleScopedPermission(current, key, data))}/>{text}</label>)}</div>)}{keys.length > 0 && <button type="button" className="primary-button" onClick={save}>Lưu phân quyền</button>}</fieldset>}
+    {mode === 'edit' && account && <fieldset disabled={busy || account.role === 'admin' || Boolean(fixed) || Boolean(missingView)}><legend>Quyền của {target}</legend>{pages.map(item => <div key={item.id}><h3>{item.label}</h3>{Object.entries(item.features).map(([key, text]) => <label className="context-permission-check" key={key}><input type="checkbox" checked={allowed.includes(key)} disabled={!hasAnyDateParent(key, allowed, data)} onChange={() => setAllowed(current => toggleScopedPermission(current, key, data))}/>{text}</label>)}</div>)}{keys.length > 0 && <button type="button" className="primary-button" onClick={save}>Lưu phân quyền</button>}</fieldset>}
     {data && !keys.length && !fixed && <p>Trang này chưa có quyền riêng trong danh mục máy chủ.</p>}
   </section></EmployeeProfileModal>
 }

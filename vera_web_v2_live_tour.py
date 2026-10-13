@@ -3518,6 +3518,7 @@ def _state_response(
     can_customer_combo_edit: bool = False,
     can_customer_combo_delete: bool = False,
     can_combo_import: bool = False,
+    can_performance_view: bool = False,
     can_reports_edit: bool = False,
     can_reports_delete: bool = False,
     date_filters: dict[str, Any] | None = None,
@@ -3706,6 +3707,7 @@ def _state_response(
             "customer_combo_edit": can_customer_combo_edit,
             "customer_combo_delete": can_customer_combo_delete,
             "combo_import": can_combo_import,
+            "performance_view": can_performance_view,
             "reports_edit": can_reports_edit,
             "reports_delete": can_reports_delete,
 
@@ -5168,6 +5170,8 @@ def install_live_tour_routes(
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_reports_view")
             grants = permissions(conn, ident, now)
+            if tab == "performance":
+                require_feature(conn, ident, "live_tour_performance_view")
             selection = authorize_dates(grants, "reports", now, preset, date_from, date_to, selected_date)
             date_from, date_to = selection['date_from'], selection['date_to']
             filters.update(date_from=date_from, date_to=date_to, date=selection['selected_date'])
@@ -5183,20 +5187,20 @@ def install_live_tour_routes(
             else:
                 state, revision = read_collections_view(conn, now, {"employees", "rooms", "services", "combos", "pending", "invoices", "reports"})
         public = _state_response(state, revision, now, **grants)
-        is_admin = str(getattr(ident, "role", "") or "").strip().lower() == "admin"
+        can_performance = grants["can_performance_view"]
         common = {"revision": revision, "capabilities": public["capabilities"], "payment_settings": public["payment_settings"]}
         if not tab:
             return {**common, "invoices": [row for row in public["state"]["invoices"] if query_store.matches_report(row, filters)],
                     "reports": [row for row in public["report_rows"] if query_store.matches_report(row, filters)],
                     "pending": [row for row in public["pending_payments"] if query_store.matches_report(row, filters, invoice_dates=False)],
-                    "performance": [row for row in _service_performance_rows(state) if query_store.matches_report(row, filters, invoice_dates=False)] if is_admin else []}
+                    "performance": [row for row in _service_performance_rows(state) if query_store.matches_report(row, filters, invoice_dates=False)] if can_performance else []}
         if queried is not None:
             result = {key: queried[key] for key in ('total', 'summary', 'employee_totals')}
             result.update(rows=public['state']['invoices'] if tab == 'invoices' else public['report_rows'],
                           invoices=public['state']['invoices'])
         else:
             result = query_store.report_page(public, state, tab=tab, page=page, page_size=page_size, filters=filters,
-                                             performance=_service_performance_rows(state) if is_admin and tab == 'performance' else [])
+                                             performance=_service_performance_rows(state) if can_performance and tab == 'performance' else [])
         return {**common, **result, "services": public["services"] if grants["can_reports_edit"] else [], "page": page, "page_size": page_size,
                 "pages": max(1, (result['total'] + page_size - 1) // page_size)}
 
@@ -5647,8 +5651,6 @@ def install_live_tour_routes(
         bounds.update(total_amount=total_amount, employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"paid", "revenue", "tip", "reports", "pending", "performance", "employee", "history", "breaks"}, invoice_dates=export_kind in {"paid", "revenue", "tip", "reports", "employee"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
-            if export_kind == "performance" and str(getattr(ident, "role", "") or "").strip().lower() != "admin":
-                raise HTTPException(403, "Chỉ Admin được xuất báo cáo thời gian dịch vụ.")
             for feature in EXPORT_FEATURES.get(export_kind, ()):
                 require_feature(conn, ident, feature)
             grants = permissions(conn, ident, now)

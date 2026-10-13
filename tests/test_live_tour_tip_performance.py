@@ -117,7 +117,7 @@ def test_early_completion_threshold_and_no_history_guessing():
         assert len(completion_events(result)) == count
 
 
-def test_performance_share_matches_export_filters_and_rechecks_admin(monkeypatch):
+def test_performance_share_matches_export_filters_and_rechecks_grant(monkeypatch):
     import vera_performance_report_export as renderer
     worker = employee('e1','An')
     worker.update(service='Body 90',room='1.1',duration=90,started_at=NOW.isoformat(),completed_at=(NOW+timedelta(minutes=80)).isoformat())
@@ -127,8 +127,13 @@ def test_performance_share_matches_export_filters_and_rechecks_admin(monkeypatch
     monkeypatch.setattr(renderer, 'render_performance_report', lambda headers, rows, bounds, fmt: captured.append((rows,bounds,fmt)) or b'pdf')
     app = FastAPI()
     identity = SimpleNamespace(employee_username='admin', full_name='Admin', role='admin')
+    granted = True
+    def require(_conn, _ident, feature):
+        if feature == 'live_tour_performance_view' and not granted:
+            from fastapi import HTTPException
+            raise HTTPException(403, 'Thiếu quyền thời gian thực hiện')
     live.install_live_tour_routes(app, engine_instance=RouteEngine, current_identity=lambda:identity,
-        require_feature=lambda *args:None, feature_allowed=lambda *args:True, identity_type=RouteIdentity)
+        require_feature=require, feature_allowed=lambda *args:True, identity_type=RouteIdentity)
     with TestClient(app) as client:
         response = client.get('/v2/live-tour/report-share', params={'kind':'performance','format':'pdf','preset':'all','employee':'An','performance_timing':'early'})
         assert response.status_code == 200, response.text
@@ -137,4 +142,6 @@ def test_performance_share_matches_export_filters_and_rechecks_admin(monkeypatch
         assert client.get('/v2/live-tour/report-share', params={'kind':'performance','format':'png','preset':'all','employee':'Other'}).status_code == 200
         assert captured[-1][0] == []
         identity.role = 'letan'
+        assert client.get('/v2/live-tour/report-share', params={'kind':'performance','format':'pdf'}).status_code == 200
+        granted = False
         assert client.get('/v2/live-tour/report-share', params={'kind':'performance','format':'pdf'}).status_code == 403

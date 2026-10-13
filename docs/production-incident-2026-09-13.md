@@ -1,3 +1,22 @@
+## 13-10-2026 — Performance tab grants and invoice selection dismissal
+
+The supplied 16:12 video shows the performance-tab permission fieldset disabled
+by the Admin-only frontend flag. Source also restricted its report/export API
+by role. Add live_tour_performance_view as an explicit default-off non-Admin
+grant, dependent on reports view. Keep report date scopes and the separate export
+grant for Excel/PDF/PNG. Both paged and legacy reads filter this protected data;
+revocation hides the tab/data. Context editing exposes the tab grant and lists
+its effective accounts. Older catalogs missing the grant show an update message.
+No account is granted access automatically and no production account was edited.
+
+The supplied 10:43 video shows a paid invoice closing after price selection ends
+outside the dialog. Its backdrop click handler closes on that release/click.
+Paid and pending editors now dismiss only on a press starting on the backdrop,
+matching the other Live Tour dialog. Dragging from an input, releasing outside,
+and portal clicks keep the draft; explicit backdrop presses, Close and Escape
+remain available. Busy writes still block backdrop dismissal. Tests reproduce
+the drag/release path and assert retained input. No deployment is verified.
+
 ## 13-10-2026 — Paid service selection (source only)
 
 Paid invoice edits accept catalog service selections and quantities for ordinary
