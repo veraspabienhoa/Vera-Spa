@@ -6,11 +6,11 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 
-def change_paid_invoice(state, action, payload, actor, now, *, money, payment_values, canonical_method, available_combo, iso, max_money, invoice_date=None, allowed_delete_date=None, admin_override=False):
+def change_paid_invoice(state, action, payload, actor, now, *, money, payment_values, canonical_method, available_combo, iso, max_money, invoice_date=None, allowed_delete_date=None, admin_override=False, service_selection=None):
     deleting = action == "paid_invoice_delete"
     allowed = {"invoice_id", "reason"} if deleting else {"invoice_id", "reason", "note", "entries", "discount", "tip", "payment_method", "invoice_at"}
     if set(payload) - allowed:
-        raise HTTPException(400, "Không được đổi khách hàng, dịch vụ, ngày hoặc mã hóa đơn đã thanh toán; hãy hủy và lập lại nếu cần.")
+        raise HTTPException(400, "Không được đổi khách hàng hoặc mã hóa đơn đã thanh toán; hãy hủy và lập lại nếu cần.")
     reason = payload.get("reason")
     if admin_override and (reason is None or isinstance(reason, str) and not reason.strip()):
         reason = "Admin điều chỉnh hóa đơn"
@@ -94,13 +94,29 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
             raise HTTPException(400, "Danh sách giá dịch vụ không hợp lệ.")
         seen = set()
         for edit in edits:
-            if not isinstance(edit, dict) or set(edit) != {"index", "price"}:
-                raise HTTPException(400, "Chỉ được sửa giá dòng dịch vụ của hóa đơn đã thanh toán.")
+            if not isinstance(edit, dict) or "index" not in edit or set(edit) - {"index", "price", "service_items"} or not ({"price", "service_items"} & edit.keys()):
+                raise HTTPException(400, "Nội dung dòng hóa đơn không hợp lệ.")
             index = edit["index"]
             if type(index) is not int or not 0 <= index < len(invoice["entries"]) or index in seen:
                 raise HTTPException(400, "Dòng hóa đơn không tồn tại hoặc bị trùng.")
             seen.add(index)
-            invoice["entries"][index].update(price=money(edit["price"], label="Giá dịch vụ"), price_source="paid_correction")
+            entry = invoice["entries"][index]
+            if "service_items" in edit:
+                # Combo sales/redemptions have a separate entitlement ledger.
+                # Never change a service while leaving its original debit intact.
+                if purchase_id or invoice.get("payment_method") == "COMBO" or entry.get("combo_purchase_id"):
+                    raise HTTPException(400, "Hóa đơn combo cần hủy và lập lại để đổi dịch vụ và đối soát vé.")
+                if service_selection is None:
+                    raise HTTPException(400, "Máy chủ chưa hỗ trợ đổi dịch vụ hóa đơn.")
+                name, duration, price, items = service_selection(working, {"service_items": edit["service_items"], "request": entry.get("request", "")}, now)
+                entry.update(service=name, duration=duration, price=price, service_items=items, price_source="catalog")
+                # Match by employee rather than relying on database row order.
+                matching = [row for row in reports if row.get("employee_id", "") == entry.get("employee_id", "")]
+                if len(matching) != 1 or sum(row.get("employee_id", "") == entry.get("employee_id", "") for row in invoice["entries"]) != 1:
+                    raise HTTPException(409, "Không xác định được dòng báo cáo tương ứng; cần đối soát trước khi đổi dịch vụ.")
+                matching[0]["service"] = name
+            if "price" in edit:
+                entry.update(price=money(edit["price"], label="Giá dịch vụ"), price_source="paid_correction")
         catalog_subtotal = money(sum(int(row.get("price") or 0) for row in invoice["entries"]), label="Tạm tính")
         covered = invoice.get("payment_method") == "COMBO" and not invoice.get("purchased_combo_id")
         subtotal = 0 if covered else catalog_subtotal

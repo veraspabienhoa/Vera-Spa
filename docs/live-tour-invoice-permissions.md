@@ -51,7 +51,8 @@ Không tự cấp quyền thực tế cho bất kỳ tài khoản không phải 
 
 - Mục riêng hiển thị tối đa 500 hóa đơn còn hiệu lực gần nhất.
 - Sửa giá từng dòng, giảm giá theo số tiền, TIP, ghi chú và chuyển giữa tiền mặt/chuyển khoản/thẻ.
-- Không đổi khách, nhân viên, dịch vụ/số lượng, ngày kinh doanh, số bill hoặc chuyển qua lại COMBO. Nếu cần đổi, hủy rồi lập lại.
+- Hóa đơn dịch vụ lẻ: tìm/thêm/bỏ dịch vụ và đổi số lượng như sửa hóa đơn chờ thanh toán. Máy chủ kiểm tra danh mục và tính lại giá; lưu bản gốc trong lịch sử, cập nhật tên dịch vụ trên báo cáo.
+- Giữ nguyên khách, nhân viên, số bill và kết quả hoàn thành. Hóa đơn bán/dùng combo hoặc chuyển qua lại COMBO vẫn cần hủy rồi lập lại để đối soát vé. Quyền sửa ngày giờ hóa đơn tiếp tục áp dụng riêng.
 - Tổng tiền và phân bổ báo cáo/TIP được tính lại trên server, giữ nguyên định danh và ngày gốc. Sửa tiền không trừ vé thêm.
 - Combo trả trước theo thành phần không thu lại doanh thu dịch vụ khi dùng lượt: tổng thu chỉ là TIP, không giảm giá lần hai.
 - “Xóa” là **hủy có lưu đối soát**. Loại hóa đơn/báo cáo/lượt dùng khỏi sổ có hiệu lực, lưu bản gốc và các sổ liên quan trong `invoice_changes`.

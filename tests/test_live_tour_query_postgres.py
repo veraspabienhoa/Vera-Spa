@@ -288,3 +288,13 @@ def test_collection_customer_filter_privacy_matches_fallback(populated, monkeypa
     fallback = client.get('/v2/live-tour/collections/' + panel, params={'customer':'dang'})
     assert fallback.status_code == 200, fallback.text
     assert fallback.json() == response.json()
+
+
+def test_report_service_catalog_is_current_and_only_loaded_for_editors(populated):
+    with populated.begin() as conn:
+        state, _, _ = store.read(conn, collections={'services'})
+        result = query.read_reports(conn, tab='revenue', page=1, page_size=7, filters=FILTERS, grants=GRANTS)
+        assert result['state']['services'] == state['services']
+        read_only = {**GRANTS, 'can_reports_edit': False}
+        result = query.read_reports(conn, tab='revenue', page=1, page_size=7, filters=FILTERS, grants=read_only)
+        assert result['state']['services'] == []

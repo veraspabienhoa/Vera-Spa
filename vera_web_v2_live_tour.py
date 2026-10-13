@@ -2507,7 +2507,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
                                      payment_values=_payment_values, canonical_method=_canonical_payment_method,
                                      available_combo=_available_combo, iso=_iso, max_money=MAX_MONEY,
                                      invoice_date=_invoice_date, allowed_delete_date=now.astimezone(VN_TZ).date(),
-                                     admin_override=admin_invoice_override)
+                                     admin_override=admin_invoice_override, service_selection=_service_selection)
     elif action in {"checkout", "quick_checkout"}:
         result["invoice"] = _checkout(
             state, payload, actor, now, action == "quick_checkout", financial_timing,
@@ -5197,7 +5197,7 @@ def install_live_tour_routes(
         else:
             result = query_store.report_page(public, state, tab=tab, page=page, page_size=page_size, filters=filters,
                                              performance=_service_performance_rows(state) if is_admin and tab == 'performance' else [])
-        return {**common, **result, "page": page, "page_size": page_size,
+        return {**common, **result, "services": public["services"] if grants["can_reports_edit"] else [], "page": page, "page_size": page_size,
                 "pages": max(1, (result['total'] + page_size - 1) // page_size)}
 
     @app.get("/v2/live-tour/board-history")
