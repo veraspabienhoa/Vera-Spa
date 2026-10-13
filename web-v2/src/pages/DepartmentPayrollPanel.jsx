@@ -82,7 +82,6 @@ export default function DepartmentPayrollPanel({ user, settingsOnly = false }) {
 function PayrollPanel({ user, identity, settingsOnly, mutation, mutationRef, updateMutation }) {
   usePageRefresh(() => loadSettings(), () => Boolean(busy || (settingsBaseline && JSON.stringify([settings, salaryConfigTables, employeeCatalog]) !== settingsBaseline)))
   const pageRef = useRef(null)
-  const hourlyRef = useRef(null)
   useFitPayrollTables(pageRef)
   const role = String(user?.role || '').toLowerCase()
   const isAdmin = role === 'admin'
@@ -502,8 +501,8 @@ function PayrollPanel({ user, identity, settingsOnly, mutation, mutationRef, upd
   const employeeConfigTable = (group, title, fields) => {
     const items = salaryConfigTables[group] || []
     const candidates = employeeCandidates(group)
-    return <section ref={group === 'operations' ? hourlyRef : undefined} data-ui-key="u-38d16c658c67" className="department-config-table-section">
-      <div data-ui-key="u-b189c5f017f9" className="panel-title-row"><div><h3>{title}</h3><p>Mỗi nhân viên chọn đúng một nguồn lương. Lưu cấu hình trước khi tính; nhân viên chưa có mức riêng dùng mức lương của bộ phận. Nguồn lương được chọn trong bảng đầy đủ ở trên.</p></div></div>
+    return <section data-ui-key="u-38d16c658c67" className="department-config-table-section">
+      <div data-ui-key="u-b189c5f017f9" className="panel-title-row"><div><h3>{title}</h3></div></div>
       <div className="department-config-add-row">
         {group === 'operations' && <label>Bộ phận<select value={addDepartment} disabled={!backendReady || !canConfig || Boolean(busy)} onChange={(event) => { setAddDepartment(event.target.value); setPendingEmployee((value) => ({ ...value, operations: '' })) }}>{Object.entries(settings).filter(([, item]) => item.config?.calculation_mode === 'hourly').map(([key, item]) => <option key={key} value={key}>{item.department_label}</option>)}</select></label>}
         <label className="department-config-search"><span>Tìm nhân viên</span><div><Search size={16} /><input value={employeeSearch[group]} disabled={!backendReady || !canConfig || Boolean(busy)} placeholder="Nhập tên hoặc tên đăng nhập…" onChange={(event) => { setEmployeeSearch((value) => ({ ...value, [group]: event.target.value })); setPendingEmployee((value) => ({ ...value, [group]: '' })) }} /></div></label>
@@ -526,8 +525,8 @@ function PayrollPanel({ user, identity, settingsOnly, mutation, mutationRef, upd
   }
 
   const sourceRows = employeeCatalog.filter(row => searchTextMatches([row.employee_name, row.employee_username, row.department_label], sourceSearch))
-  const sourceConfigTable = <section className="department-payroll-source-section">
-    <div className="panel-title-row"><div><h3>NGUỒN TÍNH LƯƠNG THEO NHÂN VIÊN</h3><p>Toàn bộ nhân viên hành chánh, kể cả người đang dùng mức lương chung của bộ phận. Chọn đúng một nguồn rồi Lưu cấu hình. Chưa chọn riêng sẽ dùng Thống kê; đổi nguồn không thay đổi mức lương.</p></div></div>
+  const sourceConfigTable = <section className="panel department-payroll-source-section">
+    <div className="panel-title-row"><div><h3>NGUỒN TÍNH LƯƠNG THEO NHÂN VIÊN</h3></div>{canConfig && <button type="button" className="primary-button" disabled={Boolean(busy) || writeBlocked} onClick={saveEmployeeConfigs}><Save size={16} />Lưu cấu hình</button>}</div>
     <label>Tìm nhân viên theo nguồn lương<input aria-label="Tìm cấu hình nguồn lương" value={sourceSearch} disabled={mutationPending} onChange={event => setSourceSearch(event.target.value)} placeholder="Tên, tên đăng nhập hoặc bộ phận…" /></label>
     <div className="responsive-data-table department-payroll-source-table" role="region" aria-label="Nguồn lương toàn bộ nhân viên hành chánh" tabIndex={0}><table>
       <colgroup><col className="department-source-name-column" /><col className="department-source-department-column" /><col className="department-source-choice-column" /></colgroup>
@@ -544,17 +543,17 @@ function PayrollPanel({ user, identity, settingsOnly, mutation, mutationRef, upd
 
   if (settingsOnly) return <div ref={pageRef} className="feature-page department-payroll-page department-payroll-config-page">
     <section data-ui-key="u-0a9ecdd6d190" className="panel department-payroll-panel">
-      <div data-ui-key="u-367c7a50f712" className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG THEO NHÂN VIÊN</h2><p>Bảng 1 gồm các bộ phận Lương giờ. Bảng 2 gồm các bộ phận Lương tháng. Chọn hình thức lương trong menu Nhân sự.</p></div><div className="list-actions">{canConfig && <button className="primary-button" type="button" disabled={Boolean(busy) || writeBlocked} onClick={saveEmployeeConfigs}><Save size={16} />Lưu cấu hình</button>}<button className="secondary-button" type="button" onClick={() => hourlyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>BẢNG 1 · LƯƠNG GIỜ</button><button data-ui-key="u-d2f1dad4aa43" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'settings-load' ? 'spin' : ''} /><UiCustomText uiKey="u-d2f1dad4aa43"> Làm mới</UiCustomText></button></div></div>
+      <div data-ui-key="u-367c7a50f712" className="panel-title-row"><div><h2><Settings2 size={18} /> CẤU HÌNH LƯƠNG THEO NHÂN VIÊN</h2></div><div className="list-actions">{canConfig && <button className="primary-button" type="button" disabled={Boolean(busy) || writeBlocked} onClick={saveEmployeeConfigs}><Save size={16} />Lưu cấu hình</button>}<button data-ui-key="u-d2f1dad4aa43" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={loadSettings} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'settings-load' ? 'spin' : ''} /><UiCustomText uiKey="u-d2f1dad4aa43"> Làm mới</UiCustomText></button></div></div>
       <StableFeedback>{notice && <div className={notice.type === 'error' ? 'error-box' : 'success-box'}>{notice.message}</div>}</StableFeedback>
       {backendCompatible === false && <div className="error-box department-payroll-backend-required" role="status">{PAYROLL_BACKEND_UPDATE_REQUIRED}</div>}
       {mutationPending && <p role="status">Đang chờ máy chủ xác nhận thao tác {mutation.resource === 'settings' ? 'cấu hình' : `bảng lương tháng ${mutation.month.split('-').reverse().join('/')}`}. Chưa thể lưu tiếp.</p>}
       {mutationUncertain && <div className="error-box" role="status">{mutation.conflict ? 'Bảng lương hoặc cấu hình đã được cập nhật ở nơi khác.' : 'Chưa xác nhận được kết quả thao tác trước.'} Hãy {settingsOnly ? 'Làm mới cấu hình' : 'Mở bảng nháp hoặc tính lại'} để kiểm tra phiên bản hiện tại trước khi lưu tiếp.</div>}
-      {sourceConfigTable}
       {employeeConfigTable('operations', 'BẢNG 1 · LƯƠNG GIỜ', operationsEmployeeFields)}
       {employeeConfigTable('tapvu', 'BẢNG 2 · LƯƠNG THÁNG', tapvuEmployeeFields)}
-      <div className="setup-note">Email bảng lương các bộ phận dùng cùng mẫu chuẩn đang áp dụng cho Leader/Nhân viên.</div>
+      
       {canConfig ? <UiToolbar data-ui-key="u-20f37bcbdc7b" className="list-actions department-payroll-actions"><button data-ui-key="u-76a59707a7cb" className="primary-button" type="button" disabled={Boolean(busy) || writeBlocked} onClick={saveEmployeeConfigs}><Save size={16} /> {busy === 'employee-settings-save' ? 'Đang lưu…' : 'Lưu toàn bộ cấu hình'}</button></UiToolbar> : <div className="error-box">Chỉ Admin được thay đổi cấu hình lương và phụ cấp.</div>}
     </section>
+    {sourceConfigTable}
   </div>
 
   return <div ref={pageRef} className="feature-page department-payroll-page">

@@ -69,15 +69,18 @@ test('non-Admin roles do not get the configuration tab',async t=>{
  assert.equal(document.querySelectorAll('[role="tab"]').length,1);assert.doesNotMatch(document.body.textContent,/Cấu hình lương|Secret/)
 })
 
-test('configuration saves edited numeric wages and jumps to the hourly table',async t=>{
+test('configuration saves numeric wages and places the separate source table last',async t=>{
  const f=await fixture(t);await f.render(h(Settings,{user:{role:'admin'}}))
  await f.change(document.querySelector('.department-config-table input'),'45.000')
  await f.click('Lưu cấu hình')
  const saved=JSON.parse(f.requests.find(r=>r.path.endsWith('/settings/employees')).options.body)
  assert.equal(saved.rows[0].rate_ca1,45000)
  assert.equal(document.querySelector('.department-config-table input').value,'45.000')
- let jumped=false;document.querySelector('.department-config-table-section').scrollIntoView=()=>{jumped=true}
- await f.click('BẢNG 1 · LƯƠNG GIỜ');assert.equal(jumped,true)
+ assert.ok(![...document.querySelectorAll('button')].some(button=>button.textContent==='BẢNG 1 · LƯƠNG GIỜ'))
+ const source=document.querySelector('.department-payroll-source-section')
+ assert.equal(source.parentElement.classList.contains('department-payroll-config-page'),true)
+ assert.equal(source.parentElement.lastElementChild,source)
+ assert.equal(document.querySelectorAll('.department-config-table-section').length,2)
 })
 
 test('configuration renews an expired session before saving',async t=>{

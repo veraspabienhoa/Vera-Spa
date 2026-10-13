@@ -64,3 +64,9 @@ body .department-payroll-page .department-payroll-source-identity small{margin:0
  .department-payroll-source-options label{gap:5px;font-size:12px}
 }
 @media(forced-colors:active){.department-payroll-source-options input[type=radio]{appearance:auto}}
+
+/* Configuration rows grow with the page; keep only horizontal scrolling. */
+body .department-payroll-page.department-payroll-config-page .responsive-data-table.department-config-table {
+  height:auto!important; max-height:none!important; overflow-x:auto!important; overflow-y:visible!important; overscroll-behavior:auto;
+}
+.department-payroll-config-page>.department-payroll-source-section{margin-top:20px}
