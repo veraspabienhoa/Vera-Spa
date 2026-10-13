@@ -44,7 +44,7 @@ export default function SettingsPage({ user, initialTab, notifications, permissi
   if (!tabs.length) return <p className="error-box">Tài khoản chưa được cấp quyền mở Cài đặt.</p>
   return <div className="feature-page spa-management settings-page">
     <PagePermissionActions page={activeTab === 'permissions' ? 'permissions' : activeTab === 'shifts' ? 'settings' : 'live-tour-settings'} label={tabs.find(([key]) => key === activeTab)?.[1]} adminOnly={['products','notifications','retention'].includes(activeTab)}/>
-    <div data-ui-key="u-1ea533c11f97" className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Cài đặt</h1><p>Quản lý dịch vụ, ca làm việc, thông báo và phân quyền.</p></div></div>
+    <div data-ui-key="u-1ea533c11f97" className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Cài đặt</h1></div></div>
     <UiToolbar data-ui-key="u-settings-navigation-20260928" className="spa-tabs settings-tabs" onKeyDown={navigateTabs} role="tablist" aria-label="Cài đặt">
       {tabs.map(([key, label]) => <button data-ui-key={`u-settings-navigation-${key}-20260928`} type="button" key={key} id={`settings-${key}-tab`} role="tab" tabIndex={activeTab === key ? 0 : -1} aria-selected={activeTab === key} aria-controls="settings-content" onClick={() => setTab(key)}>{label}</button>)}
     </UiToolbar>

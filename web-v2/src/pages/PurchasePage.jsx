@@ -118,7 +118,7 @@ function PurchaseAccountPage({ user, embedded = false, initialPreset = 'this_mon
   const filter = (key,value) => setFilters(old => ({ ...old,[key]:value }))
   return <section className="purchase-page" data-ui-key="page:purchases">
     <div className="page-heading">
-      <div><span className="eyebrow"><ShoppingCart size={14} /> Tài chính</span>{embedded ? <h2>BÁO CÁO MUA HÀNG</h2> : <h1>NHẬP MUA</h1>}<p>Dữ liệu mua hàng được lưu trực tiếp trên server VERA SPA.</p></div>
+      <div><span className="eyebrow"><ShoppingCart size={14} /> Tài chính</span>{embedded ? <h2>BÁO CÁO MUA HÀNG</h2> : <h1>NHẬP MUA</h1>}</div>
     </div>
     <StableFeedback>{error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}</StableFeedback>
     <div className="purchase-filters">

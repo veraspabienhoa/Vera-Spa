@@ -368,9 +368,9 @@ export default function RulesPage() {
       `}</style>
       <div data-ui-key="u-b88ff8c44721" className="page-heading-row rules-heading">
         <div>
-          <span className="eyebrow"><FileText size={14} /> Quy định vận hành</span>
+          
           <h1 className="page-title">Nội quy KTV</h1>
-          <p className="page-subtitle">Quản lý lý do nghỉ, ngày phép, mức phạt và quyền đăng ký/hủy. Tự động phạt theo Nội quy KTV chỉ áp dụng cho Leader và Nhân viên.</p>
+          
         </div>
         <button data-ui-key="u-f3eeda5d3c4e" data-ui-label-default="Làm mới" className="secondary-button" onClick={discard} disabled={loading || busy === 'save'}>
           <RefreshCw size={17} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-f3eeda5d3c4e"> Làm mới

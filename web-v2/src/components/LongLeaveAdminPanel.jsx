@@ -202,7 +202,7 @@ function LongLeaveAdminContent({ user, onChanged }) {
       <div>
         <h2>ADMIN · ĐƠN CHỜ DUYỆT</h2>
         {rows.length > 0 && <div className="long-leave-pending-count" role="status" aria-live="polite"><Clock3 size={17} aria-hidden="true" />{rows.length} đơn chờ Admin duyệt</div>}
-        <p>Phép năm / Nghỉ làm đẹp / Nghỉ việc · hiển thị đầy đủ thông tin trước khi quyết định.</p>
+        
       </div>
       <button data-ui-key="u-bbacc6bc597e" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={loading || Boolean(checking) || Boolean(busyId)}><RefreshCw size={14} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-bbacc6bc597e"> Làm mới</UiCustomText></button>
     </div>

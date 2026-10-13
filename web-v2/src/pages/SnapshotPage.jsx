@@ -393,7 +393,7 @@ function SnapshotContent({ user, embedded }) {
       })}</tbody></table></div>{!displayRecords.length && <div className="setup-note">Không có dữ liệu phù hợp bộ lọc.</div>}</section>
 
     {isAdmin && <section data-ui-key="u-b681748c8cbe" className="panel attendance-department-controls">
-      <div data-ui-key="u-eace497d09ab" className="panel-title-row"><div><h2>CHẤM CÔNG THEO BỘ PHẬN</h2><p>Điều khiển chấm công, thông báo và quy tắc nghỉ giữa ca theo từng bộ phận.</p></div></div>
+      <div data-ui-key="u-eace497d09ab" className="panel-title-row"><div><h2>CHẤM CÔNG THEO BỘ PHẬN</h2></div></div>
       <div className="attendance-department-grid">{[['locker', 'Locker'], ['letan', 'Lễ tân']].map(([key, label]) => {
         const control = departmentControls[key] || {}
         return <div data-ui-key="u-f530a8eebd39" className="attendance-department-card" key={key}><h3>{label}</h3><p>Ca làm lấy từ Lịch làm việc Web V2.</p><UiToolbar data-ui-key="u-b00c1a9f4d6c" className="attendance-control-actions">

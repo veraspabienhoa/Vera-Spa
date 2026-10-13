@@ -548,7 +548,7 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
         <div>
           <div className="eyebrow"><UserRoundCog size={14} /> VẬN HÀNH NHÂN SỰ</div>
           <h1 className="page-title">Nhân viên</h1>
-          <p className="page-subtitle">Danh sách, hồ sơ, trạng thái làm việc và phân ca trong một màn hình.</p>
+          
         </div>
       </div>
 

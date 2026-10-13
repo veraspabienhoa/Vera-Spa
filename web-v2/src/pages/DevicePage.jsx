@@ -131,7 +131,7 @@ export default function DevicePage({ user }) {
     && (!state || String(item.enabled) === state)
     && searchTextMatches([item.name, item.serial, item.location, item.manufacturer, item.model].join(' '), search))
   return <section className="device-page">
-    <div className="page-heading"><div><span className="eyebrow"><Server size={16} /> TRUNG TÂM THIẾT BỊ</span><h1>QUẢN LÝ THIẾT BỊ</h1><p>Quản lý FaceID, máy in, máy quét, màn hình và các thiết bị ngoại vi của spa.</p></div></div>
+    <div className="page-heading"><div><span className="eyebrow"><Server size={16} /> TRUNG TÂM THIẾT BỊ</span><h1>QUẢN LÝ THIẾT BỊ</h1></div></div>
     <div className="device-actions">
       {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || !data || Boolean(editing) || data.devices.length >= 100} onClick={() => edit(newDevice())}><Plus size={16} />Thêm thiết bị</button>}
       <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={reload}><RefreshCw size={16} className={busy ? 'spin' : ''} />{busy ? 'Đang xử lý…' : 'Tải lại danh sách'}</button>

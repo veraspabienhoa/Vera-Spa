@@ -158,7 +158,7 @@ export default function ContractPage({ user }) {
 
   return <div className="feature-page contract-page">
     <div data-ui-key="u-4054af9b130f" className="page-heading">
-      <div><span className="eyebrow"><FileSignature size={14} /> Hồ sơ lao động</span><h1>HỢP ĐỒNG</h1><p>Chọn loại hợp đồng cần mở và xuất cho một hoặc nhiều nhân viên.</p></div>
+      <div><span className="eyebrow"><FileSignature size={14} /> Hồ sơ lao động</span><h1>HỢP ĐỒNG</h1></div>
       <button data-ui-key="u-00d24a0cfef1" data-ui-label-default="Làm mới" className="secondary-button" onClick={() => load(contractType)} disabled={Boolean(busy)}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /><UiCustomText uiKey="u-00d24a0cfef1"> Làm mới</UiCustomText></button>
     </div>
 
