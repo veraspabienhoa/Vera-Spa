@@ -75,7 +75,7 @@ export default function OnlineBookingPage({ user }) {
   }, [allowed, page, status, kind, q, version, range])
   if (!allowed) return <p role="alert">Chỉ Admin, Quản lý, Lễ tân và Locker được xem Booking online.</p>
   return <section className="online-booking-page">
-    <h1>Booking online</h1><p>Yêu cầu đặt lịch và lời nhắn từ website. Lễ tân xác nhận với khách trước khi xếp phòng và nhân viên trên Live Tour.</p>
+    <h1>Booking online</h1>
     <form className="online-booking-filters" onSubmit={e => { e.preventDefault(); setPage(1); setQ(search.trim()); reload() }}>
       <input aria-label="Tìm tên hoặc số điện thoại" placeholder="Tên hoặc số điện thoại" value={search} onChange={e => setSearch(e.target.value)} maxLength={100}/>
       <select aria-label="Trạng thái" value={status} onChange={e => { setPage(1); setStatus(e.target.value) }}><option value="">Tất cả trạng thái</option>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
