@@ -25,7 +25,7 @@ def test_note_handoff_rollback_retry_and_old_ledger_integrity(database, payments
                 worker.update(status="Đang thực hiện", started_at=live._iso(NOW), duration=90)
         revision = store.write(conn, before, prepared, "fixture")
     if pending:
-        finish_body = {"action": "finish_to_pending", "payload": {"employee_ids": ["e1", "e2"]},
+        finish_body = {"action": "finish_to_pending", "payload": {"employee_ids": ["e1", "e2"], "early_completion_reason": "Khách cần đi sớm"},
                        "expected_revision": revision, "response_view": "receipt", "idempotency_key": "finish-notes-once"}
         finished = client.post("/v2/live-tour/action", json=finish_body)
         assert finished.status_code == 200, finished.text

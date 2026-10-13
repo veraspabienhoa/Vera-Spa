@@ -146,6 +146,8 @@ def test_other_operational_actions_roll_day_without_changing_configuration(datab
             changed['customers'] = [{'id': 'c1', 'name': 'Khách c1', 'phone': '0901', 'combo_purchases': []}]
             revision = store.write(conn, state, changed, 'fixture')
         payload = {'employee_id': 'e1', 'payment_method': 'TIỀN MẶT'}
+    if action == 'finish_to_pending':
+        payload['early_completion_reason'] = 'Khách cần đi sớm'
     before = saved(database)[0]
     request = {**body(revision, 'rollover-' + action), 'action': action, 'payload': payload,
                'response_view': 'receipt' if action == 'checkout' else 'board'}

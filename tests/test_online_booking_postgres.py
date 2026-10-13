@@ -95,11 +95,14 @@ def test_listing_filters_dates_before_pagination_and_uses_vietnam_contact_day(da
     assert all(row['appointment_date'] in ('2026-10-01', None) for row in first['rows'] + second['rows'])
 
 
-def test_upcoming_includes_recent_past_and_excludes_old_and_closed_before_pagination(database):
+def test_upcoming_includes_recent_past_and_excludes_old_and_closed_before_pagination(database, monkeypatch):
     from datetime import timedelta
     with database.begin() as conn:
         booking.ensure_schema(conn)
         now = conn.execute(text("SELECT CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh'")).scalar_one()
+        # Keep the read window fixed while schema/ingest work runs on slow CI.
+        monkeypatch.setattr(booking, 'UPCOMING_WINDOW_SQL', booking.UPCOMING_WINDOW_SQL.replace(
+            "CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh'", f"TIMESTAMP '{now.isoformat()}'"))
         future = (now + timedelta(days=1)).date().isoformat()
         past = (now - timedelta(days=1)).date().isoformat()
         expected = []
