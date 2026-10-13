@@ -146,7 +146,7 @@ def build_layout(report, *, png=False):
                 del lines[:count]
                 layout.line(x, layout.y + count * 12, x + width, layout.y + count * 12, GRID)
             layout.y += count * 12 + 14
-    layout.section('02', 'NHÂN VIÊN CHƯA ĐÀO TẠO / ĐÁNH GIÁ', 'Chỉ bộ phận nhanvien · Chưa có buổi đào tạo hoặc phiếu đánh giá đã nộp trong toàn bộ thời gian')
+    layout.section('02', 'NHÂN VIÊN CHƯA ĐÀO TẠO / ĐÁNH GIÁ', 'Chỉ bộ phận nhanvien · Chưa có buổi đào tạo hoặc phiếu đánh giá đã nộp trong toàn bộ thời gian', background='#fff2b3')
     if not report['untrained']:
         layout.paragraph('Không có nhân viên chưa được đào tạo / đánh giá.')
     for offset in range(0, len(report['untrained']), 3):
