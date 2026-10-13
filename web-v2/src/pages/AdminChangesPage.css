@@ -1,0 +1,76 @@
+body .admin-changes-page .audit-heading-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+body .admin-changes-page .audit-heading-actions > button {
+  min-width: 0;
+  min-height: 44px;
+  white-space: normal;
+}
+body .admin-changes-page .audit-toolbar-content {
+  min-width: 0;
+  max-width: 100%;
+}
+body .admin-changes-page .audit-single-date {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  max-width: 320px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 800;
+}
+body .admin-changes-page .audit-toolbar-content .audit-filter-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+  gap: 8px;
+}
+body .admin-changes-page .audit-toolbar-content .audit-filter-buttons > button {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  grid-column: auto;
+}
+body .admin-changes-page .audit-custom-range {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
+}
+body .admin-changes-page .audit-custom-range > label {
+  min-width: 0;
+}
+body .admin-changes-page .audit-search-line label {
+  min-width: 0;
+}
+body .admin-changes-page .vera-date-input > input[type="text"] {
+  min-height: 44px;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+@media (max-width: 640px) {
+  body .admin-changes-page .audit-heading-actions {
+    width: 100%;
+  }
+  body .admin-changes-page .audit-heading-actions > button {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+  body .admin-changes-page .audit-toolbar-content .audit-filter-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  body .admin-changes-page .audit-single-date {
+    max-width: none;
+  }
+  body .admin-changes-page .audit-custom-range {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
