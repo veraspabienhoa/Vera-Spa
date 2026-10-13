@@ -288,7 +288,7 @@ export default function LiveTourReportsPage({ user }) {
       })}</tbody></table></div>)}
       {!presets.length ? <p role="status">Tài khoản chưa được cấp bộ lọc ngày cho mục này.</p> : !canRead ? <p role="status">Chọn đầy đủ khoảng ngày hợp lệ để xem dữ liệu.</p> : !loading && !historyLoading && !rows.length && <p>Không có dữ liệu phù hợp bộ lọc.</p>}
     </section>
-    {activeContext && <LiveTourPaidInvoiceDialog key={`${activeContext.item.id}:${activeContext.mode}`} context={activeContext} busy={busy} error={error} onAction={act} isAdmin={isAdmin} canEditDate={isAdmin || grants.invoice_date_edit} onClose={() => setContext(null)}/>}
+    {activeContext && <LiveTourPaidInvoiceDialog key={`${activeContext.item.id}:${activeContext.mode}`} context={activeContext} catalog={data.services || []} busy={busy} error={error} onAction={act} isAdmin={isAdmin} canEditDate={isAdmin || grants.invoice_date_edit} onClose={() => setContext(null)}/>}
     {activeReceipt && <LiveTourReceipt invoice={activeReceipt.invoice} paymentSettings={activeReceipt.paymentSettings} onClose={() => setReceipt(null)}/>}
   </div>
 }

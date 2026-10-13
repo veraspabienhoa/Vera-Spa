@@ -1,3 +1,18 @@
+## 13-10-2026 — Paid service selection (source only)
+
+Paid invoice edits accept catalog service selections and quantities for ordinary
+service invoices. Validate under the existing action transaction on a copied
+state, recompute line values/commission/totals, match report rows by employee,
+and retain original invoice/report evidence. Work timing, booking notes, actors,
+customer identity and bill numbers remain unchanged. Ambiguous report matching
+fails atomically. Combo sales/redemptions still require void/reissue for service
+changes; never change service labels without reconciling their ticket ledger.
+
+Live Tour and Reports use the same editor. The paged report read supplies the
+ordered service catalog only to report editors, within its existing snapshot.
+Permissions, revision checks, idempotency and caller-owned connections remain
+unchanged. No production financial rows or deployment have been verified.
+
 ## 13-10-2026 — Context permissions and early completion reasons (source only)
 
 Admin can edit account grants and inspect effective access from page/tab modals.

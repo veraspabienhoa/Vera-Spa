@@ -361,7 +361,7 @@ def read_reports(conn, *, tab, page, page_size, filters, grants):
         return None
     source = 'invoices' if tab == 'invoices' else 'reports'
     pending_access = bool(grants.get('can_pending_view') and grants.get('can_invoice_view'))
-    kinds = {'invoices', source} | ({'pending'} if pending_access else set())
+    kinds = {'invoices', source} | ({'pending'} if pending_access else set()) | ({'services'} if grants.get('can_reports_edit') else set())
     ctes = _base_ctes(kinds)
     params = {'limit': page_size, 'offset': (page - 1) * page_size}
     pii = bool(grants.get('can_customers_view') or grants.get('can_invoice_view') or grants.get('can_paid_invoice_view'))
@@ -397,6 +397,8 @@ def read_reports(conn, *, tab, page, page_size, filters, grants):
     else:
         pending_count = 'NULL'
     parts = {source: _page_rows(source, 'page_rows')}
+    if grants.get('can_reports_edit'):
+        parts['services'] = _all_rows('services')
     if source == 'reports':
         parts['invoices'] = f"(SELECT COALESCE(jsonb_agg(i.payload ORDER BY i.ordinal,i.resource_id),'[]'::jsonb) FROM {invoices} i WHERE i.deleted_at IS NULL AND i.resource_id IN (SELECT f.query_data->>'invoice_id' FROM filtered f JOIN page_rows USING(resource_id)))"
     extra = f''', (SELECT COUNT(*) FROM filtered) AS total,

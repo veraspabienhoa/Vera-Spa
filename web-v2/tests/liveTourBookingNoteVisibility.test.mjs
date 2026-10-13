@@ -215,3 +215,56 @@ test('customer service history keeps each booking note with employee/room and se
     assert.match(document.querySelector('.spa-history').textContent, /Ghi chú booking: Nhẹ vai\nKhông dầu/)
   } finally { await fixture.close() }
 })
+
+test('paid editor searches services and sends changed rows with original revision', async () => {
+  window.HTMLElement.prototype.scrollIntoView = () => {}
+  const writes = []
+  const catalog = [{ id: 'body', name: 'Body', price: 40, active: true }, { id: 'foot', name: 'Foot', price: 60, active: true },
+    { id: 'new', name: 'Chăm sóc da', price: 120, active: true }, { id: 'hidden', name: 'Ngừng bán', price: 999, active: false }]
+  const fixture = await mount(PaidDialog, { context: { item: invoice, mode: 'edit', revision: 42 }, catalog, isAdmin: true,
+    onClose() {}, onAction: async (...args) => { writes.push(args); return true } })
+  try {
+    const search = document.querySelector('[role="combobox"]')
+    await act(async () => {
+      search.focus()
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(search, 'cham soc')
+      search.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    const options = [...document.querySelectorAll('[role="option"]')]
+    assert.ok(options.some(node => node.textContent.includes('Chăm sóc da')))
+    assert.ok(!options.some(node => node.textContent.includes('Ngừng bán')))
+    await act(async () => options.find(node => node.textContent.includes('Chăm sóc da')).click())
+    await click('Bỏ dịch vụ 1 của An'); await click('Bỏ dịch vụ 1 của An')
+    const quantity = document.querySelector('.tour-booking-item input')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(quantity, '2')
+      quantity.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+    await click('Lưu điều chỉnh hóa đơn')
+    assert.equal(writes.length, 1)
+    assert.deepEqual(writes[0][1].entries, [{ index: 0, price: 240, service_items: [{ service_id: 'new', quantity: 2 }] }])
+    assert.deepEqual(writes[0][3], { expectedRevision: 42 })
+    assert.equal(writes[0][0], 'paid_invoice_update')
+    verifyEntryNotes(document.querySelectorAll('.live-tour-data-card'))
+  } finally { await fixture.close() }
+})
+
+test('empty service selection prevents save and closing does not write', async () => {
+  const writes = [], item = { ...invoice, entries: [entries[0]] }
+  const fixture = await mount(PaidDialog, { context: { item, mode: 'edit', revision: 4 }, isAdmin: true,
+    onClose() {}, onAction: async (...args) => writes.push(args) })
+  try {
+    await click('Bỏ dịch vụ 1 của An'); await click('Bỏ dịch vụ 1 của An')
+    const save = [...document.querySelectorAll('button')].find(node => node.textContent === 'Lưu điều chỉnh hóa đơn')
+    assert.equal(save.disabled, true)
+    await click('Đóng'); assert.equal(writes.length, 0)
+  } finally { await fixture.close() }
+})
+
+test('combo correction and deletion do not offer service changes', async () => {
+  for (const context of [{ item: { ...invoice, combo_purchase_id: 'owned', payment_method: 'COMBO' }, mode: 'edit' }, { item: invoice, mode: 'delete' }]) {
+    const fixture = await mount(PaidDialog, { context, isAdmin: true, onClose() {}, onAction() {} })
+    try { assert.equal(document.querySelector('[role="combobox"]'), null) }
+    finally { await fixture.close() }
+  }
+})
