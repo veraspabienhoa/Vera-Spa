@@ -244,10 +244,10 @@ class _Layout:
         self.paragraph(label, bold=True, size=9, gap=2)
         self.paragraph(value, indent=10, gap=8)
 
-    def section(self, number: str, title: str, subtitle: str | None = None, *, reserve: float = 47) -> None:
+    def section(self, number: str, title: str, subtitle: str | None = None, *, reserve: float = 47, background: str = PALE) -> None:
         self.ensure(max(85, 45 + (32 if subtitle else 0) + reserve))
         self.y += 7
-        self.rect(MARGIN, self.y, BODY_WIDTH, 29, PALE)
+        self.rect(MARGIN, self.y, BODY_WIDTH, 29, background)
         self.text(number, MARGIN + 9, self.y + 7, size=10, bold=True, color=GOLD)
         self.text(title, MARGIN + 34, self.y + 6, size=11, bold=True)
         self.y += 38
