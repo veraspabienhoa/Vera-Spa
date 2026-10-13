@@ -5,7 +5,7 @@ import UiCustomText from './UiCustomText'
 import { useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { advanceBookingField } from '../lib/advanceBookingField'
-import { bookingRoomGroup, bookingRoomState, roomOptionMatches } from '../lib/liveTourRooms'
+import { bookingRoomGroup, bookingRoomState, roomOptionMatches, orderedBookingRooms } from '../lib/liveTourRooms'
 import { Plus, Trash2 } from 'lucide-react'
 import { bookingEmployees, bookingServiceItems, bookingTotal, tourNameKey } from '../lib/liveTourBooking'
 import { catalogIsAvailable, comboExtraSubtotal, orderedCatalog } from '../lib/serviceCatalog'
@@ -41,7 +41,7 @@ function LiveTourMultiBookingDialog({ data, context, allowBookingOutsideShift = 
   const [shareCombo, setShareCombo] = useState(false)
   const employees = data.state?.employees || []
   const catalog = orderedCatalog(data.services || [])
-  const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
+  const rooms = orderedBookingRooms(data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || [], data.service_areas)
   const bookingClock = useBookingClock()
   const eligibleEmployees = bookingEmployees(employees, bookingClock, data.booking_settings?.employee_available_minutes, data.records, allowBookingOutsideShift)
   const groupRooms = rooms.filter((item) => bookingRoomGroup(item.name, rooms) === context.roomGroup)
@@ -159,7 +159,7 @@ function LiveTourSingleBookingDialog({ data, sourceRevision = data.revision, sou
   const [completedRevision, setCompletedRevision] = useState(null)
   const [message, setMessage] = useState('')
   const employee = source.employee
-  const rooms = data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || []
+  const rooms = orderedBookingRooms(data.catalogs?.rooms?.length ? data.catalogs.rooms : data.state?.rooms || [], data.service_areas)
   const roomState = bookingRoomState(rooms, data.room_assignments || employees, catalog, employeeId, room, items, sharePrivateRoom)
   const awaitingPayment = tourNameKey(employee?.status) === 'cho thanh toan'
   const hasPayableService = Boolean(employee?.service || employee?.service_items?.length)

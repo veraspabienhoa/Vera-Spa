@@ -25,7 +25,7 @@ import { watchLeaveChanges } from '../lib/leaveRefresh'
 import { canChangeEmployee } from '../lib/liveTourEmployeeChange'
 import LiveTourPaymentQr from '../components/LiveTourPaymentQr'
 import { searchTextMatches } from '../lib/searchText'
-import { roomOptionMatches, bookingRoomGroup } from '../lib/liveTourRooms'
+import { roomOptionMatches, bookingRoomGroup, orderedBookingRooms } from '../lib/liveTourRooms'
 import { tourStartOrder } from '../lib/liveTourOrder'
 import LiveTourCustomerDialog from '../components/LiveTourCustomerDialog'
 import LiveTourFilters from '../components/LiveTourFilters'
@@ -1209,7 +1209,7 @@ function LiveTourWorkspace({ user, navigationToggle = null }) {
     return grouped
   }, [assignmentAreaKey, roomColumn, validRecords])
   const availableRooms = useMemo(() => asArray(data.available_rooms), [data.available_rooms])
-  const catalogRooms = asArray(data.catalogs?.rooms).length ? asArray(data.catalogs.rooms) : asArray(data.state?.rooms)
+  const catalogRooms = orderedBookingRooms(asArray(data.catalogs?.rooms).length ? asArray(data.catalogs.rooms) : asArray(data.state?.rooms), data.service_areas)
   const rawRooms = useMemo(() => asArray(data.catalogs?.rooms).length ? asArray(data.catalogs.rooms) : asArray(data.state?.rooms).length ? asArray(data.state.rooms) : Array.isArray(data.rooms) ? data.rooms : asArray(data.rooms?.all), [data.catalogs?.rooms, data.rooms, data.state?.rooms])
   const serverRoomGroups = useMemo(() => asArray(data.rooms?.all), [data.rooms])
   const roomCatalog = useMemo(() => {
