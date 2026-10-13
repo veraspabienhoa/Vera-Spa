@@ -1,3 +1,12 @@
+## Follow-up: selected date range and one-row controls
+
+The latest change supersedes the original all-time export behavior below:
+PDF/PNG now use the selected training dates (all employees, ignoring the name
+search). Headers show From/To dates in dd-mm-yyyy. All-time selection resolves
+to the earliest/latest authorized record, or today when there are no records.
+The untrained roster remains an all-time fact for department nhanvien. Employee,
+time preset and share button occupy the same grid row, including mobile.
+
 # Whole-roster training progress sharing
 
 The progress tab has a share button aligned right below the filters. Its modal

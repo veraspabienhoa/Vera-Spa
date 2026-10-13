@@ -151,3 +151,15 @@ test('legacy compatibility retry stops when activation has expired while loading
   await assert.rejects(operation, error => error === incompatible)
   assert.equal(writes, 1)
 })
+
+test('employee capture draws sorted bars directly without foreignObject or external images and excludes hidden TIP values', async t => {
+  const { elementToPngBlob } = await import('../src/lib/clipboardImage.js')
+  const texts = [], rectangles = []
+  const ctx = { scale(){}, fillRect(...args){rectangles.push(args)}, fillText(text){texts.push(text)} }
+  replaceGlobal(t,'Image',class { constructor(){assert.fail('No SVG or external image is needed')} })
+  replaceGlobal(t,'document',{createElement(name){assert.equal(name,'canvas');return {getContext:()=>ctx,toBlob:callback=>callback(png())}}})
+  const row = (name, hidden) => ({querySelector:selector=>selector.includes('name')?{textContent:name}:selector==='i'?{style:{width:'50%'}}:hidden?null:{textContent:'3'}})
+  const element = { matches:()=>true, querySelector:()=>({textContent:'Biểu đồ dịch vụ'}),querySelectorAll:()=>[row('Bình',false),row('An',true)] }
+  const blob=await elementToPngBlob(element)
+  assert.equal(blob.type,'image/png');assert.deepEqual(texts,['Biểu đồ dịch vụ','Bình','3','An']);assert.ok(rectangles.length>1)
+})

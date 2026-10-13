@@ -41,8 +41,41 @@ function cloneWithComputedStyles(source) {
   return clone
 }
 
+// Draw report bars from their already-filtered, sorted DOM data. No SVG
+// foreignObject, external fonts/images or blob-backed SVG can taint this canvas.
+export async function employeeChartPng(element, { scale = 2, background = '#ffffff' } = {}) {
+  const rows = [...element.querySelectorAll('.employee-revenue-chart-row')]
+  const width = 1100, rowHeight = 42, height = 100 + Math.max(1, rows.length) * rowHeight
+  const ratio = Math.max(1, Math.min(2, Number(scale) || 1))
+  if (width * height * ratio * ratio > 36000000) throw new Error('Biểu đồ quá lớn. Hãy thu hẹp bộ lọc trước khi chụp.')
+  const canvas = document.createElement('canvas')
+  canvas.width = width * ratio; canvas.height = height * ratio
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Trình duyệt không tạo được ảnh báo cáo.')
+  ctx.scale(ratio, ratio); ctx.fillStyle = background; ctx.fillRect(0, 0, width, height)
+  ctx.fillStyle = '#173d2f'; ctx.font = 'bold 24px sans-serif'
+  ctx.fillText(element.querySelector('h4')?.textContent || 'Báo cáo theo nhân viên', 24, 38)
+  ctx.font = '17px sans-serif'
+  if (!rows.length) ctx.fillText('Không có dữ liệu phù hợp bộ lọc.', 24, 92)
+  rows.forEach((row, index) => {
+    const y = 82 + index * rowHeight
+    const name = row.querySelector('.employee-revenue-chart-name')?.textContent || ''
+    const percent = Math.max(0, Math.min(100, parseFloat(row.querySelector('i')?.style.width) || 0))
+    ctx.fillStyle = '#173d2f'; ctx.fillText(name, 24, y + 5, 280)
+    ctx.fillStyle = '#e6eee9'; ctx.fillRect(320, y - 14, 620, 24)
+    ctx.fillStyle = '#205540'; ctx.fillRect(320, y - 14, 620 * percent / 100, 24)
+    const value = row.querySelector('strong:not([data-snapshot-ignore])')
+    if (value) { ctx.textAlign = 'right'; ctx.fillText(value.textContent, width - 24, y + 5, 120); ctx.textAlign = 'left' }
+  })
+  return new Promise((resolve, reject) => {
+    try { canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Không tạo được ảnh PNG.')), 'image/png') }
+    catch (error) { reject(error) }
+  })
+}
+
 export async function elementToPngBlob(element, { scale = 2, background = '#ffffff' } = {}) {
   if (!element || !globalThis.document) throw new Error('Không tìm thấy khu vực cần chụp ảnh.')
+  if (element.matches?.('.employee-revenue-chart')) return employeeChartPng(element, { scale, background })
   const width = Math.max(1, Math.ceil(Math.max(element.scrollWidth || 0, element.getBoundingClientRect?.().width || 0)))
   const height = Math.max(1, Math.ceil(Math.max(element.scrollHeight || 0, element.getBoundingClientRect?.().height || 0)))
   const clone = cloneWithComputedStyles(element)

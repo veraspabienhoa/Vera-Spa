@@ -194,19 +194,31 @@ test('binary transport retains server filename, exact employee filters and cance
  controller.abort();await assert.rejects(read('Thảo Linh','png',{}, {signal:controller.signal}),error=>error.name==='AbortError')
 })
 
-test('whole-roster share ignores name/date filters, prepares both files and revokes URLs on close', async()=>{
+test('whole-roster share applies dates but ignores name filter, prepares both files and revokes URLs on close', async()=>{
  const f=await fixture({readTrainingOverviewExport:async(format)=>({blob:new Blob([format],{type:format==='pdf'?'application/pdf':'image/png'}),filename:`VERA_TienDoDaoTao_ToanBoNhanVien.${format}`})})
  try{
   await f.open();await f.select('day');await f.type(document.querySelector('[role=combobox]'),'Linh')
   await f.click(document.querySelector('.training-overview-action button'))
   const calls=f.calls.filter(c=>c.method==='readTrainingOverviewExport')
   assert.equal(calls.length,2);assert.deepEqual(calls.map(c=>c.args[0]).sort(),['pdf','png'])
-  assert.ok(calls.every(c=>Object.keys(c.args[1]).join() === 'signal'))
-  assert.ok(document.querySelector('[role=dialog]').textContent.includes('Toàn bộ thời gian'))
+  assert.ok(calls.every(c=>Object.keys(c.args[2]).join() === 'signal'));assert.ok(calls.every(c=>c.args[1].date_from && c.args[1].date_to))
+  assert.ok(document.querySelector('[role=dialog]').textContent.includes('khoảng ngày đã chọn'))
   for(const label of ['Xem PDF','Tải PDF','Tải PNG'])assert.ok([...document.querySelectorAll('a')].some(a=>a.textContent===label))
   await f.click(f.button('Chia sẻ PNG qua Zalo / ứng dụng khác'))
   assert.equal(f.shares[0].files[0].type,'image/png')
   await f.click(document.querySelector('[aria-label="Đóng chia sẻ báo cáo"]'))
   assert.deepEqual(f.revoked,f.urls.map(x=>x.url))
  }finally{await f.dispose()}
+})
+
+test('performance binary transport excludes blank numeric filters and keeps selected dates/result',async()=>{
+ const source=readFileSync(new URL('../src/lib/api.js',import.meta.url),'utf8')
+ const body=source.slice(source.indexOf('  readPerformanceReportExport: async'),source.indexOf('  readTrainingOverviewExport:')).trim().replace(/^readPerformanceReportExport: /,'').replace(/,$/,'')
+ let requested
+ const read=new Function('binaryResponse',`return (${body})`)(async(url)=>{requested=url;return{blob:async()=>new Blob(['pdf'])}})
+ await read('pdf',{date_from:'2026-10-01',date_to:'2026-10-13',employee:'An',performance_timing:'early',total_amount:'',tip_amount:''})
+ const params=new URL(requested,'https://example.test').searchParams
+ assert.equal(params.get('kind'),'performance');assert.equal(params.get('performance_timing'),'early')
+ assert.equal(params.get('date_from'),'2026-10-01');assert.equal(params.get('employee'),'An')
+ assert.equal(params.has('total_amount'),false);assert.equal(params.has('tip_amount'),false)
 })

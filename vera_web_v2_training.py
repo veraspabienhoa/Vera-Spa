@@ -849,14 +849,17 @@ def install_training_routes(
     @app.get("/v2/training/progress-export")
     def export_training_overview(
         format: Literal["pdf", "png"] = Query(default="pdf"),
+        date_from: date | None = Query(default=None),
+        date_to: date | None = Query(default=None),
         ident: identity_type = Depends(current_identity),
     ):
         from vera_web_v2_training_overview import read_overview, render_overview
         from vera_web_v2_training_report_export import ReportExportTooLarge, ReportExportUnavailable
+        _validate_report_dates(date_from, date_to)
         with engine_instance().begin() as conn:
             _schema(conn); require_feature(conn, ident, "training_view")
             catalog = _with_departments(conn, _training_employee_catalog(conn, ident))
-            report = read_overview(conn, catalog)
+            report = read_overview(conn, catalog, date_from, date_to)
         try:
             content = render_overview(report, format)
         except ReportExportTooLarge as exc:
