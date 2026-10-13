@@ -711,7 +711,7 @@ function FaceIdEnrollment({ username, photo, photoBusy, inline = false }) {
     {pending && <button type="button" className="secondary-button compact" disabled={busy || automaticBusy || Boolean(photoBusy)} onClick={() => act(true)}>{busy || automaticBusy ? 'Đang kiểm tra…' : 'Kiểm tra lại kết quả'}</button>}
     {!message && enrollmentFailureMessage(enrollment) && <p role="status">{enrollmentFailureMessage(enrollment)}</p>}
     {!message && enrollment.error_code === 'precommit_reconciled' && <p role="status">Lượt gửi trước chưa cập nhật hồ sơ trên máy. Có thể gửi lại ảnh đã lưu.</p>}
-    {message && <p role="status">{message}</p>}
+    {message && message !== 'Không tìm thấy duy nhất một hồ sơ nhân viên đang hoạt động.' && <p role="status">{message}</p>}
   </div>
 }
 
@@ -753,9 +753,9 @@ export function FaceIdCard({ username, compact = false }) {
         <FaceIdCapturePicker key={`${username}:${day}`} username={username} day={day} busy={busy} onSelect={acceptFile} compact={compact}
           dateControl={<VeraDateInput aria-label="Ngày chụp FaceID" value={day} onChange={(event) => setDay(event.target.value)}/>}/>
       </div> : undefined}/>
-    <p>Ảnh lưu riêng trong VERA SPA, không xuất trong PDF hồ sơ.</p>
+    
     {!compact && data.can_view_device_tools && <FaceIdEnrollment key={`enrollment:${username}`} username={username} photo={data.photo} photoBusy={busy}/>}
-    {notice && <p role="status" className={`employee-identity-notice ${notice.type}`}>{notice.message}</p>}
+    {notice && notice.message !== 'Không tìm thấy duy nhất một hồ sơ nhân viên đang hoạt động.' && <p role="status" className={`employee-identity-notice ${notice.type}`}>{notice.message}</p>}
   </div>
 }
 
@@ -855,12 +855,12 @@ export default function EmployeeIdentityPanel({ username, allowPasswordReset = f
 
   return <div className={`employee-identity-panel ${className}`}>
 
-    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH NHÂN VIÊN</h3><p>Ảnh giữ tỷ lệ đã chọn. Nhân viên có thể tải ảnh hoặc chụp trực tiếp; cắt và xoay là tùy chọn.</p></div></div>
+    <div className="employee-identity-title"><ImageIcon size={19}/><div><h3>ẢNH NHÂN VIÊN</h3></div></div>
     <div className="employee-portrait-section"><PortraitSide username={username} metadata={meta.portrait} busy={busy.includes('portrait')} onChanged={run} setNotice={setNotice} allowAdminEdit={allowAdminEdit || allowPasswordReset}/><FaceIdCard key={username} username={username}/></div>
     <div className="employee-identity-title"><ShieldCheck size={19}/><div><h3>CĂN CƯỚC CÔNG DÂN</h3></div></div>
     <div className="employee-identity-grid"><IdentitySide username={username} side="front" title="Mặt trước" metadata={meta.front} busy={busy.includes('front')} onChanged={run} setNotice={setNotice} allowDownload={allowAdminEdit || allowPasswordReset} allowAdminEdit={allowAdminEdit || allowPasswordReset} onExtracted={onIdentityExtracted}/><IdentitySide username={username} side="back" title="Mặt sau" metadata={meta.back} busy={busy.includes('back')} onChanged={run} setNotice={setNotice} allowDownload={allowAdminEdit || allowPasswordReset} allowAdminEdit={allowAdminEdit || allowPasswordReset} onExtracted={onIdentityExtracted}/></div>
     <div className="employee-profile-export"><button data-ui-key="u-3d346c6c0daf" type="button" className="secondary-button" onClick={exportPdf} disabled={busy === 'profile-pdf'}>{busy === 'profile-pdf' ? <LoaderCircle className="spin" size={16}/> : <FileDown size={16}/>} Xuất PDF hồ sơ nhân viên</button></div>
     {allowPasswordReset && <div className="employee-password-reset"><div className="employee-password-reset-head"><KeyRound size={17}/><div><h4>RESET MẬT KHẨU NHÂN VIÊN</h4><p>Bấm Reset để tự động đặt mật khẩu mặc định và xóa phiên đăng nhập cũ.</p></div></div><div className="employee-password-reset-grid"><div className="employee-password-default"><span>Mật khẩu mặc định</span><strong>{DEFAULT_RESET_PASSWORD}</strong></div><button data-ui-key="u-ef6e811b8699" type="button" className="primary-button employee-password-submit" onClick={resetPassword} disabled={busy === 'password'}>{busy === 'password' ? <LoaderCircle className="spin" size={16}/> : <KeyRound size={16}/>} Reset mật khẩu</button></div></div>}
-    {notice && <div className={`employee-identity-notice ${notice.type}`}>{notice.message}</div>}
+    {notice && notice.message !== 'Không tìm thấy duy nhất một hồ sơ nhân viên đang hoạt động.' && <div className={`employee-identity-notice ${notice.type}`}>{notice.message}</div>}
   </div>
 }
