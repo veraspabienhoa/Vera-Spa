@@ -1,3 +1,4 @@
+import { displayCode } from './displayCode.js'
 import { tourDateRange, TOUR_DATE_PRESETS } from './liveTourFilters.js'
 
 export const CHECKIN_PRESETS = TOUR_DATE_PRESETS.map(([id, label]) => [id, id === 'all' ? 'Tất cả' : label])
@@ -28,8 +29,8 @@ export function checkinLookupOptions(rows) {
   const employees = new Map(), events = new Map()
   for (const row of rows) {
     const name = String(row.employee_name || row.device_name || row.employee_code || '').trim()
-    const detail = [...new Set([row.device_name, row.employee_code].filter(Boolean))].join(' · ')
-    if (name) employees.set(name, { value: name, label: name, detail })
+    const detail = [...new Set([row.device_name, row.employee_code ? displayCode(row.employee_code) : ''].filter(Boolean))].join(' · ')
+    if (name) employees.set(name, { value: name, label: row.employee_name || row.device_name ? name : displayCode(name), detail, searchText: row.employee_code || '' })
     const id = String(row.event_id ?? '').trim()
     if (id) events.set(id, { value: id, label: id, detail: name })
   }

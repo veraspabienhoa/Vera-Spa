@@ -1,3 +1,4 @@
+import CompactCode from '../components/CompactCode'
 import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import { checkinLookupOptions } from '../lib/checkinHistory'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -23,7 +24,7 @@ function MappingCheck({ record }) {
     finally { setBusy(false) }
   }
   return <div><button type="button" className="secondary-button" disabled={busy || !record.registration_ref} onClick={check}>{busy ? 'Đang kiểm tra…' : 'Đối chiếu'}</button>
-    {result && <p role="status">{result.status === 'reference_match' && <strong>{result.username} · {result.employee_code}<br /></strong>}{result.message}</p>}</div>
+    {result && <p role="status">{result.status === 'reference_match' && <strong>{result.username} · <CompactCode value={result.employee_code} label="Mã nhân viên"/><br /></strong>}{result.message}</p>}</div>
 }
 
 function CaptureImageButton({ record, onChoose }) {
@@ -177,7 +178,7 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
           {visible.map(item => <tr key={`${item.event_id}-${item.occurred_at}`}>
             <td data-label="Mã sự kiện">{item.event_id}</td><td data-label="Thời điểm">{formatVeraDateTime(item.occurred_at, '—')}</td>
             <td data-label="Tên hiển thị trên máy">{item.device_name || '—'}</td><td data-label="Mã trạng thái">{item.status_code ?? '—'}</td><td data-label="Mã loại trên máy">{item.type_code ?? '—'}</td>
-            <td data-label="Đối chiếu nhân viên">{source === 'facegate_saved' ? (item.mapping_status === 'reference_match' ? `${item.employee_name} · ${item.employee_code}` : 'Chưa ánh xạ') : <MappingCheck key={`${item.event_id}-${JSON.stringify(item.registration_ref)}`} record={item} />}</td>
+            <td data-label="Đối chiếu nhân viên">{source === 'facegate_saved' ? (item.mapping_status === 'reference_match' ? <>{item.employee_name} · <CompactCode value={item.employee_code} label="Mã nhân viên"/></> : 'Chưa ánh xạ') : <MappingCheck key={`${item.event_id}-${JSON.stringify(item.registration_ref)}`} record={item} />}</td>
           </tr>)}
         </tbody></table></div>
       </> : source === 'capture' ? <>
@@ -194,7 +195,7 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
         <p>{visible.length} bản ghi trong kỳ đã chọn. Nguồn: TimeSoft đã đồng bộ; không phải log trực tiếp từ thiết bị.</p>
         <div className="responsive-data-table"><table><thead><tr><th>Ngày</th><th>Mã nhân viên</th><th>Nhân viên</th><th>Giờ vào</th><th>Các lần chấm</th><th>Giờ ra</th></tr></thead><tbody>
           {visible.map((item, index) => <tr key={`${item.date}-${item.employee_code}-${index}`}>
-            <td data-label="Ngày">{formatVeraDate(item.date, '—')}</td><td data-label="Mã nhân viên">{item.employee_code || '—'}</td>
+            <td data-label="Ngày">{formatVeraDate(item.date, '—')}</td><td data-label="Mã nhân viên"><CompactCode value={item.employee_code} label="Mã nhân viên"/></td>
             <td data-label="Nhân viên">{item.employee_name || '—'}</td><td data-label="Giờ vào">{item.check_in || '—'}</td>
             <td data-label="Các lần chấm">{(item.punch_times || []).join(' · ') || '—'}</td><td data-label="Giờ ra">{item.check_out || '—'}</td>
           </tr>)}
