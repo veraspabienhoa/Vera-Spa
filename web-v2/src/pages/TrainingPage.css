@@ -58,3 +58,9 @@
 @media(max-width:640px){.training-overview-action button{width:100%}}
 .training-report-file-actions :is(a,button){white-space:normal;min-width:0;max-width:100%;overflow-wrap:anywhere;text-align:center}
 @media(max-width:600px){.training-report-file-actions .primary-button{grid-column:1/-1}}
+
+.training-employee-roster > .training-progress-filters{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.3fr);align-items:end}
+.training-employee-roster > .training-progress-filters > *{min-width:0}
+.training-progress-filters .training-overview-action{margin:0;align-self:end}
+.training-progress-filters .training-overview-action button{min-height:44px}
+@media(max-width:600px){.training-employee-roster > .training-progress-filters{gap:6px}.training-employee-roster > .training-progress-filters :is(button,input,select){font-size:11px;padding:8px 4px;width:100%;min-width:0}.training-progress-filters .training-overview-action svg{display:none}}

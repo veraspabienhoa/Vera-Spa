@@ -31,14 +31,14 @@ from copy import deepcopy
 from functools import lru_cache
 from datetime import date, datetime, time, timedelta
 from io import BytesIO
-from typing import Annotated, Any
+from typing import Literal, Annotated, Any
 from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid4, uuid5
 from zoneinfo import ZoneInfo
 
 from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from PIL import Image, ImageDraw, ImageFont
@@ -1104,7 +1104,7 @@ def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
         employee.pop(key, None)
     for key in (
         "service", "request", "request_source", "room", "status", "booked_at", "booking_created_at", "auto_started_at", "auto_start_error", "booking_actor", "private_room_share_group",
-        "started_at", "completed_at", "payment_status", "customer_id", "customer_name",
+        "started_at", "completed_at", "started_by", "completed_by", "payment_status", "customer_id", "customer_name",
         "customer_phone", "booking_id", "note",
         "service_price_source", "completion_note",
     ):
@@ -1382,7 +1382,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
         "request": request, "request_source": "auto_shift_ready" if before_shift else "auto_yc_ca1" if auto_request else "manual",
         "room": room,
         "status": "Đang chờ", "duration": duration, "booked_at": _iso(_adjust_booking_time(now)), "booking_created_at": _iso(now), "booking_actor": actor,
-        "started_at": "", "completed_at": "", "wait_minutes": None,
+        "started_at": "", "completed_at": "", "started_by": "", "completed_by": "", "wait_minutes": None,
         "completion_note": "", "completion_delta_minutes": None, "steam_elapsed_minutes": None,
         "payment_status": "", "customer_id": str((customer or {}).get("id") or ""),
         "customer_name": str((customer or {}).get("name") or ""),
@@ -1397,7 +1397,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
             if _active_booking(occupant) and _norm(_catalog_room_group(state, occupant.get("room"))) == group:
                 occupant["private_room_share_group"] = group
     if payload.get("start_now"):
-        _start_employee(state, employee, now)
+        _start_employee(state, employee, now, actor=actor)
     return employee
 
 
@@ -1442,7 +1442,7 @@ def _can_start_outside_shift(role: str, granted: bool, now: datetime) -> bool:
     )
 
 
-def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: datetime, *, admin_start=False) -> None:
+def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: datetime, *, admin_start=False, actor="Hệ thống") -> None:
     from vera_holiday_leave import local as holiday_local
     if employee.get("holiday_leave_active") or any(
             holiday_local(period['starts_at']) <= now.astimezone(VN_TZ) < holiday_local(period['ends_at'])
@@ -1477,6 +1477,8 @@ def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: dateti
     employee["board_yc_started_at" if _norm(employee.get("request")) == "yc" else "board_started_at"] = _iso(now)
     employee["status"] = "Đang thực hiện"
     employee["started_at"] = _iso(now)
+    employee["started_by"] = actor
+    employee["completed_by"] = ""
     employee["employee_change_minutes"] = (state.get("payment_settings") or {}).get("employee_change_minutes", 10)
     booked_at = _parse_datetime(employee.get("booked_at"))
     employee["wait_minutes"] = max(0, int(round((now.astimezone(VN_TZ) - booked_at).total_seconds() / 60))) if booked_at else 0
@@ -1700,6 +1702,7 @@ def _checkout_mutating(
         entries = [{
             "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
             "booking_actor": item.get("booking_actor", ""),
+            "started_by": item.get("started_by", ""), "completed_by": item.get("completed_by", ""),
             "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
             "board_started_at": _board_starts(item)["board_started_at"],
             "board_yc_started_at": _board_starts(item)["board_yc_started_at"],
@@ -2207,7 +2210,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         target_position["counter_day"] = original_position["counter_day"]
         fields = ("service", "service_items", "service_price", "service_price_source", "duration",
                   "request", "request_source", "room", "status", "booked_at", "booking_created_at", "booking_actor", "booking_id", "private_room_share_group",
-                  "started_at", "employee_change_minutes", "completed_at", "wait_minutes", "payment_status", "completion_note",
+                  "started_at", "started_by", "completed_by", "employee_change_minutes", "completed_at", "wait_minutes", "payment_status", "completion_note",
                   "completion_delta_minutes", "steam_elapsed_minutes", "customer_id", "customer_name",
                   "customer_phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components", "note")
         assignment = {key: deepcopy(source[key]) for key in fields if key in source}
@@ -2260,6 +2263,8 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             employee[counter_key] = max(0, int(employee.get(counter_key) or 0) - 1)
         employee["status"] = "Đang chờ"
         employee["started_at"] = ""
+        employee["started_by"] = ""
+        employee["completed_by"] = ""
         employee["completed_at"] = ""
         employee["payment_status"] = ""
         employee["completion_note"] = ""
@@ -2328,7 +2333,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         if customer:
             employee.update(customer_id=customer["id"], customer_name=customer.get("name", ""), customer_phone=customer.get("phone", ""))
         if payload.get("start_now") and _norm(employee["status"]) == "dang cho":
-            _start_employee(state, employee, now)
+            _start_employee(state, employee, now, actor=actor)
         result["employee"] = employee
     elif action == "finish_to_pending":
         working = deepcopy(state)
@@ -2382,7 +2387,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         result["employees"] = booked
     elif action == "start":
         employee = _employee(state, payload.get("employee_id"))
-        _start_employee(state, employee, now, admin_start=payload.get("_admin_start") is True)
+        _start_employee(state, employee, now, admin_start=payload.get("_admin_start") is True, actor=actor)
         result["employee"] = employee
     elif action == "add_minutes":
         employee = _employee(state, payload.get("employee_id"))
@@ -2406,6 +2411,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         employee["status"] = "CHO THANH TOÁN"
         employee["payment_status"] = "CHO THANH TOÁN"
         employee["completed_at"] = _iso(now)
+        employee["completed_by"] = actor
         started_at = _parse_datetime(employee.get("started_at"))
         elapsed = (now.astimezone(VN_TZ) - started_at).total_seconds() / 60 if started_at else 0
         employee["completion_delta_minutes"] = int(round(elapsed - float(employee.get("duration") or 0)))
@@ -2438,6 +2444,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             "entries": [{
                 "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
                 "booking_actor": item.get("booking_actor", ""),
+                "started_by": item.get("started_by", ""), "completed_by": item.get("completed_by", ""),
                 "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
                 "board_started_at": _board_starts(item)["board_started_at"],
                 "board_yc_started_at": _board_starts(item)["board_yc_started_at"],
@@ -3040,6 +3047,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
                 employee["status"] = "CHO THANH TOÁN"
                 employee["payment_status"] = "CHO THANH TOÁN"
                 employee["completed_at"] = _iso(now)
+                employee["completed_by"] = actor
         result.update({"marked_for_payment": len(ids), "grace_minutes": preview["grace_minutes"], "employee_ids": sorted(ids)})
     else:
         raise HTTPException(400, f"Thao tác Live Tour không hợp lệ: {action}")
@@ -3438,7 +3446,7 @@ def _service_performance_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
             "booking_note": entry.get("note", ""),
             "booked_at": _iso(booked) if booked else "", "started_at": _iso(started),
             "board_started_at": starts.get("board_started_at") or "", "board_yc_started_at": starts.get("board_yc_started_at") or "",
-            "completed_at": _iso(completed), "duration": int(round(duration)) if duration is not None else None,
+            "completed_at": _iso(completed), "started_by": entry.get("started_by", ""), "completed_by": entry.get("completed_by", ""), "duration": int(round(duration)) if duration is not None else None,
             "actual_duration_minutes": elapsed, "completion_delta_minutes": delta, "completion_result": entry.get("completion_note") or result,
             "steam_minutes": max(0, int(round((started - booked).total_seconds() / 60))) if booked else None,
         })
@@ -4003,7 +4011,7 @@ def _export_rows(
             ])
         return "Bao_cao", headers, rows
     if kind == "performance":
-        headers = ["Nhân viên", "Dịch vụ", "Phòng", "Booking", "TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC", "Hoàn thành", "Quy định (phút)", "Thực tế (phút)", "Kết quả", "TG Xông Hơi (phút)"]
+        headers = ["Nhân viên", "Dịch vụ", "Phòng", "Booking", "TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC", "Hoàn thành", "Quy định (phút)", "Thực tế (phút)", "Kết quả", "TG Xông Hơi (phút)", "Tài khoản thực hiện", "Tài khoản hoàn thành"]
         rows = []
         for item in _service_performance_rows(state):
             if not _event_in_export_bounds(item, bounds):
@@ -4019,7 +4027,7 @@ def _export_rows(
             requested = _norm(item.get("request")) == "yc"
             standard_start = "" if requested else item.get("board_started_at") or item.get("started_at")
             requested_start = item.get("board_yc_started_at") or item.get("started_at") if requested else ""
-            rows.append([item.get("employee_name"), item.get("service"), item.get("room"), item.get("booked_at"), standard_start, requested_start, item.get("completed_at"), item.get("duration"), item.get("actual_duration_minutes"), item.get("completion_result"), item.get("steam_minutes")])
+            rows.append([item.get("employee_name"), item.get("service"), item.get("room"), item.get("booked_at"), standard_start, requested_start, item.get("completed_at"), item.get("duration"), item.get("actual_duration_minutes"), item.get("completion_result"), item.get("steam_minutes"), item.get("started_by"), item.get("completed_by")])
         return "Thoi_gian_dich_vu", headers, rows
     if kind == "employee":
         grouped: dict[str, dict[str, Any]] = {}
@@ -4413,7 +4421,7 @@ def _import_board_into_state(state: dict[str, Any], rows: list[dict[str, Any]], 
         updates.append((current, parsed))
     mutable = {
         "stt", "appointment", "service", "request", "request_source", "room", "status", "duration",
-        "booked_at", "started_at", "completed_at", "payment_status", "completion_note", "tour_count",
+        "booked_at", "started_at", "completed_at", "started_by", "completed_by", "payment_status", "completion_note", "tour_count",
         "request_count", "work_status", "shift", "break_started_at", "clock_out", "clock_in",
         "break_remaining_minutes", "steam_elapsed_minutes", "wait_minutes", "completion_delta_minutes",
         "note", "vip", "sort_index",
@@ -5459,6 +5467,9 @@ def install_live_tour_routes(
             if action in {'booking', 'multi_booking'}:
                 from vera_live_tour_booking_notifications import enqueue_bookings
                 enqueue_bookings(conn, action, result, idempotency_key)
+            if action in {'complete', 'finish_to_pending', 'finish_room'}:
+                from vera_live_tour_early_completion import enqueue_early_completions
+                enqueue_early_completions(conn, result)
             next_revision = _write_state_compat(
                 conn, working, revision, actor, previous_state=state,
             )
@@ -5564,8 +5575,10 @@ def install_live_tour_routes(
                                  headers={"Content-Disposition": "attachment; filename=VERA_SoLuongKhach.png",
                                           "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
+    @app.get("/v2/live-tour/report-share")
     @app.get("/v2/live-tour/export.xlsx")
     def live_tour_export_excel(
+        format: Literal["xlsx", "pdf", "png"] = "xlsx",
         kind: str = Query(default="board"), include_hidden: bool = Query(default=False), preset: str = "",
         date_from: str = Query(default=""), date_to: str = Query(default=""),
         time_from: str = Query(default=""), time_to: str = Query(default=""),
@@ -5586,6 +5599,8 @@ def install_live_tour_routes(
             "breaks", "customer_detail", "performance", "employee",
         }:
             raise HTTPException(400, "Loại báo cáo Live Tour không hợp lệ.")
+        if format != "xlsx" and export_kind != "performance":
+            raise HTTPException(400, "Chia sẻ PDF/PNG chỉ áp dụng báo cáo thời gian thực hiện.")
         customer_id_value = str(customer_id or "").strip()
         if export_kind == "customer_detail" and not customer_id_value:
             raise HTTPException(400, "Xuất lịch sử khách hàng cần customer_id.")
@@ -5637,6 +5652,19 @@ def install_live_tour_routes(
         elif export_kind in {"reports", "tip", "employee"} and not (grants["can_customers_view"] or grants["can_invoice_view"] or grants["can_paid_invoice_view"]):
             state = deepcopy(state)
             state["reports"] = _redact_customer_pii(state["reports"])
+        if format != "xlsx":
+            from vera_performance_report_export import render_performance_report
+            from vera_web_v2_training_report_export import ReportExportTooLarge, ReportExportUnavailable
+            _, headers, rows = _export_rows(state, "performance", now, bounds=bounds)
+            try:
+                content = render_performance_report(headers, rows, bounds, format)
+            except ReportExportTooLarge as exc:
+                raise HTTPException(413, str(exc)) from exc
+            except ReportExportUnavailable as exc:
+                raise HTTPException(503, str(exc)) from exc
+            return Response(content=content, media_type="application/pdf" if format == "pdf" else "image/png",
+                headers={"Content-Disposition": f'attachment; filename="VERA_ThoiGianThucHien.{format}"',
+                         "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
         content, filename = _excel_bytes(
             state, export_kind, now, include_hidden=bool(include_hidden and can_recover_hidden),
             bounds=bounds, customer_id=customer_id_value, selected_columns=columns, employee_ids=employee_ids,
@@ -5689,6 +5717,7 @@ def install_live_tour_routes(
 
     @app.get("/v2/live-tour/export.png")
     def live_tour_export_png(
+        format: Literal["xlsx", "pdf", "png"] = "xlsx",
         kind: str = Query(default="board"), include_hidden: bool = Query(default=False),
         ident: identity_type = Depends(current_identity),
     ):

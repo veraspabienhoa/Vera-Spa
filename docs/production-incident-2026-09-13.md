@@ -1,3 +1,17 @@
+## 13-10-2026 — Performance actors and early-completion notices (source only)
+
+Start/complete transitions persist the authenticated actor through pending and
+paid entries. Legacy records retain blank actors; no historical identity is
+inferred. Restart/new booking clears actor fields, and employee replacement
+retains the original service actor. Scheduled starts identify the system.
+
+Completion results of -5 minutes or earlier enqueue fixed-audience in-app,
+popup and push notices for Admin, quanly, letan and the service employee, using
+the existing outbox inside the caller transaction/savepoint. Event identity is
+stable across batch recursion and retries. Rendering and network delivery never
+hold this business connection; account activity, current audience and channel
+switches remain checked. No production notifications or deployment were tested.
+
 ## 12-10-2026 — Automatic arrival fines use official minute bands (source only)
 
 FaceGate and the shared arrival worker now select the exact official arrival

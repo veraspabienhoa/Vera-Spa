@@ -1,6 +1,7 @@
 """All-time training overview, built only from the authorized active roster."""
 from collections import Counter
-from datetime import time
+from datetime import time, datetime
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from sqlalchemy import bindparam, text
 
@@ -21,10 +22,11 @@ def session_seconds(start, end):
         return None
 
 
-def read_overview(conn, catalog):
+def read_overview(conn, catalog, date_from=None, date_to=None):
     """Two bound bulk reads; no per-employee connections or bootstrap row limit."""
     if not catalog:
-        return {"employees": [], "untrained": []}
+        today = datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')).date().isoformat()
+        return {"employees": [], "untrained": [], 'date_from': str(date_from or today), 'date_to': str(date_to or today)}
     names = [item['username'].lower() for item in catalog]
     daily = conn.execute(text('''SELECT employee_username, training_date, start_time, end_time,
         topic, skill_grade, learning_attitude, strengths, improvements, notes
@@ -38,7 +40,18 @@ def read_overview(conn, catalog):
         JOIN vera_evaluation_cycle c ON c.id=a.cycle_id
         WHERE a.status='submitted' AND lower(a.employee_username) IN :names
         ORDER BY c.end_date, ev.submitted_at, a.id''').bindparams(bindparam('names', expanding=True)), {'names': names}).mappings().all()
-    return summarize(catalog, daily, evaluations)
+    report = summarize(catalog, daily, evaluations)
+    all_days = [str(row['training_date'])[:10] for row in daily] + [str(row['end_date'])[:10] for row in evaluations]
+    today = datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')).date().isoformat()
+    report['date_from'] = str(date_from) if date_from else min(all_days, default=today)
+    report['date_to'] = str(date_to) if date_to else max(all_days, default=today)
+    def in_range(value):
+        day = str(value)[:10]
+        return (not date_from or day >= str(date_from)) and (not date_to or day <= str(date_to))
+    if date_from or date_to:
+        filtered = summarize(catalog, [row for row in daily if in_range(row['training_date'])], [row for row in evaluations if in_range(row['end_date'])])
+        report['employees'] = filtered['employees']
+    return report
 
 
 def summarize(catalog, daily, evaluations):
@@ -89,9 +102,10 @@ def summarize(catalog, daily, evaluations):
 def build_layout(report, *, png=False):
     layout = _Layout('Toàn bộ nhân viên', png=png)
     layout.paragraph('BÁO CÁO TIẾN ĐỘ ĐÀO TẠO', size=17, bold=True)
-    layout.paragraph('Toàn bộ thời gian · Nhân viên đang hoạt động trong phạm vi quyền xem', size=8.5, color=MUTED)
+    from vera_web_v2_training_report_export import _date
+    layout.paragraph(f"Từ ngày: {_date(report.get('date_from'))} · Đến ngày: {_date(report.get('date_to'))}", size=9, color=MUTED)
     trained = report['employees']
-    layout.section('01', 'NHÂN VIÊN ĐÃ ĐÀO TẠO / ĐÁNH GIÁ', f'{len(trained)} nhân viên · Tổng giờ của tất cả các buổi có thời gian hợp lệ')
+    layout.section('01', 'NHÂN VIÊN ĐÃ ĐÀO TẠO / ĐÁNH GIÁ', f'{len(trained)} nhân viên · Tổng giờ các buổi trong khoảng ngày có thời gian hợp lệ')
     if not trained:
         layout.paragraph('Chưa có hồ sơ đào tạo hoặc đánh giá đã nộp.')
     maximum = max([item['seconds'] for item in trained] or [0]) or 1

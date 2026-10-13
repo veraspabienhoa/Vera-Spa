@@ -523,3 +523,27 @@ test('commit invalidates a legacy snapshot even if the operator switched to hist
     assert.doesNotMatch(document.body.textContent, /BILL-one/)
   } finally { await fixture.close() }
 })
+
+test('performance sharing follows full filters, includes actors and disposes files on filter changes', async () => {
+  const calls=[], revoked=[]
+  const oldCreate=URL.createObjectURL, oldRevoke=URL.revokeObjectURL
+  URL.createObjectURL=()=>`blob:performance-${calls.length}-${Math.random()}`
+  URL.revokeObjectURL=url=>revoked.push(url)
+  const fixture=await mount({
+    liveTourReports:async()=>reportPage({rows:[reportRow('one',{started_by:'reception.start',completed_by:'reception.finish',completion_result:'Sớm 5 phút',actual_duration_minutes:85})]}),
+    readPerformanceReportExport:async(format,filters,options)=>{calls.push({format,filters,options});return {blob:new Blob([format]),filename:`performance.${format}`}},
+  })
+  try {
+    await click('Thời gian dịch vụ');await click('Sớm')
+    assert.ok(document.body.textContent.includes('reception.start'))
+    assert.ok(document.body.textContent.includes('reception.finish'))
+    await click('Chia sẻ biểu đồ')
+    assert.equal(calls.length,2)
+    assert.ok(calls.every(call=>call.filters.performance_timing==='early'&&!call.filters.page))
+    assert.ok([...document.querySelectorAll('a')].some(a=>a.textContent==='Tải PDF'))
+    await click('Đóng');assert.equal(revoked.length,2)
+    await click('Chia sẻ biểu đồ')
+    await click('Trễ');assert.equal(document.querySelector('[aria-labelledby="performance-share-title"]'),null)
+    assert.equal(revoked.length,4)
+  } finally {await fixture.close();URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke}
+})

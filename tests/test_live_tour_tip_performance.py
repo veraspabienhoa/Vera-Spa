@@ -88,3 +88,53 @@ def test_my_tips_route_allows_employee_roles_only_and_returns_no_invoice_money(m
     assert response.status_code == 200 and response.json()["rows"][0]["tip"] == 50_000
     assert "total" not in response.json()["rows"][0]
     assert client_for("admin").get("/v2/live-tour/my-tips").status_code == 403
+
+
+def test_execution_actors_survive_finish_pending_and_invoice():
+    from vera_live_tour_early_completion import completion_events
+    worker = employee('e1', 'An')
+    worker.update(service='Body 90', room='1.1', duration=90, status='Đang chờ', booked_at=NOW.isoformat(), service_price=100)
+    state = state_with(worker)
+    live._apply_action(state, 'start', {'employee_id': 'e1'}, 'reception.start', NOW)
+    result = live._apply_action(state, 'finish_to_pending', {'employee_id': 'e1'}, 'reception.finish', NOW + timedelta(minutes=85))
+    row = live._service_performance_rows(state)[0]
+    assert (row['started_by'], row['completed_by']) == ('reception.start', 'reception.finish')
+    events = completion_events(result)
+    assert len(events) == 1 and events[0]['username'] == 'An'
+    assert 'Sớm 5 phút' in events[0]['payload']['body']
+    assert completion_events({'items': [result, result]}) == events
+    pending = result['pending']
+    live._apply_action(state, 'checkout', {'pending_id': pending['id'], 'payment_method': 'Tiền mặt'}, 'cashier', NOW + timedelta(minutes=86))
+    row = live._service_performance_rows(state)[0]
+    assert (row['started_by'], row['completed_by']) == ('reception.start', 'reception.finish')
+    assert state['employees'][0].get('started_by') == ''
+
+
+def test_early_completion_threshold_and_no_history_guessing():
+    from vera_live_tour_early_completion import completion_events
+    for delta, count in [(-4, 0), (-5, 1), (-30, 1), (0, 0), (3, 0), (None, 0)]:
+        result = {'employee': {'id':'e1','name':'An','started_at':NOW.isoformat(), 'completed_at':(NOW+timedelta(minutes=85)).isoformat(), 'completion_delta_minutes':delta}}
+        assert len(completion_events(result)) == count
+
+
+def test_performance_share_matches_export_filters_and_rechecks_admin(monkeypatch):
+    import vera_performance_report_export as renderer
+    worker = employee('e1','An')
+    worker.update(service='Body 90',room='1.1',duration=90,started_at=NOW.isoformat(),completed_at=(NOW+timedelta(minutes=80)).isoformat())
+    state = state_with(worker)
+    monkeypatch.setattr(live, '_read_state', lambda *a, **kw: (state, 7))
+    captured = []
+    monkeypatch.setattr(renderer, 'render_performance_report', lambda headers, rows, bounds, fmt: captured.append((rows,bounds,fmt)) or b'pdf')
+    app = FastAPI()
+    identity = SimpleNamespace(employee_username='admin', full_name='Admin', role='admin')
+    live.install_live_tour_routes(app, engine_instance=RouteEngine, current_identity=lambda:identity,
+        require_feature=lambda *args:None, feature_allowed=lambda *args:True, identity_type=RouteIdentity)
+    with TestClient(app) as client:
+        response = client.get('/v2/live-tour/report-share', params={'kind':'performance','format':'pdf','preset':'all','employee':'An','performance_timing':'early'})
+        assert response.status_code == 200, response.text
+        assert len(captured[-1][0]) == 1
+        assert response.headers['cache-control'] == 'no-store'
+        assert client.get('/v2/live-tour/report-share', params={'kind':'performance','format':'png','preset':'all','employee':'Other'}).status_code == 200
+        assert captured[-1][0] == []
+        identity.role = 'letan'
+        assert client.get('/v2/live-tour/report-share', params={'kind':'performance','format':'pdf'}).status_code == 403

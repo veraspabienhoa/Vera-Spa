@@ -387,3 +387,17 @@ def test_overview_rejects_bad_format_and_reports_size_error(report_client, monke
         raise ReportExportTooLarge('Chọn PDF để giữ toàn bộ dữ liệu')
     monkeypatch.setattr(overview, 'render_overview', oversized)
     assert client.get('/v2/training/progress-export?format=png').status_code == 413
+
+
+def test_overview_selected_dates_filter_hours_but_untrained_stays_all_time(report_client, monkeypatch):
+    import vera_web_v2_training_overview as overview
+    client, _, _ = report_client
+    captured = []
+    monkeypatch.setattr(overview,'render_overview',lambda report,fmt:captured.append(report) or b'pdf')
+    response=client.get('/v2/training/progress-export?date_from=2026-10-01&date_to=2026-10-10')
+    assert response.status_code == 200
+    report=captured[-1]
+    assert (report['date_from'],report['date_to']) == ('2026-10-01','2026-10-10')
+    assert next(item for item in report['employees'] if item['employee']['username']=='alice')['seconds'] == 7200
+    assert {item['username'] for item in report['untrained']} == {'empty','draft'}
+    assert client.get('/v2/training/progress-export?date_from=2026-10-11&date_to=2026-10-10').status_code == 400

@@ -19,7 +19,7 @@ PRIVATE_PENALTY_SOURCES = frozenset({'auto_penalty', 'missing_checkin_absence'})
 
 NATIVE_SOURCES = frozenset(GROUPS) | {
     'training_completed', 'training_cycle', 'auto_penalty', 'missing_checkin', 'missing_checkin_absence',
-    'attendance_break', 'birthday', 'profile_completion', 'live_tour_booking', 'online_booking',
+    'service_completed_early', 'attendance_break', 'birthday', 'profile_completion', 'live_tour_booking', 'online_booking',
 }
 
 
@@ -85,6 +85,7 @@ def delivery_access_sql():
         ) AND COALESCE(s.enabled,TRUE) AND COALESCE(cs.enabled,TRUE)
         AND {current_quota_sql(source=source_sql())}
         AND (NOT {private_penalty} OR {penalty_member})
+        AND ({source_sql()}<>'service_completed_early' OR p.role IN ('admin','quanly','letan') OR lower(btrim(p.employee_username))=lower(btrim(d.payload->>'employee')))
         AND ({source_sql()}<>'online_booking' OR p.role IN ('admin','letan','quanly','locker'))
         AND ({source_sql()}<>'live_tour_booking' OR lower(btrim(p.employee_username))=lower(btrim(d.payload->>'_booking_username')))
         AND ({source_sql()}<>'attendance_break' OR d.payload->>'kind' IN ('attendance-break-cleared','attendance-break-global-disabled')
