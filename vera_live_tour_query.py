@@ -428,7 +428,7 @@ def matches_report(row, filters, *, invoice_dates=True):
             return False
     if filters.get('customer') and not _report_customer_matches(row, filters['customer']):
         return False
-    return any(_report_phrase(entry.get('employee_name'), filters.get('employee')) and _report_phrase(entry.get('service'), filters.get('service')) for entry in row.get('entries') or [row])
+    return any(_report_phrase(entry.get('employee_name'), filters.get('employee')) and _report_phrase(entry.get('service'), filters.get('service')) and _report_phrase(entry.get('room'), filters.get('room')) for entry in row.get('entries') or [row])
 
 
 def is_combo_report(row):
