@@ -10,7 +10,7 @@ import { customerTicketLabel } from '../lib/liveTourComboBooking'
 import { TOUR_DATE_PRESETS, tourDateRange, tourFilterOptions } from '../lib/liveTourFilters'
 
 const EMPTY_OPTIONS = []
-export default function LiveTourFilters({ value, onChange, rows, customers = EMPTY_OPTIONS, services = EMPTY_OPTIONS, employees = EMPTY_OPTIONS, showTotal = false, showTip = false, showDate = false, allowedPresets = null, serverToday = '', onValidityChange }) {
+export default function LiveTourFilters({ value, onChange, rows, customers = EMPTY_OPTIONS, services = EMPTY_OPTIONS, employees = EMPTY_OPTIONS, showRoom = false, showTotal = false, showTip = false, showDate = false, allowedPresets = null, serverToday = '', onValidityChange }) {
   const options = useMemo(() => {
     const result = tourFilterOptions(rows)
     const merge = (key, labels) => {
@@ -48,10 +48,11 @@ export default function LiveTourFilters({ value, onChange, rows, customers = EMP
       {canCustom && <><label><span>Từ ngày</span><VeraDateInput key={`from-${dateGeneration}`} onDraftValidity={valid => reportValidity('date_from', valid)} value={value.date_from} max={value.date_to || undefined} onChange={e => change({ date: '', date_from: e.target.value, preset: 'custom' })}/></label>
       <label><span>Đến ngày</span><VeraDateInput key={`to-${dateGeneration}`} onDraftValidity={valid => reportValidity('date_to', valid)} value={value.date_to} min={value.date_from || undefined} onChange={e => change({ date: '', date_to: e.target.value, preset: 'custom' })}/></label></>}
     </UiToolbar>
-    <UiToolbar data-ui-key="u-f4dd81a665cc" className={`live-tour-filters-row live-tour-filters-search${showTotal || showTip ? ' live-tour-filters-five' : ''}${showDate ? ' live-tour-filters-date-search' : ''}`}>
+    <UiToolbar data-ui-key="u-f4dd81a665cc" className={`live-tour-filters-row live-tour-filters-search${showTotal || showTip ? ' live-tour-filters-five' : ''}${showDate ? ' live-tour-filters-date-search' : ''}${showRoom ? ' live-tour-filters-room-search' : ''}`}>
       {showDate && canCustom && <label><span>Ngày</span><VeraDateInput key={`date-${dateGeneration}`} onDraftValidity={valid => reportValidity('date', valid)} clearable aria-label="Lọc ngày hóa đơn" value={value.date || ''} onChange={event => { if (!event.target.value) reportValidity('date', true); change({ date: event.target.value, date_from: event.target.value, date_to: event.target.value, preset: event.target.value ? 'custom' : presets.some(([id]) => id === 'all') ? 'all' : 'custom' }) }} /></label>}
       <LiveTourSearchSelect label="Số hóa đơn" placeholder="Nhập hoặc chọn số hóa đơn" options={options.bill_no} value={value.bill_no || ''} searchValue={value.bill_no || ''} onSearch={text => change({ bill_no: text })} onChange={text => change({ bill_no: text })} showAllOptions emptyLabel="Tất cả"/>
       <LiveTourSearchSelect label="Nhân viên" placeholder="Tìm tên nhân viên" options={options.employee} value={value.employee} searchValue={value.employee} onSearch={text => change({ employee: text })} onChange={text => change({ employee: text })} showAllOptions emptyLabel="Tất cả"/>
+      {showRoom && <LiveTourSearchSelect label="Số phòng" placeholder="Tìm số phòng" options={options.room} value={value.room || ''} searchValue={value.room || ''} onSearch={text => change({ room: text })} onChange={text => change({ room: text })} emptyLabel="Tất cả"/>}
       <LiveTourSearchSelect label="Khách hàng" placeholder="Tìm tên hoặc số điện thoại" filterOption={(option, query) => { const [name, phone] = option.label.split(' - '); return customerMatches({ name, phone }, query) }} options={options.customer} value={value.customer} searchValue={value.customer} onSearch={text => change({ customer: text })} onChange={text => change({ customer: text })} showAllOptions emptyLabel="Tất cả"/>
       <LiveTourSearchSelect label="Dịch vụ" placeholder="Tìm dịch vụ" options={options.service} value={value.service} searchValue={value.service} onSearch={text => change({ service: text })} onChange={text => change({ service: text })} showAllOptions emptyLabel="Tất cả"/>
       {showTotal && <label><span>Tổng tiền (đ)</span><VeraMoneyInput aria-label="Lọc tổng tiền" placeholder="Tất cả số tiền" value={value.total_amount ?? ''} onChange={event => change({ total_amount: event.target.value })}/></label>}

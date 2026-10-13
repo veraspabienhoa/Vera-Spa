@@ -3940,7 +3940,8 @@ def _event_in_export_bounds(
         return False
     entries = item.get("entries") or [item]
     if not any((not bounds.get("employee") or _norm(bounds["employee"]) in _norm(row.get("employee_name")))
-               and (not bounds.get("service") or _norm(bounds["service"]) in _norm(row.get("service"))) for row in entries):
+               and (not bounds.get("service") or _norm(bounds["service"]) in _norm(row.get("service")))
+               and (not bounds.get("room") or _norm(bounds["room"]) in _norm(row.get("room"))) for row in entries):
         return False
     if bounds.get("report_kind") == "combos" and not (item.get("combo_sale") or item.get("purchased_combo_id") or item.get("combo_units") or any("combo" in _norm(r.get("service")) for r in entries)):
         return False
@@ -5151,7 +5152,7 @@ def install_live_tour_routes(
         tab: str = "", page: Annotated[int, Query(ge=1)] = 1,
         page_size: Annotated[int, Query(ge=1, le=100)] = 50,
         date_from: str = "", date_to: str = "", preset: str = "", selected_date: Annotated[str, Query(alias="date")] = "",
-        employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
+        employee: str = "", room: str = "", customer: str = "", service: str = "", bill_no: str = "",
         total_amount: Annotated[int | None, Query(ge=0, le=MAX_MONEY)] = None,
         tip_amount: Annotated[int | None, Query(ge=0, le=MAX_MONEY)] = None,
         performance_timing: str = "all", ident: identity_type = Depends(current_identity),
@@ -5163,7 +5164,7 @@ def install_live_tour_routes(
         _parse_export_bounds(date_from=date_from, date_to=date_to)
         if selected_date:
             _parse_export_bounds(date_from=selected_date, date_to=selected_date)
-        filters = dict(date_from=date_from, date_to=date_to, date=selected_date, employee=employee,
+        filters = dict(date_from=date_from, date_to=date_to, date=selected_date, employee=employee, room=room,
                        customer=customer, service=service, bill_no=bill_no, total_amount=total_amount,
                        tip_amount=tip_amount, performance_timing=performance_timing)
         now = datetime.now(timezone)
@@ -5185,7 +5186,7 @@ def install_live_tour_routes(
             if queried is not None:
                 state, revision = _normalize_state(queried['state'], now), int(queried['revision'])
             else:
-                state, revision = read_collections_view(conn, now, {"employees", "rooms", "services", "combos", "pending", "invoices", "reports"})
+                state, revision = read_collections_view(conn, now, {"employees", "rooms", "services", "combos", "pending", "invoices"} | (set() if tab == "performance" else {"reports"}))
         public = _state_response(state, revision, now, **grants)
         can_performance = grants["can_performance_view"]
         common = {"revision": revision, "capabilities": public["capabilities"], "payment_settings": public["payment_settings"]}
@@ -5621,7 +5622,7 @@ def install_live_tour_routes(
         time_from: str = Query(default=""), time_to: str = Query(default=""),
         selected_date: Annotated[str, Query(alias="date")] = "",
         customer_id: str = Query(default=""),
-        employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
+        employee: str = "", room: str = "", customer: str = "", service: str = "", bill_no: str = "",
         report_kind: str = "", performance_timing: str = "",
         total_amount: int | None = Query(default=None, ge=0, le=MAX_MONEY),
         tip_amount: int | None = Query(default=None, ge=0, le=MAX_MONEY),
@@ -5648,7 +5649,7 @@ def install_live_tour_routes(
         if selected_date:
             _parse_export_bounds(date_from=selected_date, date_to=selected_date)
         bounds.update(tip_amount=tip_amount, date=selected_date, report_filter=export_kind in {'reports', 'tip', 'employee', 'performance'})
-        bounds.update(total_amount=total_amount, employee=employee.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"paid", "revenue", "tip", "reports", "pending", "performance", "employee", "history", "breaks"}, invoice_dates=export_kind in {"paid", "revenue", "tip", "reports", "employee"})
+        bounds.update(total_amount=total_amount, employee=employee.strip(), room=room.strip(), customer=customer.strip(), service=service.strip(), bill_no=bill_no.strip(), report_kind=report_kind.strip(), performance_timing=performance_timing.strip().lower(), calendar_date=export_kind in {"paid", "revenue", "tip", "reports", "pending", "performance", "employee", "history", "breaks"}, invoice_dates=export_kind in {"paid", "revenue", "tip", "reports", "employee"})
         with engine_instance().begin() as conn:
             require_feature(conn, ident, "live_tour_export")
             for feature in EXPORT_FEATURES.get(export_kind, ()):

@@ -423,7 +423,7 @@ def test_tip_menu_reports_popups_and_mobile_controls_are_wired():
     for label in ("Hôm qua", "Hôm nay", "Tuần trước", "Tuần này", "Tháng trước", "Tháng này", "Tùy chỉnh"):
         assert label in milk_tea or label in (root / "lib/liveTourFilters.js").read_text(encoding="utf-8")
     assert 'data-label="Tiền dịch vụ"' not in milk_tea and "liveTourMyTips" in milk_tea
-    assert "['tip', 'Tiền Tip']" in reports and "['performance', 'Thời gian dịch vụ']" in reports
+    assert "['tip', 'Tiền Tip']" in reports and "['performance', 'THỜI GIAN THỰC']" in reports
     assert "TG bắt đầu thực hiện YC" in reports and "TG Xông Hơi" in reports
     assert "PopupNotifications" in shell and "NotificationModal" in popup
     assert "MutationObserver" in (root / "lib/systemFeedback.js").read_text(encoding="utf-8")

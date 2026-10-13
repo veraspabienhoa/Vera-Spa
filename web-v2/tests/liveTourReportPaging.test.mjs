@@ -59,6 +59,7 @@ async function type(placeholder, value) {
     Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(field, value)
     field.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
   })
+  if (document.querySelector('[role=tab][aria-selected=true]')?.textContent === 'THỜI GIAN THỰC') await act(() => new Promise(resolve => setTimeout(resolve, 350)))
 }
 const money = value => `${Number(value).toLocaleString('vi-VN')} đ`
 
@@ -176,7 +177,7 @@ test('exports keep all applied filters across tabs without pagination or hidden 
     await click('Xuất excel')
     assert.equal(exports[2].query.report_kind, 'combos')
     assert.equal(exports[2].query.tip_amount, '')
-    await click('Thời gian dịch vụ')
+    await click('THỜI GIAN THỰC')
     await click('Trễ')
     await click('Xuất excel')
     assert.equal(requests.at(-1).tab, 'performance')
@@ -251,7 +252,7 @@ test('view permission gates reads and non-admin UI omits privileged tabs and mut
     assert.equal(reads, 1)
     assert.equal(document.querySelector('button[aria-label="Sửa báo cáo hóa đơn"]'), null)
     assert.equal(document.querySelector('button[aria-label="Xem hóa đơn"]'), null)
-    assert.ok(![...document.querySelectorAll('[role="tab"]')].some(node => /Tiền Tip|Thời gian dịch vụ/.test(node.textContent)))
+    assert.ok(![...document.querySelectorAll('[role="tab"]')].some(node => /Tiền Tip|THỜI GIAN THỰC/.test(node.textContent)))
     assert.ok(![...document.querySelectorAll('button')].some(node => node.textContent === 'Xuất excel'))
   } finally { await allowed.close() }
 })
@@ -534,7 +535,7 @@ test('performance sharing follows full filters, includes actors and disposes fil
     readPerformanceReportExport:async(format,filters,options)=>{calls.push({format,filters,options});return {blob:new Blob([format]),filename:`performance.${format}`}},
   })
   try {
-    await click('Thời gian dịch vụ');await click('Sớm')
+    await click('THỜI GIAN THỰC');await click('Sớm')
     assert.ok(document.body.textContent.includes('reception.start'))
     assert.ok(document.body.textContent.includes('reception.finish'))
     await click('Chia sẻ biểu đồ')
@@ -556,11 +557,35 @@ test('performance tab is available to explicitly granted non-admin and hides dat
     return reportPage({ capabilities: { ...capabilities, performance_view: true }, rows: query.tab === 'performance' ? [reportRow('perf', { employee_name: 'Performance employee', actual_duration_minutes: 50 })] : [] })
   } }, user)
   try {
-    await click('Thời gian dịch vụ')
+    await click('THỜI GIAN THỰC')
     assert.equal(calls.at(-1).tab, 'performance')
     assert.match(document.body.textContent, /Performance employee/)
     await act(async () => fixture.root.render(React.createElement(fixture.Component, { user: { ...user, permissions: { live_tour_reports_view: true, live_tour_performance_view: false } } })))
-    assert.ok(![...document.querySelectorAll('[role=tab]')].some(node => node.textContent === 'Thời gian dịch vụ'))
+    assert.ok(![...document.querySelectorAll('[role=tab]')].some(node => node.textContent === 'THỜI GIAN THỰC'))
     assert.doesNotMatch(document.body.textContent, /Performance employee/)
   } finally { await fixture.close() }
+})
+
+test('performance search coalesces typing, retains employee suggestions and includes room in reads and exports', async () => {
+  const reads=[], exports=[]
+  const fixture=await mount({liveTourReports:async query=>{reads.push(query);return reportPage({rows:[reportRow('room',{employee_name:'Kiều Thy',room:'14.1'})]})},exportLiveTourExcel:async(kind,filters)=>exports.push({kind,filters})})
+  try {
+    await click('THỜI GIAN THỰC')
+    const labels=[...document.querySelectorAll('.live-tour-filters-search label')].map(node=>node.textContent)
+    assert.ok(labels.indexOf('Nhân viên') < labels.indexOf('Số phòng') && labels.indexOf('Số phòng') < labels.indexOf('Khách hàng'))
+    const actions=[...document.querySelectorAll('.performance-status-filter button')].map(node=>node.textContent)
+    assert.deepEqual(actions,['Tất cả','Đúng giờ','Trễ','Sớm','Xuất excel','Chia sẻ biểu đồ'])
+    const before=reads.length
+    const field=document.querySelector('input[placeholder="Tìm tên nhân viên"]')
+    for(const value of ['K','Ki','Kiều']) await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(field,value);field.dispatchEvent(new dom.window.Event('input',{bubbles:true}))})
+    assert.equal(reads.length,before)
+    assert.match(document.querySelector('.tour-search-popup').textContent,/Kiều Thy/)
+    await act(()=>new Promise(resolve=>setTimeout(resolve,350)))
+    assert.equal(reads.length,before+1)
+    assert.equal(reads.at(-1).employee,'Kiều')
+    await type('Tìm số phòng','14.1')
+    assert.equal(reads.at(-1).room,'14.1')
+    await click('Xuất excel')
+    assert.equal(exports.at(-1).filters.room,'14.1')
+  } finally {await fixture.close()}
 })

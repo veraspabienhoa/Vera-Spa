@@ -57,7 +57,8 @@ export function filterTourRows(rows, filters, invoiceDates = false) {
     const entries = row.entries?.length ? row.entries : [row]
     // Employee and service must match the same invoice line.
     return entries.some(entry => (!filters.employee || searchTextMatches(entry.employee_name, filters.employee))
-      && (!filters.service || searchTextMatches(entry.service, filters.service)))
+      && (!filters.service || searchTextMatches(entry.service, filters.service))
+      && (!filters.room || searchTextMatches(entry.room, filters.room)))
   })
 }
 export function invoiceLocalTime(item) {
@@ -69,7 +70,7 @@ export function invoiceLocalTime(item) {
 
 // Suggestions come from the full active list, so typing never removes other choices.
 export function tourFilterOptions(rows = []) {
-  const values = { employee: new Set(), customer: new Set(), service: new Set(), bill_no: new Set() }
+  const values = { employee: new Set(), room: new Set(), customer: new Set(), service: new Set(), bill_no: new Set() }
   const add = (key, value) => { if (String(value || '').trim()) values[key].add(String(value).trim()) }
   for (const row of rows) {
     invoiceNumbers(row).forEach(number => add('bill_no', number))
@@ -77,6 +78,7 @@ export function tourFilterOptions(rows = []) {
     for (const entry of row.entries?.length ? row.entries : [row]) {
       add('employee', entry.employee_name)
       add('service', entry.service)
+      add('room', entry.room)
     }
   }
   return Object.fromEntries(Object.entries(values).map(([key, items]) => [key,

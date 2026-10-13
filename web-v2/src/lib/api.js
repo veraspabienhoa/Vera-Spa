@@ -204,7 +204,7 @@ function liveTourExportParams(kind, query = {}) {
   for (const key of ['columns', 'employee_ids']) {
     if (Array.isArray(query[key])) query[key].forEach((value) => params.append(key, String(value)))
   }
-  for (const key of ['preset', 'bill_no', 'employee', 'customer', 'service', 'report_kind', 'performance_timing', 'total_amount', 'tip_amount', 'date_from', 'date_to', 'date', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
+  for (const key of ['preset', 'bill_no', 'employee', 'room', 'customer', 'service', 'report_kind', 'performance_timing', 'total_amount', 'tip_amount', 'date_from', 'date_to', 'date', 'time_from', 'time_to', 'include_hidden', 'customer_id']) {
     const value = String(query?.[key] ?? '').trim()
     if (value) params.set(key, value)
   }
@@ -636,7 +636,7 @@ export const veraApi = {
   },
   readCustomerCountPdf: async (query = {}, options = {}) => {
     const params = new URLSearchParams()
-    for (const key of ['preset', 'date_from', 'date_to', 'date', 'employee', 'customer', 'service', 'bill_no', 'total_amount']) {
+    for (const key of ['preset', 'date_from', 'date_to', 'date', 'employee', 'room', 'customer', 'service', 'bill_no', 'total_amount']) {
       const value = String(query[key] ?? '').trim()
       if (value) params.set(key, value)
     }
@@ -649,7 +649,7 @@ export const veraApi = {
     const params = new URLSearchParams()
     // Keep this scope identical to PDF. Paging and selected rows never limit
     // the complete invoice-count chart/table prepared by the server.
-    for (const key of ['preset', 'date_from', 'date_to', 'date', 'employee', 'customer', 'service', 'bill_no', 'total_amount']) {
+    for (const key of ['preset', 'date_from', 'date_to', 'date', 'employee', 'room', 'customer', 'service', 'bill_no', 'total_amount']) {
       const value = String(query[key] ?? '').trim()
       if (value) params.set(key, value)
     }

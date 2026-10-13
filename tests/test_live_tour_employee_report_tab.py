@@ -7,10 +7,10 @@ def test_employee_analytics_has_its_own_report_tab_with_full_filters():
     assert "['employee', 'Theo nhân viên']" in page
     assert "<LiveTourFilters" in page
     assert "showDate={tab !== 'history'}" in page
-    assert "value={filters}" in page
+    assert "value={displayedFilters}" in page
     assert "allowedPresets={presets}" in page
     assert "serverToday={policy.server_today}" in page
-    assert "onChange={setFilters}" in page
+    assert "onChange={updateFilters}" in page
     assert "tab === 'employee' && <LiveTourEmployeeRevenueBreakdown summary={data.employee_totals}/>" in page
     assert "reportReadQuery(appliedFilters, tab, performanceTiming, page)" in page
     assert "veraApi.liveTourReports(query, { signal: controller.signal })" in page
@@ -19,7 +19,7 @@ def test_employee_analytics_has_its_own_report_tab_with_full_filters():
     assert "preset: ''" not in page
     assert "<LiveTourEmployeeRevenueBreakdown rows={rows}" not in page
     helper = Path("web-v2/src/lib/liveTourReportPage.js").read_text(encoding="utf-8")
-    assert "'date', 'date_from', 'date_to', 'employee', 'customer', 'service', 'bill_no'" in helper
+    assert "'date', 'date_from', 'date_to', 'employee', 'room', 'customer', 'service', 'bill_no'" in helper
     assert "summarizeEmployeeRevenue(allRows)" in helper  # Legacy compatibility also aggregates the full filter.
     assert "summarizeEmployeeRevenue(rows)" not in helper
     assert "tab === 'revenue' && <LiveTourEmployeeRevenueBreakdown" not in page
