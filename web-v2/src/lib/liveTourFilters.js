@@ -1,6 +1,6 @@
 import { searchTextMatches } from './searchText.js'
 import { customerMatches } from './customerSearch.js'
-export const EMPTY_TOUR_FILTERS = { preset: 'all', date_from: '', date_to: '', employee: '', room: '', customer: '', service: '', bill_no: '', date: '' }
+export const EMPTY_TOUR_FILTERS = { preset: 'all', date_from: '', date_to: '', employee: '', customer: '', service: '', bill_no: '', date: '' }
 export function invoiceNumbers(row) {
   if (!row || typeof row !== 'object') return []
   if (Array.isArray(row)) return row.flatMap(invoiceNumbers)
