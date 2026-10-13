@@ -290,3 +290,24 @@ test('paid editor still requires a nonblank correction reason for non-admin acco
     assert.equal(writes[0][1].reason, 'Đối soát dịch vụ')
   } finally { await fixture.close() }
 })
+
+const PendingDialog = await component('components/LiveTourPendingDialog')
+for (const Dialog of [PaidDialog, PendingDialog]) test(`invoice modal keeps draft when selecting text and releasing outside (${Dialog.name})`, async () => {
+  let closed = 0
+  const fixture = await mount(Dialog, { context: { item: invoice, mode: 'edit', revision: 4 }, catalog: [], isAdmin: true,
+    onClose() { closed++ }, onAction() {} })
+  try {
+    const input = document.querySelector('.vera-money-input'), backdrop = document.querySelector('.live-tour-modal-backdrop')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, '123')
+      input.dispatchEvent(new window.Event('input', { bubbles: true }))
+      input.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
+      backdrop.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }))
+      backdrop.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    assert.equal(closed, 0, 'release outside after dragging from input is not a backdrop dismissal')
+    assert.equal(input.value, '123')
+    await act(async () => backdrop.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true })))
+    assert.equal(closed, 1, 'intentional backdrop press still closes')
+  } finally { await fixture.close() }
+})

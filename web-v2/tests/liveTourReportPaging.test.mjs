@@ -547,3 +547,20 @@ test('performance sharing follows full filters, includes actors and disposes fil
     assert.equal(revoked.length,4)
   } finally {await fixture.close();URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke}
 })
+
+test('performance tab is available to explicitly granted non-admin and hides data after revocation', async () => {
+  const calls = []
+  const user = { role: 'quanly', employee_username: 'manager', permissions: { live_tour_reports_view: true, live_tour_performance_view: true } }
+  const fixture = await mount({ liveTourReports: async query => {
+    calls.push(query)
+    return reportPage({ capabilities: { ...capabilities, performance_view: true }, rows: query.tab === 'performance' ? [reportRow('perf', { employee_name: 'Performance employee', actual_duration_minutes: 50 })] : [] })
+  } }, user)
+  try {
+    await click('Thời gian dịch vụ')
+    assert.equal(calls.at(-1).tab, 'performance')
+    assert.match(document.body.textContent, /Performance employee/)
+    await act(async () => fixture.root.render(React.createElement(fixture.Component, { user: { ...user, permissions: { live_tour_reports_view: true, live_tour_performance_view: false } } })))
+    assert.ok(![...document.querySelectorAll('[role=tab]')].some(node => node.textContent === 'Thời gian dịch vụ'))
+    assert.doesNotMatch(document.body.textContent, /Performance employee/)
+  } finally { await fixture.close() }
+})

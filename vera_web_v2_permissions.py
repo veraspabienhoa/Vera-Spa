@@ -48,6 +48,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "live_tour_pending_view": "Chờ thanh toán (chi tiết cần Xem hóa đơn)",
         "live_tour_customers_view": "Xem Khách hàng & combo",
         "live_tour_reports_view": "Xem báo cáo",
+        "live_tour_performance_view": "Xem tab Thời gian thực hiện",
         "live_tour_history_view": "Xem lịch sử thao tác",
         "live_tour_backup": "Tạo / khôi phục sao lưu",
         "live_tour_admin": "Cài đặt dịch vụ, khu vực, quản trị nhân viên",
@@ -169,7 +170,7 @@ PERMISSION_PAGE_LAYOUT: list[dict[str, Any]] = [
         *[key for key in DATE_FILTER_FEATURES if key.startswith(("live_tour_pending_date_", "live_tour_invoices_date_"))],
     ]},
     {"id": "reports", "label": "Báo cáo Live Tour", "view_feature": "live_tour_reports_view", "features": [
-        "live_tour_reports_view", "live_tour_reports_edit", "live_tour_reports_delete",
+        "live_tour_reports_view", "live_tour_performance_view", "live_tour_reports_edit", "live_tour_reports_delete",
         *[key for key in DATE_FILTER_FEATURES if key.startswith("live_tour_reports_date_")],
     ]},
     {"id": "customers", "label": "Khách hàng", "view_feature": "live_tour_customers_view", "features": [
@@ -334,6 +335,7 @@ FEATURE_DEPENDENCIES: dict[str, set[str]] = {
     "live_tour_customer_combo_delete": {"live_tour_customers_view"},
     "live_tour_combo_import": {"live_tour_customers_view"},
     "live_tour_reports_view": {"live_tour_view"},
+    "live_tour_performance_view": {"live_tour_reports_view"},
     "live_tour_reports_edit": {"live_tour_reports_view", "live_tour_paid_invoice_view"},
     "live_tour_reports_delete": {"live_tour_reports_view", "live_tour_paid_invoice_view"},
     "live_tour_history_view": {"live_tour_view"},

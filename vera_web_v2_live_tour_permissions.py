@@ -80,6 +80,7 @@ CAPABILITY_FEATURES = {
     "pending_view": "live_tour_pending_view",
     "customers_view": "live_tour_customers_view",
     "reports_view": "live_tour_reports_view",
+    "performance_view": "live_tour_performance_view",
     "history_view": "live_tour_history_view",
     "backup": "live_tour_backup",
 }
@@ -89,7 +90,7 @@ EXPORT_FEATURES = {
     "revenue": ("live_tour_reports_view",),
     "tip": ("live_tour_reports_view",),
     "reports": ("live_tour_reports_view",),
-    "performance": ("live_tour_reports_view",),
+    "performance": ("live_tour_reports_view", "live_tour_performance_view"),
     "employee": ("live_tour_reports_view",),
     "customers": ("live_tour_customers_view",),
     "pending": ("live_tour_pending_view", "live_tour_invoice_view"),

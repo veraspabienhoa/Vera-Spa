@@ -42,6 +42,7 @@ export default function LiveTourReportsPage({ user }) {
   const policy = useMemo(() => resolveTourDatePolicy(user, serverCapabilities), [user, serverCapabilities])
   const identityKey = tourDatePolicyKey(user, policy)
   const reportsAllowed = isAdmin || (user?.permissions?.live_tour_reports_view === true && serverCapabilities.reports_view !== false)
+  const performanceAllowed = isAdmin || (user?.permissions?.live_tour_performance_view === true && serverCapabilities.performance_view !== false)
   const allowed = reportsAllowed
   const [result, setResult] = useState(null)
   const [historyResult, setHistoryResult] = useState(null)
@@ -59,7 +60,7 @@ export default function LiveTourReportsPage({ user }) {
   const [filterValidity, setFilterValidity] = useState(null)
   const validDraft = filterValidity?.scope !== filterScope || filterValidity.valid
   const onFilterValidityChange = useCallback(valid => setFilterValidity(current => current?.scope === filterScope && current.valid === valid ? current : { scope: filterScope, valid }), [filterScope])
-  const canRead = reportsAllowed && validDraft && tourDateFiltersReady(filters)
+  const canRead = reportsAllowed && (tab !== 'performance' || performanceAllowed) && validDraft && tourDateFiltersReady(filters)
   const setFilters = value => setSelections({ accountKey, filters: normalizeTourDateFilters(value, presets, { preferredPreset: 'yesterday', serverToday: policy.server_today }) })
   const [performanceTiming, setPerformanceTiming] = useState('all')
   const [context, setContext] = useState(null)
@@ -254,13 +255,13 @@ export default function LiveTourReportsPage({ user }) {
   }
   if (!allowed) return <div data-ui-key="u-58587e19c2e9" className="panel">Tài khoản chưa có quyền Xem báo cáo.</div>
   return <div className="feature-page spa-page live-tour-reports-page" data-report-read-mode={data.read_mode || 'loading'}>
-    <PagePermissionActions page="reports" label={({revenue:'Doanh thu',employee:'Theo nhân viên',tip:'Tiền Tip',performance:'Thời gian thực hiện',combo:'Combo',history:'Lịch sử booking'})[tab]} adminOnly={tab === 'performance'}/>
+    <PagePermissionActions page="reports" label={({revenue:'Doanh thu',employee:'Theo nhân viên',tip:'Tiền Tip',performance:'Thời gian thực hiện',combo:'Combo',history:'Lịch sử booking'})[tab]} features={tab === 'performance' ? ['live_tour_performance_view', 'live_tour_export', ...['all','today','yesterday','week','last_week','month','last_month','custom'].map(preset => `live_tour_reports_date_${preset}`)] : undefined} viewFeatures={tab === 'performance' ? ['live_tour_performance_view'] : undefined}/>
     {performanceShare?.scope === scope && tab === 'performance' && canRead && grants.export && <EmployeeProfileModal labelledBy="performance-share-title" busy={sharing} onClose={() => setPerformanceShare(null)} className="training-report-modal"><div className="training-page training-report-body"><h2 id="performance-share-title">Chia sẻ thời gian thực hiện</h2><TrainingReportFiles scope={performanceShare} onSharingChange={setSharing} onDenied={error => { setPerformanceShare(null); setError(error.message) }}/><button type="button" className="secondary-button" disabled={sharing} onClick={() => setPerformanceShare(null)}>Đóng</button></div></EmployeeProfileModal>}
     {activePdfFilters && <CustomerCountShareDialog key={identityKey} filters={activePdfFilters} onClose={() => setPdfFilters(null)}/>}
     <div data-ui-key="u-9e11e35c221d" className="page-heading"><div><span className="eyebrow">VERA SPA</span><h1>Báo cáo</h1><p>Hóa đơn, doanh thu, TIP và các giao dịch combo.</p></div><button data-ui-key="u-801a859b2628" data-ui-label-default="Làm mới" className="secondary-button" disabled={busy || loading || historyLoading || !canRead} onClick={refresh}><UiCustomText uiKey="u-801a859b2628">Làm mới</UiCustomText></button></div>
     <StableFeedback>{(loading || historyLoading) && <p role="status">Đang cập nhật báo cáo…</p>}{error && <p className="error-box" role="alert">{error}</p>}</StableFeedback>
     <section data-ui-key="u-cc5b99345633" className="panel spa-content">
-      <UiToolbar data-ui-key="u-ad5f380e835e" className="spa-tabs" role="tablist" aria-label="Loại báo cáo">{[...(reportsAllowed ? [['revenue', 'Doanh thu'], ['employee', 'Theo nhân viên'], ...(isAdmin ? [['tip', 'Tiền Tip'], ['performance', 'Thời gian dịch vụ']] : []), ['combos', 'Combo']] : []), ...(reportsAllowed ? [['history', 'Lịch sử Live Tour']] : [])].map(([key,label]) => <button data-ui-key="u-a7458184ac7f" key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}</UiToolbar>
+      <UiToolbar data-ui-key="u-ad5f380e835e" className="spa-tabs" role="tablist" aria-label="Loại báo cáo">{[...(reportsAllowed ? [['revenue', 'Doanh thu'], ['employee', 'Theo nhân viên'], ...(isAdmin ? [['tip', 'Tiền Tip']] : []), ...(performanceAllowed ? [['performance', 'Thời gian dịch vụ']] : []), ['combos', 'Combo']] : []), ...(reportsAllowed ? [['history', 'Lịch sử Live Tour']] : [])].map(([key,label]) => <button data-ui-key="u-a7458184ac7f" key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>)}</UiToolbar>
       <div className={tab === 'history' ? 'history-filter-scope' : ''}><LiveTourFilters key={filterScope} onValidityChange={onFilterValidityChange} allowedPresets={presets} serverToday={policy.server_today} showDate={tab !== 'history'} value={filters} onChange={setFilters} showTotal={tab === 'revenue'} showTip={tab === 'tip'} rows={rows}/></div>
       {tab !== 'history' && <p className="report-filter-hint">Gợi ý từ trang hiện tại. Nhập để tìm trong toàn bộ báo cáo.</p>}
       {tab === 'performance' && <div className="performance-status-filter" role="group" aria-label="Lọc kết quả thời gian dịch vụ">{[['all', 'Tất cả'], ['ontime', 'Đúng giờ'], ['late', 'Trễ'], ['early', 'Sớm']].map(([key, label]) => <button data-ui-key="u-ee49af6dd36a" type="button" key={key} className="secondary-button" aria-pressed={performanceTiming === key} onClick={() => setPerformanceTiming(key)}>{label}</button>)}</div>}
