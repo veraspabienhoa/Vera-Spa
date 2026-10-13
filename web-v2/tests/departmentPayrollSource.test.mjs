@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createPayrollOperationScope, hasPendingPayrollEvidence, monthlyPayrollSalary, normalizeSalaryConfigTables, supportsPayrollContract, versionedPayrollPath, payrollPendingLabel, recalculateDepartmentPayroll, salarySource } from '../src/lib/departmentPayrollSource.js'
+import { createPayrollOperationScope, hasPendingPayrollEvidence, monthlyPayrollSalary, normalizeSalaryConfigTables, supportsPayrollContract, versionedPayrollPath, payrollPendingDetails, payrollPendingLabel, recalculateDepartmentPayroll, salarySource } from '../src/lib/departmentPayrollSource.js'
 
 test('legacy source defaults to schedule; each config carries one explicit exclusive source', () => {
   const original = { operations: [{ employee_username: 'a' }, { employee_username: 'b', salary_source: 'attendance' }], tapvu: [{ employee_username: 'c', salary_source: 'schedule' }] }
@@ -126,4 +126,32 @@ test('mixed releases require explicit exact payroll capability and a safe revisi
     { hc_payroll_contract: 1, employee_config_revision: -1 }]) assert.equal(supportsPayrollContract(result), false)
   assert.equal(versionedPayrollPath('/v2/department-payroll/settings/employees'), '/v2/department-payroll-v2/settings/employees')
   assert.equal(versionedPayrollPath('/v2/department-payroll/combined/draft?month=2026-10'), '/v2/department-payroll-v2/combined/draft?month=2026-10')
+})
+
+
+test('pending diagnostics distinguish configuration from late evidence and mixed blockers', () => {
+  const rates = { configuration_pending: true, configuration_issues: ['missing_rate:rate_ca1'] }
+  assert.equal(payrollPendingLabel(rates), 'Chờ cấu hình ca/đơn giá')
+  assert.match(payrollPendingDetails(rates), /đơn giá Ca 1/)
+  const late = { configuration_pending: true, configuration_issues: ['late_event_evidence_changed:42'] }
+  assert.equal(payrollPendingLabel(late), 'Chờ đối chiếu đi trễ')
+  assert.match(payrollPendingDetails(late), /Dữ liệu chấm công.*sự kiện 42/)
+  assert.equal(payrollPendingLabel({ ...late, attendance_pending: true }), 'Chờ đối chiếu lương')
+  assert.equal(payrollPendingLabel({ ...rates, configuration_issues: [...rates.configuration_issues, ...late.configuration_issues] }), 'Chờ đối chiếu lương')
+  assert.equal(payrollPendingLabel({ configuration_pending: true }), 'Chờ đối chiếu lương')
+  assert.match(payrollPendingDetails({ configuration_pending: true }), /Bấm Tính lương/)
+})
+
+test('pending diagnostics retain dates, unknown codes and all blockers without changing payroll', () => {
+  const row = { attendance_pending: true, configuration_pending: true, pending_dates: ['2026-10-13'], configuration_issues: ['2026-10-12:missing_shift_times', '2026-10-13:missing_overtime_times', 'unknown_issue:9', 'unverified_late_event:7', 'late_event_schedule_changed:8', 'late_payable_basis_mismatch:9'] }
+  const original = structuredClone(row)
+  const details = payrollPendingDetails(row)
+  assert.match(details, /12-10-2026: thiếu giờ bắt đầu\/kết thúc ca/)
+  assert.match(details, /13-10-2026: thiếu giờ bắt đầu\/kết thúc tăng ca/)
+  assert.match(details, /unknown_issue:9/)
+  assert.match(details, /chưa được xác minh/)
+  assert.match(details, /Ca làm việc hiện tại không khớp/)
+  assert.match(details, /Thời gian tính lương không khớp/)
+  assert.match(details, /chưa đủ điều kiện tính lương: 13-10-2026/)
+  assert.deepEqual(row, original)
 })
