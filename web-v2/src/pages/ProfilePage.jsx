@@ -173,11 +173,11 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
   const passwordRequired = forcePasswordChange || Boolean(form.new_password)
 
   return <div className="feature-page">
-    <div data-ui-key="u-02ad0292fa11" className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1><p>{forcePasswordChange ? 'Vui lòng đặt mật khẩu mới để mở khóa các chức năng Web V2.' : 'Nhân viên tự cập nhật hồ sơ mà không bắt buộc thay đổi mật khẩu.'}</p></div><button data-ui-key="u-eb800f2fd183" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-eb800f2fd183"> Làm mới</UiCustomText></button></div>
+    <div data-ui-key="u-02ad0292fa11" className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Cá nhân</span><h1>HỒ SƠ & MẬT KHẨU</h1>{forcePasswordChange && <p>Vui lòng đặt mật khẩu mới để mở khóa các chức năng Web V2.</p>}</div><button data-ui-key="u-eb800f2fd183" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-eb800f2fd183"> Làm mới</UiCustomText></button></div>
     <StableFeedback>{notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.status === 'success' && <CheckCircle2 size={16} />} {notice.message}</div>}</StableFeedback>
     <section data-ui-key="u-99eefc96a586" className="panel profile-panel">
       <form ref={formRef} className="profile-form" onSubmit={submit}>
-        <p className="wide-field" role="status">{saving ? 'Đang tự lưu…' : 'Thông tin được tự lưu khi nhập xong và rời ô. Đổi mật khẩu cần nhập đủ mật khẩu hiện tại, mật khẩu mới và xác nhận.'}</p>
+        {saving && <p className="wide-field" role="status">Đang tự lưu…</p>}
         <div className="profile-field-section wide-field">Thông tin cá nhân</div>
         <label>Họ và tên đầy đủ<input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></label>
         <label>Ngày sinh<VeraDateInput aria-label="Ngày sinh" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} /></label>
@@ -198,7 +198,7 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <label>Mã ngân hàng tự động<input value={form.bank_code || ''} readOnly aria-label="Mã ngân hàng tự động" placeholder="Tự động: VCB / ACB / TCB…" /></label>
         <label>Số tài khoản ngân hàng<input value={form.bank_account} onChange={(e) => setForm({ ...form, bank_account: e.target.value.replace(/\D/g, '').slice(0, 19) })} inputMode="numeric" /></label>
         <div className="profile-password-box wide-field">
-          <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU (KHÔNG BẮT BUỘC)'}</h3><p>{forcePasswordChange ? 'Mật khẩu mới tối thiểu 8 ký tự và phải đáp ứng chính sách bảo mật.' : 'Để trống các ô mật khẩu nếu chỉ cập nhật hồ sơ. Hệ thống không yêu cầu đổi mật khẩu khi lưu thông tin cá nhân.'}</p>
+          <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU (KHÔNG BẮT BUỘC)'}</h3>{forcePasswordChange && <p>Mật khẩu mới tối thiểu 8 ký tự và phải đáp ứng chính sách bảo mật.</p>}
           <div className="profile-password-grid">
             <label>Mật khẩu hiện tại<input type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} required={passwordRequired} autoComplete="current-password" /></label>
             <label>Mật khẩu mới<input type="password" minLength="8" required={forcePasswordChange} value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Để trống nếu không đổi" autoComplete="new-password" /></label>
