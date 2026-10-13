@@ -1,5 +1,4 @@
 import { apiRequest as sharedRequest } from '../lib/api'
-import DateSearchField from '../components/DateSearchField'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -10,6 +9,7 @@ import { Activity, Archive, CalendarDays, Download, RefreshCw } from 'lucide-rea
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import VeraDateInput from '../components/VeraDateInput'
+import './AdminChangesPage.css'
 
 const apiBase = import.meta.env.VITE_VERA_API_BASE_URL?.replace(/\/$/, '') || ''
 const formatTime = (value) => formatVeraDateTime(value)
@@ -99,6 +99,9 @@ export default function AdminChangesPage() {
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
+  const [dateDrafts, setDateDrafts] = useState({ day:true, start:true, end:true })
+  const datesValid = dateDrafts.day && (period !== 'Tùy chỉnh' || (dateDrafts.start && dateDrafts.end && Boolean(start && end && start <= end)))
+  const draftValidity = key => valid => setDateDrafts(old => old[key] === valid ? old : { ...old, [key]:valid })
 
   const params = useCallback(() => {
     const query = new URLSearchParams({ start, end })
@@ -109,6 +112,7 @@ export default function AdminChangesPage() {
   const loadRequestRef = useRef(null)
   const load = useCallback(async () => {
     loadRequestRef.current?.abort()
+    if (!datesValid) { setBusy(false); return }
     const controller = new AbortController()
     loadRequestRef.current = controller
     setBusy(true); setError('')
@@ -118,7 +122,7 @@ export default function AdminChangesPage() {
     }
     catch (e) { if (!controller.signal.aborted) setError(e.message || 'Không tải được Thay đổi hệ thống.') }
     finally { if (!controller.signal.aborted) setBusy(false) }
-  }, [params])
+  }, [params, datesValid])
 
   useEffect(() => { void load(); return () => loadRequestRef.current?.abort() }, [load])
   useEffect(() => {
@@ -128,6 +132,7 @@ export default function AdminChangesPage() {
 
   const choosePeriod = (next) => {
     setPeriod(next)
+    setDateDrafts({ day:true, start:true, end:true })
     if (next === 'Tùy chỉnh') return
     const [nextStart, nextEnd] = rangeFor(next)
     setStart(nextStart); setEnd(nextEnd)
@@ -139,13 +144,14 @@ export default function AdminChangesPage() {
   ].filter(Boolean))).sort((a, b) => a.localeCompare(b, 'vi')), [data])
 
   const exportExcel = async () => {
+    if (!datesValid) return
     setExporting(true); setError('')
     try { await downloadExcel(`/v2/admin/changes-v41/export.xlsx?${params()}`, 'VERA_ThayDoiHeThong.xlsx') }
     catch (e) { setError(e.message || 'Không export được Thay đổi hệ thống.') }
     finally { setExporting(false) }
   }
 
-  return <div className="feature-page">
+  return <div className="feature-page admin-changes-page">
     <style>{`
       .audit-detailed article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:start}
       .audit-detailed article>div{min-width:0}.audit-detailed p{margin:4px 0 8px}
@@ -160,12 +166,14 @@ export default function AdminChangesPage() {
       .admin-change-push{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.admin-change-push>div{min-width:0}.admin-change-push h3{margin:2px 0 4px;font-size:14px}.admin-change-push p{margin:0;color:#68736f;font-size:12px;line-height:1.45}.admin-change-push small{display:block;margin-top:5px;color:#176342;font-weight:800}
       @media(max-width:640px){.audit-detailed article{grid-template-columns:1fr}.audit-detailed time{font-size:11px}.audit-field-grid{grid-template-columns:1fr}.audit-snapshot-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.audit-filter-buttons{display:grid;grid-template-columns:repeat(2,1fr)}.audit-filter-buttons button:last-child{grid-column:1/-1}.audit-search-line label{min-width:100%}.admin-change-push{align-items:stretch;flex-direction:column}.admin-change-push button{width:100%}}
     `}</style>
-    <div data-ui-key="u-e5982f729629" className="page-heading"><div><span className="eyebrow"><Activity size={14} /> Admin</span><h1>THAY ĐỔI HỆ THỐNG</h1><p>Tự động lọc theo người thực hiện khi gõ tên, lọc thời gian, xem chi tiết trước/sau và export Excel.</p></div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button data-ui-key="u-1dff9f5b8620" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-1dff9f5b8620"> Làm mới</UiCustomText></button><button data-ui-key="u-9b7c0983c926" className="secondary-button" onClick={exportExcel} disabled={exporting}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Xuất excel'}</button></div></div>
+    <div data-ui-key="u-e5982f729629" className="page-heading"><div><span className="eyebrow"><Activity size={14} /> Admin</span><h1>THAY ĐỔI HỆ THỐNG</h1><p>Tự động lọc theo người thực hiện khi gõ tên, lọc thời gian, xem chi tiết trước/sau và export Excel.</p></div><div className="audit-heading-actions"><button data-ui-key="u-9b7c0983c926" className="secondary-button" onClick={exportExcel} disabled={exporting || !datesValid}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Xuất excel'}</button><button data-ui-key="u-1dff9f5b8620" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy || !datesValid}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-1dff9f5b8620"> Làm mới</UiCustomText></button></div></div>
     <StableFeedback>{error && <div className="error-box">{error}</div>}</StableFeedback>
 
     <section data-ui-key="u-6d7ee12b26b7" className="panel data-toolbar"><UiToolbar data-ui-key="u-3175e389120b" className="audit-toolbar-content">
-      <div className="audit-filter-buttons date-search-toolbar" role="group" aria-label="Lọc thời gian thay đổi hệ thống"><DateSearchField ariaLabel="Ngày thay đổi hệ thống" value={period === 'Ngày' ? start : ''} onChange={date => { if (!date) { choosePeriod('Hôm nay'); return }; setStart(date); setEnd(date); setPeriod('Ngày') } } />{FILTERS.map((item) => <button data-ui-key="u-afa1823cde30" type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>
-      {period === 'Tùy chỉnh' && <div className="audit-custom-range"><label><CalendarDays size={15}/> Từ ngày<VeraDateInput aria-label="Từ ngày" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }}/></label><label><CalendarDays size={15}/> Đến ngày<VeraDateInput aria-label="Đến ngày" min={start} value={end} onChange={(e) => setEnd(e.target.value)}/></label></div>}
+      <label className="audit-single-date">Ngày<VeraDateInput aria-label="Ngày thay đổi hệ thống" clearOnFocus={false} value={period === 'Ngày' ? start : ''} onDraftValidity={draftValidity('day')} onChange={event => { const date = event.target.value; if (!date) { choosePeriod('Hôm nay'); return }; setStart(date); setEnd(date); setPeriod('Ngày'); setDateDrafts({ day:true, start:true, end:true }) }}/></label>
+      <div className="audit-filter-buttons" role="group" aria-label="Lọc thời gian thay đổi hệ thống">{FILTERS.map((item) => <button data-ui-key="u-afa1823cde30" type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>
+      {period === 'Tùy chỉnh' && <div className="audit-custom-range"><label><CalendarDays size={15}/> Từ ngày<VeraDateInput aria-label="Từ ngày" clearOnFocus={false} value={start} onDraftValidity={draftValidity('start')} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }}/></label><label><CalendarDays size={15}/> Đến ngày<VeraDateInput aria-label="Đến ngày" clearOnFocus={false} min={start} value={end} onDraftValidity={draftValidity('end')} onChange={(e) => setEnd(e.target.value)}/></label></div>}
+      {!datesValid && <p role="status">Nhập ngày hợp lệ theo định dạng dd-mm-yyyy hoặc chọn trên lịch.</p>}
       <div className="audit-search-line"><label>Người thực hiện<ClearableSearchInput type="search" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Tìm tên người thực hiện" list="audit-actors"/></label><datalist id="audit-actors">{actors.map((value) => <option key={value} value={value}/>)}</datalist><div className="audit-total">{data.changes?.length || 0} thay đổi</div></div>
     </UiToolbar></section>
 

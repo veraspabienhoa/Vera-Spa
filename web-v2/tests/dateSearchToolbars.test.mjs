@@ -31,12 +31,17 @@ for (const [page,label,path] of [['Booking','Ngày booking',''],['Schedule','Ng�
   try {
    await w.act(async()=>w.mount(page))
    const input=w.document.querySelector(`input[aria-label="${label}"]`)
-   assert.ok(input.closest('.date-search-toolbar'))
-   if(['Attendance','Changes'].includes(page))assert.deepEqual([...input.closest('.date-search-toolbar').querySelectorAll(':scope>button')].map(b=>b.textContent),['Hôm nay','Hôm qua','Tuần này','Tuần trước','Tháng này','Tháng trước','Tùy chỉnh'])
+   assert.ok(input.closest(page === 'Changes' ? '.audit-single-date' : '.date-search-toolbar'))
+   if(['Attendance','Changes'].includes(page))assert.deepEqual([...(page === 'Changes' ? w.document.querySelector('.audit-filter-buttons') : input.closest('.date-search-toolbar')).querySelectorAll(':scope>button')].map(b=>b.textContent),['Hôm nay','Hôm qua','Tuần này','Tuần trước','Tháng này','Tháng trước','Tùy chỉnh'])
    const reads=()=>path?calls.filter(c=>c.pathname===path):w.bookingCalls
    const count=reads().length
    const type=async(node,value,event='input')=>w.act(async()=>{Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new w.Event(event,{bubbles:true}))})
    await type(input,'07');assert.equal(reads().length,count)
+   if(page === 'Changes'){
+    const actions=[...w.document.querySelectorAll('.audit-heading-actions button')]
+    assert.deepEqual(actions.map(b=>b.textContent.trim()),['Xuất excel','Làm mới'])
+    assert.ok(actions.every(b=>b.disabled))
+   }
    await type(input,'07102026');assert.equal(input.value,'07-10-2026')
    const range=()=>path?Object.fromEntries((page==='Schedule'?reads().findLast(c=>c.searchParams.get('start')===c.searchParams.get('end')):reads().at(-1)).searchParams):reads().at(-1)
    assert.equal(range()[path?'start':'date_from'],'2026-10-07');assert.equal(range()[path?'end':'date_to'],'2026-10-07')
