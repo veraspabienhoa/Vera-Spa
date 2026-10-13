@@ -1,4 +1,3 @@
-import PagePermissionActions from '../components/PagePermissionActions'
 import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import { canBookOutsideShift } from '../lib/liveTourBooking'
 import UpcomingOnlineBookings from '../components/UpcomingOnlineBookings'
@@ -1606,7 +1605,6 @@ function LiveTourWorkspace({ user, navigationToggle = null }) {
   const panelActions = usePanelActions({exportData, openModal, openCustomerHistory, copyBoardImage, executeAction, confirmExpired, previewExpired, removeCatalogItem})
 
   return <div className="feature-page tour-page live-tour-page">
-    {activePanel && <PagePermissionActions page={activePanel === 'reports' ? 'reports' : activePanel === 'customers' ? 'customers' : ['history','catalog'].includes(activePanel) ? 'live-tour-settings' : 'live-tour'} label={PANEL_TABS.find(([key]) => key === activePanel)?.[1]} viewFeatures={activePanel === 'pending' ? ['live_tour_pending_view'] : activePanel === 'invoices' ? ['live_tour_paid_invoice_view'] : undefined}/> }
     {onlineBookingsOpen && canViewOnlineBookings(user) && <UpcomingOnlineBookings services={data.services || []} user={user} onClose={() => setOnlineBookingsOpen(false)}/>}
     <style>{appearanceCss}</style>
     <style>{`

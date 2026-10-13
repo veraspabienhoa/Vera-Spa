@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { veraApi } from '../lib/api'
 import { catalogAllowedFeatures, catalogFeatureAllowed, canEditCatalogFeature, hasAnyDateParent, supportsDateFilterPolicy, datePermissionSaveProblem } from '../lib/permissionCatalog'
 import { searchTextMatches } from '../lib/searchText'
@@ -6,7 +7,14 @@ import EmployeeProfileModal from './EmployeeProfileModal'
 import './PagePermissionActions.css'
 
 const UserContext = createContext(null)
-export function PagePermissionProvider({ user, children }) { return <UserContext.Provider value={user}>{children}</UserContext.Provider> }
+const ScopeContext = createContext(null)
+export function PagePermissionProvider({ user, page, children }) {
+  const [scopes, setScopes] = useState({})
+  const register = useCallback((id, value) => {
+    setScopes(current => { const next = { ...current }; if (value) next[id] = value; else delete next[id]; return next })
+  }, [])
+  return <UserContext.Provider value={user}><ScopeContext.Provider value={{ page, scopes, register }}>{children}</ScopeContext.Provider></UserContext.Provider>
+}
 const aliases = {
   system: ['changes', 'storage'], settings: ['live-tour-settings', 'ktv-shift', 'schedule', 'permissions'],
   'department-payroll': ['payroll'], 'payroll-config': ['payroll'], 'checkin-history': ['devices'],
@@ -32,15 +40,62 @@ function toggleScopedPermission(current, key, data) {
   return next.filter(item => hasAnyDateParent(item, next, data))
 }
 
-export default function PagePermissionActions({ page, label, features, viewFeatures, adminOnly = false }) {
-  const user = useContext(UserContext)
-  const [mode, setMode] = useState('')
-  if (user?.role !== 'admin' || user?.must_change_password) return null
-  return <div className="page-permission-actions">
-    <button type="button" className="secondary-button" onClick={() => setMode('edit')}>Phân quyền{label ? ` · ${label}` : ''}</button>
-    <button type="button" className="secondary-button" onClick={() => setMode('list')}>Tài khoản đã được phân quyền{label ? ` · ${label}` : ''}</button>
-    {mode && <PermissionDialog key={`${page}:${label || ''}:${mode}`} {...{page, label, features, viewFeatures, adminOnly, mode}} onClose={() => setMode('')}/>}
-  </div>
+export default function PagePermissionActions({ primary = false, ...scope }) {
+  const user = useContext(UserContext), registry = useContext(ScopeContext)
+  const id = useId(), marker = useRef(null)
+  const serialized = JSON.stringify(scope)
+  const register = registry?.register
+  const managed = registry?.page !== undefined
+  useEffect(() => {
+    if (!managed || primary || !register || registry.page === 'live-tour') return undefined
+    register(id, { ...JSON.parse(serialized), element: marker.current })
+    return () => register(id, null)
+  }, [managed, primary, register, registry?.page, id, serialized])
+  if (user?.role !== 'admin' || user?.must_change_password || scope.page === 'live-tour' || registry?.page === 'live-tour') return null
+  if (managed && !primary) return <span ref={marker} hidden data-permission-scope=""/>
+  return <PermissionLauncher key={`${registry?.page || scope.page}:${user.employee_username || ''}`} scope={scope} scopes={managed ? Object.values(registry.scopes) : []} attachToTitle={primary}/>
+}
+function PermissionLauncher({ scope, scopes, attachToTitle }) {
+  const [menu, setMenu] = useState(false), [selection, setSelection] = useState(null), [heading, setHeading] = useState(null)
+  const anchor = useRef(null)
+  useLayoutEffect(() => {
+    if (!attachToTitle) return undefined
+    const container = anchor.current?.parentElement
+    if (!container) return undefined
+    const host = document.createElement('span')
+    host.className = 'permission-title-action'
+    let title = null
+    const findHeading = () => {
+      const visible = node => !node.closest('[hidden], [role="dialog"], .page-recovery, [role="alert"], .page-loading')
+      const next = [...container.querySelectorAll('h1')].find(visible) || [...container.querySelectorAll('h2')].find(visible) || null
+      if (title !== next) { title?.classList.remove('permission-title-row'); title = next }
+      if (title) {
+        title.classList.add('permission-title-row')
+        if (host.parentElement !== title) title.appendChild(host)
+      } else host.remove()
+      setHeading(current => current === (title ? host : null) ? current : title ? host : null)
+    }
+    findHeading()
+    const observer = new MutationObserver(findHeading)
+    observer.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] })
+    return () => { observer.disconnect(); title?.classList.remove('permission-title-row'); host.remove() }
+  }, [attachToTitle])
+  const options = [scope, ...scopes.filter(item => item.element?.isConnected && !item.element.parentElement?.closest('[hidden]'))]
+    .filter((item, index, all) => all.findIndex(other => other.page === item.page && other.label === item.label) === index)
+  const launcher = <button type="button" className="secondary-button page-permission-launcher" aria-haspopup="dialog" onClick={() => setMenu(true)}>Phân quyền</button>
+  return <>
+    <span ref={anchor} hidden/>
+    {attachToTitle ? heading && createPortal(launcher, heading) : launcher}
+    {menu && !selection && <EmployeeProfileModal labelledBy="permission-menu-title" onClose={() => setMenu(false)} className="page-permission-modal">
+      <header><h2 id="permission-menu-title">Phân quyền</h2><button type="button" onClick={() => setMenu(false)}>Đóng</button></header>
+      <div className="permission-menu-options">{options.map(item => <section key={`${item.page}:${item.label || ''}`}>
+        <h3>{item.label || 'Trang hiện tại'}</h3>
+        <button type="button" className="secondary-button" onClick={() => setSelection({ scope: item, mode: 'edit' })}>Phân quyền{item.label ? ` · ${item.label}` : ' trang'}</button>
+        <button type="button" className="secondary-button" onClick={() => setSelection({ scope: item, mode: 'list' })}>Tài khoản đã được phân quyền{item.label ? ` · ${item.label}` : ''}</button>
+      </section>)}</div>
+    </EmployeeProfileModal>}
+    {selection && <PermissionDialog {...selection.scope} mode={selection.mode} onClose={() => setSelection(null)}/>}
+  </>
 }
 function PermissionDialog({ page, label, features, viewFeatures, adminOnly, mode, onClose }) {
   const [data, setData] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
