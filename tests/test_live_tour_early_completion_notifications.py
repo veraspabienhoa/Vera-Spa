@@ -10,13 +10,14 @@ def test_early_completion_exact_audience_channels_retry_and_rollback(database, n
     accounts, identity, client = notices
     result = {'pending': {'entries': [{'employee_id':'e1','employee_name':'nhanvien','service':'Body 90','room':'1.1',
         'started_at':'2026-10-13T10:00:00+07:00','completed_at':'2026-10-13T11:25:00+07:00',
-        'completion_delta_minutes':-5,'started_by':'letan','completed_by':'admin'}]}}
+        'completion_delta_minutes':-5,'started_by':'letan','completed_by':'admin','early_completion_reason':'Khách có việc gấp'}]}}
     with database.begin() as conn:
         enqueue_early_completions(conn,result)
         enqueue_early_completions(conn,result)
     with database.connect() as conn:
-        rows=list(conn.execute(text('SELECT recipient,channel FROM vera_notification_delivery')).mappings())
+        rows=list(conn.execute(text('SELECT recipient,channel,payload FROM vera_notification_delivery')).mappings())
     audience={'admin','quanly','letan','nhanvien'}
+    assert all('Lý do ra sớm: Khách có việc gấp' in row['payload']['body'] for row in rows)
     assert len(rows)==12
     assert {row['recipient'] for row in rows} == {accounts[role] for role in audience}
     assert {row['channel'] for row in rows} == {'in_app','popup','push'}

@@ -28,9 +28,10 @@ def completion_events(result):
             continue
         identity = [SOURCE, row.get('employee_id') or row.get('id'), row.get('started_at'), row.get('completed_at')]
         event = hashlib.sha256(json.dumps(identity, ensure_ascii=False).encode()).hexdigest()
+        reason = str(row.get('early_completion_reason') or '').strip() or 'Chưa có lý do'
         events[event] = {'event': event, 'username': username, 'payload': {
             'title': 'Dịch vụ hoàn thành sớm',
-            'body': f"{username} · {row.get('service') or 'Dịch vụ'} · Phòng {row.get('room') or '—'} · Sớm {abs(int(delta))} phút · Thực hiện: {row.get('started_by') or '—'} · Hoàn thành: {row.get('completed_by') or '—'}",
+            'body': f"{username} · {row.get('service') or 'Dịch vụ'} · Phòng {row.get('room') or '—'} · Sớm {abs(int(delta))} phút · Thực hiện: {row.get('started_by') or '—'} · Hoàn thành: {row.get('completed_by') or '—'} · Lý do ra sớm: {reason}",
             'employee': username, 'kind': SOURCE, '_source_key': SOURCE, 'tag': SOURCE + '-' + event,
             'url': 'https://app.veraspa.vn/',
         }}

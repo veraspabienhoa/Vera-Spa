@@ -58,3 +58,29 @@ def test_http_missing_reason_cannot_commit_and_valid_reason_is_saved(monkeypatch
     response=client.post('/v2/live-tour/action',json=body)
     assert response.status_code==200, response.text
     assert shared['state']['pending'][0]['entries'][0]['early_completion_reason']=='Khách có lịch hẹn'
+
+@pytest.mark.parametrize('action', ['complete', 'finish_to_pending', 'finish_room'])
+def test_completion_notice_includes_saved_reason(action):
+    from vera_live_tour_early_completion import completion_events
+    worker = employee('e1', 'An')
+    worker.update(status='Đang thực hiện', service='Body 90', duration=90,
+                  room='1', started_at=(NOW-timedelta(minutes=85)).isoformat())
+    state = state_with(worker)
+    payload = {'employee_id': 'e1', 'room': '1', 'early_completion_reason': 'Khách có việc gấp'}
+    live._require_early_completion_reason(state, action, payload, NOW)
+    result = live._apply_action(state, action, payload, 'letan.finish', NOW)
+    events = completion_events(result)
+    assert len(events) == 1
+    assert 'Lý do ra sớm: Khách có việc gấp' in events[0]['payload']['body']
+
+
+@pytest.mark.parametrize('reason', [None, '', '  '])
+def test_legacy_completion_notice_reason_fallback_preserves_identity(reason):
+    from vera_live_tour_early_completion import completion_events
+    row = {'id': 'e1', 'username': 'An', 'started_at': '2026-10-13T10:00:00+07:00',
+           'completed_at': '2026-10-13T11:25:00+07:00', 'completion_delta_minutes': -5,
+           'early_completion_reason': reason}
+    event = completion_events({'employee': row})[0]
+    assert 'Lý do ra sớm: Chưa có lý do' in event['payload']['body']
+    row['early_completion_reason'] = 'Khách có việc gấp'
+    assert completion_events({'employee': row})[0]['event'] == event['event']
