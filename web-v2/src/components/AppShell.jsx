@@ -450,7 +450,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
       <main className="main-area">
         {(currentPage !== 'live-tour' || (isAdmin && !user?.must_change_password)) && <header className="topbar">
           {navigationToggle}
-          <div><div className="topbar-kicker">VERA SPA</div><div className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</div></div>
+          <button type="button" className="topbar-brand-home" onClick={() => choose('live-tour', true)} disabled={user?.must_change_password} aria-label="Về trang Live Tour" title="Về trang Live Tour"><span className="topbar-kicker">VERA SPA</span><span className="topbar-title vera-script-tagline">Suối nguồn thư giãn, trọn vẹn an yên</span></button>
           <UiToolbar data-ui-key="u-d08e23e02899" className="topbar-actions">
             {!user?.must_change_password && <NotificationInbox key={`system-inbox:${user?.id || user?.employee_username}`} user={user} onPageChange={page => choose(page, true)}/>}
             {currentPage !== 'tour' && currentPage !== 'live-tour' && <button data-ui-key="u-f10aa9b76c0d" data-ui-label-default="Mở tab mới" type="button" className="topbar-refresh-button topbar-open-tab-button" onClick={openCurrentPageInNewTab} aria-label="Mở trang hiện tại trong tab mới" title="Mở trang hiện tại trong tab mới"><ExternalLink size={15} /><UiCustomText uiKey="u-f10aa9b76c0d"> Mở tab mới</UiCustomText></button>}

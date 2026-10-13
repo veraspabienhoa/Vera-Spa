@@ -1332,3 +1332,9 @@ body .date-search-field .vera-date-picker-button{padding:0}
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* Header brand returns through the shared navigation/unsaved-change guard. */
+.topbar .topbar-brand-home { display: block; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; box-shadow: none; transform: none; }
+.topbar-brand-home > span { display: block; }
+.topbar-brand-home:focus-visible { outline: 2px solid var(--gold); outline-offset: 5px; }
+.topbar .topbar-brand-home:disabled { cursor: default; opacity: 1; }
