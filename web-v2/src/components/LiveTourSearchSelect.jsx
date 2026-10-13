@@ -16,7 +16,7 @@ export default function LiveTourSearchSelect({ label, value, options, onChange, 
   const [index, setIndex] = useState(0)
   const [position, setPosition] = useState({ left: 0, top: 0, width: 240, zIndex: 2200 })
   useEffect(() => { if (!typing.current) setQuery(selected?.label || ''); typing.current = false }, [value, selected?.label])
-  const matches = options.filter((option) => filterOption ? filterOption(option, query) : searchTextMatches([option.label, option.detail], query))
+  const matches = options.filter((option) => filterOption ? filterOption(option, query) : searchTextMatches([option.label, option.detail, option.searchText], query))
   const activeIndex = Math.min(index, Math.max(0, matches.length - 1))
   const close = () => { setOpen(false); side.current = null }
   const choose = (item) => {

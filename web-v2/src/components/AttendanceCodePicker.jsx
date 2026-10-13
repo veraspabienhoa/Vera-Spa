@@ -1,3 +1,5 @@
+import { displayCode } from '../lib/displayCode'
+import CompactCode from './CompactCode'
 import { useState } from 'react'
 import { veraApi } from '../lib/api'
 
@@ -14,7 +16,7 @@ export default function AttendanceCodePicker({ onChoose }) {
     finally { setBusy(false) }
   }
   const search = query.trim().toLocaleLowerCase('vi')
-  const employees = (data?.employees || []).filter(row => [row.username, row.full_name, ...row.codes.flatMap(code => [code.attendance_code, code.employee_code])].join(' ').toLocaleLowerCase('vi').includes(search))
+  const employees = (data?.employees || []).filter(row => [row.username, row.full_name, ...row.codes.flatMap(code => [code.attendance_code, code.employee_code, displayCode(code.employee_code)])].join(' ').toLocaleLowerCase('vi').includes(search))
   return <section className="attendance-code-picker">
     <h3>Lấy mã chấm công để ánh xạ</h3>
     <div className="device-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => load(veraApi.attendanceCodes)}>Lấy mã TimeSoft đã đồng bộ</button>
@@ -23,8 +25,8 @@ export default function AttendanceCodePicker({ onChoose }) {
     {busy && <p role="status">Đang đối chiếu mã…</p>}{error && <p role="alert">{error}</p>}
     {data && <><p>{data.source} · Khớp {data.matched_count}/{data.total_count} nhân viên.</p>
       <label>Tìm nhân viên hoặc mã<input type="search" value={query} onChange={event => setQuery(event.target.value)}/></label>
-      <div className="responsive-data-table"><table><thead><tr><th>Nhân viên VERA</th><th>Mã chấm công</th><th>Mã nhân viên TimeSoft</th><th>Đối chiếu</th></tr></thead><tbody>{employees.map(row => <tr key={row.username}><td>{row.username}{row.full_name && ` · ${row.full_name}`}</td><td>{[...new Set(row.codes.map(code => code.attendance_code))].join(', ') || '—'}</td><td>{[...new Set(row.codes.map(code => code.employee_code).filter(Boolean))].join(', ') || '—'}</td><td>{statuses[row.status]}{row.status === 'matched' && <button type="button" className="secondary-button compact" disabled={busy} onClick={() => onChoose(row.username, row.codes[0].attendance_code)}>Chọn mã</button>}</td></tr>)}</tbody></table></div>
-      {!!data.unmatched?.length && <details><summary>{data.unmatched.length} mã chưa khớp chắc chắn với nhân viên VERA</summary>{data.unmatched.map((row, index) => <p key={index}>{row.name} · Mã chấm công {row.attendance_code} · Mã nhân viên {row.employee_code || '—'}</p>)}</details>}
+      <div className="responsive-data-table"><table><thead><tr><th>Nhân viên VERA</th><th>Mã chấm công</th><th>Mã nhân viên TimeSoft</th><th>Đối chiếu</th></tr></thead><tbody>{employees.map(row => <tr key={row.username}><td>{row.username}{row.full_name && ` · ${row.full_name}`}</td><td>{[...new Set(row.codes.map(code => code.attendance_code))].join(', ') || '—'}</td><td>{[...new Set(row.codes.map(code => code.employee_code).filter(Boolean))].map((code, index) => <span key={code}>{index > 0 && ', '}<CompactCode value={code} label="Mã nhân viên"/></span>)}{!row.codes.some(code => code.employee_code) && '—'}</td><td>{statuses[row.status]}{row.status === 'matched' && <button type="button" className="secondary-button compact" disabled={busy} onClick={() => onChoose(row.username, row.codes[0].attendance_code)}>Chọn mã</button>}</td></tr>)}</tbody></table></div>
+      {!!data.unmatched?.length && <details><summary>{data.unmatched.length} mã chưa khớp chắc chắn với nhân viên VERA</summary>{data.unmatched.map((row, index) => <p key={index}>{row.name} · Mã chấm công {row.attendance_code} · Mã nhân viên <CompactCode value={row.employee_code} label="Mã nhân viên"/></p>)}</details>}
     </>}
   </section>
 }

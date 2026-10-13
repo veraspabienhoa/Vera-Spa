@@ -1,3 +1,4 @@
+import CompactCode from './CompactCode'
 import { memo } from "react";
 import UiToolbar from "../components/UiToolbar";
 import { Plus } from "lucide-react";
@@ -42,6 +43,7 @@ function LiveTourCustomersPanel({
         if (event.key === 'Enter' && !event.target.closest('button')) void openCustomerHistory(customer);
       }} key={itemId(customer, index)}>
             <strong>{itemLabel(customer, `Khách hàng ${index + 1}`)}</strong>
+            <small>Mã khách hàng: <CompactCode value={stableCustomerId(customer)} label="Mã khách hàng"/></small>
             <span>{customer?.phone || 'Chưa có số điện thoại'}</span>
             <small>Số dư combo: {customer?.combo_balance ?? customer?.remaining_tickets ?? customer?.balance ?? 0}</small>
             {customerComboPurchases(customer).map((combo, comboIndex) => <div key={itemId(combo, comboIndex)}><small>{itemLabel(combo)} · còn {combo?.remaining ?? combo?.balance ?? 0}/{combo?.total ?? ''} vé · mua {bookingTimeLabel(combo?.purchased_at || combo?.created_at)}</small>{isAdmin && capabilities.customer_combo_edit && <button data-ui-key="u-50ce352c9444" data-ui-label-default="Sửa combo" className="text-button" onClick={() => {

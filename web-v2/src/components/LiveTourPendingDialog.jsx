@@ -1,3 +1,4 @@
+import CompactCode from './CompactCode'
 import { availableBookingPurchase, customerPurchases, customerTicketLabel } from '../lib/liveTourComboBooking'
 import { customerOptionMatches } from '../lib/customerSearch'
 import StableFeedback from './StableFeedback'
@@ -52,7 +53,7 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
   return <div className="live-tour-modal-backdrop" onClick={() => { if (!busy) onClose() }}>
     <section data-ui-key="u-6ed55d105540" ref={dialog} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={deleting ? 'Xóa hóa đơn chờ thanh toán' : editing ? 'Sửa hóa đơn chờ thanh toán' : 'Xem hóa đơn chờ thanh toán'} onClick={(event) => event.stopPropagation()}>
       <div className="live-tour-modal-head"><strong>{deleting ? 'Xóa' : editing ? 'Sửa' : 'Xem'} hóa đơn chờ thanh toán</strong><button data-ui-key="u-236fa3b34f62" type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
-      <p><strong>{item.customer_name || 'Khách lẻ'}</strong>{item.customer_phone && ` · ${item.customer_phone}`}<br/><small>Mã: {item.id} · {formatVeraDateTime(item.effective_at || item.booked_at || item.created_at)}</small></p>
+      <p><strong>{item.customer_name || 'Khách lẻ'}</strong>{item.customer_phone && ` · ${item.customer_phone}`}<br/><small>Mã hóa đơn: <CompactCode value={item.id} label="Mã hóa đơn"/> · {formatVeraDateTime(item.effective_at || item.booked_at || item.created_at)}</small></p>
       <StableFeedback>{error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất trước khi sửa.</p>}
       {deleting && <p className="error-box">Xóa phiếu khỏi Chờ thanh toán và giải phóng vé combo đang giữ chỗ. Không trừ vé, không đổi doanh thu đã thu. Bản cũ và lý do được lưu trong lịch sử để đối chiếu.</p>}</StableFeedback>
       {editing && <p>Giữ nguyên nhân viên và kết quả hoàn thành. Đổi khách hàng, combo hoặc dịch vụ sẽ kiểm tra lại vé giữ chỗ; chỉ trừ vé khi thanh toán.</p>}

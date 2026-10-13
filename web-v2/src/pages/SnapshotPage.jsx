@@ -1,3 +1,4 @@
+import CompactCode from '../components/CompactCode'
 import DateSearchField from '../components/DateSearchField'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
@@ -363,7 +364,7 @@ function SnapshotContent({ user, embedded }) {
         const restricted = Boolean(item.break_restricted_reason)
         return <tr key={`${item.date}-${item.employee_code}-${item.check_in}-${index}`}>
           <td>{formatVeraDate(item.date, item.date)}</td>
-          <td><strong>{item.employee_name}</strong><small>{item.employee_code} · {item.break_department || '—'}</small></td>
+          <td><strong>{item.employee_name}</strong><small><CompactCode value={item.employee_code} label="Mã nhân viên"/> · {item.break_department || '—'}</small></td>
           <td>{item.shift || '—'}<small>{item.shift_start || '—'} – {item.shift_end || '—'}</small></td>
           <td className="attendance-status-cell"><strong className={startStatus.tone}>{startStatus.label}</strong><small>FaceID: {item.check_in || '—'}</small><small>{startStatus.detail}</small></td>
           <td className={`attendance-break ${breakIsLate ? 'attendance-break-late' : ''}`}>
