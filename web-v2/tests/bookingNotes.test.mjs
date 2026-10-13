@@ -177,7 +177,10 @@ async function pageFixture(options = {}) {
   globalThis.__notesApi = { liveTour: async () => options.holdBoard ? originalBoard : data,
     liveTourCollection: async () => ({ data: detail(), revision: detail().revision, page: 1, pages: 1, total: bills.length }),
     liveTourAction: async body => {
-      writes.push(body)
+      writes.push(options.earlyReason ? structuredClone(body) : body)
+      if (options.earlyReason && body.action === 'finish_to_pending' && !body.payload.early_completion_reason) {
+        throw Object.assign(new Error('Còn hơn 3 phút'), {status:422,payload:{detail:{code:'early_completion_reason_required',message:'Còn hơn 3 phút. Nhập Lý do ra sớm cho An'}}})
+      }
       if (options.enforceCas && body.expected_revision !== detail().revision) {
         throw Object.assign(new Error('Live Tour đã thay đổi ở thiết bị khác. Hãy làm mới rồi thao tác lại.'), { status: 409, payload: { code: 'revision_conflict' } })
       }
@@ -385,4 +388,26 @@ test('completed booking checkout forwards the completion revision after a later 
     assert.equal(view.accepted.length, 1, 'only Finish commits; stale checkout is rejected')
     assert.match(document.body.textContent, /đã thay đổi ở thiết bị khác/)
   } finally { await view.dispose() }
+})
+
+
+test('early finish requires a nonblank reason, uses a fresh key and cancel never commits', async () => {
+ const view = await pageFixture({ doing:true, finishResult:true, earlyReason:true })
+ try {
+  await click(document.querySelector('.tour-table button[title="An"]'))
+  await click(button('Hoàn thành'))
+  assert.equal(view.accepted.length,0)
+  assert.ok(document.querySelector('.system-dialog-input'))
+  await click(button('Xác nhận'))
+  assert.equal(view.writes.length,1,'blank input cannot retry the write')
+  await click(button('Hủy'))
+  assert.equal(view.accepted.length,0)
+  await click(button('Hoàn thành'))
+  const input=document.querySelector('.system-dialog-input')
+  input.value='Khách cần đi sớm'
+  await click(button('Xác nhận'))
+  assert.equal(view.accepted.length,1)
+  assert.equal(view.accepted[0].payload.early_completion_reason,'Khách cần đi sớm')
+  assert.notEqual(view.writes.at(-1).idempotency_key,view.writes.at(-2).idempotency_key)
+ } finally { await view.dispose() }
 })

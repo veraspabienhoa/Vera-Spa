@@ -37,6 +37,7 @@ def render_performance_report(headers, rows, bounds, file_format):
         layout.paragraph(f'Booking: {_datetime(row[3])} · Xông hơi: {row[10] if row[10] is not None else "—"} phút', size=8)
         layout.paragraph(f'Bắt đầu: {_datetime(row[4] or row[5])} · Hoàn thành: {_datetime(row[6])}', size=8)
         layout.paragraph(f'Tài khoản thực hiện: {row[11] or "—"} · Tài khoản hoàn thành: {row[12] or "—"}', size=8)
+        layout.paragraph(f'Lý do ra sớm: {row[13] if len(row) > 13 and row[13] else "—"}', size=8)
     pages = layout.finish()
     replacements = {'BÁO CÁO ĐÀO TẠO & PHÁT TRIỂN': 'BÁO CÁO THỜI GIAN THỰC HIỆN', 'VERA SPA | Báo cáo đào tạo đầy đủ': 'VERA SPA | Thời gian thực hiện'}
     pages = [[(cmd[0], replacements.get(cmd[1], cmd[1]), *cmd[2:]) if cmd[0] == 'text' else cmd for cmd in page] for page in pages]

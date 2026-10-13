@@ -1,3 +1,4 @@
+import PagePermissionActions from '../components/PagePermissionActions'
 import { confirmDialog } from '../lib/systemDialogs'
 import EmployeeProfileModal from '../components/EmployeeProfileModal'
 import PurchasePage from './PurchasePage'
@@ -668,6 +669,7 @@ export default function RevenuePage({ user }) {
   const overallClass = overallStatus === 'KHỚP' ? 'ok' : overallStatus === 'GẦN KHỚP' ? 'near' : 'bad'
 
   return <div className="feature-page revenue-page">
+    <PagePermissionActions page="revenue" label={({ledger:'Doanh thu-Chi phí',purchase:'Báo cáo mua hàng',overview:'Tổng quan',audit:'Lịch sử sửa, xóa',duplicates:'Kiểm tra dữ liệu trùng'})[activeTab]} adminOnly={['overview','audit','duplicates'].includes(activeTab)}/>
     <style>{`
       .revenue-page .revenue-source{display:flex;gap:8px;align-items:center;color:#68736f;font-size:13px}.revenue-source-toolbar{display:grid;gap:10px;margin-bottom:14px;padding:12px 14px;border:1px solid #cbded3;border-radius:15px;background:#f7faf8}.revenue-source-toggle,.revenue-time-toolbar{display:flex;gap:7px;flex-wrap:wrap}.revenue-source-toggle button,.revenue-time-toolbar button{min-height:36px;padding:6px 11px;border:1px solid #b8d0c3;border-radius:10px;background:#fff;color:#24473a;font-weight:900}.revenue-source-toggle button.active,.revenue-time-toolbar button.active{background:#1f513f;color:#fff;border-color:#1f513f}.revenue-custom-range{display:flex;gap:10px;flex-wrap:wrap}.revenue-custom-range label{display:grid;gap:4px;font-size:11px;font-weight:900}.revenue-source-toolbar small{color:#64746d}.revenue-crud-actions{display:flex;gap:5px;white-space:nowrap}.revenue-admin-records{margin:14px 0}
       .revenue-period{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px}

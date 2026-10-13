@@ -1,3 +1,4 @@
+import PagePermissionActions from '../components/PagePermissionActions'
 import { Suspense, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { requestPageRefresh } from '../lib/usePageRefresh'
@@ -15,6 +16,7 @@ export default function AttendancePage({ user, initialTab = 'snapshot' }) {
   ].filter(tab => tab.allowed)
   const active = tabs.some(tab => tab.id === selected) ? selected : tabs[0]?.id
   return <div className="attendance-workspace">
+    <PagePermissionActions page={active === 'snapshot' ? 'snapshot' : 'devices'} label={tabs.find(item => item.id === active)?.label} features={active === 'history' ? ['device_history_view'] : undefined}/>
     <div className="page-heading"><h1>CHẤM CÔNG</h1></div>
     {!tabs.length ? <p role="status">Bạn chưa được cấp quyền xem chấm công hoặc lịch sử check in.</p> : <>
       <div className="attendance-tab-actions">

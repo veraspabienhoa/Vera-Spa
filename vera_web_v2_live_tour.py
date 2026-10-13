@@ -140,6 +140,35 @@ class LiveTourAction(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+def _require_early_completion_reason(state, action, payload, now):
+    """Validate user completion against the locked server snapshot, before writes."""
+    if action not in {"complete", "finish_to_pending", "finish_room"}:
+        return
+    reason = payload.get("early_completion_reason", "")
+    if not isinstance(reason, str) or len(reason.strip()) > 1000:
+        raise HTTPException(422, "Lý do ra sớm phải là văn bản, tối đa 1000 ký tự.")
+    if action == "finish_room":
+        members = _room_action_members(state, str(payload.get("room") or ""), action)
+    else:
+        ids = payload.get("employee_ids") or [payload.get("employee_id")]
+        members = [_employee(state, employee_id) for employee_id in ids if employee_id]
+    if action == "finish_to_pending" and "service_items" in payload:
+        preview = deepcopy(state)
+        _apply_action(preview, "update_booking", payload, "validation", now)
+        members = [_employee(preview, employee["id"]) for employee in members]
+    early = []
+    for employee in members:
+        started = _parse_datetime(employee.get("started_at"))
+        if not started or employee.get("completed_at"):
+            continue
+        remaining = float(employee.get("duration") or 0) * 60 - (now.astimezone(VN_TZ) - started).total_seconds()
+        if remaining > 180:
+            early.append(str(employee.get("name") or employee.get("id")))
+    if early and not reason.strip():
+        raise HTTPException(422, {"code": "early_completion_reason_required",
+            "message": "Còn hơn 3 phút. Nhập Lý do ra sớm cho: " + ", ".join(early), "employees": early})
+
+
 def _normalize_text(value: str) -> str:
     raw = unicodedata.normalize("NFD", value.strip().lower())
     raw = "".join(ch for ch in raw if unicodedata.category(ch) != "Mn").replace("đ", "d")
@@ -1104,7 +1133,7 @@ def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
         employee.pop(key, None)
     for key in (
         "service", "request", "request_source", "room", "status", "booked_at", "booking_created_at", "auto_started_at", "auto_start_error", "booking_actor", "private_room_share_group",
-        "started_at", "completed_at", "started_by", "completed_by", "payment_status", "customer_id", "customer_name",
+        "started_at", "completed_at", "started_by", "completed_by", "early_completion_reason", "payment_status", "customer_id", "customer_name",
         "customer_phone", "booking_id", "note",
         "service_price_source", "completion_note",
     ):
@@ -1382,7 +1411,7 @@ def _booking(state: dict[str, Any], payload: dict[str, Any], now: datetime, acto
         "request": request, "request_source": "auto_shift_ready" if before_shift else "auto_yc_ca1" if auto_request else "manual",
         "room": room,
         "status": "Đang chờ", "duration": duration, "booked_at": _iso(_adjust_booking_time(now)), "booking_created_at": _iso(now), "booking_actor": actor,
-        "started_at": "", "completed_at": "", "started_by": "", "completed_by": "", "wait_minutes": None,
+        "started_at": "", "completed_at": "", "started_by": "", "completed_by": "", "early_completion_reason": "", "wait_minutes": None,
         "completion_note": "", "completion_delta_minutes": None, "steam_elapsed_minutes": None,
         "payment_status": "", "customer_id": str((customer or {}).get("id") or ""),
         "customer_name": str((customer or {}).get("name") or ""),
@@ -1478,6 +1507,7 @@ def _start_employee(state: dict[str, Any], employee: dict[str, Any], now: dateti
     employee["status"] = "Đang thực hiện"
     employee["started_at"] = _iso(now)
     employee["started_by"] = actor
+    employee["early_completion_reason"] = ""
     employee["completed_by"] = ""
     employee["employee_change_minutes"] = (state.get("payment_settings") or {}).get("employee_change_minutes", 10)
     booked_at = _parse_datetime(employee.get("booked_at"))
@@ -1702,7 +1732,7 @@ def _checkout_mutating(
         entries = [{
             "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
             "booking_actor": item.get("booking_actor", ""),
-            "started_by": item.get("started_by", ""), "completed_by": item.get("completed_by", ""),
+            "started_by": item.get("started_by", ""), "completed_by": item.get("completed_by", ""), "early_completion_reason": item.get("early_completion_reason", ""),
             "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
             "board_started_at": _board_starts(item)["board_started_at"],
             "board_yc_started_at": _board_starts(item)["board_yc_started_at"],
@@ -2168,7 +2198,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         # Resolve every bed from the stored state, regardless of table filters or
         # hidden rows. A single failed transition rolls back the entire room.
         result = _apply_action(state, "start" if action == "start_room" else "finish_to_pending",
-                               {"employee_ids": [row["id"] for row in members], "_admin_start": payload.get("_admin_start") is True}, actor, now)
+                               {"employee_ids": [row["id"] for row in members], "_admin_start": payload.get("_admin_start") is True, "early_completion_reason": payload.get("early_completion_reason", "")}, actor, now)
         result["room"] = canonical_room
     elif action == "sync_daily_status":
         result = _sync_daily(state, payload["directory"], payload["leaves"], today=payload.get("today", ""))
@@ -2210,7 +2240,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         target_position["counter_day"] = original_position["counter_day"]
         fields = ("service", "service_items", "service_price", "service_price_source", "duration",
                   "request", "request_source", "room", "status", "booked_at", "booking_created_at", "booking_actor", "booking_id", "private_room_share_group",
-                  "started_at", "started_by", "completed_by", "employee_change_minutes", "completed_at", "wait_minutes", "payment_status", "completion_note",
+                  "started_at", "started_by", "completed_by", "early_completion_reason", "employee_change_minutes", "completed_at", "wait_minutes", "payment_status", "completion_note",
                   "completion_delta_minutes", "steam_elapsed_minutes", "customer_id", "customer_name",
                   "customer_phone", "combo_purchase_id", "combo_reserved_units", "combo_reserved_components", "note")
         assignment = {key: deepcopy(source[key]) for key in fields if key in source}
@@ -2265,6 +2295,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         employee["started_at"] = ""
         employee["started_by"] = ""
         employee["completed_by"] = ""
+        employee["early_completion_reason"] = ""
         employee["completed_at"] = ""
         employee["payment_status"] = ""
         employee["completion_note"] = ""
@@ -2412,6 +2443,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
         employee["payment_status"] = "CHO THANH TOÁN"
         employee["completed_at"] = _iso(now)
         employee["completed_by"] = actor
+        employee["early_completion_reason"] = str(payload.get("early_completion_reason") or "").strip()
         started_at = _parse_datetime(employee.get("started_at"))
         elapsed = (now.astimezone(VN_TZ) - started_at).total_seconds() / 60 if started_at else 0
         employee["completion_delta_minutes"] = int(round(elapsed - float(employee.get("duration") or 0)))
@@ -2444,7 +2476,7 @@ def _apply_action_impl(state: dict[str, Any], action: str, payload: dict[str, An
             "entries": [{
                 "employee_id": item.get("id"), "employee_name": item.get("name"), "booked_at": item.get("booked_at", ""),
                 "booking_actor": item.get("booking_actor", ""),
-                "started_by": item.get("started_by", ""), "completed_by": item.get("completed_by", ""),
+                "started_by": item.get("started_by", ""), "completed_by": item.get("completed_by", ""), "early_completion_reason": item.get("early_completion_reason", ""),
                 "started_at": item.get("started_at", ""), "completed_at": item.get("completed_at", ""),
                 "board_started_at": _board_starts(item)["board_started_at"],
                 "board_yc_started_at": _board_starts(item)["board_yc_started_at"],
@@ -3446,7 +3478,7 @@ def _service_performance_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
             "booking_note": entry.get("note", ""),
             "booked_at": _iso(booked) if booked else "", "started_at": _iso(started),
             "board_started_at": starts.get("board_started_at") or "", "board_yc_started_at": starts.get("board_yc_started_at") or "",
-            "completed_at": _iso(completed), "started_by": entry.get("started_by", ""), "completed_by": entry.get("completed_by", ""), "duration": int(round(duration)) if duration is not None else None,
+            "completed_at": _iso(completed), "started_by": entry.get("started_by", ""), "completed_by": entry.get("completed_by", ""), "early_completion_reason": entry.get("early_completion_reason", ""), "duration": int(round(duration)) if duration is not None else None,
             "actual_duration_minutes": elapsed, "completion_delta_minutes": delta, "completion_result": entry.get("completion_note") or result,
             "steam_minutes": max(0, int(round((started - booked).total_seconds() / 60))) if booked else None,
         })
@@ -4011,7 +4043,7 @@ def _export_rows(
             ])
         return "Bao_cao", headers, rows
     if kind == "performance":
-        headers = ["Nhân viên", "Dịch vụ", "Phòng", "Booking", "TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC", "Hoàn thành", "Quy định (phút)", "Thực tế (phút)", "Kết quả", "TG Xông Hơi (phút)", "Tài khoản thực hiện", "Tài khoản hoàn thành"]
+        headers = ["Nhân viên", "Dịch vụ", "Phòng", "Booking", "TG bắt đầu thực hiện", "TG bắt đầu thực hiện YC", "Hoàn thành", "Quy định (phút)", "Thực tế (phút)", "Kết quả", "TG Xông Hơi (phút)", "Tài khoản thực hiện", "Tài khoản hoàn thành", "Lý do ra sớm"]
         rows = []
         for item in _service_performance_rows(state):
             if not _event_in_export_bounds(item, bounds):
@@ -4027,7 +4059,7 @@ def _export_rows(
             requested = _norm(item.get("request")) == "yc"
             standard_start = "" if requested else item.get("board_started_at") or item.get("started_at")
             requested_start = item.get("board_yc_started_at") or item.get("started_at") if requested else ""
-            rows.append([item.get("employee_name"), item.get("service"), item.get("room"), item.get("booked_at"), standard_start, requested_start, item.get("completed_at"), item.get("duration"), item.get("actual_duration_minutes"), item.get("completion_result"), item.get("steam_minutes"), item.get("started_by"), item.get("completed_by")])
+            rows.append([item.get("employee_name"), item.get("service"), item.get("room"), item.get("booked_at"), standard_start, requested_start, item.get("completed_at"), item.get("duration"), item.get("actual_duration_minutes"), item.get("completion_result"), item.get("steam_minutes"), item.get("started_by"), item.get("completed_by"), item.get("early_completion_reason")])
         return "Thoi_gian_dich_vu", headers, rows
     if kind == "employee":
         grouped: dict[str, dict[str, Any]] = {}
@@ -4421,7 +4453,7 @@ def _import_board_into_state(state: dict[str, Any], rows: list[dict[str, Any]], 
         updates.append((current, parsed))
     mutable = {
         "stt", "appointment", "service", "request", "request_source", "room", "status", "duration",
-        "booked_at", "started_at", "completed_at", "started_by", "completed_by", "payment_status", "completion_note", "tour_count",
+        "booked_at", "started_at", "completed_at", "started_by", "completed_by", "early_completion_reason", "payment_status", "completion_note", "tour_count",
         "request_count", "work_status", "shift", "break_started_at", "clock_out", "clock_in",
         "break_remaining_minutes", "steam_elapsed_minutes", "wait_minutes", "completion_delta_minutes",
         "note", "vip", "sort_index",
@@ -5440,6 +5472,7 @@ def install_live_tour_routes(
                 payload["_actor_role"] = str(getattr(ident, "role", "") or "").strip().lower()
             # Authority comes exclusively from the authenticated identity, never
             # from a payload flag, an account name or a delegated feature grant.
+            _require_early_completion_reason(working, action, payload, now)
             from vera_live_tour_bill_numbers import allocation_scope
             with allocation_scope(conn, state):
                 result = _apply_action(working, action, payload, actor, now,

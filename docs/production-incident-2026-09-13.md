@@ -1,3 +1,20 @@
+## 13-10-2026 — Context permissions and early completion reasons (source only)
+
+Admin can edit account grants and inspect effective access from page/tab modals.
+Scoped permission writes retain unrelated explicit overrides and role inheritance,
+use the existing permission transaction lock/revision and acknowledge policy v1.
+Existing fixed-role/Admin-only surfaces remain restricted and are labelled; tabs
+without separate grants share their existing page permissions. No new role bypass.
+
+Before complete/finish-to-pending/finish-room, the HTTP action validates remaining
+seconds from its locked snapshot. Strictly more than 180 seconds requires a
+nonblank reason (maximum 1000 characters). Validation precedes mutations/outbox;
+room actions fail as a whole. A rejected request can open the shared prompt; the
+resubmission uses a new payload-bound idempotency key and unchanged revision.
+Cancel or blank input cannot complete work. Reasons survive pending/paid entries,
+performance reads and PDF/PNG/Excel; new bookings clear them. The existing >=5
+minute notification rule is unchanged. No production data or deployment verified.
+
 ## 13-10-2026 — Performance actors and early-completion notices (source only)
 
 Start/complete transitions persist the authenticated actor through pending and

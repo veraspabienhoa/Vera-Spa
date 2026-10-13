@@ -1,3 +1,4 @@
+import PagePermissionActions from '../components/PagePermissionActions'
 import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import ActionSuccessDialog from '../components/ActionSuccessDialog'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -739,6 +740,7 @@ export default function LeaveRegistrationPage({ user }) {
 
   return (
     <div ref={leavePageRef}>
+    <PagePermissionActions page="leave" label={({registration:'Đăng ký nghỉ',list:'Danh sách lịch nghỉ',statistics:'Thống kê'})[activeTab]}/>
       {message && <ActionSuccessDialog message={message} title="Đăng ký lịch nghỉ thành công" onClose={() => setMessage('')} />}
       {listActionNotice?.status === 'success' && <ActionSuccessDialog message={listActionNotice.message} title={listActionNotice.action === 'edit' ? 'Sửa lịch nghỉ thành công' : 'Xóa lịch nghỉ thành công'} onClose={() => setListActionNotice(null)} />}
       <div data-ui-key="u-2f745fc2db4b" className="page-heading-row">
