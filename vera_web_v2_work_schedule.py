@@ -86,7 +86,7 @@ def _schedule_departments(conn):
 
 SCHEDULE_TABLE_HEADERS = {
     'statistics': ('Nhân viên', 'Ngày làm việc', 'Ngày nghỉ', 'Ngày Ca 1', 'Ngày Ca 2', 'Giờ tăng ca', 'Vi phạm', 'Phạt vi phạm'),
-    'violations': ('Nhân viên', 'Ngày vi phạm', 'Nội dung vi phạm', 'Tiền phạt', 'Ghi chú', 'Người nhập', 'Ngày ghi nhận'),
+    'violations': ('Nhân viên', 'Ngày vi phạm', 'Nội dung vi phạm', 'Số phút trễ (Có phép)', 'Tiền phạt', 'Ghi chú', 'Người nhập', 'Ngày ghi nhận'),
 }
 
 
@@ -101,7 +101,9 @@ class ScheduleTableExport(BaseModel):
 def _schedule_table_workbook(body: ScheduleTableExport):
     """Export the visible snapshot; never query or expose additional employee data."""
     headers = SCHEDULE_TABLE_HEADERS[body.kind]
-    if any(len(row) != len(headers) or any(isinstance(cell, str) and len(cell) > 2000 for cell in row) for row in body.rows):
+    # Older frontends send seven cells; preserve their amounts in the correct column.
+    export_rows = [row[:3] + [None] + row[3:] if body.kind == 'violations' and len(row) == 7 else row for row in body.rows]
+    if any(len(row) != len(headers) or any(isinstance(cell, str) and len(cell) > 2000 for cell in row) for row in export_rows):
         raise HTTPException(400, 'Dữ liệu bảng xuất Excel không hợp lệ.')
     workbook = Workbook()
     sheet = workbook.active
@@ -110,7 +112,7 @@ def _schedule_table_workbook(body: ScheduleTableExport):
     sheet.append([f'{sheet.title.upper()} · {label}'])
     sheet.append([f'{body.start:%d-%m-%Y} – {body.end:%d-%m-%Y}'])
     sheet.append(headers)
-    for values in body.rows:
+    for values in export_rows:
         sheet.append(values)
         for cell in sheet[sheet.max_row]:
             if isinstance(cell.value, str):
@@ -128,7 +130,7 @@ def _schedule_table_workbook(body: ScheduleTableExport):
     sheet.freeze_panes = 'A4'
     sheet.auto_filter.ref = f'A3:{sheet.cell(3, len(headers)).column_letter}{sheet.max_row}'
     for index in range(1, len(headers) + 1):
-        sheet.column_dimensions[sheet.cell(3, index).column_letter].width = 28 if index == 1 else (38 if body.kind == 'violations' and index in {3, 5} else 20)
+        sheet.column_dimensions[sheet.cell(3, index).column_letter].width = 28 if index == 1 else (38 if body.kind == 'violations' and index in {3, 6} else 20)
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
