@@ -25,7 +25,7 @@ def payload_dict(value):
     return value if isinstance(value, dict) else {}
 
 
-def price_basis(basis, day):
+def price_basis(basis, day, *, approved_multiplier=0):
     """Reprice only a verified default 2× late component, never a mixed fine."""
     from vera_hc_rules import wage
     if not isinstance(basis, dict) or basis.get('kind') != 'late':
@@ -54,7 +54,7 @@ def price_basis(basis, day):
     if not total.is_finite() or total <= 0:
         raise ValueError('invalid_wage_amount')
     return {approved: int((total * multiplier).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
-            for approved, multiplier in ((False, 2), (True, 1))}
+            for approved, multiplier in ((False, 2), (True, approved_multiplier))}
 
 
 def metadata(row):
@@ -71,13 +71,15 @@ def metadata(row):
         prices = price_basis(basis, day)
         if KEY in payload:
             stamp = datetime.fromisoformat(state['at'])
-            if (state.get('version') != 1 or type(state.get('approved')) is not bool
-                    or state.get('multiplier') != (1 if state['approved'] else 2)
+            if (state.get('version') not in (1, 2) or type(state.get('approved')) is not bool
+                    or state.get('multiplier') != ((1 if state['version'] == 1 else 0) if state['approved'] else 2)
                     or not state.get('actor') or not stamp.tzinfo
                     or not isinstance(state.get('event_id'), int) or state['event_id'] <= 0):
                 raise ValueError('invalid_approval_audit')
+        # Accept verified version-1 approvals without rewriting financial history.
+        expected_prices = price_basis(basis, day, approved_multiplier=1) if state.get('version') == 1 else prices
         current = Decimal(str(row.get('penalty', row.get('amount'))))
-        if payload.get('__schedule_violation_deleted') or current != prices[result['hc_late_approved']]:
+        if payload.get('__schedule_violation_deleted') or current != expected_prices[result['hc_late_approved']]:
             raise ValueError('fine_was_manually_changed')
         result.update(hc_late_approval_eligible=True, hc_late_minutes=basis.get('minutes'),
                       hc_late_approved_amount=prices[True], hc_late_unapproved_amount=prices[False],
@@ -135,7 +137,7 @@ def apply(conn, row, approved, actor, now):
     assert_not_finalized(conn, row['leave_date'], row['employee_name'])
     amount = info['hc_late_approved_amount'] if approved else info['hc_late_unapproved_amount']
     before = deepcopy(payload.get(KEY))
-    payload[KEY] = {'version': 1, 'approved': approved, 'multiplier': 1 if approved else 2,
+    payload[KEY] = {'version': 2, 'approved': approved, 'multiplier': 0 if approved else 2,
                     'actor': actor, 'at': now.isoformat(), 'event_id': event['id']}
     history = list(payload.get('schedule_violation_changes') or [])
     history.append({'action': 'hc_late_approval', 'actor': actor, 'at': now.isoformat(),

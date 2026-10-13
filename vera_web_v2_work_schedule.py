@@ -241,9 +241,13 @@ def _mutate_schedule_violation(conn, uid, body, ident, *, deleting=False):
     if row.get('updated_at') != body.expected_updated_at:
         raise HTTPException(409, "Vi phạm vừa được thay đổi. Hãy làm mới trước khi sửa/xóa.")
     import vera_hc_late_approval as late_approval
+    legacy_approved_amount = None
     if row['source_sheet_id'] == late_approval.SOURCE:
         late_approval.assert_not_finalized(conn, row['leave_date'], row['employee_name'])
-        if not deleting and late_approval.payload_dict(payload.get(late_approval.KEY)) and body.amount != row['penalty']:
+        info = late_approval.metadata(row)
+        if info.get('hc_late_approval_eligible') and info.get('hc_late_approved'):
+            legacy_approved_amount = row['penalty']
+        if not deleting and late_approval.payload_dict(payload.get(late_approval.KEY)) and body.amount != (0 if legacy_approved_amount is not None else row['penalty']):
             raise HTTPException(400, 'Dùng ô Đi trễ có phép để đổi mức phạt HC đã xác nhận.')
     manual = row['source_sheet_id'] == 'postgres:work_schedule_violation'
     now = datetime.now(ZoneInfo('Asia/Ho_Chi_Minh'))
@@ -251,6 +255,8 @@ def _mutate_schedule_violation(conn, uid, body, ident, *, deleting=False):
     day, reason, note, amount = row['leave_date'], row['leave_reason'], row.get('detail') or '', 0
     if not deleting:
         day, reason, note, amount = body.violation_date, body.reason.strip(), body.note.strip(), body.amount
+        if legacy_approved_amount is not None:
+            amount = legacy_approved_amount
         if not reason:
             raise HTTPException(400, "Vui lòng nhập nội dung vi phạm.")
         if not manual and (day != row['leave_date'] or reason != row['leave_reason']):
@@ -319,9 +325,18 @@ def _employee_violations(conn, employees, start, end):
         ORDER BY leave_date DESC, created_at DESC
     """), {"start": start, "end": end, "employees": list(names)}).mappings().all()
     from vera_hc_late_approval import metadata as late_metadata
-    return [dict({key: value for key, value in row.items() if key not in {'payload', 'source_sheet_id'}},
-                 employee_name=names[str(row["employee_username"]).strip().casefold()]["full_name"], **late_metadata(row))
-            for row in rows if str(row["employee_username"]).strip().casefold() in names]
+    result = []
+    for row in rows:
+        if str(row["employee_username"]).strip().casefold() not in names:
+            continue
+        info = late_metadata(row)
+        item = dict({key: value for key, value in row.items() if key not in {'payload', 'source_sheet_id'}},
+                    employee_name=names[str(row["employee_username"]).strip().casefold()]["full_name"], **info)
+        # Legacy 1× approvals represent unpaid wages, not an additional fine.
+        if info.get('hc_late_approval_eligible') and info.get('hc_late_approved'):
+            item['amount'] = 0
+        result.append(item)
+    return result
 
 
 def _combo_customers(conn):

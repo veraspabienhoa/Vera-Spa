@@ -53,10 +53,10 @@ class Connection:
 def test_exact_money_uses_immutable_basis_not_half_of_rounded_fine():
     basis = deepcopy(BASIS)
     basis['config']['rate_ca1'] = Decimal('30002')
-    assert approval.price_basis(basis, DAY) == {False: 15001, True: 7501}
+    assert approval.price_basis(basis, DAY) == {False: 15001, True: 0}
     basis['config'] = dict(calculation_mode='monthly', default_base_salary=6240000,
                            standard_month_days=26, standard_day_hours=8, full_allowance=5000000)
-    assert approval.price_basis(basis, DAY) == {False: 15000, True: 7500}
+    assert approval.price_basis(basis, DAY) == {False: 15000, True: 0}
 
 
 def test_seconds_and_midnight_cutoff_are_preserved():
@@ -64,7 +64,7 @@ def test_seconds_and_midnight_cutoff_are_preserved():
     basis.update(start='2026-10-06T21:59:30+07:00', end='2026-10-07T00:00:30+07:00')
     basis['config'] = dict(calculation_mode='hourly', rate_ca2_before_22=36000, rate_ca2_after_22=72000)
     basis['wage_segments'] = [dict(start=basis['start'], end=basis['end'], shift='Ca 2')]
-    assert approval.price_basis(basis, DAY) == {False: 289800, True: 144900}
+    assert approval.price_basis(basis, DAY) == {False: 289800, True: 0}
 
 
 @pytest.mark.parametrize('change', [
@@ -88,14 +88,14 @@ def test_overlap_or_out_of_interval_segments_rejected():
 def test_approval_unapproval_roundtrip_preserves_original_event_and_evidence():
     row, event = fixture(); before = deepcopy(event); conn = Connection(row, event)
     payload, amount = approval.apply(conn, row, True, 'admin', NOW)
-    assert amount == 7500 and payload[approval.KEY]['approved'] is True
+    assert amount == 0 and payload[approval.KEY]['approved'] is True
     assert payload['hc_basis'] == BASIS and row['detail'] == 'Original minutes/evidence' and event == before
     assert payload['schedule_violation_changes'][-1]['before']['amount'] == '15000'
     assert payload['schedule_violation_changes'][-1]['actor'] == 'admin'
     row.update(payload=payload, penalty=amount)
     # The same persisted state never halves the previous amount again.
     payload, amount = approval.apply(conn, row, True, 'admin', NOW)
-    assert amount == 7500
+    assert amount == 0
     row.update(payload=payload, penalty=amount)
     payload, amount = approval.apply(conn, row, False, 'admin', NOW)
     assert amount == 15000 and payload[approval.KEY]['multiplier'] == 2
@@ -133,7 +133,7 @@ def test_finalized_employee_month_blocks_changes(key):
 def test_other_employee_or_month_snapshot_does_not_block():
     row, event = fixture()
     entries = [dict(month='2026-09', rows=[dict(employee_username='Lan')]), dict(month='2026-10', rows=[dict(employee_username='Other')])]
-    assert approval.apply(Connection(row, event, entries), row, True, 'admin', NOW)[1] == 7500
+    assert approval.apply(Connection(row, event, entries), row, True, 'admin', NOW)[1] == 0
 
 
 def test_endpoint_preserves_admin_only_gate_before_any_database():
@@ -153,7 +153,7 @@ def test_mutation_cas_scope_and_audit(monkeypatch):
     monkeypatch.setattr(schedule, '_employee_catalog', lambda *args: [{'username': 'Lan'}])
     body = schedule.ScheduleLateApproval(department='support', expected_updated_at=NOW, approved=True)
     actor = SimpleNamespace(employee_username='Admin', role='admin')
-    assert schedule._approve_schedule_late(conn, 'uid', body, actor)['amount'] == 7500
+    assert schedule._approve_schedule_late(conn, 'uid', body, actor)['amount'] == 0
     assert len(conn.writes) == 1
     assert json.loads(conn.writes[0]['payload'])[approval.KEY]['actor'] == 'Admin'
     assert "pg_advisory_xact_lock(hashtext('vera:phase4:leave_primary'))" in conn.calls[0][0]
@@ -187,14 +187,19 @@ def test_postgres_approval_recompute_cas_and_finalized_history(database, monkeyp
     actor = SimpleNamespace(employee_username='Admin', role='admin')
     body = schedule.ScheduleLateApproval(department='support', expected_updated_at=row['updated_at'], approved=True)
     with database.begin() as conn:
-        assert schedule._approve_schedule_late(conn, row['record_uid'], body, actor)['amount'] == 7500
+        assert schedule._approve_schedule_late(conn, row['record_uid'], body, actor)['amount'] == 0
     with database.begin() as conn:
         saved = dict(conn.execute(text('SELECT * FROM leave_records')).mappings().first())
-        assert saved['penalty'] == 7500 and saved['payload'][approval.KEY]['approved'] is True
+        assert saved['penalty'] == 0 and saved['payload'][approval.KEY]['approved'] is True
+        import vera_web_v2_department_payroll as dep
+        events = dep._hc_late_events(conn, DAY, DAY, lambda v: v.lower())['lan']
+        assert events[0]['approved'] and events[0]['amount'] == 0 and not events[0].get('issue')
+        visible = schedule._employee_violations(conn, [{'username':'Lan','full_name':'Lan'}], DAY, DAY)
+        assert len(visible) == 1 and visible[0]['amount'] == 0
         assert saved['detail'] == row['detail'] and saved['payload']['hc_basis'] == row['payload']['hc_basis']
         assert dict(conn.execute(text('SELECT * FROM vera_hc_penalty_event')).mappings().first()) == before
         assert not hc.write_penalty(conn, scheduled, DAY, decision, 15000, 1, BASIS['config'])
-        assert conn.execute(text('SELECT penalty FROM leave_records')).scalar() == 7500
+        assert conn.execute(text('SELECT penalty FROM leave_records')).scalar() == 0
     with pytest.raises(HTTPException) as exc:
         with database.begin() as conn:
             schedule._approve_schedule_late(conn, row['record_uid'], body, actor)
@@ -207,7 +212,7 @@ def test_postgres_approval_recompute_cas_and_finalized_history(database, monkeyp
             schedule._approve_schedule_late(conn, row['record_uid'], body.model_copy(update={'approved':False,'expected_updated_at':saved['updated_at']}), actor)
     assert exc.value.status_code == 409
     with database.begin() as conn:
-        assert conn.execute(text('SELECT penalty FROM leave_records')).scalar() == 7500
+        assert conn.execute(text('SELECT penalty FROM leave_records')).scalar() == 0
         assert conn.execute(text("SELECT value_json FROM vera_app_setting WHERE setting_key='department_payroll_combined_history'")).scalar() == official
         assert dict(conn.execute(text('SELECT * FROM vera_hc_penalty_event')).mappings().first()) == before
 
@@ -268,8 +273,45 @@ def test_historical_hourly_after_midnight_custom_bucket_is_not_reinterpreted():
         approval.price_basis(basis, DAY)
     assert basis == original
     basis['wage_segments'][0]['shift'] = 'Ca 2'
-    assert approval.price_basis(basis, DAY) == {False: 60000, True: 30000}
+    assert approval.price_basis(basis, DAY) == {False: 60000, True: 0}
     # Monthly basic wage has no Ca 1/Ca 2 bucket difference.
     basis['wage_segments'][0]['shift'] = 'Giờ làm'
     basis['config'] = dict(calculation_mode='monthly', default_base_salary=6240000, standard_month_days=26, standard_day_hours=8)
-    assert approval.price_basis(basis, DAY) == {False: 30000, True: 15000}
+    assert approval.price_basis(basis, DAY) == {False: 30000, True: 0}
+
+
+def test_legacy_approval_can_upgrade_to_zero_without_losing_evidence():
+    row, event = fixture()
+    row['penalty'] = 7500
+    row['payload'][approval.KEY] = dict(version=1, approved=True, multiplier=1,
+        actor='Admin', at=NOW.isoformat(), event_id=123)
+    info = approval.metadata(row)
+    assert info['hc_late_approval_eligible'] and info['hc_late_approved_amount'] == 0
+    payload, amount = approval.apply(Connection(row, event), row, True, 'Admin', NOW)
+    assert amount == 0 and payload[approval.KEY]['version'] == 2
+    assert payload[approval.KEY]['multiplier'] == 0
+    assert payload['schedule_violation_changes'][-1]['before']['amount'] == '7500'
+
+
+def test_zero_approved_event_remains_in_payroll_and_violation_reads():
+    import vera_web_v2_department_payroll as dep
+    row, event = fixture()
+    payload, amount = approval.apply(Connection(row, event), row, True, 'Admin', NOW)
+    row.update(payload=payload, penalty=amount, hc_event_id=123, hc_event_date=DAY,
+               hc_event_employee='Lan', hc_event_amount=15000, hc_event_basis=deepcopy(BASIS))
+    class ReadConnection:
+        def execute(self, statement, params=None):
+            sql = str(statement)
+            if 'to_regclass' in sql: return Result('vera_hc_penalty_event')
+            if 'JOIN vera_hc_penalty_event' in sql:
+                assert "OR l.payload->'hc_late_approval'->>'approved'='true'" in sql
+                return Result(rows=[row])
+            return Result(rows=[dict(row, employee_username='Lan', amount=amount, violation_date=DAY)])
+    conn = ReadConnection()
+    events = dep._hc_late_events(conn, DAY, DAY, lambda v: v.lower())['lan']
+    assert events[0]['amount'] == 0 and events[0]['approved'] and not events[0].get('issue')
+    for version, recorded in [(2, 0), (1, 7500)]:
+        row['payload'][approval.KEY].update(version=version, multiplier=0 if version == 2 else 1)
+        row['penalty'] = recorded
+        result = schedule._employee_violations(conn, [{'username':'Lan','full_name':'Lan'}], DAY, DAY)
+        assert result[0]['amount'] == 0

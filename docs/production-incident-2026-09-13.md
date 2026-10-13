@@ -1,3 +1,14 @@
+## 13-10-2026 — Permitted HC lateness has zero fine (source only)
+
+New Admin approvals store a zero fine and version-2 audit, retaining immutable
+late events and wage evidence. Version-1 approvals remain verifiable and display
+zero additional fine in the violation list/export; existing financial history is
+not rewritten. Editing their note preserves the original stored reference.
+Payroll includes zero approved events so schedule-based wages still exclude late
+time; attendance wages remain unpaid for that interval without a second debit.
+Unapproval restores the original verified rule. Finalized payroll, CAS, Admin-only
+access and the caller transaction remain protected. Production is unverified.
+
 ## 13-10-2026 — Early completion notice reason (source only)
 
 The completion notice body omitted the saved early_completion_reason. Include

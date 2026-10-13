@@ -643,7 +643,8 @@ def _hc_late_events(conn, start, end, norm):
         e.employee_name AS hc_event_employee, e.amount AS hc_event_amount, e.basis AS hc_event_basis
         FROM leave_records l JOIN vera_hc_penalty_event e ON e.leave_record_uid=l.record_uid
         WHERE l.leave_date BETWEEN :start AND :end AND l.source_sheet_id='postgres:hc_rules'
-          AND e.kind='late' AND COALESCE(l.penalty,0)>0 ORDER BY l.leave_date,e.id"""), {"start": start, "end": end}).mappings().all()
+          AND e.kind='late' AND (COALESCE(l.penalty,0)>0 OR l.payload->'hc_late_approval'->>'approved'='true')
+          AND COALESCE(l.payload->>'__schedule_violation_deleted','false') <> 'true' ORDER BY l.leave_date,e.id"""), {"start": start, "end": end}).mappings().all()
     result = {}
     for raw in records:
         row = dict(raw)

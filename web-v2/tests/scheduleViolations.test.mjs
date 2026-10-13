@@ -84,7 +84,7 @@ test('HC late approval is scoped, confirmed, revision checked and preserves stat
    return {message:'Đã cập nhật; tính lại bảng lương nháp.'}
   }
   return {hc_late_approval_version:1,rows:[
-   {id:'hc',updated_at:'2026-10-06T03:00:00Z',employee_name:'Lan',employee_username:'lan',violation_date:'2026-10-06',reason:'Đi trễ · Nội quy HC',amount:approved?7500:15000,note:'Bằng chứng gốc',hc_late_approval_eligible:true,hc_late_approved:approved,hc_late_minutes:15,hc_late_approved_amount:7500,hc_late_unapproved_amount:15000},
+   {id:'hc',updated_at:'2026-10-06T03:00:00Z',employee_name:'Lan',employee_username:'lan',violation_date:'2026-10-06',reason:'Đi trễ · Nội quy HC',amount:approved?0:15000,note:'Bằng chứng gốc',hc_late_approval_eligible:true,hc_late_approved:approved,hc_late_minutes:15,hc_late_approved_amount:0,hc_late_unapproved_amount:15000},
    {id:'absence',employee_name:'Other',employee_username:'other',violation_date:'2026-10-06',reason:'Nghỉ không phép',amount:300000},
    {id:'custom',employee_name:'Custom',employee_username:'custom',violation_date:'2026-10-06',reason:'Đi trễ',amount:20000,hc_late_approval_eligible:false,hc_late_approval_unavailable:'Mức phạt tùy chỉnh'},
   ]}
@@ -120,7 +120,7 @@ test('pending violation confirmations and editors close on capability loss or id
  const writes=[]
  const request=async(path,options)=>{
   if(options){writes.push({path,options});return {message:'Saved'}}
-  return {hc_late_approval_version:1,rows:[{id:'hc',updated_at:'2026-10-06T03:00:00Z',employee_name:'Lan',employee_username:'lan',violation_date:'2026-10-06',reason:'HC',amount:15000,hc_late_approval_eligible:true,hc_late_approved:false,hc_late_approved_amount:7500,hc_late_unapproved_amount:15000}]}
+  return {hc_late_approval_version:1,rows:[{id:'hc',updated_at:'2026-10-06T03:00:00Z',employee_name:'Lan',employee_username:'lan',violation_date:'2026-10-06',reason:'HC',amount:15000,hc_late_approval_eligible:true,hc_late_approved:false,hc_late_approved_amount:0,hc_late_unapproved_amount:15000}]}
  }
  const render=(canManage,key='account-A')=>act(async()=>root.render(React.createElement(mod.exports.default,{key,department:'support',canManage,canEdit:true,request})))
  const click=selector=>act(()=>document.querySelector(selector).click())
@@ -161,7 +161,7 @@ test('in-flight old-account completion cannot update the replacement ledger', as
  let finish,oldSaved=0,newSaved=0,writes=0
  const oldRequest=async(path,options)=>{
   if(options){writes++;return new Promise(resolve=>{finish=resolve})}
-  return {hc_late_approval_version:1,rows:[{id:'old',updated_at:'2026-10-06T03:00:00Z',employee_name:'Old account',violation_date:'2026-10-06',amount:15000,hc_late_approval_eligible:true,hc_late_approved:false,hc_late_approved_amount:7500,hc_late_unapproved_amount:15000}]}
+  return {hc_late_approval_version:1,rows:[{id:'old',updated_at:'2026-10-06T03:00:00Z',employee_name:'Old account',violation_date:'2026-10-06',amount:15000,hc_late_approval_eligible:true,hc_late_approved:false,hc_late_approved_amount:0,hc_late_unapproved_amount:15000}]}
  }
  await act(async()=>root.render(React.createElement(mod.exports.default,{key:'A',department:'support',canManage:true,request:oldRequest,onSaved:()=>oldSaved++})))
  await act(()=>document.querySelector('input[type="checkbox"]').click())
@@ -185,7 +185,7 @@ test('checking and unchecking automatically refresh row money, ledger total and 
  let approved=false,version=0,pending
  const writes=[],parentTotals=[]
  const timestamp=()=>`2026-10-06T03:00:0${version}Z`
- const amount=()=>approved?7500:15000
+ const amount=()=>approved?0:15000
  const request=async(path,options)=>{
   if(options){
    const body=JSON.parse(options.body);writes.push(body)
@@ -193,7 +193,7 @@ test('checking and unchecking automatically refresh row money, ledger total and 
    return new Promise((resolve,reject)=>{pending={body,resolve,reject}})
   }
   return {hc_late_approval_version:1,rows:[
-   {id:'hc',updated_at:timestamp(),employee_name:'Lan',employee_username:'lan',violation_date:'2026-10-06',reason:'Đi trễ · Nội quy HC',amount:amount(),hc_late_approval_eligible:true,hc_late_approved:approved,hc_late_approved_amount:7500,hc_late_unapproved_amount:15000},
+   {id:'hc',updated_at:timestamp(),employee_name:'Lan',employee_username:'lan',violation_date:'2026-10-06',reason:'Đi trễ · Nội quy HC',amount:amount(),hc_late_approval_eligible:true,hc_late_approved:approved,hc_late_approved_amount:0,hc_late_unapproved_amount:15000},
    {id:'uniform',employee_name:'Other',violation_date:'2026-10-06',reason:'Đồng phục',amount:5000},
   ]}
  }
@@ -203,7 +203,7 @@ test('checking and unchecking automatically refresh row money, ledger total and 
  const rowMoney=()=>document.querySelector('.schedule-scroll tbody tr').children[4].textContent
  assert.deepEqual([...document.querySelectorAll('thead th')].slice(2,5).map(th=>th.textContent),['Nội dung vi phạm','Có phép','Mức ghi nhận'])
  assert.equal(checkbox().checked,false);assert.match(rowMoney(),/^15\.000đ/);assert.equal(summary(),'20.000đ')
- for(const [next,total,text] of [[true,'12.500đ','7.500đ'],[false,'20.000đ','15.000đ']]){
+ for(const [next,total,text] of [[true,'5.000đ','0đ'],[false,'20.000đ','15.000đ']]){
   await act(()=>checkbox().click())
   assert.equal(checkbox().disabled,true);assert.equal(checkbox().checked,!next)
   assert.equal(document.querySelector('.schedule-violation-dialog form'),null)
@@ -213,11 +213,11 @@ test('checking and unchecking automatically refresh row money, ledger total and 
  }
  assert.deepEqual(writes.map(body=>body.approved),[true,false])
  assert.notEqual(writes[0].expected_updated_at,writes[1].expected_updated_at)
- assert.deepEqual(parentTotals,[12500,20000])
+ assert.deepEqual(parentTotals,[5000,20000])
  await act(()=>checkbox().click())
  await act(async()=>pending.reject(Error('Không lưu được; số tiền chưa thay đổi.')))
  assert.equal(checkbox().checked,false);assert.match(rowMoney(),/^15\.000đ/);assert.equal(summary(),'20.000đ')
- assert.deepEqual(parentTotals,[12500,20000])
+ assert.deepEqual(parentTotals,[5000,20000])
 })
 
 test('ledger export cannot download or show stale feedback after filter or capability changes', async t => {
@@ -257,10 +257,10 @@ test('mixed-version ledger gates approvals, survives a cached-capability 404 and
    writes.push({path,body:JSON.parse(options.body)})
    if(rejectNext){rejectNext=false;stage='stale';throw Object.assign(Error('Not Found'),{status:404})}
    approved=JSON.parse(options.body).approved
-   return {amount:7500,approved,message:'Đã cập nhật.'}
+   return {amount:0,approved,message:'Đã cập nhật.'}
   }
-  const row={id:'hc',updated_at:'2026-10-06T03:00:00Z',employee_name:'Lan',employee_username:'lan',violation_date:'2026-10-06',reason:'Đi trễ · Nội quy HC',amount:approved?7500:15000}
-  if(stage!=='legacy') Object.assign(row,{hc_late_approval_eligible:true,hc_late_approved:approved,hc_late_approved_amount:7500,hc_late_unapproved_amount:15000})
+  const row={id:'hc',updated_at:'2026-10-06T03:00:00Z',employee_name:'Lan',employee_username:'lan',violation_date:'2026-10-06',reason:'Đi trễ · Nội quy HC',amount:approved?0:15000}
+  if(stage!=='legacy') Object.assign(row,{hc_late_approval_eligible:true,hc_late_approved:approved,hc_late_approved_amount:0,hc_late_unapproved_amount:15000})
   return {...(stage==='new'?{hc_late_approval_version:1}:{}),rows:[row]}
  }
  await act(async()=>root.render(React.createElement(mod.exports.default,{department:'support',canManage:true,canEdit:true,request,onSaved:()=>saved++})))
@@ -288,5 +288,5 @@ test('mixed-version ledger gates approvals, survives a cached-capability 404 and
  await act(async()=>document.querySelector('input[type="checkbox"]').click())
  assert.equal(writes.length,2);assert.equal(saved,1)
  assert.equal(document.querySelector('input[type="checkbox"]').checked,true)
- assert.match(moneyCell(),/^7\.500đ/)
+ assert.match(moneyCell(),/^0đ/)
 })
