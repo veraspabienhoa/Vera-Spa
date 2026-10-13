@@ -109,8 +109,7 @@ export default function ScheduleViolations({ department, departmentLabel, employ
     const view = viewRef.current
     submitting.current = true; setBusy(true); setNotice('')
     try {
-      const amount = approved ? row.hc_late_approved_amount : row.hc_late_unapproved_amount
-      if (!(await confirmMutation(`${approved ? 'Xác nhận' : 'Bỏ xác nhận'} Đi trễ có phép cho ${row.employee_name} ngày ${formatVeraDate(row.violation_date)}? Mức theo đơn giá ghi nhận: ${money(amount)} ${approved ? 'Có phép: không phạt, chỉ không tính lương thời gian đi trễ.' : 'Không phép: áp dụng mức phạt theo quy định; thời gian đi trễ không được tính lương.'}`, true)) || !mountedRef.current || !approvalSupportedRef.current || viewRef.current !== view) return
+      if (!(await confirmMutation(`${approved ? 'Xác nhận' : 'Bỏ xác nhận'} Đi trễ có phép cho ${row.employee_name} ngày ${formatVeraDate(row.violation_date)}? ${approved ? 'Có phép: không phạt, chỉ không tính lương thời gian đi trễ.' : 'Không phép: áp dụng mức phạt theo quy định; thời gian đi trễ không được tính lương.'}`, true)) || !mountedRef.current || !approvalSupportedRef.current || viewRef.current !== view) return
       const result = await requestRef.current(`/v2/work-schedule/violations/${encodeURIComponent(row.id)}/late-approval`, {
         method: 'PUT', body: JSON.stringify({ department, approved, expected_updated_at: row.updated_at }),
       })
@@ -161,7 +160,7 @@ export default function ScheduleViolations({ department, departmentLabel, employ
           onChange={event => void approveLate(row, event.target.checked)} />
           {row.hc_late_minutes != null && <small>{Number(row.hc_late_minutes).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} phút trễ</small>}
           {row.hc_late_approved_by && <small>{row.hc_late_approved_by} · {formatVeraDateTime(row.hc_late_approved_at)}</small>}
-          {row.hc_late_approval_unavailable && <small>{row.hc_late_approval_unavailable}</small>}</> : '—'}</td><td>{money(row.amount)}{row.hc_late_approval_eligible && <small>Mức theo đơn giá ghi nhận</small>}</td><td>{row.note}</td><td>{row.updated_by}</td><td>{formatVeraDateTime(row.created_at)}</td>{canManage && <td><div className="schedule-violation-row-actions"><button type="button" className="secondary-button" disabled={busy || !row.id || !row.updated_at} onClick={() => edit(row)}>Sửa</button><button type="button" className="danger-button" disabled={busy || !row.id || !row.updated_at} onClick={() => void remove(row)}>Xóa</button></div></td>}</tr>)}
+          {row.hc_late_approval_unavailable && <small>{row.hc_late_approval_unavailable}</small>}</> : '—'}</td><td>{money(row.amount)}</td><td>{row.note}</td><td>{row.updated_by}</td><td>{formatVeraDateTime(row.created_at)}</td>{canManage && <td><div className="schedule-violation-row-actions"><button type="button" className="secondary-button" disabled={busy || !row.id || !row.updated_at} onClick={() => edit(row)}>Sửa</button><button type="button" className="danger-button" disabled={busy || !row.id || !row.updated_at} onClick={() => void remove(row)}>Xóa</button></div></td>}</tr>)}
       {!visible.length && <tr><td colSpan={canManage ? 9 : 8}>{loading ? 'Đang tải…' : 'Không có vi phạm theo bộ lọc.'}</td></tr>}
     </tbody></table></div>
     <dialog ref={dialog} className="schedule-violation-dialog" onCancel={e => { if (busy) e.preventDefault() }}>

@@ -32,7 +32,7 @@ def setup(allowed):
 @pytest.mark.parametrize('kind', ['statistics', 'violations'])
 def test_visible_snapshot_export_checks_department_and_produces_real_xlsx(department, kind):
     route, checks = setup(True)
-    cells = ['=HYPERLINK("invalid")', '—', 1, 50000, 'Ghi chú', '', '07-10-2026 19:00:00']
+    cells = ['=HYPERLINK("invalid")', '—', 1, 15, 50000, 'Ghi chú', '', '07-10-2026 19:00:00']
     if kind == 'statistics':
         cells = ['Nhân viên', 2, 1, 1, 1, 1.5, '—', '—']
     body = schedule.ScheduleTableExport(department=department, kind=kind, start=date(2026, 10, 1), end=date(2026, 10, 7), rows=[cells])

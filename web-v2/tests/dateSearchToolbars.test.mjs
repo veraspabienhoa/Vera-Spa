@@ -13,8 +13,8 @@ test('schedule Excel snapshot keeps hidden penalties masked and numeric totals i
  assert.deepEqual(result[2].slice(6),['—','—'])
  assert.ok(monthlyStatisticsExportRows(data,'Locker',()=>true,true,true).every(row=>row[6]==='—'&&row[7]==='—'))
  const violation=violationExportRows([{employee_name:'Tên tôi',violation_date:'2026-10-07',reason:'Lỗi',amount:50000,note:'Ghi chú',created_at:'2026-10-07T12:00:00Z'}])
- assert.equal(violation[0][1],'07-10-2026');assert.equal(violation[0][6],'07-10-2026 19:00:00')
- assert.equal(violation[0][3],50000);assert.equal(violation.at(-1)[3],50000)
+ assert.equal(violation[0][1],'07-10-2026');assert.equal(violation[0][7],'07-10-2026 19:00:00')
+ assert.equal(violation[0][4],50000);assert.equal(violation.at(-1)[4],50000)
 })
 const built = await build({stdin:{contents:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Booking from './src/pages/OnlineBookingPage';import Schedule from './src/pages/WorkSchedulePage';import Attendance from './src/pages/SnapshotPage';import Changes from './src/pages/AdminChangesPage';const pages={Booking,Schedule,Attendance,Changes};window.act=act;window.root=createRoot(document.getElementById('root'));window.mount=(key,role='letan')=>window.root.render(React.createElement(pages[key],{user:{role,username:'Gia Anh',permissions:{work_schedule_letan:true}}}));`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},define:{'import.meta.env':JSON.stringify({VITE_VERA_API_BASE_URL:'https://api.test'})},plugins:[{name:'fixtures',setup(b){
  b.onResolve({filter:/\/lib\/(api|supabase)$/},args=>({path:args.path.endsWith('supabase')?'auth':'api',namespace:'mock'}))

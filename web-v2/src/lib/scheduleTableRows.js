@@ -8,7 +8,7 @@ export function monthlyStatisticsExportRows(statistics, label, canViewEmployee, 
 }
 
 export function violationExportRows(rows) {
-  return [...rows.map(row => [row.employee_name, formatVeraDate(row.violation_date), row.reason, Number(row.amount || 0),
-    row.hc_late_approval_eligible ? `${row.hc_late_approved ? 'Đi trễ có phép' : 'Đi trễ không phép'} · Mức theo đơn giá ghi nhận; bảng lương tách lương thời gian trễ không được hưởng và phạt thêm. Căn cứ gốc: ${row.note || ''}` : row.note || '', row.updated_by || '', formatVeraDateTime(row.created_at)]),
-  ['Tổng', '', '', rows.reduce((sum, row) => sum + Number(row.amount || 0), 0), '', '', '']]
+  return [...rows.map(row => [row.employee_name, formatVeraDate(row.violation_date), row.reason, row.hc_late_approved && row.hc_late_minutes != null ? Number(row.hc_late_minutes) : null, Number(row.amount || 0),
+    row.hc_late_approval_eligible ? `${row.hc_late_approved ? 'Đi trễ có phép' : 'Đi trễ không phép'} · Căn cứ gốc: ${row.note || ''}` : row.note || '', row.updated_by || '', formatVeraDateTime(row.created_at)]),
+  ['Tổng', '', '', null, rows.reduce((sum, row) => sum + Number(row.amount || 0), 0), '', '', '']]
 }
