@@ -332,7 +332,10 @@ def test_invoice_editors_use_opening_revision_and_require_non_admin_reason():
         dialog = _source(LIVE_TOUR.parent.parent / "components" / component)
         assert "expectedRevision: revision" in dialog
         assert "reason: reason.trim()" in dialog
-        assert "disabled={!isAdmin && !reason.trim()}" in dialog
+        if component == "LiveTourPaidInvoiceDialog.jsx":
+            assert "disabled={(!isAdmin && !reason.trim()) ||" in dialog
+        else:
+            assert "disabled={!isAdmin && !reason.trim()}" in dialog
         assert "required={!isAdmin}" in dialog
         assert 'role="dialog" aria-modal="true"' in dialog
 

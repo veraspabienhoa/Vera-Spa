@@ -268,3 +268,25 @@ test('combo correction and deletion do not offer service changes', async () => {
     finally { await fixture.close() }
   }
 })
+
+test('paid editor still requires a nonblank correction reason for non-admin accounts', async () => {
+  const writes = []
+  const fixture = await mount(PaidDialog, { context: { item: invoice, mode: 'edit', revision: 4 }, isAdmin: false,
+    onClose() {}, onAction: async (...args) => { writes.push(args); return true } })
+  try {
+    const save = [...document.querySelectorAll('button')].find(node => node.textContent === 'Lưu điều chỉnh hóa đơn')
+    const reason = [...document.querySelectorAll('textarea')].at(-1)
+    assert.equal(reason.required, true)
+    assert.equal(save.disabled, true)
+    for (const value of ['   ', 'Đối soát dịch vụ']) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(reason, value)
+        reason.dispatchEvent(new window.Event('input', { bubbles: true }))
+      })
+      assert.equal(save.disabled, !value.trim())
+    }
+    await click('Lưu điều chỉnh hóa đơn')
+    assert.equal(writes.length, 1)
+    assert.equal(writes[0][1].reason, 'Đối soát dịch vụ')
+  } finally { await fixture.close() }
+})
