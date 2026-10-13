@@ -69,7 +69,6 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
   const [lookupError, setLookupError] = useState('')
   const [options, setOptions] = useState({ statuses: [], types: [] })
   const [truncated, setTruncated] = useState(false)
-  const [attendancePolicy, setAttendancePolicy] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -108,7 +107,6 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
       const response = await veraApi.checkinHistory(query)
       if (requestId.current !== id) return
       setRecords(response.records || [])
-      setAttendancePolicy(response.attendance_policy || null)
       if (!query.employee && !query.event_id) setLookup({ key: JSON.stringify({ ...query, employee: '', event_id: '' }), rows: response.records || [] })
       setTruncated(Boolean(response.truncated))
       setOptions(response.options || { statuses: [], types: [] })
@@ -140,7 +138,7 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
   const visible = records || []
 
   return <section className="checkin-history-page">
-    <div className="page-heading"><div>{embedded ? <h2>LỊCH SỬ CHECK IN</h2> : <h1>LỊCH SỬ CHECK IN</h1>}<p>Tra cứu nhật ký thiết bị hoặc dữ liệu chấm công đã đồng bộ vào VERA.</p></div></div>
+    <div className="page-heading"><div>{embedded ? <h2>LỊCH SỬ CHECK IN</h2> : <h1>LỊCH SỬ CHECK IN</h1>}</div></div>
     <form ref={formRef} className="checkin-filters" onSubmit={load} onInput={() => setDirty(true)}>
       <fieldset disabled={busy || exporting}>
         <div className="checkin-filter-dates">
@@ -169,9 +167,8 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
     <StableFeedback>{error && <p role="alert">{error}</p>}</StableFeedback>
     {records && <>
       <p>Dữ liệu đã tải: {formatVeraDate(loadedQuery.start)} – {formatVeraDate(loadedQuery.end)}.</p>
-      {visible.length === 0 && <p role="status">Không có bản ghi phù hợp bộ lọc.</p>}
+      
       {(source === 'facegate' || source === 'facegate_saved') ? <>
-        <p>{visible.length} sự kiện FaceGate {source === 'facegate_saved' ? 'đã lưu trong VERA' : 'đọc trực tiếp từ máy'} trong kỳ. {source === 'facegate_saved' ? 'Ánh xạ hiển thị theo hồ sơ Admin đã xác nhận.' : 'Bấm Đối chiếu để kiểm tra hồ sơ đã ánh xạ.'} {attendancePolicy?.source === 'facegate' ? `FaceGate là nguồn chấm công từ ${formatVeraDate(attendancePolicy.effective_date)}. Chỉ dữ liệu đã đồng bộ, xác minh và đủ điều kiện mới được dùng tính công/lương; số sự kiện ở đây không phải số ngày công.` : attendancePolicy?.source === 'timesoft' ? 'Nguồn tính công hiện tại là TimeSoft; nhật ký FaceGate ở đây dùng để tra cứu.' : 'Xem nguồn tính công hiện tại tại Quản lý thiết bị. Nhật ký sự kiện không phải bảng công đã xác nhận.'}</p>
         {source === 'facegate_saved' && <p role="status">Đã khớp: {visible.filter(item => item.mapping_status === 'reference_match').length} · Chưa ánh xạ: {visible.filter(item => item.mapping_status !== 'reference_match').length}.</p>}
         {truncated && <p role="status">Kết quả đã chạm giới hạn truy vấn. Hãy thu hẹp khoảng ngày để xem và xuất đầy đủ dữ liệu.</p>}
         <div className="responsive-data-table"><table><thead><tr><th>Mã sự kiện</th><th>Thời điểm</th><th>Tên hiển thị trên máy</th><th>Mã trạng thái</th><th>Mã loại trên máy</th><th>Đối chiếu nhân viên</th></tr></thead><tbody>
