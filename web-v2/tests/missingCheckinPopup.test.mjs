@@ -84,18 +84,31 @@ test('hide/show preserves unread rows and each employee is acknowledged independ
   assert.equal(toggle().getAttribute('aria-expanded'),'false')
   assert.equal(w.document.querySelector('.missing-checkin-popup [hidden]').querySelectorAll('li').length,2)
   assert.equal(w.localStorage.getItem('vera-missing-checkin-seen:viewer'),null)
+  await publish(w,[row('A'),row('B')])
+  assert.equal(toggle().getAttribute('aria-expanded'),'false')
   await publish(w,[row('A'),row('B'),row('C')])
+  assert.equal(toggle().getAttribute('aria-expanded'),'true')
+  await w.act(async()=>toggle().click())
   assert.match(w.document.querySelector('header strong').textContent,/3/)
   await w.mount({role:'admin',employee_username:'another'})
   await w.mount({role:'letan',employee_username:'viewer'})
   await publish(w,[row('A'),row('B')])
-  assert.equal(toggle().textContent,'Hiện thông báo')
-  await w.act(async()=>toggle().click())
   assert.equal(toggle().textContent,'Ẩn thông báo')
   await w.act(async()=>w.document.querySelector('li .missing-checkin-seen').click())
   assert.deepEqual([...w.document.querySelectorAll('li strong')].map(el=>el.textContent),['B'])
   await publish(w,[row('A'),row('B')])
   assert.deepEqual([...w.document.querySelectorAll('li strong')].map(el=>el.textContent),['B'])
   assert.deepEqual(JSON.parse(w.localStorage.getItem('vera-missing-checkin-seen:viewer')),['missing-A'])
+ }finally{await w.unmount();w.close()}
+})
+
+ test('legacy saved hide preference never hides a newly mounted notification',async()=>{
+ const dom=await mount('admin'),w=dom.window
+ try {
+  w.localStorage.setItem('vera-missing-checkin-hidden:other','true')
+  await w.mount({role:'admin',employee_username:'other'})
+  await publish(w,[row()])
+  assert.equal(w.document.querySelector('header button').getAttribute('aria-expanded'),'true')
+  assert.equal(w.document.querySelector('.missing-checkin-popup [hidden]'),null)
  }finally{await w.unmount();w.close()}
 })
