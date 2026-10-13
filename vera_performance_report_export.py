@@ -13,7 +13,7 @@ def render_performance_report(headers, rows, bounds, file_format):
     start = bounds.get('date') or bounds.get('date_from') or min(dates, default='')
     end = bounds.get('date') or bounds.get('date_to') or max(dates, default='')
     layout.paragraph(f'Từ ngày: {_date(start)} · Đến ngày: {_date(end)}', size=9)
-    names = {'employee': 'Nhân viên', 'customer': 'Khách hàng', 'service': 'Dịch vụ', 'bill_no': 'Hóa đơn', 'performance_timing': 'Kết quả'}
+    names = {'employee': 'Nhân viên', 'room': 'Số phòng', 'customer': 'Khách hàng', 'service': 'Dịch vụ', 'bill_no': 'Hóa đơn', 'performance_timing': 'Kết quả'}
     timing = {'all': 'Tất cả', 'early': 'Sớm', 'late': 'Trễ', 'ontime': 'Đúng giờ'}
     for key, label in names.items():
         if bounds.get(key):
