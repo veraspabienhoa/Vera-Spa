@@ -1,3 +1,11 @@
+## 13-10-2026 — Early completion notice reason (source only)
+
+The completion notice body omitted the saved early_completion_reason. Include
+it with the label Lý do ra sớm in the shared payload for in-app, popup and push.
+Legacy rows without a reason display Chưa có lý do. Preserve the five-minute
+threshold, recipients, event identity and caller-owned transaction. Existing
+queued/delivered notices are not rewritten or resent. Production is unverified.
+
 ## 13-10-2026 — Performance tab grants and invoice selection dismissal
 
 The supplied 16:12 video shows the performance-tab permission fieldset disabled
