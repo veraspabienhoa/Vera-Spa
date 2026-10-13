@@ -312,24 +312,91 @@ def install_device_routes(app, *, engine_instance, current_identity, require_fea
         access(ident, 'device_manage')
         actor = str(getattr(ident, 'employee_username', '') or getattr(ident, 'username', ''))
         with engine_instance().begin() as conn:
+            return write_registry(conn, body, ident, actor)
+
+    def write_registry(conn, body, ident, actor):
+        conn.execute(text("""INSERT INTO vera_app_setting(category,setting_key,value_json,source,updated_by,revision,created_at,updated_at)
+            VALUES ('devices','registry',CAST(:initial AS jsonb),'web_v2',:actor,0,NOW(),NOW())
+            ON CONFLICT(category,setting_key) DO NOTHING"""), {'initial': json.dumps({'devices': default_devices()}), 'actor': actor})
+        current = read_registry(conn, lock=True)
+        removed = {d['id'] for d in current['devices']} - {d.id for d in body.devices}
+        if removed and ident.role != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được xóa thiết bị.')
+        previous_ip = next((d.get('address') or '' for d in current['devices'] if d.get('id') == 'facegate-current'), '')
+        next_ip = next((d.address for d in body.devices if d.id == 'facegate-current'), '')
+        if previous_ip != next_ip:
+            require_feature(conn, ident, 'device_facegate_ip_manage')
+        if current['revision'] != body.expected_revision:
+            raise HTTPException(409, 'Danh sách thiết bị vừa được sửa ở phiên khác. Hủy chỉnh sửa và tải lại danh sách trước khi lưu.')
+        devices = [d.model_dump() for d in body.devices]
+        conn.execute(text("""UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb), updated_by=:actor,
+            updated_at=NOW(),revision=revision+1 WHERE category='devices' AND setting_key='registry'"""),
+            {'value': json.dumps({'devices': devices}, ensure_ascii=False), 'actor': actor})
+        return registry_result({'devices': devices, 'revision': current['revision'] + 1})
+
+    def configuration_access(ident):
+        if ident.role != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được lưu và phục hồi cấu hình máy.')
+        access(ident, 'device_manage')
+        access(ident, 'device_facegate_ip_manage')
+
+    def read_configuration(conn, lock=False):
+        row = conn.execute(text("SELECT value_json, revision FROM vera_app_setting WHERE category='devices' AND setting_key='facegate_configuration'" + (' FOR UPDATE' if lock else ''))).mappings().first()
+        if not row:
+            return {'configuration': None, 'revision': 0}
+        value = row['value_json']
+        return {'configuration': json.loads(value) if isinstance(value, str) else value, 'revision': int(row['revision'])}
+
+    @app.get('/v2/devices/facegate-configuration')
+    def configuration(ident: identity_type = Depends(current_identity)):
+        configuration_access(ident)
+        with engine_instance().connect() as conn:
+            return read_configuration(conn)
+
+    @app.post('/v2/devices/facegate-configuration')
+    def backup_configuration(expected_revision: int = Query(..., ge=0), ident: identity_type = Depends(current_identity)):
+        configuration_access(ident)
+        actor = str(getattr(ident, 'employee_username', '') or getattr(ident, 'username', ''))
+        with engine_instance().begin() as conn:
+            # Serialize inventory writes, including the initial unsaved registry.
             conn.execute(text("""INSERT INTO vera_app_setting(category,setting_key,value_json,source,updated_by,revision,created_at,updated_at)
                 VALUES ('devices','registry',CAST(:initial AS jsonb),'web_v2',:actor,0,NOW(),NOW())
                 ON CONFLICT(category,setting_key) DO NOTHING"""), {'initial': json.dumps({'devices': default_devices()}), 'actor': actor})
             current = read_registry(conn, lock=True)
-            removed = {d['id'] for d in current['devices']} - {d.id for d in body.devices}
-            if removed and ident.role != 'admin':
-                raise HTTPException(403, 'Chỉ Admin được xóa thiết bị.')
-            previous_ip = next((d.get('address') or '' for d in current['devices'] if d.get('id') == 'facegate-current'), '')
-            next_ip = next((d.address for d in body.devices if d.id == 'facegate-current'), '')
-            if previous_ip != next_ip:
-                require_feature(conn, ident, 'device_facegate_ip_manage')
-            if current['revision'] != body.expected_revision:
-                raise HTTPException(409, 'Danh sách thiết bị vừa được sửa ở phiên khác. Hủy chỉnh sửa và tải lại danh sách trước khi lưu.')
-            devices = [d.model_dump() for d in body.devices]
-            conn.execute(text("""UPDATE vera_app_setting SET value_json=CAST(:value AS jsonb), updated_by=:actor,
-                updated_at=NOW(),revision=revision+1 WHERE category='devices' AND setting_key='registry'"""),
-                {'value': json.dumps({'devices': devices}, ensure_ascii=False), 'actor': actor})
-        return registry_result({'devices': devices, 'revision': current['revision'] + 1})
+            if current['revision'] != expected_revision:
+                raise HTTPException(409, 'Danh sách thiết bị đã thay đổi. Tải lại trước khi lưu cấu hình.')
+            device = next((d for d in current['devices'] if d['id'] == 'facegate-current'), None)
+            if device is None:
+                raise HTTPException(404, 'Không có máy FaceGate để lưu cấu hình.')
+            value = {'device': Device.model_validate(device).model_dump(), 'saved_at': datetime.now(VN).isoformat(), 'saved_by': actor}
+            conn.execute(text("""INSERT INTO vera_app_setting(category,setting_key,value_json,source,updated_by,revision,created_at,updated_at)
+                VALUES ('devices','facegate_configuration',CAST(:value AS jsonb),'web_v2',:actor,1,NOW(),NOW())
+                ON CONFLICT(category,setting_key) DO UPDATE SET value_json=EXCLUDED.value_json,
+                updated_by=EXCLUDED.updated_by, updated_at=NOW(), revision=vera_app_setting.revision+1"""),
+                {'value': json.dumps(value, ensure_ascii=False), 'actor': actor})
+            return read_configuration(conn)
+
+    @app.post('/v2/devices/facegate-configuration/restore')
+    def restore_configuration(expected_revision: int = Query(..., ge=0), backup_revision: int = Query(..., ge=1), ident: identity_type = Depends(current_identity)):
+        configuration_access(ident)
+        actor = str(getattr(ident, 'employee_username', '') or getattr(ident, 'username', ''))
+        with engine_instance().begin() as conn:
+            # Same lock order as backup: registry before configuration.
+            current = read_registry(conn, lock=True)
+            backup = read_configuration(conn, lock=True)
+            if backup['configuration'] is None:
+                raise HTTPException(404, 'Chưa có cấu hình máy đã lưu.')
+            if backup['revision'] != backup_revision:
+                raise HTTPException(409, 'Bản cấu hình đã thay đổi. Tải lại trước khi phục hồi.')
+            device = Device.model_validate(backup['configuration']['device'])
+            if device.id != 'facegate-current':
+                raise HTTPException(409, 'Bản cấu hình không thuộc máy FaceGate.')
+            entries = [d for d in current['devices'] if d['id'] != device.id] + [device.model_dump()]
+            try:
+                body = RegistryInput(expected_revision=expected_revision, devices=entries)
+            except ValueError as exc:
+                raise HTTPException(409, 'Cấu hình trùng serial hoặc vượt giới hạn thiết bị. Kiểm tra danh sách trước khi phục hồi.') from exc
+            return write_registry(conn, body, ident, actor)
 
     @app.delete('/v2/devices/registry/{device_id}')
     def delete_device(device_id: str, expected_revision: int = Query(..., ge=0),

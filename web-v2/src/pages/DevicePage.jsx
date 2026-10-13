@@ -15,6 +15,7 @@ const newDevice = () => ({ id: crypto.randomUUID(), name: '', kind: 'faceid', co
 export default function DevicePage({ user }) {
   usePageRefresh(() => reload(), () => Boolean(busy || editing))
   const [data, setData] = useState(null)
+  const [backup, setBackup] = useState(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
@@ -34,6 +35,10 @@ export default function DevicePage({ user }) {
     setBusy(true); setError('')
     try {
       const response = await veraApi.deviceRegistry()
+      if (user?.role === 'admin' && user?.permissions?.device_manage && user?.permissions?.device_facegate_ip_manage) {
+        const saved = await veraApi.facegateConfiguration()
+        if (sequence.current === id) setBackup(saved)
+      }
       if (sequence.current === id) setData(response)
     } catch (cause) { if (sequence.current === id) setError(cause.message || 'Không tải được danh sách thiết bị.') }
     finally { if (sequence.current === id) setBusy(false) }
@@ -91,6 +96,26 @@ export default function DevicePage({ user }) {
     } catch (cause) { setError(cause.message || 'Không xóa được thiết bị.') }
     finally { setBusy(false) }
   }
+  const saveConfiguration = async () => {
+    if (busy || editing || !data) return
+    if (backup?.configuration && !(await confirmDialog('Thay bản cấu hình đã lưu bằng cấu hình máy hiện tại?'))) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      setBackup(await veraApi.saveFacegateConfiguration(data.revision))
+      setMessage('Đã lưu cấu hình máy Face ID. Bản lưu vẫn được giữ khi xóa thiết bị.')
+    } catch (cause) { setError(cause.message || 'Không lưu được cấu hình máy.') }
+    finally { setBusy(false) }
+  }
+  const restoreConfiguration = async () => {
+    if (busy || editing || !backup?.configuration || !data) return
+    if (!(await confirmDialog(`Phục hồi cấu hình “${backup.configuration.device.name}” đã lưu lúc ${formatVeraDateTime(backup.configuration.saved_at)}? Cấu hình FaceGate hiện tại sẽ được thay bằng bản đã lưu.`))) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      setData(await veraApi.restoreFacegateConfiguration(data.revision, backup.revision))
+      setMessage('Đã phục hồi cấu hình máy Face ID. Có thể kiểm tra kết nối ngay.')
+    } catch (cause) { setError(cause.message || 'Không phục hồi được cấu hình máy.') }
+    finally { setBusy(false) }
+  }
   const inspectSource = async () => {
     setSourceBusy(true); setSourceError('')
     try { setSource(await veraApi.attendanceSource()) }
@@ -113,7 +138,12 @@ export default function DevicePage({ user }) {
       {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverUsb()}><ScanLine size={16}/>Nhận diện USB</button>}
       {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || !data || data.devices.length >= 100} onClick={() => void discoverBluetooth()}><ScanLine size={16}/>Nhận diện Bluetooth</button>}
     </div>
-    {data && user?.role === 'admin' && !data.devices.some(item => item.id === 'facegate-current') && <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={() => edit({ ...newDevice(), id: 'facegate-current', name: 'Máy nhận diện chấm công', kind: 'faceid', adapter: 'facegate_server' })}>Khôi phục hồ sơ FaceGate</button>}
+    {data && user?.role === 'admin' && user?.permissions?.device_manage && user?.permissions?.device_facegate_ip_manage && <div className="device-actions">
+      <button type="button" className="secondary-button" disabled={busy || Boolean(editing) || !backup?.configuration} onClick={restoreConfiguration}>Phục hồi cấu hình máy</button>
+      <small>{backup?.configuration ? `Cấu hình đã lưu: ${formatVeraDateTime(backup.configuration.saved_at)} · IP ${backup.configuration.device.address || 'Theo cấu hình máy chủ'} · Serial ${backup.configuration.device.serial || 'Chưa nhập'}` : 'Chưa có bản cấu hình đã lưu.'}</small>
+    </div>}
+    {data && user?.role === 'admin' && !backup?.configuration && !data.devices.some(item => item.id === 'facegate-current') && <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={() => edit({ ...newDevice(), id: 'facegate-current', name: 'Máy nhận diện chấm công', kind: 'faceid', adapter: 'facegate_server' })}>Tạo lại hồ sơ FaceGate</button>}
+
     <p>Điện thoại Android/iPhone có thể chụp ảnh, quét mã và gửi sự kiện chấm công qua tài khoản Admin trên HTTPS. Wi-Fi Direct trực tiếp cần ứng dụng hệ điều hành hỗ trợ.</p>
     {detected && <p className="device-detected">Đã nhận diện: {detected.manufacturer || 'USB'} {detected.model || `${detected.vendor}:${detected.product}`}. <a href={`https://www.google.com/search?q=${encodeURIComponent(`${detected.manufacturer} ${detected.model} ${detected.vendor}:${detected.product} driver official`)}`} target="_blank" rel="noopener noreferrer">Tìm driver từ hãng</a></p>}
     <StableFeedback>{error && <p className="device-error" role="alert">{error}</p>}
@@ -156,6 +186,7 @@ export default function DevicePage({ user }) {
           <dl><dt>Vị trí</dt><dd>{item.location || 'Chưa đặt'}</dd><dt>Hãng / model</dt><dd>{[item.manufacturer, item.model].filter(Boolean).join(' · ') || 'Chưa nhập'}</dd><dt>Serial / ID</dt><dd>{item.serial || 'Chưa nhập'}</dd><dt>Kết nối</dt><dd>{data.connections[item.connection]}</dd><dt>Bộ kết nối</dt><dd>{adapter?.label || 'Chờ tích hợp'}</dd></dl>
           <p>{item.adapter === 'pending' ? 'Chưa có kết nối vận hành.' : adapter?.configured ? 'Đã có cấu hình máy chủ. Trạng thái online chưa được kiểm tra.' : 'Chưa đủ cấu hình máy chủ.'}</p>
           {user?.permissions?.device_manage && <button type="button" className="secondary-button" disabled={busy || Boolean(editing) || (item.id === 'facegate-current' && !user?.permissions?.device_facegate_ip_manage)} onClick={() => edit(item)}><Settings2 size={16} />Chỉnh sửa</button>}
+          {item.id === 'facegate-current' && user?.role === 'admin' && user?.permissions?.device_manage && user?.permissions?.device_facegate_ip_manage && <button type="button" className="secondary-button" disabled={busy || Boolean(editing)} onClick={saveConfiguration}>Lưu cấu hình máy</button>}
           {user?.role === 'admin' && <button type="button" className="secondary-button danger" disabled={busy || Boolean(editing)} onClick={() => removeDevice(item)}>Xóa thiết bị</button>}
         </article>
       })}</div>
