@@ -1,0 +1,13 @@
+.page-permission-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin:8px 0;min-width:0}
+.page-permission-actions>button{max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:12px}
+.page-permission-modal{width:min(780px,calc(100vw - 24px));max-height:85dvh;overflow:auto;padding:18px}
+.page-permission-modal header{display:flex;justify-content:space-between;align-items:start;gap:12px}
+.page-permission-modal h2{font-size:20px;margin:0 0 16px}
+.page-permission-modal input[type=search]{width:100%;box-sizing:border-box}
+.permission-account-results{display:grid;gap:6px;max-height:240px;overflow:auto;margin:12px 0}
+.permission-account-results button{white-space:normal;text-align:left;overflow-wrap:anywhere}
+.permission-account-results small{display:block}
+.permission-account-results button[aria-pressed=true]{background:#fff2b3}
+.permission-account-results button:disabled{opacity:1;color:inherit}
+.context-permission-check{display:flex;align-items:center;gap:8px;margin:10px 0}
+.context-permission-check input{width:auto;flex:none}

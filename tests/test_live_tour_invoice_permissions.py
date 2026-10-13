@@ -331,7 +331,7 @@ def test_room_finish_nested_results_do_not_leak_pending_details(monkeypatch):
     from test_live_tour_room_actions import mixed_room
     grants = {"live_tour_view", "live_tour_operate", "live_tour_customers_view"}
     client, shared = scoped_client(monkeypatch, mixed_room(), grants)
-    response = post(client, shared, "finish_room", {"room": "1"})
+    response = post(client, shared, "finish_room", {"room": "1", "early_completion_reason": "Khách cần đi sớm"})
     assert response.status_code == 200, response.text
     for item in response.json()["result"]["items"]:
         assert set(item["pending"]) == {"id"}

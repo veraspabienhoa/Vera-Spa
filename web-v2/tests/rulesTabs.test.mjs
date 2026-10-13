@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { build } from 'esbuild'
 import React, { act, useState } from 'react'
 import { JSDOM } from 'jsdom'
-const bundle = await build({ stdin: { contents: "export {default} from './src/components/RulesTabs'", resolveDir: process.cwd() }, bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react-dom', 'react/jsx-runtime'], loader: { '.css': 'empty' } })
+const bundle = await build({ stdin: { contents: "export {default} from './src/components/RulesTabs'", resolveDir: process.cwd() }, bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react-dom', 'react/jsx-runtime'], loader: { '.css': 'empty' }, plugins: [{name:'api-fixture',setup(b){b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const veraApi = {}'}))}}] })
 const mod = { exports: {} }; new Function('require', 'module', 'exports', bundle.outputFiles[0].text)(createRequire(import.meta.url), mod, mod.exports)
 test('unified rules tabs retain edits when switching and honor the HC entry', async t => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://example.test' })

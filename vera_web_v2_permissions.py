@@ -523,6 +523,7 @@ class PermissionUpdate(BaseModel):
     inherit: bool = False
     expected_revision: int | None = Field(default=None, ge=0)
     preserve_unchanged: bool = False
+    edited_features: list[str] | None = Field(default=None, max_length=1000)
     date_filter_policy_version: Literal[1] | None = None
 
 
@@ -571,6 +572,7 @@ def install_permission_routes(
             "defaults": {role: sorted(DEFAULT_ROLE_FEATURES.get(role, set())) for role in ROLES},
             "legacy_inheritance": LEGACY_FEATURE_INHERITANCE,
             "date_filter_policy_version": DATE_FILTER_POLICY_VERSION,
+            "scoped_permission_policy_version": 1,
             "date_filter_features": DATE_FILTER_FEATURES,
             "date_filter_presets": DATE_FILTER_PRESETS,
             "date_filter_sections": DATE_FILTER_SECTIONS,
@@ -590,7 +592,7 @@ def install_permission_routes(
             raise HTTPException(400, "Thiếu vai trò hoặc tài khoản cần phân quyền.")
         if scope == "role" and target.lower() not in ROLES:
             raise HTTPException(400, "Vai trò không hợp lệ hoặc vai trò Admin không được sửa.")
-        unknown = sorted(set(body.allowed_features) - set(FEATURES))
+        unknown = sorted((set(body.allowed_features) | set(body.edited_features or [])) - set(FEATURES))
         if unknown:
             raise HTTPException(400, f"Có quyền không hợp lệ: {', '.join(unknown)}")
         if body.preserve_unchanged and body.expected_revision is None:
@@ -613,6 +615,13 @@ def install_permission_routes(
             edits_date_features = (body.date_filter_policy_version == DATE_FILTER_POLICY_VERSION
                                    or any(feature in DATE_FILTER_FEATURES for feature in body.allowed_features))
             saved_features = set(FEATURES) if edits_date_features else set(FEATURES) - set(DATE_FILTER_FEATURES)
+            if body.edited_features is not None:
+                if scope != "account" or body.inherit or not body.preserve_unchanged or body.expected_revision is None:
+                    raise HTTPException(400, "Phân quyền tại trang cần tài khoản và phiên bản hiện tại.")
+                edited = set(body.edited_features)
+                # Only explicit edits and prerequisites of newly granted edits
+                # become overrides; other pages keep their original inheritance.
+                saved_features &= edited | permission_closure(edited & set(body.allowed_features))
             # A tab opened before the date catalog existed sends no date IDs.
             # Keep its old date rows (including absence) instead of fabricating
             # 32 false overrides. A v1 all-false save is explicit via version.
@@ -703,6 +712,7 @@ def install_permission_routes(
                 "allowed_features": sorted(allowed) if not (scope == "account" and body.inherit) else [],
                 "revision": revision + 1,
                 "date_filter_policy_version": DATE_FILTER_POLICY_VERSION,
+            "scoped_permission_policy_version": 1,
                 "mirror_pending": bool(mirror_warning),
                 "warnings": [mirror_warning] if mirror_warning else [],
             }

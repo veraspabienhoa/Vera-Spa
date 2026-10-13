@@ -1,3 +1,4 @@
+import PagePermissionActions, { PagePermissionProvider } from './components/PagePermissionActions'
 import { clearSystemDialogs } from './lib/systemDialogs'
 import { invalidateSharedReads } from './lib/sharedRead'
 import { recoverablePage as lazyPage } from './lib/recoverablePage'
@@ -264,8 +265,9 @@ export default function App() {
   if (!shellUser) return <div className="boot-screen"><div><p role={authError ? "alert" : "status"}>{authError || 'Đang xác minh hồ sơ VERA SPA…'}</p><button type="button" className="primary-button" onClick={() => setAuthRetry(value => value + 1)}>Thử xác minh lại</button><button type="button" className="secondary-button" onClick={signOut}>Đăng xuất</button></div></div>
 
   return (
-    <AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onPageIntent={preloadPage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
+    <PagePermissionProvider user={shellUser}><AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onPageIntent={preloadPage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
       {(navigationToggle) => <>
+        <PagePermissionActions page={page}/>
         {page !== 'live-tour' && <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />}
         <PageErrorBoundary key={page} page={page} onRetry={() => pageModules[page]?.reset()}>
         <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={page}>
@@ -314,6 +316,6 @@ export default function App() {
         </section>
       </EmployeeProfileModal>}
       </>}
-    </AppShell>
+    </AppShell></PagePermissionProvider>
   )
 }

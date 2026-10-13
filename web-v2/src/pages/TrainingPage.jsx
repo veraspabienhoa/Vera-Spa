@@ -1,3 +1,4 @@
+import PagePermissionActions from '../components/PagePermissionActions'
 import StableFeedback from '../components/StableFeedback'
 import usePageRefresh from '../lib/usePageRefresh'
 import TrainingNoticeDetail from '../components/TrainingNoticeDetail'
@@ -82,6 +83,7 @@ function TrainingPageContent({ user }) {
   const unreadNotifications = (data?.notifications || []).filter(item => !item.is_read).length
 
   return <main className="training-page">
+    <PagePermissionActions page="training" label={({sessions:'Đào tạo hằng ngày',evaluate:'Phiếu đánh giá',report:'Báo cáo tiến độ',notifications:'Thông báo đào tạo',admin:'Thiết lập đào tạo'})[tab]} features={tab === 'sessions' ? ['training_view','training_session_create','training_session_update'] : tab === 'evaluate' ? ['training_view','training_evaluate'] : tab === 'admin' ? ['training_view','training_admin'] : ['training_view']} viewFeatures={[tab === 'admin' ? 'training_admin' : tab === 'evaluate' ? 'training_evaluate' : 'training_view']}/>
     <header><div><p className="eyebrow">NHÂN SỰ VERA SPA</p><h1>Đào tạo & đánh giá nhân viên</h1></div></header>
     <Notice value={notice} />
     <nav className="training-tabs" aria-label="Chức năng đào tạo">

@@ -316,7 +316,7 @@ def test_http_stale_booking_and_replayed_checkout_do_not_overspend(monkeypatch):
     assert post("booking", second_payload, "combo-booking-stale", initial_revision).status_code == 409
     assert post("booking", second_payload, "combo-booking-second").status_code == 409
     assert post("start", {"employee_id": "e1"}, "combo-start-first").status_code == 200
-    pending = post("finish_to_pending", {"employee_id": "e1"}, "combo-finish-first").json()["result"]["pending"]
+    pending = post("finish_to_pending", {"employee_id": "e1", "early_completion_reason": "Khách cần đi sớm"}, "combo-finish-first").json()["result"]["pending"]
     payload = {"pending_id": pending["id"], "combo_purchase_id": owned["id"], "payment_method": "COMBO"}
     paid = post("checkout", payload, "combo-checkout-once")
     assert paid.status_code == 200, paid.text

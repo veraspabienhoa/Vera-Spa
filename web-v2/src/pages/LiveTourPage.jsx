@@ -1,3 +1,4 @@
+import PagePermissionActions from '../components/PagePermissionActions'
 import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import { canBookOutsideShift } from '../lib/liveTourBooking'
 import UpcomingOnlineBookings from '../components/UpcomingOnlineBookings'
@@ -857,7 +858,7 @@ function LiveTourWorkspace({ user, navigationToggle = null }) {
       actionPayload.employee_ids = rowIds
       if (rowIds.length === 1) actionPayload.employee_id = rowIds[0]
     }
-    const requestEntry = requestIdempotencyEntry(requestEntriesRef.current, cacheKey, action, actionPayload, options.idempotencyKey)
+    let requestEntry = requestIdempotencyEntry(requestEntriesRef.current, cacheKey, action, actionPayload, options.idempotencyKey)
     try {
       const receiptOnly = ['checkout', 'quick_checkout', 'combo_purchase', 'combo_sale_decide', 'paid_invoice_update', 'paid_invoice_delete'].includes(action)
       const body = { action, payload: actionPayload, idempotency_key: requestEntry.key, response_view: receiptOnly ? 'receipt' : 'board' }
@@ -871,6 +872,19 @@ function LiveTourWorkspace({ user, navigationToggle = null }) {
           result = await veraApi.liveTourAction(body)
           break
         } catch (err) {
+          if (err.status === 422 && err.payload?.detail?.code === 'early_completion_reason_required') {
+            let reason = ''
+            while (!reason.trim() || reason.trim().length > 1000) {
+              reason = await promptDialog(`${err.payload.detail.message} (Bắt buộc, tối đa 1000 ký tự)`, reason)
+              if (reason === null) { releaseIdempotencyEntry(requestEntriesRef.current, requestEntry); return null }
+            }
+            releaseIdempotencyEntry(requestEntriesRef.current, requestEntry)
+            actionPayload.early_completion_reason = reason.trim()
+            requestEntry = requestIdempotencyEntry(requestEntriesRef.current, cacheKey, action, actionPayload)
+            body.idempotency_key = requestEntry.key
+            attempt -= 1
+            continue
+          }
           // A rejected maintenance fence cannot commit the action. Keep the
           // same idempotency key in case the response arrived after a commit.
           if (err.status !== 503 || !/(?:Tài nguyên|Đối tượng) đang được cập nhật/i.test(liveTourErrorDetail(err)) || attempt === fenceAttempts - 1) throw err
@@ -1592,6 +1606,7 @@ function LiveTourWorkspace({ user, navigationToggle = null }) {
   const panelActions = usePanelActions({exportData, openModal, openCustomerHistory, copyBoardImage, executeAction, confirmExpired, previewExpired, removeCatalogItem})
 
   return <div className="feature-page tour-page live-tour-page">
+    {activePanel && <PagePermissionActions page={activePanel === 'reports' ? 'reports' : activePanel === 'customers' ? 'customers' : ['history','catalog'].includes(activePanel) ? 'live-tour-settings' : 'live-tour'} label={PANEL_TABS.find(([key]) => key === activePanel)?.[1]} viewFeatures={activePanel === 'pending' ? ['live_tour_pending_view'] : activePanel === 'invoices' ? ['live_tour_paid_invoice_view'] : undefined}/> }
     {onlineBookingsOpen && canViewOnlineBookings(user) && <UpcomingOnlineBookings services={data.services || []} user={user} onClose={() => setOnlineBookingsOpen(false)}/>}
     <style>{appearanceCss}</style>
     <style>{`
