@@ -1,3 +1,5 @@
+import { formatVeraDate } from './veraDate.js'
+
 export const salarySource = value => value === 'attendance' ? 'attendance' : 'schedule'
 
 export const salarySourceLabel = value => salarySource(value) === 'attendance' ? 'Chấm công' : 'Thống kê'
@@ -22,7 +24,40 @@ export function normalizeSalaryConfigTables(tables = {}) {
 
 export const hasPendingPayrollEvidence = rows => rows.some(row => Boolean(row.attendance_pending || row.configuration_pending))
 
-export const payrollPendingLabel = row => row.configuration_pending ? 'Chờ cấu hình ca/đơn giá' : 'Chờ xác nhận công'
+const isConfigurationIssue = issue => /^missing_rate:|^\d{4}-\d{2}-\d{2}:missing_(shift|overtime)_times$/.test(issue)
+const isLateIssue = issue => /^(unverified_late_event|late_event_schedule_changed|late_event_evidence_changed|late_payable_basis_mismatch):/.test(issue)
+
+export function payrollPendingLabel(row) {
+  if (!row.configuration_pending) return 'Chờ xác nhận công'
+  const issues = row.configuration_issues || []
+  if (issues.length && issues.every(isConfigurationIssue) && !row.attendance_pending) return 'Chờ cấu hình ca/đơn giá'
+  if (issues.length && issues.every(isLateIssue) && !row.attendance_pending) return 'Chờ đối chiếu đi trễ'
+  return 'Chờ đối chiếu lương'
+}
+
+export function payrollPendingDetails(row) {
+  const rateLabels = { rate_ca1: 'Ca 1', rate_ca2_before_22: 'Ca 2 trước 22h', rate_ca2_after_22: 'Ca 2 sau 22h', default_base_salary: 'lương tháng' }
+  const lateLabels = {
+    unverified_late_event: 'Sự kiện đi trễ chưa được xác minh',
+    late_event_schedule_changed: 'Ca làm việc hiện tại không khớp với ca ghi nhận khi xử lý đi trễ',
+    late_event_evidence_changed: 'Dữ liệu chấm công hiện tại không khớp với dữ liệu ghi nhận khi xử lý đi trễ',
+    late_payable_basis_mismatch: 'Thời gian tính lương không khớp với cơ sở tính đi trễ',
+  }
+  const details = [...new Set(row.configuration_issues || [])].map(issue => {
+    const [code, value] = String(issue).split(':')
+    if (code === 'missing_rate') return `Chưa cấu hình đơn giá ${rateLabels[value] || value}. Kiểm tra mức riêng của nhân viên hoặc mức chung của bộ phận.`
+    if (value === 'missing_shift_times') return `${formatVeraDate(code, code)}: thiếu giờ bắt đầu/kết thúc ca. Kiểm tra lịch phân ca và cài đặt ca của bộ phận.`
+    if (value === 'missing_overtime_times') return `${formatVeraDate(code, code)}: thiếu giờ bắt đầu/kết thúc tăng ca. Kiểm tra lịch tăng ca.`
+    if (lateLabels[code]) return `${lateLabels[code]} (sự kiện ${value || '—'}). Kiểm tra chấm công, phân ca và vi phạm đi trễ.`
+    return `Cần kiểm tra dữ liệu tính lương (mã: ${issue}).`
+  })
+  if (row.configuration_pending && !details.length) details.push('Bảng lương chưa có mã lỗi chi tiết. Bấm Tính lương để kiểm tra lại dữ liệu hiện tại.')
+  if (row.attendance_pending) {
+    const dates = [...new Set(row.pending_dates || [])].map(date => formatVeraDate(date, date))
+    details.push(`Dữ liệu chấm công chưa đủ điều kiện tính lương${dates.length ? `: ${dates.join(', ')}` : ''}. Kiểm tra bản ghi đã đồng bộ, xác minh và lịch phân ca.`)
+  }
+  return details.join('\n\n')
+}
 
 // Payroll sends decimal strings from exact seconds. Keep those decimals through
 // half-up rounding instead of rounding the two-decimal display time again.

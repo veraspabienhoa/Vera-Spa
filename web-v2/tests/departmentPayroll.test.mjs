@@ -291,7 +291,7 @@ for (const pending of ['attendance_pending', 'configuration_pending']) test(`${p
   await f.click('Lưu bảng nháp')
   const saved = JSON.parse(f.requests.find(r => r.path.endsWith('/draft') && r.options.method === 'PUT').options.body).rows[0]
   assert.equal(saved.net_salary, null); assert.equal(saved[pending], true)
-  assert.match(document.querySelector('.department-payroll-table').textContent, pending === 'configuration_pending' ? /Chờ cấu hình ca\/đơn giá/ : /Chờ xác nhận công/)
+  assert.match(document.querySelector('.department-payroll-table').textContent, pending === 'configuration_pending' ? /Chờ đối chiếu lương/ : /Chờ xác nhận công/)
 })
 
 for (const action of ['calculate', 'draft-load', 'export']) {
@@ -677,4 +677,20 @@ test('cached new capability cannot send legacy payroll writes after backend roll
   assert.equal(button('Lưu bảng nháp').disabled, true); assert.equal(button('Xuất excel').disabled, true)
   assert.match(document.querySelector('.department-payroll-backend-required').textContent, /Cần cập nhật máy chủ/)
   assert.equal(rowCount(), 3)
+})
+
+
+test('payroll pending reason button opens exact server blockers in the shared modal', async t => {
+  const f = await fixture(t, false, [{ ...rows[0], configuration_pending: true, configuration_issues: ['2026-10-13:missing_shift_times', 'late_event_evidence_changed:42'], salary: null, total_salary: null, net_salary: null }])
+  await f.render(h(Panel, { user: admin })); await f.click('Tính lương theo cấu hình')
+  f.manualDialogs()
+  const calls = f.requests.length
+  await f.click('Xem lý do')
+  const dialog = document.querySelector('dialog.system-dialog-warning')
+  assert.ok(dialog?.open)
+  assert.match(dialog.textContent, /Nhân Viên A · Chưa tính được lương/)
+  assert.match(dialog.textContent, /13-10-2026: thiếu giờ bắt đầu/)
+  assert.match(dialog.textContent, /Dữ liệu chấm công hiện tại không khớp.*sự kiện 42/)
+  assert.equal(f.requests.length, calls)
+  assert.equal(button('Hoàn thành bảng lương').disabled, true)
 })
