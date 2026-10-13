@@ -89,7 +89,8 @@ def test_day_off_placeholders_are_not_missing_evidence_but_scheduled_absence_is(
     totals = dep._attendance_totals([], 'a',norm,cfg,schedule_records=[schedule()],definitions=DEFINITIONS)
     assert totals['pending_dates'] == ['2026-10-01']
     missing = dep._attendance_totals([record(departure='')], 'a',norm,cfg,schedule_records=[schedule()],definitions=DEFINITIONS)
-    assert missing['pending_dates'] == ['2026-10-01']
+    assert missing['pending_dates'] == []
+    assert missing['minutes_ca1'] == 465
 
 
 @pytest.mark.parametrize('source', ['schedule', 'attendance'])
