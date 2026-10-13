@@ -478,6 +478,26 @@ def _interval_minutes(item: dict[str, Any], work_day: date) -> tuple[int, dateti
     return max(0, payroll._number(item.get("total_minutes"))), start, end
 
 
+def _hc_payroll_window(item, work_day, periods):
+    """Payroll-only fallback; never overwrite raw FaceGate checkout evidence."""
+    _, start, end = _interval_minutes(item, work_day)
+    blocking_reasons = set(item.get('attendance_pending_reasons') or []) - {'missing_check_out', 'shift_still_open', 'incomplete_archive'}
+    if not start or not periods or item.get('attendance_evidence_issues') or blocking_reasons or item.get('identity_verified') is False:
+        return start, end, False
+    left = min(p[0] for p in periods)
+    right = max(p[1] for p in periods)
+    if start < left and left.hour >= 12 and start.hour < 12 and (end is None or end <= left):
+        start += timedelta(days=1)
+        if end:
+            end += timedelta(days=1)
+    inferred = end is None
+    if inferred:
+        if datetime.now(VN_TZ).replace(tzinfo=None) < right:
+            return start, None, False
+        end = right
+    return start, end, inferred
+
+
 def _attendance_totals(records: list[dict[str, Any]], employee: str, norm: Callable[[Any], str], cfg: dict[str, Any],
                        *, schedule_records=None, definitions=None, department="") -> dict[str, Any]:
     totals = {"minutes_ca1": 0, "minutes_ca2_before_22": 0, "minutes_ca2_after_22": 0,
@@ -493,31 +513,41 @@ def _attendance_totals(records: list[dict[str, Any]], employee: str, norm: Calla
         except ValueError:
             continue
         seen_dates.add(work_day)
-        minutes, start, end = _interval_minutes(item, work_day)
-        if start and end:
-            minutes = (end - start).total_seconds() / 60
-        # Never turn missing raw evidence into payable time using a duration or
-        # client pending flag. Legacy pure callers retain their clock-only path.
-        expected = work_day in schedules or bool(item.get("attendance_expected"))
-        if item.get("attendance_pending") or (schedule_records is not None and expected and (not start or not end)):
+        schedule = schedules.get(work_day)
+        periods = _planned_intervals(schedule, work_day, department, definitions or {}, norm) if schedule else []
+        if schedule and not periods:
+            totals["configuration_issues"].append(f"{work_day.isoformat()}:missing_shift_times")
             totals["pending_dates"].append(work_day.isoformat())
             totals["incomplete_days"] += 1
             continue
+        minutes, start, end = _interval_minutes(item, work_day)
+        inferred = False
+        if periods:
+            start, end, inferred = _hc_payroll_window(item, work_day, periods)
+        expected = work_day in schedules or bool(item.get("attendance_expected"))
+        if item.get('attendance_evidence_issues') or (item.get("attendance_pending") and not inferred) or (schedule_records is not None and expected and (not start or not end)):
+            totals["pending_dates"].append(work_day.isoformat())
+            totals["incomplete_days"] += 1
+            continue
+        if start and end:
+            minutes = (end-start).total_seconds()/60
         if minutes <= 0:
             totals["incomplete_days"] += 1
-            if work_day in schedules or item.get("attendance_expected"):
+            if expected:
                 totals["pending_dates"].append(work_day.isoformat())
+            continue
+        if periods:
+            edges = sorted({start, end, *(max(start, min(end, value)) for period in periods for value in period[:2])})
+            paid_minutes = 0
+            for left, right in zip(edges, edges[1:]):
+                bucket = next((bucket for a, b, bucket in periods if a <= left and right <= b), None)
+                if bucket:
+                    paid_minutes += _add_interval(totals, left, right, work_day, bucket)
+            if paid_minutes >= cfg["full_day_hours"] * 60:
+                totals["full_days"] += 1
             continue
         if minutes >= cfg["full_day_hours"] * 60:
             totals["full_days"] += 1
-        schedule = schedules.get(work_day)
-        if schedule:
-            periods = _planned_intervals(schedule, work_day, department, definitions or {}, norm)
-            if not periods:
-                totals["configuration_issues"].append(f"{work_day.isoformat()}:missing_shift_times")
-                continue
-        else:
-            periods = []
         shift = norm(item.get("shift"))
         default_bucket = "ca2" if "ca 2" in shift else "ca1"
         if not start or not end:
@@ -723,8 +753,10 @@ def _late_payroll_adjustment(row, cfg, source, events, records, schedules, defin
                 or actual.get("attendance_evidence_issues")):
             result["configuration_issues"] = list(result.get("configuration_issues") or []) + [f"late_event_evidence_changed:{event['event_id']}"]
             continue
-        if source == "attendance" and (not departure or actual.get("attendance_pending")):
-            continue
+        if source == "attendance":
+            _, departure, inferred = _hc_payroll_window(actual, day, periods)
+            if not departure or (actual.get("attendance_pending") and not inferred):
+                continue
         missed = {key: Decimal(0) for key in ("minutes_ca1", "minutes_ca2_before_22", "minutes_ca2_after_22")}
         segments = []
         expected_seconds = Decimal(0)
