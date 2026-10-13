@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
-const built=await build({stdin:{contents:`import React,{act} from 'react';import{createRoot}from'react-dom/client';import Actions,{PagePermissionProvider}from'./src/components/PagePermissionActions';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=(role,props={})=>act(async()=>root.render(<PagePermissionProvider user={{role}}><Actions page="training" {...props}/></PagePermissionProvider>));window.unmount=()=>act(async()=>root.unmount());`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'api',setup(b){b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const veraApi={permissions:()=>window.api.read(),savePermissions:(...args)=>window.api.save(...args)}'}))}}]})
+const built=await build({stdin:{contents:`import React,{act} from 'react';import{createRoot}from'react-dom/client';import Actions,{PagePermissionProvider}from'./src/components/PagePermissionActions';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=(role,props={})=>act(async()=>root.render(<PagePermissionProvider user={{role}}><Actions page="training" {...props}/></PagePermissionProvider>));window.mountManaged=(page,tab='Hiện tại',role='admin')=>act(async()=>root.render(<PagePermissionProvider user={{role}} page={page}><main><Actions primary page={page}/><h1>{page}</h1><section><Actions page="reports" label={tab}/></section></main></PagePermissionProvider>));window.unmount=()=>act(async()=>root.unmount());`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'api',setup(b){b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const veraApi={permissions:()=>window.api.read(),savePermissions:(...args)=>window.api.save(...args)}'}))}}]})
 async function setup(role='admin'){
  const dom=new JSDOM('<div id="root"></div>',{url:'https://test.local',runScripts:'dangerously',pretendToBeVisual:true}),w=dom.window
  w.MessageChannel=class {constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}}
@@ -12,7 +12,11 @@ async function setup(role='admin'){
  w.eval(built.outputFiles[0].text);await w.mount(role)
  return{w,dom,writes,data}
 }
-const click=async(w,text)=>{const b=[...w.document.querySelectorAll('button')].find(x=>x.textContent===text);assert.ok(b,text);await w.act(async()=>b.click())}
+const click=async(w,text)=>{
+ if (!w.document.querySelector('[role=dialog]')) { const launch=w.document.querySelector('.page-permission-launcher'); if(launch) await w.act(async()=>launch.click()) }
+ const wanted=text==='Phân quyền'?'Phân quyền trang':text
+ const b=[...w.document.querySelectorAll('[role=dialog] button')].find(x=>x.textContent===wanted);assert.ok(b,text);await w.act(async()=>b.click())
+}
 async function close(w){await w.unmount();w.close()}
 test('non-admin cannot see or load contextual permission controls',async()=>{const{w}=await setup('letan');try{assert.equal(w.document.querySelector('button'),null)}finally{await close(w)}})
 test('list includes role inheritance and excludes explicit denial',async()=>{const{w}=await setup();try{await click(w,'Tài khoản đã được phân quyền');const list=w.document.querySelector('.permission-account-results');assert.match(list.textContent,/An/);assert.match(list.textContent,/Kế thừa nhóm/);assert.doesNotMatch(list.textContent,/Binh/);assert.match(list.textContent,/admin/)}finally{await close(w)}})
@@ -45,5 +49,33 @@ test('performance tab permits scoped grant to a non-admin and lists the granted 
   await click(w,'Đóng');await click(w,'Tài khoản đã được phân quyền · Thời gian thực hiện')
   assert.match(w.document.querySelector('.permission-account-results').textContent,/An/)
   assert.doesNotMatch(w.document.querySelector('.permission-account-results').textContent,/Binh/)
+ }finally{await close(w)}
+})
+
+test('managed page shows exactly one title launcher and moves page/tab actions into modal',async()=>{
+ const{w}=await setup()
+ try{
+  await w.mountManaged('reports','Thời gian thực hiện')
+  assert.equal(w.document.querySelectorAll('button').length,1)
+  assert.equal(w.document.querySelector('h1 button')?.textContent,'Phân quyền')
+  assert.equal(w.document.querySelector('[role=dialog]'),null)
+  await w.act(async()=>w.document.querySelector('h1 button').click())
+  assert.match(w.document.querySelector('[role=dialog]').textContent,/Phân quyền trang/)
+  assert.match(w.document.querySelector('[role=dialog]').textContent,/Phân quyền · Thời gian thực hiện/)
+  assert.match(w.document.querySelector('[role=dialog]').textContent,/Tài khoản đã được phân quyền/)
+  await click(w,'Đóng')
+  await w.mountManaged('reports','Doanh thu')
+  assert.equal(w.document.querySelectorAll('button').length,1)
+  await w.act(async()=>w.document.querySelector('h1 button').click())
+  assert.match(w.document.querySelector('[role=dialog]').textContent,/Phân quyền · Doanh thu/)
+  assert.doesNotMatch(w.document.querySelector('[role=dialog]').textContent,/Thời gian thực hiện/)
+  await w.mountManaged('training')
+  assert.equal(w.document.querySelector('[role=dialog]'),null)
+  assert.equal(w.document.querySelectorAll('h1 button').length,1)
+  await w.mountManaged('live-tour')
+  assert.equal(w.document.querySelector('button'),null)
+  assert.equal(w.document.querySelector('[role=dialog]'),null)
+  await w.mountManaged('reports','Hiện tại','letan')
+  assert.equal(w.document.querySelector('button'),null)
  }finally{await close(w)}
 })
