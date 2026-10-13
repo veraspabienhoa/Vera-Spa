@@ -55,7 +55,7 @@ test('history reloads the selected dates directly from the FaceGate device', asy
   assert.equal(queries[0].source, 'facegate')
   assert.ok(queries[0].start)
   assert.ok(queries[0].end)
-  assert.match(dom.window.document.querySelector('.checkin-history-page').textContent, /đọc trực tiếp từ máy/)
+  assert.match(dom.window.document.querySelector('tbody').textContent, /27/)
   assert.equal(button(dom, 'Tải từ Face ID').disabled, false)
 })
 
@@ -122,16 +122,16 @@ test('history typing suggests employee names/codes and event IDs, with independe
 })
 
 
-test('history reports configured attendance source without claiming every log is payroll eligible',async context=>{
+test('history hides removed explanatory copy for every attendance source',async context=>{
  let policy={source:'facegate',effective_date:'2026-09-29'}
  const dom=await page('history',{checkinHistory:async()=>({records:[],attendance_policy:policy})},context)
  const reload=async()=>dom.window.testAct(async()=>button(dom,'Xem lịch sử').click())
  await reload()
- assert.match(dom.window.document.body.textContent,/FaceGate là nguồn chấm công từ 29-09-2026/)
- assert.match(dom.window.document.body.textContent,/số sự kiện ở đây không phải số ngày công/)
+ assert.doesNotMatch(dom.window.document.body.textContent,/FaceGate là nguồn chấm công từ/)
+ assert.doesNotMatch(dom.window.document.body.textContent,/số sự kiện ở đây không phải số ngày công/)
  assert.doesNotMatch(dom.window.document.body.textContent,/chưa dùng tính công/)
  policy={source:'timesoft'};await reload()
- assert.match(dom.window.document.body.textContent,/Nguồn tính công hiện tại là TimeSoft/)
+ assert.doesNotMatch(dom.window.document.body.textContent,/Nguồn tính công hiện tại là TimeSoft/)
  policy={source:'unknown'};await reload()
- assert.match(dom.window.document.body.textContent,/Xem nguồn tính công hiện tại tại Quản lý thiết bị/)
+ assert.doesNotMatch(dom.window.document.body.textContent,/Xem nguồn tính công hiện tại tại Quản lý thiết bị/)
 })
