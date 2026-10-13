@@ -44,3 +44,13 @@ export function bookingRoomState(rooms, employees, catalog, employeeId, selected
   })
   return { options, error }
 }
+
+// Area order is the user-owned order from Settings; bed IDs retain their order.
+export function orderedBookingRooms(rooms, areas = []) {
+  const positions = new Map()
+  for (const area of areas || []) for (const bed of area.beds || []) {
+    if (bed.id != null && !positions.has(String(bed.id))) positions.set(String(bed.id), positions.size)
+  }
+  if (!positions.size) return [...rooms]
+  return [...rooms].sort((a, b) => (positions.get(String(a.id)) ?? positions.size) - (positions.get(String(b.id)) ?? positions.size))
+}
