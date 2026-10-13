@@ -66,7 +66,7 @@ function PermissionLauncher({ scope, scopes, attachToTitle }) {
     host.className = 'permission-title-action'
     let title = null
     const findHeading = () => {
-      const visible = node => !node.closest('[hidden], [role="dialog"]')
+      const visible = node => !node.closest('[hidden], [role="dialog"], .page-recovery, [role="alert"], .page-loading')
       const next = [...container.querySelectorAll('h1')].find(visible) || [...container.querySelectorAll('h2')].find(visible) || null
       if (title !== next) { title?.classList.remove('permission-title-row'); title = next }
       if (title) {

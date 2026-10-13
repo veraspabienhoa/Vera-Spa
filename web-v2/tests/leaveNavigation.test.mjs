@@ -92,6 +92,7 @@ for(const entry of ['/', '/?standalone=1&page=leave'])test(`actual application o
     assert.equal(link.searchParams.get('page'),'leave')
     assert.equal(link.searchParams.get('standalone'),'1')
     assert.ok(link.searchParams.get('reload'))
+    assert.equal(document.querySelector('.page-recovery .page-permission-launcher'),null, 'Recovery heading is not a page permission target')
     failStats=false
     await act(async()=>document.querySelector('.page-recovery button').click());await settle()
     assert.ok(document.querySelector('.registration-panel .leave-form'))
