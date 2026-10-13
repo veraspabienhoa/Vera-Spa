@@ -434,6 +434,7 @@ def _with_departments(conn, employees):
     hr = registry(conn)
     for employee in employees:
         code = department_code(employee, hr)
+        employee["department_code"] = code
         employee["department"] = hr["departments"].get(code, {}).get("name", code)
     return employees
 
@@ -862,7 +863,9 @@ def install_training_routes(
             # A log deleted between READ COMMITTED reads must not put an employee
             # in both tables in the same response. Favor their observed record.
             recorded_names = {employee["username"].casefold() for employee in [*recorded, *employees]}
-            untrained = [employee for employee in catalog if employee["username"].casefold() not in recorded_names]
+            untrained = [employee for employee in catalog
+                         if employee["department_code"] == "nhanvien"
+                         and employee["username"].casefold() not in recorded_names]
             return {"employees": employees, "untrained_employees": untrained,
                     "untrained_scope": "all_time", "date_from": date_from, "date_to": date_to}
 

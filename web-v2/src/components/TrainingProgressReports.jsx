@@ -51,6 +51,7 @@ export default function TrainingProgressReports({ user }) {
   const [mode, setMode] = useState('all'), [day, setDay] = useState(vietnamToday), [month, setMonth] = useState(() => vietnamToday().slice(0,7))
   const [start, setStart] = useState(vietnamToday), [end, setEnd] = useState(vietnamToday), [draftValid, setDraftValid] = useState({ day: true, start: true, end: true })
   const [search, setSearch] = useState(''), [employee, setEmployee] = useState(''), [selected, setSelected] = useState(null)
+  const [untrainedSearch, setUntrainedSearch] = useState(''), [untrainedEmployee, setUntrainedEmployee] = useState('')
   const [result, setResult] = useState(null), [reload, setReload] = useState(0)
   const identity = trainingIdentityKey(user)
   const filters = useMemo(() => trainingDateRange({mode,day,month,start,end}), [mode,day,month,start,end])
@@ -67,10 +68,11 @@ export default function TrainingProgressReports({ user }) {
   }, [queryKey, filters, valid])
   const active = valid && result?.queryKey === queryKey ? result : null
   const employees = active?.employees || []
-  const untrained = active?.untrained || []
-  const options = [...employees, ...untrained]
+  const untrained = (active?.untrained || []).filter(item => (item.department_code ?? item.role) === 'nhanvien')
+  const options = employees
   const matches = item => employee ? item.username === employee : searchTextMatches([item.username, item.full_name], search)
-  const rows = employees.filter(matches), untrainedRows = untrained.filter(matches)
+  const rows = employees.filter(matches)
+  const untrainedRows = untrained.filter(item => untrainedEmployee ? item.username === untrainedEmployee : searchTextMatches([item.username, item.full_name], untrainedSearch))
   const scope = selected?.queryKey === queryKey && employees.some(item => item.username === selected.employee) ? selected : null
   const updateMode = value => { setMode(value); setDraftValid({ day:true, start:true, end:true }); setEmployee(''); setSearch(''); setSelected(null) }
   const validity = key => value => setDraftValid(old => old[key] === value ? old : { ...old, [key]:value })
@@ -90,6 +92,9 @@ export default function TrainingProgressReports({ user }) {
     {active?.employees && <><table><thead><tr><th>Nhân viên</th><th>Bộ phận</th></tr></thead><tbody>{rows.map(item => <tr key={item.username}><td><button type="button" className="text-button" aria-haspopup="dialog" onClick={() => setSelected({ queryKey, employee:item.username, name:item.full_name || item.username, filters })}>{item.full_name || item.username}</button></td><td>{item.department || item.role}</td></tr>)}</tbody></table>{!rows.length && <p>Không có nhân viên đã đào tạo / đánh giá phù hợp bộ lọc.</p>}</>}
     {active?.employees && <section className="training-untrained-roster" aria-labelledby="training-untrained-title">
       <h2 id="training-untrained-title">Nhân viên chưa được đào tạo / đánh giá</h2>
+      <div className="training-progress-filters">
+        <LiveTourSearchSelect label="Tên nhân viên" value={untrainedEmployee} options={untrained.map(item => ({ value:item.username, label:item.full_name || item.username, detail:item.username }))} placeholder="Nhập tên hoặc chọn nhân viên…" emptyLabel="Tất cả nhân viên" searchValue={untrainedSearch} onSearch={value => { setUntrainedSearch(value); setUntrainedEmployee('') }} onChange={value => { setUntrainedEmployee(value); setUntrainedSearch(untrained.find(item => item.username === value)?.full_name || value) }}/>
+      </div>
       <table><caption>Chưa có hồ sơ · Toàn bộ thời gian</caption><thead><tr><th>Nhân viên</th><th>Bộ phận</th></tr></thead><tbody>{untrainedRows.map(item => <tr key={item.username}><td>{item.full_name || item.username}</td><td>{item.department || item.role}</td></tr>)}</tbody></table>
       {!untrainedRows.length && <p>Không có nhân viên phù hợp.</p>}
     </section>}
