@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { X } from 'lucide-react'
+import { Share2, X } from 'lucide-react'
 import EmployeeProfileModal from './EmployeeProfileModal'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
 import VeraDateInput from './VeraDateInput'
@@ -52,6 +52,7 @@ export default function TrainingProgressReports({ user }) {
   const [start, setStart] = useState(vietnamToday), [end, setEnd] = useState(vietnamToday), [draftValid, setDraftValid] = useState({ day: true, start: true, end: true })
   const [search, setSearch] = useState(''), [employee, setEmployee] = useState(''), [selected, setSelected] = useState(null)
   const [untrainedSearch, setUntrainedSearch] = useState(''), [untrainedEmployee, setUntrainedEmployee] = useState('')
+  const [overview, setOverview] = useState(null), [overviewSharing, setOverviewSharing] = useState(false)
   const [result, setResult] = useState(null), [reload, setReload] = useState(0)
   const identity = trainingIdentityKey(user)
   const filters = useMemo(() => trainingDateRange({mode,day,month,start,end}), [mode,day,month,start,end])
@@ -86,6 +87,7 @@ export default function TrainingProgressReports({ user }) {
       {mode === 'month' && <label>Tháng đào tạo<input type="month" aria-label="Tháng đào tạo" value={month} onChange={event => { setMonth(event.target.value); setEmployee(''); setSearch(''); setSelected(null) }}/></label>}
       {mode === 'custom' && <><label>Từ ngày<VeraDateInput aria-label="Đào tạo từ ngày" value={start} onChange={changeDate(setStart,'start')} onDraftValidity={validity('start')}/></label><label>Đến ngày<VeraDateInput aria-label="Đào tạo đến ngày" min={start} value={end} onChange={changeDate(setEnd,'end')} onDraftValidity={validity('end')}/></label></>}
     </div>
+    <div className="training-overview-action"><button type="button" className="primary-button" disabled={!active?.employees || Boolean(active?.error)} onClick={() => setOverview({ kind: 'overview', queryKey, name: 'Toàn bộ nhân viên' })}><Share2 size={18}/> Chia sẻ báo cáo toàn bộ nhân viên</button></div>
     {!valid && <p role="status">Nhập đầy đủ ngày hợp lệ; ngày kết thúc không được trước ngày bắt đầu.</p>}
     {valid && !active && <p role="status">Đang tải nhân viên theo khoảng ngày…</p>}
     {active?.error && <div><p role="alert" className="error-box">{active.error.message}</p><button type="button" className="secondary-button" onClick={() => setReload(n => n+1)}>Thử tải lại danh sách</button></div>}
@@ -98,6 +100,11 @@ export default function TrainingProgressReports({ user }) {
       <table><caption>Chưa có hồ sơ · Toàn bộ thời gian</caption><thead><tr><th>Nhân viên</th><th>Bộ phận</th></tr></thead><tbody>{untrainedRows.map(item => <tr key={item.username}><td>{item.full_name || item.username}</td><td>{item.department || item.role}</td></tr>)}</tbody></table>
       {!untrainedRows.length && <p>Không có nhân viên phù hợp.</p>}
     </section>}
+    {overview?.queryKey === queryKey && active?.employees && !active.error && <EmployeeProfileModal className="training-report-modal" labelledBy="training-overview-title" busy={overviewSharing} onClose={() => setOverview(null)}>
+      <div className="training-page training-report-body"><header className="training-report-heading"><div><p className="eyebrow">VERA SPA</p><h2 id="training-overview-title">Chia sẻ báo cáo tiến độ toàn bộ nhân viên</h2></div><button type="button" className="secondary-button" aria-label="Đóng chia sẻ báo cáo" disabled={overviewSharing} onClick={() => setOverview(null)}><X size={20}/></button></header>
+        <TrainingReportFiles scope={overview} onSharingChange={setOverviewSharing} onDenied={() => { setOverview(null); setReload(n => n+1) }}/>
+      </div>
+    </EmployeeProfileModal>}
     {scope && <TrainingEmployeeReport key={`${scope.queryKey}:${scope.employee}`} scope={scope} onClose={() => setSelected(null)} onDenied={() => { setSelected(null); setReload(n => n+1) }}/>}
   </section>
 }

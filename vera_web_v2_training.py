@@ -846,6 +846,27 @@ def install_training_routes(
             _audit(conn, "evaluation", assignment_id, "submit" if body.submit else "save_draft", ident.employee_username)
             return {"ok": True, "notifications_created": notified}
 
+    @app.get("/v2/training/progress-export")
+    def export_training_overview(
+        format: Literal["pdf", "png"] = Query(default="pdf"),
+        ident: identity_type = Depends(current_identity),
+    ):
+        from vera_web_v2_training_overview import read_overview, render_overview
+        from vera_web_v2_training_report_export import ReportExportTooLarge, ReportExportUnavailable
+        with engine_instance().begin() as conn:
+            _schema(conn); require_feature(conn, ident, "training_view")
+            catalog = _with_departments(conn, _training_employee_catalog(conn, ident))
+            report = read_overview(conn, catalog)
+        try:
+            content = render_overview(report, format)
+        except ReportExportTooLarge as exc:
+            raise HTTPException(413, str(exc)) from exc
+        except ReportExportUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        return Response(content=content, media_type="application/pdf" if format == "pdf" else "image/png",
+            headers={"Content-Disposition": f'attachment; filename="VERA_TienDoDaoTao_ToanBoNhanVien.{format}"',
+                     "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
     @app.get("/v2/training/report-employees")
     def training_report_employees(
         date_from: date | None = Query(default=None),

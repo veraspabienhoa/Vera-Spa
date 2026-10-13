@@ -10,7 +10,10 @@ function useReportFile(scope, format, onDenied) {
   useEffect(() => {
     const controller = new AbortController(); let active = true, url
     setResult(null)
-    veraApi.readTrainingReportExport(scope.employee, format, scope.filters, { signal: controller.signal }).then(({ blob, filename }) => {
+    const request = scope.kind === 'overview'
+      ? veraApi.readTrainingOverviewExport(format, { signal: controller.signal })
+      : veraApi.readTrainingReportExport(scope.employee, format, scope.filters, { signal: controller.signal })
+    request.then(({ blob, filename }) => {
       if (!active) return
       const file = new File([blob], filename || trainingReportFilename(scope.name || scope.employee, format), { type: types[format] })
       url = URL.createObjectURL(file); setResult({ scope, file, url })
@@ -46,7 +49,8 @@ export default function TrainingReportFiles({ scope, onDenied, onSharingChange }
     } catch (error) { fail(error); finish() }
   }
   return <section className="training-report-files" aria-label="Xem, tải và chia sẻ báo cáo">
-    <p>Toàn bộ dữ liệu theo nhân viên và khoảng ngày đang xem. PDF khổ A4 có lề; PNG là ảnh toàn bộ báo cáo.</p>
+    <p>{scope.kind === 'overview' ? 'Toàn bộ nhân viên trong phạm vi quyền xem · Toàn bộ thời gian. Tổng giờ cộng từ các buổi đào tạo; danh sách chưa đào tạo chỉ gồm bộ phận nhanvien.' : 'Toàn bộ dữ liệu theo nhân viên và khoảng ngày đang xem.'} PDF khổ A4 có lề; PNG là ảnh toàn bộ báo cáo.</p>
+    {scope.kind === 'overview' && <p>Chọn Zalo trong bảng chia sẻ của thiết bị. Nếu không có Zalo hoặc trình duyệt không hỗ trợ chia sẻ file, hãy tải PDF/PNG rồi đính kèm trong Zalo.</p>}
     {feedback && <p role={feedback.error ? 'alert' : 'status'} className={feedback.error ? 'error-box' : ''}>{feedback.text}</p>}
     {[['pdf',pdf],['png',png]].map(([format,report]) => <div className="training-report-file" key={format}>
       {!report.file && !report.error && <p role="status">Đang tạo {format.toUpperCase()}…</p>}
@@ -54,7 +58,7 @@ export default function TrainingReportFiles({ scope, onDenied, onSharingChange }
       {report.file && <><strong>{format === 'pdf' ? 'PDF A4' : 'Ảnh PNG'} · {(report.file.size/1024).toFixed(0)} KB</strong><div className="training-report-file-actions">
         <a className="secondary-button" href={report.url} target="_blank" rel="noopener noreferrer">Xem {format.toUpperCase()}</a>
         <a className="secondary-button" href={report.url} download={report.file.name}>Tải {format.toUpperCase()}</a>
-        {canShare(report.file) ? <button type="button" className="primary-button" disabled={Boolean(sharing)} onClick={() => share(report,format)}>{sharing === format ? 'Đang mở chia sẻ…' : `Chia sẻ ${format.toUpperCase()}`}</button> : <small>Tải {format.toUpperCase()} rồi đính kèm trong ứng dụng cần chia sẻ.</small>}
+        {canShare(report.file) ? <button type="button" className="primary-button" disabled={Boolean(sharing)} onClick={() => share(report,format)}>{sharing === format ? 'Đang mở chia sẻ…' : `Chia sẻ ${format.toUpperCase()}${scope.kind === 'overview' ? ' qua Zalo / ứng dụng khác' : ''}`}</button> : <small>Tải {format.toUpperCase()} rồi đính kèm trong ứng dụng cần chia sẻ.</small>}
       </div></>}
     </div>)}
   </section>
