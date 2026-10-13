@@ -223,3 +223,7 @@
 .live-tour-report-table.performance-report-table th{width:auto}
 .live-tour-report-table.performance-report-table :is(th,td){white-space:normal;overflow-wrap:anywhere}
 @media(max-width:760px){.performance-report-table table,.performance-report-table tbody{display:block;width:100%}.performance-report-table thead{display:none}.performance-report-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;border:1px solid #285541;margin-bottom:12px}.performance-report-table tbody td{display:block;width:auto;min-width:0;font-size:12px;text-align:left}.performance-report-table tbody td::before{content:attr(data-label);display:block;font-weight:700;margin-bottom:4px}.performance-report-table tbody td:first-child{grid-column:1/-1}}
+
+.performance-status-filter{flex-wrap:nowrap;max-width:100%;min-width:0}
+.performance-status-filter .secondary-button{min-width:0}
+@media(max-width:760px){.performance-status-filter{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,1.25fr) minmax(0,1.8fr)}.performance-status-filter .secondary-button{font-size:9px;white-space:normal}}
