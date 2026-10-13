@@ -110,7 +110,7 @@ export default function ScheduleViolations({ department, departmentLabel, employ
     submitting.current = true; setBusy(true); setNotice('')
     try {
       const amount = approved ? row.hc_late_approved_amount : row.hc_late_unapproved_amount
-      if (!(await confirmMutation(`${approved ? 'Xác nhận' : 'Bỏ xác nhận'} Đi trễ có phép cho ${row.employee_name} ngày ${formatVeraDate(row.violation_date)}? Mức theo đơn giá ghi nhận: ${money(amount)} (${approved ? '1' : '2'}× đơn giá đã ghi nhận cho thời gian trễ). Bảng lương tính riêng lương thời gian trễ không được hưởng và khoản phạt thêm theo đơn giá áp dụng của bảng lương.`, true)) || !mountedRef.current || !approvalSupportedRef.current || viewRef.current !== view) return
+      if (!(await confirmMutation(`${approved ? 'Xác nhận' : 'Bỏ xác nhận'} Đi trễ có phép cho ${row.employee_name} ngày ${formatVeraDate(row.violation_date)}? Mức theo đơn giá ghi nhận: ${money(amount)} ${approved ? 'Có phép: không phạt, chỉ không tính lương thời gian đi trễ.' : 'Không phép: áp dụng mức phạt theo quy định; thời gian đi trễ không được tính lương.'}`, true)) || !mountedRef.current || !approvalSupportedRef.current || viewRef.current !== view) return
       const result = await requestRef.current(`/v2/work-schedule/violations/${encodeURIComponent(row.id)}/late-approval`, {
         method: 'PUT', body: JSON.stringify({ department, approved, expected_updated_at: row.updated_at }),
       })
@@ -143,7 +143,7 @@ export default function ScheduleViolations({ department, departmentLabel, employ
     }
   }
   return <section className="panel schedule-violations">
-    <div className="schedule-violation-title"><h3>{personal ? 'LỊCH SỬ VI PHẠM CỦA TÔI' : `VI PHẠM · PHẠT VI PHẠM${departmentLabel ? ` · ${departmentLabel}` : ''}`}</h3>{onExport && <button className="secondary-button" type="button" disabled={loading || exporting || Boolean(error) || busy} onClick={() => void exportVisible()}>{exporting ? 'Đang xuất…' : 'Xuất excel'}</button>}{canEdit && openSequence === undefined && <button className="primary-button" type="button" onClick={open}>+ Nhập phạt vi phạm</button>}</div>
+    <div className="schedule-violation-title"><h3>{personal ? 'LỊCH SỬ VI PHẠM CỦA TÔI' : `VI PHẠM${departmentLabel ? ` · ${departmentLabel}` : ''}`}</h3>{onExport && <button className="secondary-button" type="button" disabled={loading || exporting || Boolean(error) || busy} onClick={() => void exportVisible()}>{exporting ? 'Đang xuất…' : 'Xuất excel'}</button>}{canEdit && openSequence === undefined && <button className="primary-button" type="button" onClick={open}>+ Nhập phạt vi phạm</button>}</div>
     <div className="schedule-violation-filters">
       {!personal && <label>Tên nhân viên<input type="search" placeholder="Tìm tên nhân viên…" value={search} onChange={e => setSearch(e.target.value)} /></label>}
       <label>Ngày vi phạm<VeraDateInput value={date} aria-label="Lọc ngày vi phạm" onChange={e => setDate(e.target.value)} /></label>
@@ -157,7 +157,7 @@ export default function ScheduleViolations({ department, departmentLabel, employ
       {visible.map((row, index) => <tr key={row.id || index}><td>{row.employee_name}<small>{row.employee_username}</small></td><td>{formatVeraDate(row.violation_date)}</td><td>{row.reason}</td><td>{row.hc_late_approval_eligible || row.hc_late_approval_unavailable || row.hc_late_approved
         ? <><input type="checkbox" aria-label={`Đi trễ có phép ${row.employee_name} ${formatVeraDate(row.violation_date)}`} checked={row.hc_late_approved === true}
           disabled={!canManage || approvalSupported !== true || busy || !row.hc_late_approval_eligible || !row.id || !row.updated_at}
-          title={row.hc_late_approval_unavailable || 'Có phép 1×, không phép 2× theo đơn giá ghi nhận. Bảng lương tách lương thời gian trễ không được hưởng và phạt thêm theo đơn giá của bảng lương.'}
+          title={row.hc_late_approval_unavailable || 'Có phép: phạt 0đ, chỉ không tính lương thời gian đi trễ. Không phép: áp dụng mức phạt theo quy định.'}
           onChange={event => void approveLate(row, event.target.checked)} />
           {row.hc_late_minutes != null && <small>{Number(row.hc_late_minutes).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} phút trễ</small>}
           {row.hc_late_approved_by && <small>{row.hc_late_approved_by} · {formatVeraDateTime(row.hc_late_approved_at)}</small>}
@@ -165,7 +165,7 @@ export default function ScheduleViolations({ department, departmentLabel, employ
       {!visible.length && <tr><td colSpan={canManage ? 9 : 8}>{loading ? 'Đang tải…' : 'Không có vi phạm theo bộ lọc.'}</td></tr>}
     </tbody></table></div>
     <dialog ref={dialog} className="schedule-violation-dialog" onCancel={e => { if (busy) e.preventDefault() }}>
-      {form && <form onSubmit={save}><h3>{form.id ? 'SỬA VI PHẠM · PHẠT VI PHẠM' : 'NHẬP PHẠT VI PHẠM'}</h3><div className="schedule-violation-form">
+      {form && <form onSubmit={save}><h3>{form.id ? 'SỬA VI PHẠM' : 'NHẬP PHẠT VI PHẠM'}</h3><div className="schedule-violation-form">
         <label>Nhân viên<select required disabled={Boolean(form.id)} value={form.employee_username} onChange={e => setForm({ ...form, employee_username: e.target.value })}><option value="">Chọn nhân viên</option>{employees.map(employee => <option key={employee.username} value={employee.username}>{employee.full_name || employee.username} · {employee.username}</option>)}</select></label>
         <label>Ngày vi phạm<VeraDateInput required disabled={Boolean(form.id && !form.is_manual)} clearOnFocus={false} value={form.violation_date} onChange={e => setForm({ ...form, violation_date: e.target.value })} /></label>
         <label>Nội dung vi phạm<input required disabled={Boolean(form.id && !form.is_manual)} maxLength={400} value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} /></label>

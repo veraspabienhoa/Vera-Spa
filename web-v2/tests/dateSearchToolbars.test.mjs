@@ -64,7 +64,7 @@ test('every work-schedule department displays its own violation ledger on tab ch
   for(const [department,label] of [['locker','Locker'],['letan','Lễ tân'],['tapvu','Tạp vụ'],['quanly','Quản lý'],['locker','Locker']]){
    await w.act(async()=>[...w.document.querySelectorAll('.schedule-department-tabs button')].find(b=>b.textContent===label).click())
    const ledger=w.document.querySelector('.schedule-violations')
-   assert.match(ledger.querySelector('h3').textContent,new RegExp(`VI PHẠM · PHẠT VI PHẠM · ${label}`))
+   assert.match(ledger.querySelector('h3').textContent,new RegExp(`VI PHẠM · ${label}`))
    assert.match(ledger.textContent,new RegExp(`Violation ${department}`))
    assert.ok(calls.some(u=>u.pathname.endsWith('/violations')&&u.searchParams.get('department')===department))
    assert.ok(ledger.compareDocumentPosition(w.document.querySelector('.monthly-statistics'))&w.Node.DOCUMENT_POSITION_PRECEDING)
