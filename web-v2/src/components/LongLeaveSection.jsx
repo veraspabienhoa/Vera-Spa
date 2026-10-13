@@ -307,7 +307,7 @@ function LongLeaveContent({ user, refreshRevision }) {
         <div>
           <span className="eyebrow"><CalendarDays size={14} /> Quy trình xin duyệt</span>
           <h2 id="long-leave-heading">PHÉP NĂM / NGHỈ LÀM ĐẸP / NGHỈ VIỆC</h2>
-          <p>Đơn mới được chuyển vào quy trình duyệt hiện tại. Chỉ đơn Phép năm đã duyệt mới ghi vào lịch nghỉ hằng ngày.</p>
+          
         </div>
         <button data-ui-key="u-914b7aa7a213" data-ui-label-default="Làm mới" type="button" className="secondary-button compact" onClick={load} disabled={loading}>
           <RefreshCw size={15} className={loading ? 'spin' : ''} /><UiCustomText uiKey="u-914b7aa7a213"> Làm mới
