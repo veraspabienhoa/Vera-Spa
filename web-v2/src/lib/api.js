@@ -422,6 +422,9 @@ export const veraApi = {
     if (!response.ok) throw new Error(apiErrorMessage(payload, response.status))
     return payload
   },
+  facegateConfiguration: () => request('/v2/devices/facegate-configuration'),
+  saveFacegateConfiguration: revision => request(`/v2/devices/facegate-configuration?expected_revision=${revision}`, { method: 'POST' }),
+  restoreFacegateConfiguration: (revision, backupRevision) => request(`/v2/devices/facegate-configuration/restore?expected_revision=${revision}&backup_revision=${backupRevision}`, { method: 'POST' }),
   deleteDevice: (id, revision) => request(`/v2/devices/registry/${encodeURIComponent(id)}?expected_revision=${revision}`, { method: 'DELETE' }),
   deleteMobileStationImage: id => request(`/v2/devices/mobile-station/events/${encodeURIComponent(id)}/image`, { method: 'DELETE' }),
   saveDeviceRegistry: body => request('/v2/devices/registry', { method: 'PUT', body: JSON.stringify(body) }),
