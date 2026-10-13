@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { veraApi } from '../lib/api'
+import { alertDialog } from '../lib/systemDialogs'
 import { catalogAllowedFeatures, catalogFeatureAllowed, canEditCatalogFeature, hasAnyDateParent, supportsDateFilterPolicy, datePermissionSaveProblem } from '../lib/permissionCatalog'
 import { searchTextMatches } from '../lib/searchText'
 import EmployeeProfileModal from './EmployeeProfileModal'
@@ -125,6 +126,7 @@ function PermissionDialog({ page, label, features, viewFeatures, adminOnly, mode
       if (problem) throw new Error(problem)
       if (result.scoped_permission_policy_version !== 1 || refreshed.scoped_permission_policy_version !== 1) throw new Error('Chưa xác minh được quyền vừa lưu. Hãy tải lại phân quyền.')
       setNotice('Đã lưu phân quyền tài khoản.')
+      await alertDialog('Đã lưu thành công.', { kind: 'success', title: 'Lưu phân quyền' })
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
   return <EmployeeProfileModal labelledBy="page-permission-title" busy={busy} onClose={onClose} className="page-permission-modal"><section>
