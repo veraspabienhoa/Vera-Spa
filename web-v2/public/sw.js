@@ -123,8 +123,16 @@ self.addEventListener('notificationclick', (event) => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     for (const client of windows) {
       if (new URL(client.url).origin === self.location.origin && 'focus' in client) {
-        if ('navigate' in client) await client.navigate(targetUrl)
-        return client.focus()
+        try {
+          // Focus before navigation: a resumed/mobile client can reject navigation.
+          await client.focus()
+          if ('navigate' in client) {
+            const navigated = await client.navigate(targetUrl)
+            if (!navigated) continue
+            navigated.postMessage({ type: 'vera-notification-open', url: targetUrl })
+            return
+          }
+        } catch { /* Try another window, then open a fresh deep link. */ }
       }
     }
     return self.clients.openWindow ? self.clients.openWindow(targetUrl) : undefined
