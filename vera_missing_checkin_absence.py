@@ -1,7 +1,8 @@
 """Current-day absence rule, evaluated only after a complete FaceGate refresh.
 
 All business writes and durable notifications share the caller's transaction.
-No device/network calls, nested connections, historical backfill or payroll writes.
+Scheduled runs cover today; explicit manual-deletion rechecks target one date.
+No device/network calls, nested connections, blanket backfill or payroll writes.
 """
 import json
 from datetime import datetime, time, timedelta
@@ -61,9 +62,9 @@ def deadline_for(row, day, policy):
     return datetime.combine(day, time(hour), tzinfo=VN_TZ) + timedelta(hours=2)
 
 
-def eligible_schedule(row, *, now, synced, policy, mapped, checked, leave_names):
+def eligible_schedule(row, *, now, synced, policy, mapped, checked, leave_names, work_date=None):
     username = str(row.get('employee_username') or '').strip()
-    cutoff = deadline_for(row, now.date(), policy)
+    cutoff = deadline_for(row, work_date or now.date(), policy)
     if not cutoff or now <= cutoff or synced <= cutoff:
         return False
     if username not in mapped or username in checked:
@@ -110,7 +111,7 @@ def replace_unpermitted(conn, rows, *, day, username, target_reason):
         if deleted.rowcount != 1:
             raise RuntimeError('replacement_row_changed')
 
-def process(conn, *, now=None):
+def process(conn, *, now=None, work_date=None, employee_names=None):
     from vera_attendance_source import source_for
     import vera_facegate_attendance as fg
     from vera_facegate_runtime import archive_complete, archive_sync, blocking_issues, issue_scope, evidence_diagnostics, future_evidence
@@ -121,8 +122,10 @@ def process(conn, *, now=None):
 
     now = now or datetime.now(VN_TZ)
     now = now.replace(tzinfo=VN_TZ) if now.tzinfo is None else now.astimezone(VN_TZ)
-    day = now.date()
+    day = work_date or now.date()
     result = {'added': 0, 'skipped': 0}
+    if day > now.date():
+        return {**result, 'reason': 'future_work_date'}
     if source_for(day) != 'facegate':
         return {**result, 'reason': 'facegate_not_selected'}
     conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:missing-checkin-absence'))"))
@@ -149,6 +152,8 @@ def process(conn, *, now=None):
     auto_check.ensure_schema(conn)
     for row in sorted(schedules, key=lambda r: str(r.get('employee_username') or '')):
         username = str(row.get('employee_username') or '').strip()
+        if employee_names is not None and username not in employee_names:
+            continue
         if not username or username not in mapped or row.get('employee_role') not in auto_check.AUTO_PENALTY_ROLES:
             continue
         if str(row.get('department') or '').strip().lower() not in {'', *auto_check.AUTO_PENALTY_ROLES}:
@@ -168,7 +173,7 @@ def process(conn, *, now=None):
         leaves = conn.execute(text('SELECT * FROM leave_records WHERE leave_date=:day AND employee_name=:name FOR UPDATE'), {'day': day, 'name': username}).mappings().all()
         leave_names = {auto_check._norm(r['employee_name']) for r in leaves
                        if 'di tre' not in auto_check._norm(r['leave_reason']) and 'khong phep' not in auto_check._norm(r['leave_reason'])}
-        if not eligible_schedule(row, now=now, synced=synced, policy=policy, mapped=mapped, checked=checked, leave_names=leave_names):
+        if not eligible_schedule(row, now=now, synced=synced, policy=policy, mapped=mapped, checked=checked, leave_names=leave_names, work_date=day):
             result['skipped'] += 1
             continue
         # A registered full-day absence already records the missing check-in.
