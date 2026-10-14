@@ -97,7 +97,7 @@ def test_month_query_applies_the_same_ktv_scope():
         conn.executescript("""CREATE TABLE employees(username TEXT,role TEXT);
             CREATE TABLE leave_records(record_uid TEXT,leave_date TEXT,weekday_label TEXT,
               employee_name TEXT,leave_reason TEXT,leave_type TEXT,detail TEXT,penalty REAL,
-              updated_by TEXT,updated_at TEXT);
+              updated_by TEXT,updated_at TEXT,created_at TEXT);
             INSERT INTO employees VALUES('KTV','nhanvien'),('HC','locker');
             INSERT INTO leave_records(record_uid,leave_date,employee_name,penalty)
               VALUES('ktv','2026-10-07','KTV',10000),('hc','2026-10-07','HC',50000);""")

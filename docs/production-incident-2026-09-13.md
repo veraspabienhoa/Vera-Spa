@@ -2794,3 +2794,27 @@ live-cache freshness. Saving revalidates against current server evidence.
 Validation: 90 payroll regressions plus 16 connection-reuse, auth-pool,
 notification and VPS diagnostic regressions passed locally. Deployment and
 verification of this new code on production remain outstanding.
+
+## 14-10-2026 — Creation-day leave permission and Ca 1 arrival supplement
+
+Source diagnosis: the month-records query omitted immutable created_at, although
+both frontend and server require it for the creation-day edit/delete exception.
+Return it through fresh and cached month reads. Keep Vietnam date boundaries,
+row-level server authorization, missing-timestamp denial, historical restrictions
+and all existing grants unchanged. No production leave record was deleted.
+
+For a verified FaceGate arrival receiving one of the four official late bands,
+use the VERA shift from the write-time evidence recheck. Ca 1 also records the
+catalog's KHÔNG dọn vệ sinh ca 1 violation (requested catalog value 100,000 VND,
+zero leave days); Ca 2 and absent/ambiguous evidence do not. Custom shift names
+resolve through VERA definitions. Each reason retains its own employee/day event
+key, so worker retries and manually deleted financial rows cannot recreate fines.
+Both events and notification outboxes commit on the existing caller connection.
+A missing/invalid cleaning rule is reported, never guessed. Later approved support
+revokes the associated automatically sourced cleaning fine with the arrival fine,
+while retaining manually entered cleaning fines and other violations.
+
+Remove the requested explanatory copy from the permission page. No permissions,
+production policy catalog, attendance archives or saved payroll were changed.
+Focused local regressions pass; PostgreSQL, full CI and deployment verification
+are still pending at the time of this source update.

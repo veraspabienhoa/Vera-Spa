@@ -1407,7 +1407,7 @@ def _timesoft_penalty_date_eligible(
     return target_date == today or include_synced_history
 
 
-def _facegate_arrival_current(conn, row, work_date, employee):
+def _facegate_arrival_current(conn, row, work_date, employee, *, basis=None):
     """Recheck the exact arrival basis on the financial write connection.
 
     Source selection, newly ambiguous evidence or a changed arrival/shift must
@@ -1425,11 +1425,14 @@ def _facegate_arrival_current(conn, row, work_date, employee):
         return False
     current = matches[0]
     try:
-        return bool(current.get('attendance_fine_evidence_ready') is True
+        valid = bool(current.get('attendance_fine_evidence_ready') is True
             and current.get('identity_verified') and current.get('check_in')
             and current.get('check_in_at') == _timesoft_row_value(row, ['_vera_checkin_at'])
             and str(current.get('shift_start') or '') == _timesoft_row_value(row, ['StartWorkTime'])
             and float(current.get('late_minutes') or 0) == float(_parse_minutes_late(row)))
+        if valid and basis is not None:
+            basis.update(current)
+        return valid
     except (TypeError, ValueError):
         return False
 
@@ -1583,7 +1586,8 @@ def process_timesoft_penalties(
             if checkin_time:
                 detail += f" · Check-in {checkin_time}"
             with engine.begin() as conn:
-                if auto_check.penalties_paused(conn) or not _facegate_arrival_current(conn, row, work_date, employee):
+                basis = {}
+                if auto_check.penalties_paused(conn) or not _facegate_arrival_current(conn, row, work_date, employee, basis=basis):
                     result['skipped'] += 1
                     continue
                 ok, msg = auto_check.save_violation(
@@ -1592,6 +1596,18 @@ def process_timesoft_penalties(
                     source=("ĐỒNG BỘ TIMESOFT - CHẤM CÔNG BỘ PHẬN" if department in department_attendance.DEPARTMENTS else "ĐỒNG BỘ TIMESOFT - PHẠT TRỰC TIẾP"),
                     minutes=penalty_minutes,
                 )
+                # Use the VERA shift from the same verified projection, never
+                # the physical device's shift label or the employee's base week.
+                if ok and msg in {'ADDED', 'SKIP_DUPLICATE'} and basis:
+                    cleaning_status = auto_check.save_arrival_cleaning_violation(
+                        conn, work_date=work_date, employee=employee, catalog=catalog,
+                        shift=basis.get('shift'), detail=detail, minutes=penalty_minutes,
+                    )
+                    if cleaning_status == 'ADDED':
+                        result['added'] += 1
+                    elif cleaning_status == 'MISSING_CLEANING_RULE':
+                        result['errors'] += 1
+                        _log('AUTO ARRIVAL ERROR: Nội quy thiếu mức KHÔNG dọn vệ sinh ca 1 hợp lệ.')
             if ok and msg in {"SKIP_DUPLICATE", "SKIP_ROLE_NOT_ELIGIBLE", "SKIP_GRACE_PERIOD"}:
                 result["skipped"] += 1
             elif ok:

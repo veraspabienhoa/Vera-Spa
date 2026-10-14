@@ -28,7 +28,8 @@ def database():
             conn.execute(text('''CREATE TABLE leave_records (
                 record_uid text PRIMARY KEY, leave_date date, weekday_label text,
                 employee_name text, leave_reason text, leave_type text, detail text,
-                penalty numeric, updated_by text, updated_at timestamptz DEFAULT now())'''))
+                penalty numeric, updated_by text, updated_at timestamptz DEFAULT now(),
+                created_at timestamptz DEFAULT now())'''))
             conn.execute(text('CREATE TABLE employees(username text PRIMARY KEY, role text)'))
             conn.execute(text("INSERT INTO employees VALUES('Synthetic','nhanvien'),('Locker Test','locker')"))
             ensure_schema_conn(conn)
@@ -163,3 +164,23 @@ def test_month_cache_excludes_hc_financial_rows_without_removing_them(database):
         assert [row['record_uid'] for row in result['records']] == ['ktv']
     with database.connect() as conn:
         assert conn.execute(text("SELECT penalty FROM leave_records WHERE record_uid='hc'")).scalar_one() == 50000
+
+
+def test_creation_timestamp_survives_month_cache_and_never_uses_last_edit(database):
+    from datetime import datetime
+    from vera_auto_check import VN_TZ
+    from vera_leave_created_today import may_manage_created_today
+    migrate(database)
+    now = datetime(2026, 10, 14, 12, tzinfo=VN_TZ)
+    with database.begin() as conn:
+        for uid, created in [('today', '2026-10-13T17:00:00Z'),
+                             ('old', '2026-10-13T16:59:59Z'), ('unknown', None)]:
+            insert(conn, uid, '2026-10-01')
+            conn.execute(text('UPDATE leave_records SET created_at=:created, updated_at=:now WHERE record_uid=:uid'),
+                         {'created': created, 'now': now, 'uid': uid})
+    reader = MonthReader(lambda: database)
+    for fresh in [False, False, True]:
+        rows = reader.read('2026-10', ('Reception', 'letan', False), fresh=fresh)['records']
+        assert {row['record_uid']: may_manage_created_today(row, now, True) for row in rows} == {
+            'today': True, 'old': False, 'unknown': False}
+        assert all(not may_manage_created_today(row, now, False) for row in rows)

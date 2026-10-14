@@ -62,16 +62,21 @@ def test_real_postgres_legacy_event_blocks_all_new_bands(database, monkeypatch):
 def test_real_postgres_support_revokes_bands_but_preserves_manual_and_other_fines(database, monkeypatch):
     with database.begin() as conn:
         conn.execute(text("""CREATE TABLE leave_records(record_uid text, source_sheet_id text,
-            leave_date date,employee_name text,leave_reason text)"""))
+            leave_date date,employee_name text,leave_reason text,updated_by text)"""))
         conn.execute(text("""CREATE TABLE vera_auto_check_event(work_date date,employee_name text,
-            reason text,status text,leave_record_uid text,detail text)"""))
+            reason text,status text,leave_record_uid text,detail text,source text)"""))
         reasons = ['Đi trễ không phép', *auto.ARRIVAL_BAND_REASONS, 'Ra ngoài vào muộn dưới 30 phút']
         for i, reason in enumerate(reasons):
-            conn.execute(text("""INSERT INTO leave_records VALUES(:uid,'postgres:auto_check','2026-10-12','Test',:reason)"""),
+            conn.execute(text("""INSERT INTO leave_records VALUES(:uid,'postgres:auto_check','2026-10-12','Test',:reason,'test')"""),
                          {'uid':str(i),'reason':reason})
-            conn.execute(text("""INSERT INTO vera_auto_check_event VALUES('2026-10-12','Test',:reason,'added',:uid,'test')"""),
+            conn.execute(text("""INSERT INTO vera_auto_check_event VALUES('2026-10-12','Test',:reason,'added',:uid,'test','test')"""),
                          {'uid':str(i),'reason':reason})
-        conn.execute(text("""INSERT INTO leave_records VALUES('manual','postgres:web_v2','2026-10-12','Test','Đi trễ không phép')"""))
-        assert auto.revoke_auto_late_penalty(conn, work_date=date(2026,10,12), employee='Test', basis='Hỗ trợ') == 5
-        assert conn.execute(text('SELECT count(*) FROM leave_records')).scalar_one() == 2
-        assert conn.execute(text("SELECT count(*) FROM vera_auto_check_event WHERE status='revoked'")).scalar_one() == 5
+        conn.execute(text("""INSERT INTO leave_records VALUES('manual','postgres:web_v2','2026-10-12','Test','Đi trễ không phép','manual')"""))
+        for uid, source in [('clean-auto', auto.CLEANING_CA1_SOURCE), ('clean-manual', 'Admin')]:
+            conn.execute(text("""INSERT INTO leave_records VALUES(:uid,'postgres:auto_check','2026-10-12','Test',:reason,:source)"""),
+                         {'uid': uid, 'source': source, 'reason': auto.CLEANING_CA1_REASON})
+            conn.execute(text("""INSERT INTO vera_auto_check_event VALUES('2026-10-12','Test',:reason,'added',:uid,'test',:source)"""),
+                         {'uid': uid, 'source': source, 'reason': auto.CLEANING_CA1_REASON})
+        assert auto.revoke_auto_late_penalty(conn, work_date=date(2026,10,12), employee='Test', basis='Hỗ trợ') == 6
+        assert conn.execute(text('SELECT count(*) FROM leave_records')).scalar_one() == 3
+        assert conn.execute(text("SELECT count(*) FROM vera_auto_check_event WHERE status='revoked'")).scalar_one() == 6

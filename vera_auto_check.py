@@ -184,6 +184,30 @@ ARRIVAL_BAND_REASONS = (
     'Đi trễ nhỏ hơn hoặc bằng 120 phút',
     'Đi trễ lớn hơn 120 phút',
 )
+CLEANING_CA1_REASON = 'KHÔNG dọn vệ sinh ca 1'
+CLEANING_CA1_SOURCE = 'ĐỒNG BỘ FACEGATE - VỆ SINH CA 1'
+
+
+def save_arrival_cleaning_violation(conn, *, work_date, employee, catalog, shift, detail, minutes):
+    """Supplement a verified arrival band with one Ca 1 cleaning violation."""
+    from vera_web_v2_live_tour_roster import shift_label
+    label = shift_label(shift)
+    if not label and shift:
+        from vera_web_v2_snapshot import _shift_break_settings
+        definitions, _ = _shift_break_settings(conn)
+        label = shift_label(shift, definitions)
+    if label != 'Ca 1' or not automatic_late_penalty_eligible(ARRIVAL_BAND_REASONS[0], minutes):
+        return 'SKIP_NOT_CA1_LATE'
+    item = catalog_item(catalog, CLEANING_CA1_REASON)
+    if not item or item.get('days') != 0 or _norm(item.get('type')) != _norm('Vi phạm'):
+        return 'MISSING_CLEANING_RULE'
+    ok, status = save_violation(
+        conn, work_date=work_date, employee=employee, reason_item=item,
+        detail=f'{CLEANING_CA1_REASON} · {detail}', source=CLEANING_CA1_SOURCE, minutes=minutes,
+    )
+    if not ok:
+        raise RuntimeError('Could not save Ca 1 cleaning violation')
+    return status
 
 
 def arrival_reason(catalog: dict, minutes: float):
@@ -300,17 +324,21 @@ def revoke_auto_late_penalty(conn, *, work_date: date, employee: str, basis: str
         WHERE source_sheet_id='postgres:auto_check'
           AND leave_date=:day
           AND lower(employee_name)=lower(:employee)
-          AND lower(leave_reason) = ANY(:reasons)
+          AND (lower(leave_reason) = ANY(:reasons)
+               OR (leave_reason=:cleaning AND updated_by=:cleaning_source))
         RETURNING record_uid
-    """), {"day": work_date, "employee": employee, "reasons": [name.lower() for name in ('Đi trễ không phép', *ARRIVAL_BAND_REASONS)]}).scalars().all()
+    """), {"day": work_date, "employee": employee, "reasons": [name.lower() for name in ('Đi trễ không phép', *ARRIVAL_BAND_REASONS)],
+             "cleaning": CLEANING_CA1_REASON, "cleaning_source": CLEANING_CA1_SOURCE}).scalars().all()
     if deleted:
         conn.execute(text("""
             UPDATE vera_auto_check_event
             SET status='revoked', leave_record_uid=NULL,
                 detail=CONCAT(COALESCE(detail,''),' · Thu hồi vì có ',CAST(:basis AS text))
             WHERE work_date=:day AND lower(employee_name)=lower(:employee)
-              AND lower(reason) = ANY(:reasons) AND status='added'
-        """), {"day": work_date, "employee": employee, "reasons": [name.lower() for name in ('Đi trễ không phép', *ARRIVAL_BAND_REASONS)], "basis": basis})
+              AND (lower(reason) = ANY(:reasons)
+                   OR (reason=:cleaning AND source=:cleaning_source)) AND status='added'
+        """), {"day": work_date, "employee": employee, "reasons": [name.lower() for name in ('Đi trễ không phép', *ARRIVAL_BAND_REASONS)], "basis": basis,
+                 "cleaning": CLEANING_CA1_REASON, "cleaning_source": CLEANING_CA1_SOURCE})
     return len(deleted)
 
 
