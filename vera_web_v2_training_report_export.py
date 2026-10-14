@@ -470,7 +470,7 @@ def _render_pdf(pages: list[list[tuple]], report: dict) -> bytes:
     output = BytesIO()
     pdf = canvas.Canvas(output, pagesize=A4, pageCompression=1)
     employee = report.get("employee") or {}
-    pdf.setTitle("Báo cáo đào tạo - " + _text(employee.get("full_name") or employee.get("display_name")
+    pdf.setTitle(report.get("document_title") or "Báo cáo đào tạo - " + _text(employee.get("full_name") or employee.get("display_name")
                                              or report.get("employee_username") or employee.get("username")))
     pdf.setAuthor("VERA SPA")
     for page in pages:
