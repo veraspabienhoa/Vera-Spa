@@ -218,7 +218,7 @@ def arrival_reason(catalog: dict, minutes: float):
     if not math.isfinite(value) or value <= 0:
         return None
     index = 0 if value <= 30 else 1 if value <= 60 else 2 if value <= 120 else 3
-    return catalog_item(catalog, ARRIVAL_BAND_REASONS[index])
+    return catalog_item(catalog, 'Đi trễ KHÔNG phép' if index == 3 else ARRIVAL_BAND_REASONS[index])
 
 
 def outside_reason(catalog: dict, minutes: float):

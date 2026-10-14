@@ -1312,8 +1312,6 @@ def process_break_return_penalties(engine, catalog: dict, *, work_date=None, emp
     committed_logs = []
     try:
         with engine.begin() as conn:
-            if auto_check.penalties_paused(conn):
-                return result
             # Keep the canonical evidence read in the owning write transaction,
             # rather than releasing its connection and later writing stale facts.
             records = _confirmed_break_return_records(engine, today, conn=conn)
@@ -1359,10 +1357,6 @@ def process_break_return_penalties(engine, catalog: dict, *, work_date=None, emp
                             if not fresh:
                                 result["skipped"] += 1
                                 continue
-                        # A pause made after projection still stops new writes.
-                        if auto_check.penalties_paused(conn):
-                            result["skipped"] += 1
-                            continue
                         ok, message = auto_check.save_violation(
                             conn,
                             work_date=fact["work_day"],
@@ -1494,9 +1488,6 @@ def process_timesoft_penalties(
             registered_covered = False
             registered_revoked = 0
             with engine.begin() as conn:
-                if auto_check.penalties_paused(conn):
-                    result['skipped'] += 1
-                    continue
                 department = department_attendance.employee_role(conn, employee)
                 if department in department_attendance.DEPARTMENTS:
                     if not department_attendance.control_for(conn, department)["attendance_enabled"]:
@@ -1589,7 +1580,7 @@ def process_timesoft_penalties(
                 detail += f" · Check-in {checkin_time}"
             with engine.begin() as conn:
                 basis = {}
-                if auto_check.penalties_paused(conn) or not _facegate_arrival_current(conn, row, work_date, employee, basis=basis):
+                if not _facegate_arrival_current(conn, row, work_date, employee, basis=basis):
                     result['skipped'] += 1
                     continue
                 ok, msg = auto_check.save_violation(

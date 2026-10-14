@@ -163,7 +163,7 @@ def test_restriction_annotations_survive_pause_or_nonfresh_financial_evidence(mo
            'attendance_evidence_issues': False, 'attendance_fine_evidence_ready': fresh}
     monkeypatch.setattr(outside.auto_check, 'penalties_paused', lambda _: paused)
     monkeypatch.setattr(outside, '_restriction_map', lambda *_: {(day, outside._norm('Healthy')): {'reasons': ['Đi trễ CÓ phép']}})
-    monkeypatch.setattr(outside.auto_check, 'load_catalog', lambda *_: pytest.fail('Financial work while paused/stale/historical'))
+    monkeypatch.setattr(outside.auto_check, 'load_catalog', lambda *_: {} if fresh and not historical else pytest.fail('Financial work while stale/historical'))
     output = outside._apply_restrictions_and_penalties(None, object(), [row], day, day)[0]
     assert output['break_alert_suppressed'] is True
     assert output['break_restricted_reason'] == 'Đi trễ CÓ phép'

@@ -126,7 +126,7 @@ def test_weekday_weekend_official_amount_and_replay(scenario, day, reason, amoun
     assert len(s.saved) == len(s.notices) == 1
 
 
-@pytest.mark.parametrize('condition', ['empty', 'incomplete', 'ambiguous', 'stale', 'future', 'disabled', 'paused', 'checked', 'leave', 'unmapped'])
+@pytest.mark.parametrize('condition', ['empty', 'incomplete', 'ambiguous', 'stale', 'future', 'disabled', 'checked', 'leave', 'unmapped'])
 def test_no_writes_without_reliable_absence(scenario, condition):
     s = scenario
     if condition == 'empty': s.data['rows'] = []
@@ -135,7 +135,6 @@ def test_no_writes_without_reliable_absence(scenario, condition):
     if condition == 'stale': s.data['syncs'][0]['last_synced_at'] = (s.now-timedelta(minutes=6)).isoformat()
     if condition == 'future': s.data['syncs'][0]['last_synced_at'] = (s.now+timedelta(seconds=1)).isoformat()
     if condition == 'disabled': s.policy['enabled'] = False
-    if condition == 'paused': s.policy['paused'] = True
     if condition == 'checked': s.data['rows'].append({'EmployeeName': 'Test'})
     if condition == 'leave': s.leaves.append({'employee_name': 'Test', 'leave_reason': 'Nghỉ CÓ phép'})
     if condition == 'unmapped': s.data['index'] = {}
@@ -372,3 +371,8 @@ def test_explicit_deleted_day_uses_its_cutoff_without_backfilling_other_dates():
                 policy=POLICY, mapped={'Test'}, checked=set(), leave_names=set())
     assert rule.eligible_schedule(**args, work_date=day)
     assert not rule.eligible_schedule(**args)
+
+
+def test_ready_absence_ignores_auto_check_scan_pause(scenario):
+    scenario.policy['paused'] = True
+    assert rule.process(scenario.conn, now=scenario.now)['added'] == 1

@@ -104,10 +104,6 @@ def install_break_return_penalty(
                 output.append(item)
                 continue
 
-            if auto_check.penalties_paused(conn):
-                item['break_return_penalty_status'] = 'PAUSED'
-                output.append(item)
-                continue
 
             work_day = fact["work_day"]
             break_out = fact["break_out"]

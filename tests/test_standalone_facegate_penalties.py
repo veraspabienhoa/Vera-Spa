@@ -241,10 +241,10 @@ def _exercise_standalone(mode, scenario):
         catalog = {job.ts.auto_check._norm(reason['name']): reason}
         first = job.ts.process_break_return_penalties(engine, catalog)
         second = job.ts.process_break_return_penalties(engine, catalog)
-        if blocked or scenario in {'paused', 'pause_before_write', 'evidence_changed_before_write', 'elapsed_freshness'}:
+        if blocked or scenario in {'evidence_changed_before_write', 'elapsed_freshness'}:
             assert first['added'] == second['added'] == 0
             assert not calls and not events
-            if scenario in {'pause_before_write', 'evidence_changed_before_write', 'elapsed_freshness'}:
+            if scenario in {'evidence_changed_before_write', 'elapsed_freshness'}:
                 assert first['eligible'] == first['skipped'] == 1
         elif scenario == 'pair_changed_before_write':
             assert first == {'eligible': 1, 'added': 0, 'skipped': 1, 'errors': 0}
@@ -354,13 +354,7 @@ def test_postgres_standalone_replay_commits_one_event_leave_and_outbox(database,
 
     reason = {'name': 'Ra ngoài vào muộn nhỏ hơn hoặc bằng 30 phút', 'penalty': 100000}
     catalog = {auto_check._norm(reason['name']): reason}
-    assert ts.process_break_return_penalties(database, catalog) == {
-        'eligible': 0, 'added': 0, 'skipped': 0, 'errors': 0}
-    with database.begin() as conn:
-        # A paused direct call never reaches the schema-mutating writer.
-        assert conn.execute(text("SELECT to_regclass('vera_auto_check_event')")).scalar() is None
-        conn.execute(text("""UPDATE vera_app_setting SET value_json='{"status":"RUNNING"}'::jsonb
-            WHERE category='auto_check' AND setting_key='config'"""))
+    # Even with Auto Check paused, verified returns commit once immediately.
     assert ts.process_break_return_penalties(database, catalog) == {
         'eligible': 1, 'added': 1, 'skipped': 0, 'errors': 0}
     assert ts.process_break_return_penalties(database, catalog) == {

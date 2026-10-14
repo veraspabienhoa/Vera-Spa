@@ -1,7 +1,7 @@
 """Archive one complete FaceGate Control Log day in VERA PostgreSQL.
 
-Default: read-only preview. --apply saves raw evidence only, never payroll,
-attendance projections, employee mappings, photos or device enrollment.
+Default: read-only preview. --apply archives evidence, then immediately evaluates
+verified attendance with the selected source. Never edits payroll, mappings or devices.
 """
 import argparse
 from datetime import date, datetime, timezone
@@ -209,6 +209,17 @@ def sync_day(engine, day, *, apply=False, fetch=None):
             if prior is not None and prior > len(batch):
                 raise SyncError('device_day_count_decreased')
             result.update(persist_batch(conn, device_id, day, batch))
+    if apply:
+        # Raw evidence has committed and the archive lock/connection is released.
+        # Reconcile now for both manual downloads and scheduled captures.
+        from vera_facegate_auto_sync import reconcile_day
+        import io
+        from contextlib import redirect_stdout
+        try:
+            with redirect_stdout(io.StringIO()):
+                result['reconciliation_failures'] = reconcile_day(date.fromisoformat(day), engine=engine)
+        except Exception as exc:
+            result['reconciliation_failures'] = [{'date': day, 'stage': 'reconciliation', 'reason': type(exc).__name__}]
     return result
 
 

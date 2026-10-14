@@ -232,7 +232,7 @@ function AutoCheckContent({ user }) {
     <StableFeedback>{error && <div className="error-box">{error}</div>}
     {latestRunFailed && <div className="error-box">Lần chạy Auto Check gần nhất gặp lỗi{latestRunError ? `: ${latestRunError}` : '.'}</div>}</StableFeedback>
     <div className="auto-check-grid">
-      <div data-ui-key="u-e9f00f13cab7" className="auto-check-card"><span>Cấu hình Auto Check</span><strong className={connected && cfg.status !== 'PAUSED' ? '' : 'auto-check-paused'}>{!connected ? 'Chưa kết nối' : cfg.status === 'PAUSED' ? 'Tạm dừng' : 'Đã bật'}</strong><small>Trạng thái cấu hình không xác nhận kết quả ghi phạt.</small></div>
+      <div data-ui-key="u-e9f00f13cab7" className="auto-check-card"><span>Cấu hình Auto Check</span><strong className={connected && cfg.status !== 'PAUSED' ? '' : 'auto-check-paused'}>{!connected ? 'Chưa kết nối' : cfg.status === 'PAUSED' ? 'Tạm dừng' : 'Đã bật'}</strong><small>Tạm dừng Auto Check không dừng phạt từ dữ liệu chấm công hợp lệ.</small></div>
       <div data-ui-key="u-099084b7b354" className="auto-check-card"><span>Đi trễ đầu ca · Face ID</span><strong>{connected ? 'Ghi phạt ngay' : '—'}</strong><small>Khi có check-in hợp lệ sau giờ ca, áp dụng nội quy đang bật; loại trừ Giám đốc, Admin, Quản lý và Support.</small></div>
       <div data-ui-key="u-cf373f87b595" className="auto-check-card"><span>Lịch kiểm tra chuẩn</span><strong>{connected ? (cfg.schedule_hours || [15,20,21]).map(x => `${x}:00`).join(' · ') : '—'}</strong></div>
     </div>

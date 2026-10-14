@@ -18,6 +18,7 @@ from test_live_tour_resource_postgres import database
 def catalog():
     rows = [dict(name=name, type='Vi phạm', days=0, penalty=25000*(i+1))
             for i, name in enumerate(auto.ARRIVAL_BAND_REASONS)]
+    rows.append(dict(name='Đi trễ KHÔNG phép', type='Không phép', days=0, penalty=300000))
     rows.append(dict(name=auto.CLEANING_CA1_REASON, type='Vi phạm', days=0, penalty=100000))
     return {auto._norm(row['name']): row for row in rows}
 

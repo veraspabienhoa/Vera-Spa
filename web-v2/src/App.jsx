@@ -25,7 +25,7 @@ import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera
 
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['online-bookings', 'system', 'hr', 'leave', 'schedule', 'long-leave', 'employees', 'contract-1', 'rules', 'hc-rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['online-bookings', 'system', 'hr', 'leave', 'schedule', 'long-leave', 'residence', 'employees', 'contract-1', 'rules', 'hc-rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -55,6 +55,7 @@ const PurchasePage = lazyPage(() => import('./pages/PurchasePage'))
 
 const LeaveRegistrationPage = lazyPage(() => import('./pages/LeaveRegistrationPage'))
 const HumanResourcesPage = lazyPage(() => import('./pages/HumanResourcesPage'))
+const ResidencePage = lazyPage(() => import('./pages/ResidencePage'))
 const EmployeePage = lazyPage(() => import('./pages/EmployeePage'))
 const HcRulesPage = lazyPage(() => import('./pages/HcRulesPage'))
 const RulesPage = lazyPage(() => import('./pages/RulesPage'))
@@ -85,7 +86,7 @@ const TrainingPage = lazyPage(() => import('./pages/TrainingPage'))
 const pageModules = {
   'online-bookings': OnlineBookingPage,
   leave: LeaveRegistrationPage, schedule: WorkSchedulePage, 'long-leave': LongLeaveSection,
-  employees: EmployeePage, 'contract-1': ContractPage, rules: RulesPage, 'hc-rules': HcRulesPage, profile: ProfilePage,
+  residence: ResidencePage, employees: EmployeePage, 'contract-1': ContractPage, rules: RulesPage, 'hc-rules': HcRulesPage, profile: ProfilePage,
   hr: HumanResourcesPage, payroll: PayrollPage, 'department-payroll': DepartmentPayrollPanel,
   'payroll-config': DepartmentPayrollSettingsPage, revenue: RevenuePage, purchases: PurchasePage,
   training: TrainingPage, snapshot: AttendancePage, devices: DevicePage, 'checkin-history': AttendancePage,
@@ -278,6 +279,7 @@ export default function App() {
             <LongLeaveAdminPanel user={shellUser} onChanged={() => setLongLeaveRevision((value) => value + 1)} />
             <LongLeaveSection refreshRevision={longLeaveRevision} user={shellUser} />
         </>}
+        {page === 'residence' && <ResidencePage user={shellUser} />}
         {page === 'employees' && <><EmployeePage user={shellUser} registerNavigationGuard={registerEmployeeNavigation} /><EmployeeManagementEnhancements user={shellUser} /><EmployeeExactSearch /></>}
         {page === 'contract-1' && <ContractPage user={shellUser} />}
         {(page === 'rules' || page === 'hc-rules') && <RulesTabs initialTab={page === 'hc-rules' ? 'administrative' : 'ktv'} administrative={<HcRulesPage user={shellUser} />} ktv={<RulesPage user={shellUser} />} />}

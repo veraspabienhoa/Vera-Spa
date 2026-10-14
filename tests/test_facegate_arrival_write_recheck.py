@@ -65,7 +65,7 @@ def test_arrival_rechecks_same_write_connection_and_defers_changed_basis(monkeyp
     name = 'Đi trễ nhỏ hơn hoặc bằng 30 phút'
     result = job.process_timesoft_penalties(SimpleNamespace(begin=begin), {'threshold_minutes': 5}, {job._employee_key('Synthetic Employee'): 'Synthetic Employee'},
         {job._norm(name): {'name': name, 'penalty': 100}}, [(DAY, pd.DataFrame([row]))])
-    assert len(writes) == result['added'] == int(change == 'none')
+    assert len(writes) == result['added'] == int(change in {'none', 'pause'})
     assert all(c is conn for c, _ in writes)
     assert all(kw['reason_item']['name'] == name and kw['reason_item']['penalty'] == 100 for _, kw in writes)
     assert result['errors'] == 0

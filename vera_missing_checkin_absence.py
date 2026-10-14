@@ -132,8 +132,6 @@ def process(conn, *, now=None, work_date=None, employee_names=None):
     policy = load_policy(conn)
     if not policy['enabled']:
         return {**result, 'reason': 'disabled'}
-    if auto_check.load_config(conn)['status'] == 'PAUSED':
-        return {**result, 'reason': 'auto_penalty_paused'}
     data = fg.project_evidence(conn, day, day)
     result['evidence'] = evidence_diagnostics(data, day, day, now=now)
     if (not data['rows'] or future_evidence(data, now) or not archive_complete(data, day, before=archive_sync(data, day))

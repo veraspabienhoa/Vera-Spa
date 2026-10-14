@@ -314,14 +314,10 @@ def _apply_restrictions_and_penalties(
             output.append(item)
             continue
 
-        # Freshness and pause gate financial work only; historical/restricted
+        # Evidence freshness gates financial work only; historical/restricted
         # leave annotations and final-checkout recognition above remain intact.
         if (item.get('evidence_source') == 'facegate'
                 and item.get('attendance_fine_evidence_ready') is not True):
-            output.append(item)
-            continue
-        if auto_check.penalties_paused(conn):
-            item['break_auto_penalty_status'] = 'PAUSED'
             output.append(item)
             continue
         if catalog is None:
