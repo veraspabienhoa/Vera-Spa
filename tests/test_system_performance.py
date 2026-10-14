@@ -84,9 +84,16 @@ def test_combined_calculation_reads_period_inputs_once(monkeypatch):
         'department_label': dep, 'config': payroll.DEFAULT_CONFIG.get(dep, payroll.DEFAULT_CONFIG['support'])})
     monkeypatch.setattr(payroll.hr, 'admin_departments', lambda conn: {'letan': {}, 'locker': {}, 'support': {}})
     monkeypatch.setattr(payroll.payroll, '_setting', lambda *args: [])
-    result = payroll._combined_calculation(Connection(), '2026-09', queries.normalize, 'schedule')
+    connection = Connection()
+    attendance_calls = []
+    def attendance_records(conn, start, end):
+        attendance_calls.append((conn, start, end))
+        return []
+    monkeypatch.setattr(payroll.attendance, '_records', attendance_records)
+    result = payroll._combined_calculation(connection, '2026-09', queries.normalize, 'schedule')
     assert len(result['rows']) == 3
     assert len(calls) == 2 and config_calls == [1] and penalty_calls == [1]
+    assert attendance_calls == [(connection, date(2026, 9, 1), date(2026, 9, 30))]
 
 
 @pytest.mark.parametrize('component', ['schedule', 'booking', 'training', 'identity'])

@@ -711,9 +711,62 @@ def _late_event_key(events):
              "approved": e["approved"], "basis": e["basis"], "issue": e.get("issue")} for e in sorted(events, key=lambda item: (item["day"], str(item["event_id"])))]
 
 
+def _schedule_late_wage_events(row, events, records, schedules, definitions, norm):
+    """Calculation-only wage exclusions; never create or alter penalty records."""
+    covered = {event['day'] for event in events}
+    planned = {item['work_date']: item for item in schedules}
+    output = []
+    for actual in records:
+        if norm(actual.get('employee_name')) != norm(row.get('employee_username')):
+            continue
+        try:
+            day = datetime.strptime(str(actual.get('date') or ''), '%d/%m/%Y').date()
+        except ValueError:
+            continue
+        if day.isoformat() in covered or day not in planned:
+            continue
+        periods = _planned_intervals(planned[day], day, row['department'], definitions, norm)
+        _, arrival, departure = _interval_minutes(actual, day)
+        if not periods or not arrival:
+            continue  # Schedule pay does not require a scan or a checkout.
+        start = min(p[0] for p in periods)
+        if arrival < start and start.hour >= 12 and arrival.hour < 12 and (departure is None or departure <= start):
+            arrival += timedelta(days=1)
+        if arrival <= start:
+            continue
+        # Union scheduled intervals so overlapping overtime cannot be deducted twice.
+        edges = sorted({t for a, b, _ in periods for t in (a, b)} | {arrival})
+        segments = []
+        for a, b in zip(edges, edges[1:]):
+            if b <= arrival and any(left <= a and b <= right for left, right, _ in periods):
+                segments.append({'start': a.replace(tzinfo=VN_TZ).isoformat(),
+                                 'end': b.replace(tzinfo=VN_TZ).isoformat()})
+        if not segments:
+            continue
+        event_id = 'schedule-arrival-' + day.isoformat()
+        event = {'event_id': event_id, 'day': day.isoformat(), 'amount': 0,
+                 'approved': True, 'wage_only': True,
+                 'basis': {'start': start.replace(tzinfo=VN_TZ).isoformat(),
+                           'end': arrival.replace(tzinfo=VN_TZ).isoformat(),
+                           'wage_segments': segments}}
+        pending_reasons = actual.get('attendance_pending_reasons')
+        # Historical payroll needs complete archived evidence, not the live
+        # five-minute freshness requirement used for issuing a new fine.
+        if (actual.get('identity_verified') is not True
+                or not isinstance(pending_reasons, list)
+                or set(pending_reasons) - {'missing_check_out', 'shift_still_open'}
+                or actual.get('attendance_evidence_issues')):
+            event['issue'] = f'unverified_late_event:{event_id}'
+        output.append(event)
+        covered.add(day.isoformat())
+    return output
+
+
 def _late_payroll_adjustment(row, cfg, source, events, records, schedules, definitions, norm):
     """Lateness stays unpaid; offset only that same verified event's wage loss."""
     result = dict(row)
+    if source == 'schedule':
+        events = [*events, *_schedule_late_wage_events(row, events, records, schedules, definitions, norm)]
     result["unadjusted_time"] = {key: row.get(key, 0) for key in TIME_FIELDS}
     result["unadjusted_time_basis"] = dict(row.get("payroll_time_basis") or {key: str(row.get(key) or 0) for key in TIME_FIELDS})
     result.update(late_penalty_credit=0, late_penalty_surcharge=0, hc_late_original_penalty=0,
@@ -1074,9 +1127,9 @@ def _schedule_calculation(conn, department: str, month: str, norm: Callable[[Any
     context = _calculation_inputs(conn, start, end, norm, "schedule", {} if context is None else context)
     employee_configs = context["employee_configs"]
     employees = participation.eligible(_employees(conn, department) if employees is None else employees, start, end, key='username', administrative_payroll=True)
-    if any(context["late_events"].get(norm(employee["username"])) for employee in employees):
-        # Schedule pay still verifies the same late event against current scans,
-        # but a missing checkout does not change its independently selected source.
+    if employees:
+        # Verified late arrivals reduce scheduled wages even without a fine.
+        # Reuse the request's caller-owned connection and source cache.
         _calculation_inputs(conn, start, end, norm, "attendance", context)
         _calculation_inputs(conn, start, end, norm, "schedule", context)
     definitions = context["definitions"]
