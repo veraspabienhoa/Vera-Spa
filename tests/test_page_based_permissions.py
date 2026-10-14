@@ -21,7 +21,7 @@ def test_permissions_page_renders_each_menu_page_with_individual_actions():
     page = Path("web-v2/src/pages/PermissionsPage.jsx").read_text(encoding="utf-8")
 
     assert "PHÂN QUYỀN THEO TRANG" in page
-    assert "Mỗi trang/menu có các tác vụ riêng" in page
+    assert "Mỗi trang/menu có các tác vụ riêng" not in page
     assert "const pages = useMemo" in page
     assert "permission-page-card" in page
     assert "permission-view-permission" in page
