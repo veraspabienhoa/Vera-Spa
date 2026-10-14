@@ -1303,12 +1303,12 @@ def _confirmed_break_return_records(engine, work_date: date, *, conn=None) -> li
     return records
 
 
-def process_break_return_penalties(engine, catalog: dict) -> dict:
+def process_break_return_penalties(engine, catalog: dict, *, work_date=None, employee_names=None) -> dict:
     """Project and write on one connection, isolating each best-effort penalty."""
     from vera_web_v2_break_return_penalty import confirmed_break_return_fact
 
     result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
-    today = datetime.now(VN_TZ).date()
+    today = work_date or datetime.now(VN_TZ).date()
     committed_logs = []
     try:
         with engine.begin() as conn:
@@ -1318,6 +1318,8 @@ def process_break_return_penalties(engine, catalog: dict) -> dict:
             # rather than releasing its connection and later writing stale facts.
             records = _confirmed_break_return_records(engine, today, conn=conn)
             for item in records:
+                if employee_names is not None and item.get('employee_name') not in employee_names:
+                    continue
                 fact = confirmed_break_return_fact(item, today)
                 if fact is None:
                     continue

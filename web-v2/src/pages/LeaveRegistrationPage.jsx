@@ -568,13 +568,13 @@ export default function LeaveRegistrationPage({ user }) {
     setManaging(true)
     setListActionNotice(null)
     try {
-      await veraApi.deleteLeaves(deletableSelectedUids)
+      const result = await veraApi.deleteLeaves(deletableSelectedUids)
       await latestLoad.current({ afterSave: true })
       await refreshWatchDates()
       setListActionNotice({
         action: 'delete',
         status: 'success',
-        message: `Đã xóa ${deletedCount} lịch nghỉ đã chọn.`,
+        message: result?.message || `Đã xóa ${deletedCount} lịch nghỉ đã chọn.`,
       })
     } catch (err) {
       setListActionNotice({

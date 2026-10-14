@@ -49,6 +49,10 @@ def _remove_route(app, path: str, method: str):
 
 def _ensure_schema(engine_instance: Callable[[], Any]) -> None:
     with engine_instance().begin() as conn:
+        from vera_postgres_job_queue import ensure_schema_conn
+        from vera_auto_check import ensure_schema
+        ensure_schema_conn(conn)
+        ensure_schema(conn)
         resource_concurrency.ensure_schema(conn)
         conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS {QUEUE_TABLE} (
@@ -260,7 +264,9 @@ def _lease_current(engine_instance, item) -> bool:
 def _worker_loop(stop, *, engine_instance, api_module) -> None:
     while not stop.is_set():
         try:
-            if not _process_one(engine_instance=engine_instance, api_module=api_module):
+            from vera_leave_penalty_recheck import process_one
+            rechecked = process_one(engine_instance)
+            if not _process_one(engine_instance=engine_instance, api_module=api_module) and not rechecked:
                 stop.wait(3)
             else:
                 # A busy queue still reports progress and honors graceful stop.

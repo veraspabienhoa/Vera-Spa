@@ -2792,6 +2792,8 @@ def _delete_leave_uids(record_uids: list[str], ident: Identity):
         for target, keys in affected.items():
             rebalanced.extend(_rebalance_progressive_rows(conn, target, keys))
         deleted_count = len(rows)
+        from vera_leave_penalty_recheck import enqueue_deleted
+        recheck_queued = enqueue_deleted(conn, rows, manual_sheet_id=LEAVE_SHEET_ID)
         # PostgreSQL/record_uid is canonical. A historical Auto Check row may
         # legitimately have no MainData source_row when its optional mirror
         # failed. Commit the deletion first instead of blocking or resurrecting it.
@@ -2831,11 +2833,14 @@ def _delete_leave_uids(record_uids: list[str], ident: Identity):
             mirror_pending = True
     conn.close()
     message = f"Đã xóa {deleted_count} bản ghi THÀNH CÔNG."
+    if recheck_queued:
+        message += " Hệ thống đang kiểm tra lại chấm công để ghi nhận vi phạm tự động."
     if mirror_pending:
         message += " PostgreSQL đã cập nhật; MainData đang chờ đồng bộ lại."
     return {
         "ok": True,
         "deleted": deleted_count,
+        "penalty_recheck_queued": recheck_queued,
         "mirror_pending": mirror_pending,
         "message": message,
     }
