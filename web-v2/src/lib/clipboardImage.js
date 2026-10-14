@@ -55,13 +55,22 @@ export async function employeeChartPng(element, { scale = 2, background = '#ffff
   ctx.scale(ratio, ratio); ctx.fillStyle = background; ctx.fillRect(0, 0, width, height)
   ctx.fillStyle = '#173d2f'; ctx.font = 'bold 24px sans-serif'
   ctx.fillText(element.querySelector('h4')?.textContent || 'Báo cáo theo nhân viên', 24, 38)
-  ctx.font = '17px sans-serif'
+  ctx.font = 'bold 15px sans-serif'
+  if (rows.length) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('STT', 44, 60)
+    ctx.textAlign = 'left'; ctx.fillText('Nhân viên', 80, 60)
+  }
+  ctx.textBaseline = 'alphabetic'; ctx.font = '17px sans-serif'
   if (!rows.length) ctx.fillText('Không có dữ liệu phù hợp bộ lọc.', 24, 92)
   rows.forEach((row, index) => {
     const y = 82 + index * rowHeight
     const name = row.querySelector('.employee-revenue-chart-name')?.textContent || ''
     const percent = Math.max(0, Math.min(100, parseFloat(row.querySelector('i')?.style.width) || 0))
-    ctx.fillStyle = '#173d2f'; ctx.fillText(name, 24, y + 5, 280)
+    ctx.fillStyle = '#173d2f'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(String(index + 1), 44, y - 2, 40)
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
+    ctx.fillText(name, 80, y + 5, 224)
     ctx.fillStyle = '#e6eee9'; ctx.fillRect(320, y - 14, 620, 24)
     ctx.fillStyle = '#205540'; ctx.fillRect(320, y - 14, 620 * percent / 100, 24)
     const value = row.querySelector('strong:not([data-snapshot-ignore])')

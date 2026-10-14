@@ -50,7 +50,9 @@ function RevenueBars({
       </UiToolbar>
     </div>
     <div className="employee-revenue-chart-list">
-      {sortedItems.map(item => <div className="employee-revenue-chart-row" key={item.employee}>
+      {sortedItems.length > 0 && <div className="employee-revenue-chart-columns"><span className="employee-revenue-chart-index">STT</span><span>Nhân viên</span></div>}
+      {sortedItems.map((item, index) => <div className="employee-revenue-chart-row" key={item.employee}>
+        <span className="employee-revenue-chart-index">{index + 1}</span>
         <span className="employee-revenue-chart-name">{item.employee}</span>
         <span className="employee-revenue-chart-track"><i style={{ width: `${Math.max(0, Number(item[valueKey] || 0)) / max * 100}%` }}/></span>
         <strong data-snapshot-ignore={hideValuesInSnapshot ? true : undefined}>{valueFormatter(item[valueKey])}</strong>
