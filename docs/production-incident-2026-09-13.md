@@ -2818,3 +2818,32 @@ Remove the requested explanatory copy from the permission page. No permissions,
 production policy catalog, attendance archives or saved payroll were changed.
 Focused local regressions pass; PostgreSQL, full CI and deployment verification
 are still pending at the time of this source update.
+
+## 14-10-2026 — Recheck after deletion of manual leave
+
+The operator supplied a screenshot of Ngọc Như's manually entered Đi trễ KHÔNG
+phép row (14-10-2026, 300,000 VND) and an export with a mapped 10:41:15 scan.
+These attachments do not by themselves verify the deployed shift, archive
+freshness or final penalty amount. The operator will delete the manual row;
+no production record has been deleted by this code change.
+
+The canonical checked/locked delete now enqueues one durable employee/day job
+per manual source UID in the same transaction. Rollback leaves no job. Auto Check
+source rows, automatic mirror actors and rows linked to automatic event history
+are excluded; no automatic event is reset or erased. Reuse the existing supervised
+leave worker and generic PostgreSQL queue with startup preparation and fenced
+claims. Pending evidence/paused rules remain queued for retry.
+
+The worker uses verified FaceGate evidence and the VERA shift for the deleted
+date, targeting only that employee. Arrival (including Ca 1 cleaning), confirmed
+break-return and missing-check-in rules retain their current policy and duplicate
+checks. Optional date/name arguments leave normal scheduled scope unchanged.
+Historical evaluation is limited to the explicitly deleted day and still needs
+fresh complete verified captures, not guessed scans or a fabricated historical
+clock. Future dates cannot generate a violation. Checks and financial writes use
+one caller connection and savepoints under absence-before-leave lock order.
+Outbox delivery remains outside the transaction. UI acknowledges queued recheck.
+
+Focused regressions cover manual/automatic classification, targeted rule scope,
+queue rollback/deduplication, pending evidence, financial rollback and lease
+completion. CI PostgreSQL and production deployment remain pending.
