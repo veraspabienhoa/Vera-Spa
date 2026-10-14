@@ -10,7 +10,7 @@ from vera_read_cache import ReadCache, json_default
 
 MONTH_ROWS = text('''
     SELECT record_uid,leave_date,weekday_label,employee_name,leave_reason,
-           leave_type,detail,penalty,updated_by,updated_at
+           leave_type,detail,penalty,updated_by,updated_at,created_at
     FROM leave_records
     WHERE leave_date >= :start AND leave_date < :stop
       AND EXISTS (SELECT 1 FROM employees e
