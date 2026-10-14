@@ -62,8 +62,11 @@ def test_roster_membership_profile_refresh_export_and_authorization(database):
     assert load_workbook(BytesIO(exported.content)).active.max_row == 1
     allowed.remove('residence_manage')
     assert client.put('/v2/residence', json={'username':'Test','included':False}).status_code == 403
+    assert client.get('/v2/residence/export?format=pdf').content.startswith(b'%PDF')
+    assert client.get('/v2/residence/export?format=bad').status_code == 422
     allowed.remove('residence_export')
     assert client.get('/v2/residence/export.xlsx').status_code == 403
+    assert client.get('/v2/residence/export?format=png').status_code == 403
     allowed.add('residence_manage')
     assert client.put('/v2/residence', json={'username':'Test','included':False}).status_code == 200
     assert client.get('/v2/residence').json()['records'] == []
@@ -72,3 +75,31 @@ def test_roster_membership_profile_refresh_export_and_authorization(database):
         assert payload['Số CCCD'] == '001234567890'
     allowed.clear()
     assert client.get('/v2/residence').status_code == 403
+
+
+def test_admin_only_defaults_keep_explicit_grants_available():
+    from vera_web_v2_permissions import DEFAULT_ROLE_FEATURES, FEATURES, permission_closure
+    for role, features in DEFAULT_ROLE_FEATURES.items():
+        assert ('residence_view' in features) == (role == 'admin')
+    assert 'residence_export' in FEATURES
+    assert 'residence_view' in permission_closure({'residence_export'})
+
+
+def test_residence_pdf_png_all_fields_and_long_values():
+    from vera_web_v2_residence_export import render_residence
+    from io import BytesIO
+    from PIL import Image
+    from pypdf import PdfReader
+    row = {key: f'VALUE_{index}' for index, (key, _) in enumerate(residence.COLUMNS)}
+    row['bank_account'] = 'SECRET_BANK'
+    row['address'] = 'Địa chỉ rất dài ' * 150
+    pdf = render_residence([row], residence.COLUMNS, 'pdf')
+    reader = PdfReader(BytesIO(pdf))
+    text = '\n'.join(page.extract_text() for page in reader.pages)
+    for index, (key, _) in enumerate(residence.COLUMNS):
+        if key != 'address': assert f'VALUE_{index}' in text
+    assert 'SECRET_BANK' not in text
+    assert reader.metadata.title == 'VERA SPA - Danh sách tạm trú'
+    png = render_residence([row], residence.COLUMNS, 'png')
+    image = Image.open(BytesIO(png))
+    assert image.width > 1000 and image.height > 1000

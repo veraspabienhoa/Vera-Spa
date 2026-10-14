@@ -3,7 +3,7 @@ from datetime import datetime
 from io import BytesIO
 
 from fastapi import Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from pydantic import BaseModel, Field
@@ -152,3 +152,24 @@ def install_residence_routes(app, *, engine_instance, current_identity, require_
         return StreamingResponse(workbook(records),
             media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             headers={'Content-Disposition': 'attachment; filename="VERA_TamTru.xlsx"'})
+
+    @app.get('/v2/residence/export')
+    def export_document(format: str = 'pdf', department: str = '', search: str = '',
+                        ident: identity_type = Depends(current_identity)):
+        from vera_web_v2_residence_export import render_residence
+        from vera_web_v2_training_report_export import ReportExportTooLarge, ReportExportUnavailable
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, 'residence_view')
+            require_feature(conn, ident, 'residence_export')
+            if format not in {'pdf', 'png'}:
+                raise HTTPException(422, 'Chọn định dạng PDF hoặc PNG.')
+            records = filtered(rows(conn, ident), department, search)
+        try:
+            content = render_residence(records, COLUMNS, format)
+        except ReportExportTooLarge:
+            raise HTTPException(413, 'Ảnh quá lớn. Hãy lọc theo bộ phận hoặc tải PDF.')
+        except ReportExportUnavailable as exc:
+            raise HTTPException(503, str(exc))
+        return Response(content, media_type='application/pdf' if format == 'pdf' else 'image/png',
+                        headers={'Content-Disposition': f'inline; filename="VERA_TamTru.{format}"',
+                                 'Cache-Control': 'no-store'})

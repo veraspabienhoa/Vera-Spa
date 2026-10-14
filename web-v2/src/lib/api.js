@@ -213,6 +213,12 @@ function liveTourExportParams(kind, query = {}) {
 
 export const veraApi = {
   residence: () => request('/v2/residence'),
+  readResidenceExport: async (format, filters = {}, options = {}) => {
+    const response = await binaryResponse(`/v2/residence/export?${new URLSearchParams({ ...filters, format })}`, options)
+    const blob = await response.blob()
+    options.signal?.throwIfAborted()
+    return { blob, filename: `VERA_TamTru.${format}` }
+  },
   saveResidence: body => request('/v2/residence', { method: 'PUT', body: JSON.stringify(body) }),
   exportResidence: params => download(`/v2/residence/export.xlsx?${new URLSearchParams(params)}`, 'VERA_TamTru.xlsx'),
   createOnlineBooking: body => request('/v2/online-bookings', { method: 'POST', body: JSON.stringify(body) }),

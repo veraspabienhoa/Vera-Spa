@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
+import './TrainingReportFiles.css'
 import { trainingReportFilename } from '../lib/trainingReport'
 
 const types = { pdf: 'application/pdf', png: 'image/png' }
@@ -10,7 +11,9 @@ function useReportFile(scope, format, onDenied) {
   useEffect(() => {
     const controller = new AbortController(); let active = true, url
     setResult(null)
-    const request = scope.kind === 'performance'
+    const request = scope.kind === 'residence'
+      ? veraApi.readResidenceExport(format, scope.filters, { signal: controller.signal })
+      : scope.kind === 'performance'
       ? veraApi.readPerformanceReportExport(format, scope.filters, { signal: controller.signal })
       : scope.kind === 'overview'
       ? veraApi.readTrainingOverviewExport(format, scope.filters || {}, { signal: controller.signal })
@@ -45,13 +48,13 @@ export default function TrainingReportFiles({ scope, onDenied, onSharingChange }
     const fail = error => { if (current === session.current && error?.name !== 'AbortError') setFeedback({ error: true, text: `Không mở được chia sẻ ${format.toUpperCase()}. Bạn có thể tải file để gửi.` }) }
     try {
       // Prepared files keep native sharing inside the original user click.
-      Promise.resolve(navigator.share({ files: [report.file], title: scope.kind === 'performance' ? 'Thời gian thực hiện · VERA SPA' : 'Báo cáo đào tạo · VERA SPA' })).then(() => {
+      Promise.resolve(navigator.share({ files: [report.file], title: scope.kind === 'residence' ? 'Tạm trú · VERA SPA' : scope.kind === 'performance' ? 'Thời gian thực hiện · VERA SPA' : 'Báo cáo đào tạo · VERA SPA' })).then(() => {
         if (current === session.current) setFeedback({ text: 'Đã chuyển file sang ứng dụng chia sẻ.' })
       }).catch(fail).finally(finish)
     } catch (error) { fail(error); finish() }
   }
   return <section className="training-report-files" aria-label="Xem, tải và chia sẻ báo cáo">
-    <p>{scope.kind === 'performance' ? 'Toàn bộ dịch vụ khớp bộ lọc đang xem.' : scope.kind === 'overview' ? 'Toàn bộ nhân viên theo khoảng ngày đã chọn. Tổng giờ cộng từ các buổi đào tạo; danh sách chưa đào tạo chỉ gồm bộ phận nhanvien.' : 'Toàn bộ dữ liệu theo nhân viên và khoảng ngày đang xem.'} PDF khổ A4 có lề; PNG là ảnh toàn bộ báo cáo.</p>
+    <p>{scope.kind === 'residence' ? 'Danh sách tạm trú theo bộ lọc đang chọn.' : scope.kind === 'performance' ? 'Toàn bộ dịch vụ khớp bộ lọc đang xem.' : scope.kind === 'overview' ? 'Toàn bộ nhân viên theo khoảng ngày đã chọn. Tổng giờ cộng từ các buổi đào tạo; danh sách chưa đào tạo chỉ gồm bộ phận nhanvien.' : 'Toàn bộ dữ liệu theo nhân viên và khoảng ngày đang xem.'} PDF khổ A4 có lề; PNG là ảnh toàn bộ báo cáo.</p>
     {['overview', 'performance'].includes(scope.kind) && <p>Chọn Zalo trong bảng chia sẻ của thiết bị. Nếu không có Zalo hoặc trình duyệt không hỗ trợ chia sẻ file, hãy tải PDF/PNG rồi đính kèm trong Zalo.</p>}
     {feedback && <p role={feedback.error ? 'alert' : 'status'} className={feedback.error ? 'error-box' : ''}>{feedback.text}</p>}
     {[['pdf',pdf],['png',png]].map(([format,report]) => <div className="training-report-file" key={format}>

@@ -39,12 +39,6 @@
 .training-report-heading h2{margin:5px 0}
 .training-report-heading p{margin:6px 0}
 .training-report-heading>button{flex:0 0 auto;min-height:44px;min-width:44px}
-.training-report-files{display:grid;gap:10px;padding:14px;background:#f3f8f5;border:1px solid #b8cbbf;border-radius:12px}
-.training-report-file{display:grid;gap:8px;min-width:0}
-.training-report-files p{margin:0;overflow-wrap:anywhere}
-.training-report-file-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0}
-.training-report-file-actions :is(a,button){display:flex;align-items:center;justify-content:center;min-height:44px;text-decoration:none}
-.training-report-file-actions small{flex-basis:100%;overflow-wrap:anywhere}
 .training-report-export-control{display:flex;flex-wrap:wrap}
 .training-report-body .training-card{min-width:0}
 .training-report-body .training-radar svg{max-height:280px}
@@ -56,7 +50,6 @@
 .training-overview-action{display:flex;justify-content:flex-end;margin:0 0 14px;min-width:0}
 .training-overview-action button{display:flex;align-items:center;justify-content:center;gap:8px;white-space:normal;max-width:100%}
 @media(max-width:640px){.training-overview-action button{width:100%}}
-.training-report-file-actions :is(a,button){white-space:normal;min-width:0;max-width:100%;overflow-wrap:anywhere;text-align:center}
 @media(max-width:600px){.training-report-file-actions .primary-button{grid-column:1/-1}}
 
 .training-employee-roster > .training-progress-filters{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.3fr);align-items:end}

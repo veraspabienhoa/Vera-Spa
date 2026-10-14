@@ -2885,3 +2885,22 @@ Local tests exercise immediate post-commit execution, pause independence, exact
 120-minute boundaries, unchanged stale/ambiguous evidence guards, roster filters,
 modal cancellation, and workbook identity/bank exclusion. Real PostgreSQL roster
 CRUD, permission denial, fresh-profile reads and idempotent fines run in CI.
+
+
+## 14-10-2026 — Residence exports and default access; historical audit incomplete
+
+Source: remove residence features from non-Admin default role sets while retaining
+explicit role/account grants and all three page actions. PDF/PNG reads enforce
+view plus export permissions and project the same bank-free roster and filters as
+Excel. Rendering happens after releasing the read connection. Paginated tables
+retain every field and wrap long identifiers; PNG allocation is bounded, with PDF
+or department filtering offered for oversized images. Reuse prepared-file native
+sharing, abort/URL cleanup and shared employee search/buttons.
+
+Production read-only observation: the October attendance UI returned 1,829 rows
+for 01–31 October (including unworked future days). Several Ca 1 rows through
+14 October showed lateness. These alone do not establish missing cleaning fines:
+registered leave, support adjustments, existing fines and prior reversals must
+also be checked. The browser failed under credential protection during the
+leave-list comparison. No historical fine was added, no complete audit result is
+claimed, and no deployment of these source changes has been verified.

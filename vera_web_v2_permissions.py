@@ -83,7 +83,7 @@ FEATURE_GROUPS: dict[str, dict[str, str]] = {
         "long_leave_end": "Kết thúc nghỉ", "long_leave_delete": "Xóa bản ghi",
         "long_leave_export": "Export đơn",
     },
-    "Tạm trú": {"residence_view": "Xem bảng tạm trú", "residence_manage": "Thêm / bỏ nhân viên tạm trú", "residence_export": "Xuất Excel tạm trú"},
+    "Tạm trú": {"residence_view": "Xem bảng tạm trú", "residence_manage": "Thêm / bỏ nhân viên tạm trú", "residence_export": "Xuất / chia sẻ Excel, PNG, PDF tạm trú"},
     "Nhân viên": {
         "employee_face_id_view": "Xem ẢNH FACE ID", "employee_face_id_manage": "Quản lý ẢNH FACE ID",
         "employee_face_id_all_users_edit": "Thêm mới, chỉnh sửa Face ID của tất cả tài khoản",
@@ -497,7 +497,6 @@ def dependent_features(feature: str) -> set[str]:
     return output
 
 FRONTDESK = {
-    "residence_view", "residence_manage", "residence_export",
     "device_view", "device_photo_delete",
     "tour", "tour_refresh", "tour_leave_sync", "leave", "leave_manage", "leave_create", "leave_export", "leave_email", "leave_detail_edit", "leave_detail_delete",
     "live_tour_view", "live_tour_operate", "live_tour_reorder", "live_tour_payment", "live_tour_export",
