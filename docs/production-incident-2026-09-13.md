@@ -2769,3 +2769,28 @@ does not acquire an extra start bypass. No attendance, leave or shift is changed
 The frontend uses the corresponding capability and time window for opening
 booking and employee suggestions. Non-admin grants default off. This is a source
 change pending CI, deployment and verification on the actual overnight runtime.
+
+
+## 14-10-2026 — Schedule payroll excludes verified late time without a fine
+
+Read-only production checks found that FaceGate authentication responded and the
+13–14 October evidence status was fresh with no blockers at 09:46 Vietnam time.
+This does not establish that older payroll evidence is complete. Administrative
+payroll also reported three zero-duration management shifts; the operator
+confirmed their intended end time, and those three schedule entries were corrected
+through the normal UI. Recalculation cleared that employee's shift blocker.
+
+Code inspection found schedule-based late wage exclusion was conditional on a
+linked multiplier HC penalty event. Schedule calculations now read arrivals once
+per request through the existing caller-owned connection and exclude verified
+late intervals even when no matching fine exists. These calculation-only entries
+have zero penalty and never write penalty events, notifications or raw scans.
+Linked late events retain their existing credit rules and reserve their day to
+prevent double deduction. Missing scans or checkout do not switch schedule pay
+to attendance pay. Known late arrivals with unverified identity, incomplete
+archive or evidence conflicts remain pending. Historical archives do not require
+live-cache freshness. Saving revalidates against current server evidence.
+
+Validation: 90 payroll regressions plus 16 connection-reuse, auth-pool,
+notification and VPS diagnostic regressions passed locally. Deployment and
+verification of this new code on production remain outstanding.
