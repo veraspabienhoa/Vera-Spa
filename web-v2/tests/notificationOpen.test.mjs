@@ -30,3 +30,35 @@ test('Admin explicitly marks viewed and the row disappears without showing VERA 
  dom.window.document.querySelector('.notification-entry .notification-viewed').click();await tick();
  assert.equal(read,7);assert.equal(dom.window.document.querySelector('.notification-entry'),null);dom.window.close();
 })
+
+for (const outcome of ['success', 'rejected', 'null']) test(`existing lock-screen client navigation ${outcome}`, async () => {
+ const handlers = {}, calls = []; let waiting
+ const client = { url: 'https://app.veraspa.vn/', focus: async () => calls.push('focus'),
+  navigate: async url => { calls.push(url); if (outcome === 'rejected') throw new Error('suspended'); return outcome === 'null' ? null : client },
+  postMessage: data => calls.push(data.type) }
+ const self = { location: { origin: 'https://app.veraspa.vn' }, addEventListener: (k,f) => handlers[k]=f,
+  clients: { matchAll: async () => [client], openWindow: async url => calls.push(`new:${url}`) } }
+ vm.runInNewContext(source, { self, URL })
+ handlers.notificationclick({ notification: { data: { notificationId: '42' }, close() {} }, waitUntil: p => waiting=p })
+ await waiting
+ assert.equal(calls[0], 'focus')
+ assert.equal(calls.at(-1), outcome === 'success' ? 'vera-notification-open' : 'new:https://app.veraspa.vn/?notification=42')
+})
+
+test('running web opens repeated push details and rejects external links', async () => {
+ const dom = new JSDOM('<div id="root"></div>', { url:'https://app.veraspa.vn/', runScripts:'dangerously', pretendToBeVisual:true })
+ const worker = new dom.window.EventTarget()
+ Object.defineProperty(dom.window.navigator, 'serviceWorker', { value: worker })
+ dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true}
+ dom.window.api={notificationDetail:async id=>({id,payload:{title:`Notice ${id}`,body:`Detail ${id}`}})}
+ dom.window.eval(bundle.outputFiles[0].text);dom.window.mount();await tick()
+ const send=url=>worker.dispatchEvent(new dom.window.MessageEvent('message',{data:{type:'vera-notification-open',url}}))
+ send('https://evil.test/?notification=42');await tick();assert.equal(dom.window.document.querySelector('dialog'),null)
+ for(const id of ['42','43','43']) {
+  send(`https://app.veraspa.vn/?notification=${id}`);await tick();await tick()
+  assert.equal(dom.window.document.querySelector('dialog').open,true)
+  assert.match(dom.window.document.body.textContent,new RegExp(`Detail ${id}`))
+  dom.window.document.querySelector('[aria-label="Đóng thông báo"]').click();await tick()
+ }
+ dom.window.close()
+})

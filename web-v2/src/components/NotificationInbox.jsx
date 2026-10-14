@@ -32,6 +32,33 @@ export default function NotificationInbox({ showTrigger = true, user, onPageChan
     return () => { lifecycle.current += 1 }
   }, [])
   useEffect(() => {
+    const openRequested = () => {
+      const id = requested()
+      if (!id) return
+      navigationTaken.current = false
+      setDetail(null); setError(''); setSelected(id); setOpen(true)
+      setRetry(value => value + 1)
+    }
+    const onMessage = event => {
+      if (event.data?.type !== 'vera-notification-open') return
+      let target
+      try { target = new URL(event.data.url, window.location.origin) } catch { return }
+      if (target.origin !== window.location.origin) return
+      const id = target.searchParams.get('notification') || ''
+      if (!/^[1-9][0-9]{0,18}$/.test(id)) return
+      const url = new URL(window.location.href)
+      url.searchParams.set('notification', id)
+      window.history.replaceState(window.history.state, '', url)
+      openRequested()
+    }
+    navigator.serviceWorker?.addEventListener('message', onMessage)
+    window.addEventListener('popstate', openRequested)
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', onMessage)
+      window.removeEventListener('popstate', openRequested)
+    }
+  }, [])
+  useEffect(() => {
     if (!showTrigger) return undefined
     return subscribeNotificationFeed(data => setItems(data.inbox || []))
   }, [showTrigger])
