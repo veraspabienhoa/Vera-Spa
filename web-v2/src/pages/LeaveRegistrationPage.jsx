@@ -1076,7 +1076,7 @@ export default function LeaveRegistrationPage({ user }) {
                 </strong>
                 <span>{listActionNotice.message}</span>
               </div>
-              <button data-ui-key="u-3ea62cdcdeb4" type="button" className="list-action-notice-close" onClick={() => setListActionNotice(null)} aria-label="Đóng thông báo">
+              <button data-dialog-close="true" data-ui-key="u-3ea62cdcdeb4" type="button" className="list-action-notice-close" onClick={() => setListActionNotice(null)} aria-label="Đóng thông báo">
                 <X size={15} />
               </button>
             </div>

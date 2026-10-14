@@ -71,7 +71,7 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
   })
   if (draft.service && !serviceOptions.some(row => row.value === draft.service)) serviceOptions.unshift({ value: draft.service, label: draft.service })
   return <EmployeeProfileModal labelledBy="manual-booking-title" className="upcoming-booking-modal manual-online-booking-modal" busy={busy} onClose={onClose}>
-    <header><h2 id="manual-booking-title">ĐẶT LỊCH - BOOKING</h2><button disabled={busy} onClick={onClose}>Đóng</button></header>
+    <header><h2 id="manual-booking-title">ĐẶT LỊCH - BOOKING</h2><button data-dialog-close="true" disabled={busy} onClick={onClose}>Đóng</button></header>
     <form className="manual-booking-form" onSubmit={save}>
       <div className="manual-booking-fields">
         <LiveTourSearchSelect className="wide manual-booking-services" label="Dịch vụ" placeholder="Chưa chọn dịch vụ" emptyLabel="Chưa chọn dịch vụ" inlineOptions disabled={busy} value={draft.service} options={serviceOptions} onChange={value => set('service', value)}/>
@@ -90,7 +90,7 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
         <label className="wide">Lời nhắn<textarea rows="2" aria-label="Lời nhắn" maxLength={4000} disabled={busy} value={draft.message} onChange={event => set('message', event.target.value)}/></label>
         {error && <p className="wide" role="alert">{error}</p>}
       </div>
-      <div className="online-booking-actions manual-booking-actions"><button type="button" disabled={busy} onClick={onClose}>Đóng</button><button type="submit" disabled={busy || (Boolean(draft.requested_staff) && (staffLoading || Boolean(staffError)))}>{busy ? 'Đang lưu…' : booking ? 'Lưu thay đổi' : 'Lưu lịch đặt Booking'}</button></div>
+      <div className="online-booking-actions manual-booking-actions"><button data-dialog-close="true" type="button" disabled={busy} onClick={onClose}>Đóng</button><button type="submit" disabled={busy || (Boolean(draft.requested_staff) && (staffLoading || Boolean(staffError)))}>{busy ? 'Đang lưu…' : booking ? 'Lưu thay đổi' : 'Lưu lịch đặt Booking'}</button></div>
     </form>
   </EmployeeProfileModal>
 }

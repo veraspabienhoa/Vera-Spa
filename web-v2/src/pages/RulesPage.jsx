@@ -42,7 +42,7 @@ function Notice({ notice, onClose }) {
     <div className={`rules-notice ${notice.type}`} role="status">
       <strong>{notice.type === 'success' ? 'THÀNH CÔNG' : 'KHÔNG THÀNH CÔNG'}</strong>
       <span>{notice.message}</span>
-      <button data-ui-key="u-1861ebb8a0a3" data-ui-label-default="×" type="button" onClick={onClose} aria-label="Đóng thông báo"><UiCustomText uiKey="u-1861ebb8a0a3">×</UiCustomText></button>
+      <button data-dialog-close="true" data-ui-key="u-1861ebb8a0a3" data-ui-label-default="×" type="button" onClick={onClose} aria-label="Đóng thông báo"><UiCustomText uiKey="u-1861ebb8a0a3">×</UiCustomText></button>
     </div>
   )}</StableFeedback>
 }

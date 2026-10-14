@@ -32,7 +32,7 @@ function Editor({ title, onClose, busy, children }) {
     return () => previous?.focus?.()
   }, [])
   return <dialog ref={dialog} className="spa-editor" aria-label={title} onCancel={(event) => { event.preventDefault(); if (!busy) onClose() }}>
-    <div data-ui-key="u-fe840576035a" className="spa-editor-heading"><h2>{title}</h2><button data-ui-key="u-6c82f382eb53" className="icon-button" type="button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={20}/></button></div>
+    <div data-ui-key="u-fe840576035a" className="spa-editor-heading"><h2>{title}</h2><button data-dialog-close="true" data-ui-key="u-6c82f382eb53" className="icon-button" type="button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={20}/></button></div>
     {children}
   </dialog>
 }

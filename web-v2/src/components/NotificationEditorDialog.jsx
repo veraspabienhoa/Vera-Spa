@@ -23,7 +23,7 @@ export default function NotificationEditorDialog({ children, title, busy, onClos
     }
   }, [])
   return createPortal(<dialog ref={dialog} role="dialog" aria-modal="true" aria-labelledby="notification-dialog-title" className="notification-settings-page notification-modal">
-    <header className="notification-modal-head"><h3 id="notification-dialog-title">{title}</h3><button type="button" disabled={busy} onClick={onClose} aria-label="Đóng hộp thoại thông báo">✕</button></header>
+    <header className="notification-modal-head"><h3 id="notification-dialog-title">{title}</h3><button data-dialog-close="true" type="button" disabled={busy} onClick={onClose} aria-label="Đóng hộp thoại thông báo">✕</button></header>
     <div className="notification-editor">{children}</div>
   </dialog>, document.body)
 }

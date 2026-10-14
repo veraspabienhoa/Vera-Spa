@@ -109,7 +109,7 @@ export default function OnlineBookingPopup({ user, onOpen }) {
         <strong aria-live="polite">{row.kind === 'booking' ? 'Booking online mới' : 'Lời nhắn mới'}{rows.length > 1 ? ` · ${rows.length}` : ''}</strong>
       </button>
       <button type="button" aria-expanded={!hidden} onClick={() => setHidden(value => !value)}>{hidden ? 'Hiện' : 'Ẩn'}</button>
-      <button type="button" aria-label="Đóng thông báo booking online" disabled={busy} onClick={() => dismiss()}>Đóng</button>
+      <button data-dialog-close="true" type="button" aria-label="Đóng thông báo booking online" disabled={busy} onClick={() => dismiss()}>Đóng</button>
     </div>
     {!hidden && <>
       <OnlineBookingDetails row={row}/>

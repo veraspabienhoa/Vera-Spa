@@ -77,6 +77,7 @@ export function showSystemDialog(options = {}) {
     const button = (label, action, primary = false) => {
       const node = doc.createElement('button')
       node.type = 'button'; node.textContent = label
+      if (label === 'Đóng') node.dataset.dialogClose = 'true'
       node.className = primary ? 'primary-button' : 'secondary-button'
       node.addEventListener('click', action)
       footer.append(node)

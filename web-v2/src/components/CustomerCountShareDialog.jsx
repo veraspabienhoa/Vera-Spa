@@ -70,7 +70,7 @@ export default function CustomerCountShareDialog({ filters, onClose }) {
   const pdfSupported = formats.pdf.canShare(pdf.file)
   const pngSupported = formats.png.canShare(png.file)
   return <EmployeeProfileModal className="customer-count-share-dialog" labelledBy="customer-count-share-title" onClose={onClose} busy={Boolean(sharing)}>
-    <header><div><span className="eyebrow">VERA SPA · A4 ngang</span><h2 id="customer-count-share-title">Chia sẻ báo cáo số khách</h2></div><button type="button" className="secondary-button" onClick={onClose} disabled={Boolean(sharing)} aria-label="Đóng báo cáo số khách">✕</button></header>
+    <header><div><span className="eyebrow">VERA SPA · A4 ngang</span><h2 id="customer-count-share-title">Chia sẻ báo cáo số khách</h2></div><button data-dialog-close="true" type="button" className="secondary-button" onClick={onClose} disabled={Boolean(sharing)} aria-label="Đóng báo cáo số khách">✕</button></header>
     <p>Báo cáo theo bộ lọc hiện tại, có biểu đồ theo ngày. Mỗi hóa đơn được tính là một lượt khách.</p>
     {error && <p className="error-box" role="alert">{error}</p>}
     {message && <p role="status" data-system-feedback>{message}</p>}

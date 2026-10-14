@@ -35,7 +35,7 @@ export default function UpcomingOnlineBookings({ user, onClose, services = [] })
   return <EmployeeProfileModal labelledBy="upcoming-booking-title" className="upcoming-booking-modal" onClose={onClose}>
     <header>
       <h2 id="upcoming-booking-title">Booking online sắp tới</h2>
-      <button onClick={onClose}>Đóng</button>
+      <button data-dialog-close="true" onClick={onClose}>Đóng</button>
     </header>
     <div className="upcoming-booking-toolbar">
       {canEditOnlineBookings(user) && <button aria-haspopup="dialog" onClick={() => setCreating(true)}>Thêm Lịch đặt Booking</button>}

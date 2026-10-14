@@ -36,7 +36,7 @@ export function RequestCard({ row, reload, onClose, services = [], user, initial
   }
   if (editable && editing) return <ManualOnlineBooking services={services} booking={row} onClose={() => setEditing(false)} onSaved={() => { onClose(); reload() }} />
   return <EmployeeProfileModal labelledBy="online-booking-modal-title" className="online-booking-modal" busy={busy} onClose={onClose}><article className="online-booking-card">
-    <header><h2 id="online-booking-modal-title">Đặt lịch</h2><button disabled={busy} onClick={onClose} aria-label="Đóng Đặt lịch">Đóng</button></header>
+    <header><h2 id="online-booking-modal-title">Đặt lịch</h2><button data-dialog-close="true" disabled={busy} onClick={onClose} aria-label="Đóng Đặt lịch">Đóng</button></header>
     <header><strong>#{row.id} · {row.kind === 'booking' ? 'Đặt lịch' : 'Liên hệ'}</strong><span>{formatVeraDateTime(row.created_at)}</span></header>
     <OnlineBookingDetails row={row}/>
     <div className="online-booking-actions"><label>Trạng thái<select disabled={!editable || busy} value={status} onChange={e => setStatus(e.target.value)}>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>
