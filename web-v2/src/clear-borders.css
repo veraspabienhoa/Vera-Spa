@@ -755,3 +755,30 @@ body .attendance-page .attendance-kpi:focus-visible { outline: 3px solid #a36a00
 .attendance-summary-status { font-size: 12px; color: #324a40; }
 
 body .topbar .topbar-brand-home { border: 0 !important; }
+
+/* Explicit dismissal controls stay at the right edge in headers/action rows.
+   Backdrops and business actions such as “Đóng đợt” are not dismiss controls. */
+body button[data-dialog-close="true"]:not([hidden]):not(.mobile-close) { display: flex; }
+body button[data-dialog-close="true"] {
+  align-items: center;
+  justify-content: center;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  justify-self: end;
+  align-self: end;
+  order: 999 !important;
+  flex: 0 0 auto !important;
+  width: fit-content !important;
+  max-width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+body button.residence-close-button {
+  min-width: 112px;
+  min-height: 52px;
+  padding: 12px 24px;
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 12px;
+}

@@ -418,7 +418,7 @@ function LongLeaveContent({ user, refreshRevision }) {
           <label>Chi tiết<textarea disabled={approvedBusy} value={approvedEditor.detail || ''}
             onChange={event => setApprovedEditor(current => ({ ...current, detail: event.target.value }))} /></label>
           <div className="approved-request-actions"><button type="submit" className="primary-button" disabled={approvedBusy}>Lưu thay đổi</button>
-            <button type="button" className="secondary-button" disabled={approvedBusy} onClick={() => setApprovedEditor(null)}>Đóng</button></div>
+            <button data-dialog-close="true" type="button" className="secondary-button" disabled={approvedBusy} onClick={() => setApprovedEditor(null)}>Đóng</button></div>
         </form>
       </section>}
       {canViewApproved && (

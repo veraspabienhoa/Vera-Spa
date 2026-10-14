@@ -23,7 +23,7 @@ export default function LiveTourCustomerDialog({ context, busy, error, onAction,
     if (await onAction(action, payload, [], { expectedRevision: revision })) onClose()
   }
   return <div className="live-tour-modal-backdrop"><section data-ui-key="u-27e85fc9ad0d" ref={ref} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={title}>
-    <div className="live-tour-modal-head"><strong>{title} · {customer.name}</strong><button data-ui-key="u-f227e0371e42" data-ui-label-default="Đóng" type="button" className="secondary-button" disabled={busy} onClick={onClose}><UiCustomText uiKey="u-f227e0371e42">Đóng</UiCustomText></button></div>
+    <div className="live-tour-modal-head"><strong>{title} · {customer.name}</strong><button data-dialog-close="true" data-ui-key="u-f227e0371e42" data-ui-label-default="Đóng" type="button" className="secondary-button" disabled={busy} onClick={onClose}><UiCustomText uiKey="u-f227e0371e42">Đóng</UiCustomText></button></div>
     <StableFeedback>{error && <p role="alert" className="error-box">{error}</p>}</StableFeedback>
     <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
       {purchase && <p className="wide">{purchase.combo_name} · Đã dùng {purchase.used || 0} vé</p>}

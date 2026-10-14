@@ -77,14 +77,14 @@ export default function TrainingNoticeDetail({ notice, onClose }) {
   return <div className="training-notification-modal" role="dialog" aria-modal="true" aria-label="Chi tiết đào tạo">
     <div className="training-notification-dialog">
       <header><div><small>ĐÀO TẠO & ĐÁNH GIÁ</small><h2>{notice.notification?.title}</h2></div>
-        <button type="button" aria-label="Đóng" onClick={onClose}><X size={20}/></button></header>
+        <button data-dialog-close="true" type="button" aria-label="Đóng" onClick={onClose}><X size={20}/></button></header>
       <p>{notice.notification?.body}</p>
       <dl>{linesFor(notice).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
       <StableFeedback>{error && <p role="alert">{error}</p>}</StableFeedback>
       <div className="training-notification-actions">
         <button type="button" className="primary-button" onClick={() => void share()}><Share2 size={16}/> Chia sẻ ảnh / Zalo</button>
         <button type="button" className="secondary-button" onClick={() => void share(true)}><ImageDown size={16}/> Tải ảnh PNG</button>
-        <button type="button" className="primary-button" onClick={onClose}>Đóng</button>
+        <button data-dialog-close="true" type="button" className="primary-button" onClick={onClose}>Đóng</button>
       </div>
     </div>
   </div>

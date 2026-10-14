@@ -38,6 +38,7 @@ function ensureTopClose(panel) {
   button.type = 'button'
   button.className = 'secondary-button compact vera-profile-top-close'
   button.textContent = '✕ Đóng'
+  button.dataset.dialogClose = 'true'
   button.addEventListener('click', () => {
     const cancel = Array.from(panel.querySelectorAll('.staff-form-actions button'))
       .find((item) => /^Hủy$/i.test(clean(item.dataset.uiLabelDefault || item.textContent)))

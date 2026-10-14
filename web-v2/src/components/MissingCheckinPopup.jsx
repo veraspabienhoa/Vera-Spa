@@ -63,7 +63,7 @@ export default function MissingCheckinPopup({ user }) {
   }
   if (!username || locked || !canSeeMissingCheckins(role) || !alerts.length) return null
   return <NotificationModal title="Nhân viên chưa check-in" onClose={() => dismissRows(alerts)}><section className="missing-checkin-popup" role="region" aria-label="Nhân viên chưa check-in" aria-live="polite">
-    <header><BellRing size={18}/><strong>Chưa có check-in · {alerts.length}</strong><button type="button" aria-expanded={!collapsed} aria-controls={contentId} onClick={toggle}>{collapsed ? 'Hiện thông báo' : 'Ẩn thông báo'}</button><button type="button" className="missing-checkin-close" aria-label="Đóng popup chưa check-in" title="Đóng popup" onClick={() => dismissRows(alerts)}><X size={20} aria-hidden="true"/></button></header>
+    <header><BellRing size={18}/><strong>Chưa có check-in · {alerts.length}</strong><button type="button" aria-expanded={!collapsed} aria-controls={contentId} onClick={toggle}>{collapsed ? 'Hiện thông báo' : 'Ẩn thông báo'}</button><button data-dialog-close="true" type="button" className="missing-checkin-close" aria-label="Đóng popup chưa check-in" title="Đóng popup" onClick={() => dismissRows(alerts)}><X size={20} aria-hidden="true"/></button></header>
     <div id={contentId} hidden={collapsed}>
       <p>Có lịch làm, quá giờ vào ca 15 phút và chưa có lịch nghỉ.</p>
       <ul>{alerts.map(row => <li key={keyOf(row)}><strong>{row.employee}</strong><span>{row.body}</span><button type="button" className="missing-checkin-seen" aria-label={`Đã xem thông báo của ${row.employee}`} onClick={() => dismissRows([row])}>Đã xem</button></li>)}</ul>

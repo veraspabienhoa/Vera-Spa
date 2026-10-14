@@ -170,7 +170,7 @@ export default function ScheduleViolations({ department, departmentLabel, employ
         <label>Nội dung vi phạm<input required disabled={Boolean(form.id && !form.is_manual)} maxLength={400} value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} /></label>
         <label>Tiền phạt<VeraMoneyInput disabled={Boolean(form.hc_late_approved_by)} value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></label>
         <label>Ghi chú<input maxLength={1000} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} /></label>
-      </div>{notice && <p role="alert">{notice}</p>}<div className="schedule-violation-title"><button type="button" className="secondary-button" disabled={busy} onClick={() => { dialog.current.close(); setForm(null) }}>Đóng</button><button type="submit" className="primary-button" disabled={busy}>{busy ? 'Đang lưu…' : form.id ? 'Lưu sửa' : 'Lưu phạt vi phạm'}</button></div></form>}
+      </div>{notice && <p role="alert">{notice}</p>}<div className="schedule-violation-title"><button data-dialog-close="true" type="button" className="secondary-button" disabled={busy} onClick={() => { dialog.current.close(); setForm(null) }}>Đóng</button><button type="submit" className="primary-button" disabled={busy}>{busy ? 'Đang lưu…' : form.id ? 'Lưu sửa' : 'Lưu phạt vi phạm'}</button></div></form>}
     </dialog>
   </section>
 }

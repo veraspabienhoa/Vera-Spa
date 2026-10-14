@@ -26,7 +26,7 @@ function TrainingEmployeeReport({ scope, onClose, onDenied }) {
   const denied = error => { setPrepareFiles(false); setState({ error }); onDenied(error) }
   return <EmployeeProfileModal className="training-report-modal" labelledBy="training-report-title" onClose={onClose} busy={sharing}>
     <div className="training-page training-report-body">
-      <header className="training-report-heading"><div><p className="eyebrow">VERA SPA · BÁO CÁO TIẾN ĐỘ</p><h2 id="training-report-title">{scope.name}</h2><p>{trainingRangeLabel(scope.filters)}</p></div><button type="button" className="secondary-button" aria-label="Đóng báo cáo đào tạo" disabled={sharing} onClick={onClose}><X size={20}/></button></header>
+      <header className="training-report-heading"><div><p className="eyebrow">VERA SPA · BÁO CÁO TIẾN ĐỘ</p><h2 id="training-report-title">{scope.name}</h2><p>{trainingRangeLabel(scope.filters)}</p></div><button data-dialog-close="true" type="button" className="secondary-button" aria-label="Đóng báo cáo đào tạo" disabled={sharing} onClick={onClose}><X size={20}/></button></header>
       {!state && <p role="status" className="training-empty">Đang tải toàn bộ báo cáo…</p>}
       {state?.error && <div><p role="alert" className="error-box">{state.error.message}</p>{![401,403].includes(state.error.status) && <button type="button" className="secondary-button" onClick={() => { setState(null); setRetry(n => n+1) }}>Thử tải lại báo cáo</button>}</div>}
       {report && <>
@@ -101,7 +101,7 @@ export default function TrainingProgressReports({ user }) {
       {!untrainedRows.length && <p>Không có nhân viên phù hợp.</p>}
     </section>}
     {overview?.queryKey === queryKey && active?.employees && !active.error && <EmployeeProfileModal className="training-report-modal" labelledBy="training-overview-title" busy={overviewSharing} onClose={() => setOverview(null)}>
-      <div className="training-page training-report-body"><header className="training-report-heading"><div><p className="eyebrow">VERA SPA</p><h2 id="training-overview-title">Chia sẻ báo cáo tiến độ toàn bộ nhân viên</h2></div><button type="button" className="secondary-button" aria-label="Đóng chia sẻ báo cáo" disabled={overviewSharing} onClick={() => setOverview(null)}><X size={20}/></button></header>
+      <div className="training-page training-report-body"><header className="training-report-heading"><div><p className="eyebrow">VERA SPA</p><h2 id="training-overview-title">Chia sẻ báo cáo tiến độ toàn bộ nhân viên</h2></div><button data-dialog-close="true" type="button" className="secondary-button" aria-label="Đóng chia sẻ báo cáo" disabled={overviewSharing} onClick={() => setOverview(null)}><X size={20}/></button></header>
         <TrainingReportFiles scope={overview} onSharingChange={setOverviewSharing} onDenied={() => { setOverview(null); setReload(n => n+1) }}/>
       </div>
     </EmployeeProfileModal>}

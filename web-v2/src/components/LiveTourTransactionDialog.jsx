@@ -62,7 +62,7 @@ export default function LiveTourTransactionDialog({ title, children, onClose, bu
     <div ref={frameRef} className="tour-transaction-frame">
       <section data-ui-key="u-28ee347d7e54" ref={dialogRef} tabIndex="-1" role="dialog" aria-modal="true" aria-label={title}
         className={`live-tour-modal tour-transaction-dialog ${className}`} style={{ width }}>
-        <div className="live-tour-modal-head"><strong>{title}</strong><button data-ui-key="u-b59b73812d19" type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
+        <div className="live-tour-modal-head"><strong>{title}</strong><button data-dialog-close="true" data-ui-key="u-b59b73812d19" type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
         {children}
       </section>
     </div>

@@ -88,7 +88,7 @@ function PermissionLauncher({ scope, scopes, attachToTitle }) {
     <span ref={anchor} hidden/>
     {attachToTitle ? heading && createPortal(launcher, heading) : launcher}
     {menu && !selection && <EmployeeProfileModal labelledBy="permission-menu-title" onClose={() => setMenu(false)} className="page-permission-modal">
-      <header><h2 id="permission-menu-title">Phân quyền</h2><button type="button" onClick={() => setMenu(false)}>Đóng</button></header>
+      <header><h2 id="permission-menu-title">Phân quyền</h2><button data-dialog-close="true" type="button" onClick={() => setMenu(false)}>Đóng</button></header>
       <div className="permission-menu-options">{options.map(item => <section key={`${item.page}:${item.label || ''}`}>
         <h3>{item.label || 'Trang hiện tại'}</h3>
         <button type="button" className="secondary-button" onClick={() => setSelection({ scope: item, mode: 'edit' })}>Phân quyền{item.label ? ` · ${item.label}` : ' trang'}</button>
@@ -130,7 +130,7 @@ function PermissionDialog({ page, label, features, viewFeatures, adminOnly, mode
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
   return <EmployeeProfileModal labelledBy="page-permission-title" busy={busy} onClose={onClose} className="page-permission-modal"><section>
-    <header><h2 id="page-permission-title">{mode === 'list' ? 'Tài khoản đã được phân quyền' : 'Phân quyền'} · {label || pages.map(item => item.label).join(' / ') || page}</h2><button type="button" disabled={busy} onClick={onClose}>Đóng</button></header>
+    <header><h2 id="page-permission-title">{mode === 'list' ? 'Tài khoản đã được phân quyền' : 'Phân quyền'} · {label || pages.map(item => item.label).join(' / ') || page}</h2><button data-dialog-close="true" type="button" disabled={busy} onClick={onClose}>Đóng</button></header>
     {data && missingView && <p role="alert">Máy chủ chưa có quyền riêng cho tab này. Cần cập nhật máy chủ rồi tải lại phân quyền.</p>}
     {fixed && <p>{fixed}. Các quyền khác không thay đổi giới hạn này.</p>}
     <p>Các tab dùng chung quyền sẽ cùng chịu tác động khi thay đổi quyền đó.</p>

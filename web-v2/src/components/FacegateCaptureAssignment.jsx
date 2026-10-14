@@ -83,7 +83,7 @@ export default function FacegateCaptureAssignment({ capture, onClose, onSaved })
       {editing ? <IdentityImageEditor file={capture.blob} title={username || 'FACE ID'} mediaLabel="FACE ID" aspectRatio={null}
         confirmLabel="Dùng ảnh đã chỉnh" onCancel={() => setEditing(false)}
         onConfirm={async blob => { setPrepared(blob); setConfirmed(false); setEditing(false) }}/> : <>
-        <header><h2>Chọn ảnh cho nhân viên</h2><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Đóng</button></header>
+        <header><h2>Chọn ảnh cho nhân viên</h2><button data-dialog-close="true" type="button" className="secondary-button" disabled={busy} onClick={onClose}>Đóng</button></header>
         <p>Ảnh Capture #{capture.record.event_id} · {formatVeraDateTime(capture.record.occurred_at)}</p>
         <p>Lưu vào mục ẢNH FACE ID trong hồ sơ nhân viên VERA. Chưa đăng ký ảnh lên máy FaceGate hoặc xác nhận ánh xạ chấm công.</p>
         {loading && <p role="status">Đang tải danh sách nhân viên…</p>}

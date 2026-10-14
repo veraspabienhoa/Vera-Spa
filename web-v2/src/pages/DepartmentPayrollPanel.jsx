@@ -596,7 +596,7 @@ function PayrollPanel({ user, identity, settingsOnly, mutation, mutationRef, upd
               <button type="button" className="secondary-button" disabled={!backendReady || !shareFiles} onClick={() => shareFile('pdf')}>PDF</button>
               <button type="button" className="secondary-button" disabled={!backendReady || !shareFiles} onClick={() => saveFile('pdf')}><Download size={16} />Lưu PDF</button>
             </div>
-            <button type="button" className="secondary-button" onClick={closeShare}>Đóng</button>
+            <button data-dialog-close="true" type="button" className="secondary-button" onClick={closeShare}>Đóng</button>
             {busy === 'share-prepare' && <span role="status">Đang tạo file…</span>}
           </div>
         </dialog>

@@ -183,7 +183,7 @@ function openViewer(card, image) {
   overlay.className = 'vera-cccd-viewer'
   overlay.innerHTML = `
     <div class="vera-cccd-viewer-card" role="dialog" aria-modal="true" aria-label="Xem ảnh ${title}">
-      <div class="vera-cccd-viewer-head"><h3>${title.toUpperCase()} · CCCD</h3><button type="button" class="vera-cccd-viewer-close">Đóng</button></div>
+      <div class="vera-cccd-viewer-head"><h3>${title.toUpperCase()} · CCCD</h3><button type="button" data-dialog-close="true" class="vera-cccd-viewer-close">Đóng</button></div>
       <div class="vera-cccd-viewer-image"><img alt="${title} CCCD" /></div>
       <div class="vera-cccd-viewer-actions"></div>
     </div>

@@ -79,7 +79,7 @@ export default function ResidencePage({ user }) {
       <TrainingReportFiles scope={exportScope} onSharingChange={setSharing} onDenied={err => {
         setExportScope(null); void showSystemDialog({ kind: 'error', message: err.message })
       }} />
-      <button className="secondary-button" type="button" disabled={sharing} onClick={() => setExportScope(null)}>Đóng</button>
+      <button data-dialog-close="true" className="secondary-button residence-close-button" type="button" disabled={sharing} onClick={() => setExportScope(null)}>Đóng</button>
     </EmployeeProfileModal>}
     {data && <><p>{records.length} nhân viên tạm trú</p>
       <div className="residence-table" tabIndex="0" role="region" aria-label="Bảng nhân viên tạm trú">

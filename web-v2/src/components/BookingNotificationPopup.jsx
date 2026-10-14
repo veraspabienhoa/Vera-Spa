@@ -48,7 +48,7 @@ export default function BookingNotificationPopup({ user, onOpen }) {
   return <NotificationModal key={keyOf(row)} title="Booking cho nhân viên" onClose={() => dismiss(row)}><aside className="booking-notification-popup" aria-label="Booking cho nhân viên" role="status" aria-live="polite" aria-atomic="true">
     <BellRing size={23} aria-hidden="true"/>
     <div className="booking-notification-copy"><strong>Booking mới{rows.length > 1 ? ` · ${rows.length}` : ''}</strong><p>{row.payload.body}</p></div>
-    <button type="button" className="booking-notification-close" aria-label="Đóng thông báo booking" onClick={() => dismiss(row)}><X size={22}/></button>
+    <button data-dialog-close="true" type="button" className="booking-notification-close" aria-label="Đóng thông báo booking" onClick={() => dismiss(row)}><X size={22}/></button>
     <button type="button" className="booking-notification-open" onClick={() => { dismiss(row); onOpen?.() }}>Mở Live Tour</button>
   </aside></NotificationModal>
 }

@@ -34,7 +34,7 @@ function Modal({ title, busy, close, children }) {
     return () => { node.removeEventListener('cancel', cancel); node.close(); document.body.style.overflow = overflow; opener?.focus({ preventScroll: true }) }
   }, [])
   return createPortal(<dialog className="purchase-modal" ref={ref} aria-labelledby="purchase-modal-title">
-    <header><h2 id="purchase-modal-title">{title}</h2><button disabled={busy} onClick={close} aria-label="Đóng">✕</button></header>{children}
+    <header><h2 id="purchase-modal-title">{title}</h2><button data-dialog-close="true" disabled={busy} onClick={close} aria-label="Đóng">✕</button></header>{children}
   </dialog>, document.body)
 }
 

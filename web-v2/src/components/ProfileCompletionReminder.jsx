@@ -89,7 +89,7 @@ export default function ProfileCompletionReminder({ user, onOpenProfile }) {
     <div className="profile-completion-reminder-content"><strong>HỒ SƠ CHƯA ĐẦY ĐỦ</strong><p>Còn thiếu: {text}.</p></div>
     <UiToolbar data-ui-key="u-0b55aee6f19a" className="profile-completion-reminder-actions">
       <button data-ui-key="u-cb964d3cd078" data-ui-label-default="Cập nhật hồ sơ" type="button" className="primary-button compact" onClick={() => { setDismissed(true); onOpenProfile() }}><UserRoundPen size={14}/><UiCustomText uiKey="u-cb964d3cd078"> Cập nhật hồ sơ</UiCustomText></button>
-      <button data-ui-key="u-6dd538dc5ee1" data-ui-label-default="Đóng" type="button" className="secondary-button compact" onClick={() => setDismissed(true)}><X size={14}/><UiCustomText uiKey="u-6dd538dc5ee1"> Đóng</UiCustomText></button>
+      <button data-dialog-close="true" data-ui-key="u-6dd538dc5ee1" data-ui-label-default="Đóng" type="button" className="secondary-button compact" onClick={() => setDismissed(true)}><X size={14}/><UiCustomText uiKey="u-6dd538dc5ee1"> Đóng</UiCustomText></button>
     </UiToolbar>
   </div></NotificationModal>
 }
