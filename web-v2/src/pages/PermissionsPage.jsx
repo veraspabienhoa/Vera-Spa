@@ -148,7 +148,7 @@ export default function PermissionsPage() {
       .permission-view-permission{border-color:#9fc8b6!important;background:#eef8f3!important}
       .permission-view-permission strong:after{content:' · MỞ TRANG';font-size:9px;color:#2d6a50;font-weight:900}
     `}</style>
-    <div data-ui-key="u-7f40edd7308c" className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Admin</span><h1>PHÂN QUYỀN THEO TRANG</h1><p>Mỗi trang/menu có các tác vụ riêng. Admin có thể cấp từng tác vụ cho nhóm hoặc cho từng tài khoản.</p></div><button data-ui-key="u-9d2013a3b024" data-ui-label-default="Làm mới" className="secondary-button" onClick={() => load()} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-9d2013a3b024"> Làm mới</UiCustomText></button></div>
+    <div data-ui-key="u-7f40edd7308c" className="page-heading"><div><span className="eyebrow"><ShieldCheck size={14} /> Admin</span><h1>PHÂN QUYỀN THEO TRANG</h1></div><button data-ui-key="u-9d2013a3b024" data-ui-label-default="Làm mới" className="secondary-button" onClick={() => load()} disabled={busy}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-9d2013a3b024"> Làm mới</UiCustomText></button></div>
     <StableFeedback>{notice && <div className={notice.status === 'success' ? 'success-box' : 'error-box'}>{notice.message}</div>}</StableFeedback>
     <section data-ui-key="u-651db1ae818d" className="panel permission-target-panel">
       <UiToolbar data-ui-key="u-a0020edbc857" className="permission-scope-tabs"><button data-ui-key="u-f183ddd5f06a" data-ui-label-default="Theo nhóm" className={scope === 'role' ? 'active' : ''} onClick={() => chooseScope('role')}><UiCustomText uiKey="u-f183ddd5f06a">Theo nhóm</UiCustomText></button><button data-ui-key="u-cd99f6cb1fbe" data-ui-label-default="Theo tài khoản" className={scope === 'account' ? 'active' : ''} onClick={() => chooseScope('account')}><UiCustomText uiKey="u-cd99f6cb1fbe">Theo tài khoản</UiCustomText></button></UiToolbar>
@@ -159,11 +159,9 @@ export default function PermissionsPage() {
           {inherit
             ? <button data-ui-key="u-8fac46410269" data-ui-label-default="Phân quyền riêng tài khoản này" type="button" className="secondary-button" onClick={enablePrivatePermissions}><UiCustomText uiKey="u-8fac46410269">Phân quyền riêng tài khoản này</UiCustomText></button>
             : <button data-ui-key="u-16144bb9f395" data-ui-label-default="Dùng lại quyền của nhóm" type="button" className="secondary-button" onClick={resetToRolePermissions}><UiCustomText uiKey="u-16144bb9f395">Dùng lại quyền của nhóm</UiCustomText></button>}
-          <small>Trạng thái: <span className="permission-account-state">{inherit ? 'Đang kế thừa theo nhóm' : 'Đang phân quyền riêng'}</span>. Có thể bấm trực tiếp vào bất kỳ quyền nào để tạo ghi đè riêng.</small>
         </UiToolbar>
       </>}
       <label className="permission-search"><input aria-label="Tìm quyền" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm quyền…" /></label>
-      {supportsDateFilterPolicy(data) && <p className="permission-date-note">Mỗi mục Live Tour có 8 quyền lọc ngày riêng. Quyền chưa cấu hình kế thừa quyền xem mục đó; bỏ chọn cả 8 sẽ chặn dữ liệu theo ngày. Lịch sử cần quyền Xem lịch sử hoặc Sao lưu; quyền Sao lưu không mở nội dung nhật ký.</p>}
     </section>
     <div className="permission-pages">
       {pages.map((page) => <section data-ui-key="u-3507366ab96e" className="permission-page-card" key={page.id}>
