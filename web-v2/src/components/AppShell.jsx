@@ -33,7 +33,6 @@ const items = [
   { id: 'payroll', label: 'Bảng Lương', icon: WalletCards, ready: true, anyPermission: ['payroll_history', 'payroll_calculate'] },
   { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
-  { id: 'residence', label: 'Tạm trú', icon: Users, ready: true, permission: 'residence_view' },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
   { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
   { id: 'purchases', label: 'Nhập mua', icon: CircleDollarSign, ready: true, permission: 'purchase_view' },
@@ -47,6 +46,7 @@ const items = [
   { id: 'system', label: 'Hệ thống', icon: HardDrive, ready: true, anyPermission: ['audit_admin_view', 'storage_admin_view'] },
   { id: 'settings', label: 'Cài đặt', icon: Settings2, ready: true, anyPermission: ['live_tour_admin', 'ktv_shift_view', 'work_schedule_letan', 'work_schedule_locker', 'work_schedule_quanly', 'work_schedule_tapvu', 'permission_admin'] },
   { id: 'rules', label: 'Nội qui', icon: FileText, ready: true, permission: 'official_rules_view' },
+  { id: 'residence', label: 'Tạm trú', icon: Users, ready: true, permission: 'residence_view' },
   { id: 'devices', label: 'Thiết bị', icon: Server, ready: true, permission: 'device_view' },
 ]
 

@@ -13,13 +13,17 @@ def test_excel_preserves_ids_and_never_executes_formula_or_exposes_banks():
     row.update(username='Synthetic', full_name='=1+1', cccd_number='001234567890', phone='0900000000',
                bank_name='PRIVATE', bank_account='PRIVATE')
     ws = load_workbook(residence.workbook([row])).active
-    headers = [cell.value for cell in ws[1]]
-    values = [cell.value for cell in ws[2]]
+    headers = [cell.value for cell in ws[4]]
+    values = [cell.value for cell in ws[5]]
     assert 'PRIVATE' not in values
     assert all('ngân hàng' not in str(x).lower() for x in headers)
-    assert ws.cell(2, headers.index('Họ và tên')+1).data_type == 's'
+    assert ws.cell(5, headers.index('Họ và tên')+1).data_type == 's'
     assert values[headers.index('Số CCCD')] == '001234567890'
-    assert ws.freeze_panes == 'C2'
+    assert headers == ['STT', 'Tên nhân viên', 'Họ và tên', 'Ngày sinh', 'Giới tính', 'Số CCCD', 'Ngày cấp CCCD', 'Nơi cấp CCCD', 'Địa chỉ']
+    assert ws.freeze_panes == 'C5'
+    assert str(ws.page_setup.paperSize) == ws.PAPERSIZE_A4
+    assert ws.page_setup.fitToWidth == 1
+    assert ws.print_title_rows == '$1:$4'
 
 
 def test_filter_uses_hr_department_and_accent_insensitive_name():
@@ -59,7 +63,7 @@ def test_roster_membership_profile_refresh_export_and_authorization(database):
     assert client.get('/v2/residence').json()['records'][0]['full_name'] == 'Updated'
     exported = client.get('/v2/residence/export.xlsx?department=nhanvien')
     from io import BytesIO
-    assert load_workbook(BytesIO(exported.content)).active.max_row == 1
+    assert load_workbook(BytesIO(exported.content)).active['A5'].value is None
     allowed.remove('residence_manage')
     assert client.put('/v2/residence', json={'username':'Test','included':False}).status_code == 403
     assert client.get('/v2/residence/export?format=pdf').content.startswith(b'%PDF')
@@ -86,20 +90,22 @@ def test_admin_only_defaults_keep_explicit_grants_available():
 
 
 def test_residence_pdf_png_all_fields_and_long_values():
-    from vera_web_v2_residence_export import render_residence
+    from vera_web_v2_residence_export import render_residence, EXPORT_COLUMNS, TITLE
     from io import BytesIO
     from PIL import Image
     from pypdf import PdfReader
-    row = {key: f'VALUE_{index}' for index, (key, _) in enumerate(residence.COLUMNS)}
+    row = {key: f'V{index:02d}Z' for index, (key, _) in enumerate(residence.COLUMNS)}
     row['bank_account'] = 'SECRET_BANK'
     row['address'] = 'Địa chỉ rất dài ' * 150
     pdf = render_residence([row], residence.COLUMNS, 'pdf')
     reader = PdfReader(BytesIO(pdf))
     text = '\n'.join(page.extract_text() for page in reader.pages)
     for index, (key, _) in enumerate(residence.COLUMNS):
-        if key != 'address': assert f'VALUE_{index}' in text
+        if key != 'address':
+            assert (f'V{index:02d}Z ' in text or f'V{index:02d}Z\n' in text) == (key in dict(EXPORT_COLUMNS))
     assert 'SECRET_BANK' not in text
-    assert reader.metadata.title == 'VERA SPA - Danh sách tạm trú'
+    assert reader.metadata.title == TITLE
+    assert float(reader.pages[0].mediabox.width) > float(reader.pages[0].mediabox.height)
     png = render_residence([row], residence.COLUMNS, 'png')
     image = Image.open(BytesIO(png))
-    assert image.width > 1000 and image.height > 1000
+    assert image.width > 1600 and image.height > 1000

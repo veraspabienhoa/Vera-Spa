@@ -269,9 +269,9 @@ class _Layout:
         return self.pages
 
 
-def _check_png_size(page_count: int) -> tuple[int, int]:
-    width = math.ceil(PAGE_WIDTH * PNG_SCALE)
-    height = math.ceil(PAGE_HEIGHT * PNG_SCALE) * page_count
+def _check_png_size(page_count: int, page_size=(PAGE_WIDTH, PAGE_HEIGHT)) -> tuple[int, int]:
+    width = math.ceil(page_size[0] * PNG_SCALE)
+    height = math.ceil(page_size[1] * PNG_SCALE) * page_count
     if height > MAX_PNG_HEIGHT or width * height > MAX_PNG_PIXELS:
         raise ReportExportTooLarge(
             "Báo cáo quá dài để xuất PNG đầy đủ an toàn. "
@@ -466,9 +466,9 @@ def _build_layout(report: dict, *, png: bool = False) -> list[list[tuple]]:
     return layout.finish()
 
 
-def _render_pdf(pages: list[list[tuple]], report: dict) -> bytes:
+def _render_pdf(pages: list[list[tuple]], report: dict, page_size=A4) -> bytes:
     output = BytesIO()
-    pdf = canvas.Canvas(output, pagesize=A4, pageCompression=1)
+    pdf = canvas.Canvas(output, pagesize=page_size, pageCompression=1)
     employee = report.get("employee") or {}
     pdf.setTitle(report.get("document_title") or "Báo cáo đào tạo - " + _text(employee.get("full_name") or employee.get("display_name")
                                              or report.get("employee_username") or employee.get("username")))
@@ -481,32 +481,32 @@ def _render_pdf(pages: list[list[tuple]], report: dict) -> bytes:
                 pdf.setFont(BOLD_FONT if bold else REGULAR_FONT, size)
                 pdf.setFillColor(color)
                 draw = pdf.drawRightString if anchor == "right" else pdf.drawCentredString if anchor == "center" else pdf.drawString
-                draw(x, PAGE_HEIGHT - y - size, value)
+                draw(x, page_size[1] - y - size, value)
             elif kind == "rect":
                 x, y, width, height, color = args
                 pdf.setFillColor(color)
-                pdf.rect(x, PAGE_HEIGHT - y - height, width, height, fill=1, stroke=0)
+                pdf.rect(x, page_size[1] - y - height, width, height, fill=1, stroke=0)
             elif kind == "roundrect":
                 x, y, width, height, radius, fill, border = args
                 pdf.setFillColor(fill)
                 pdf.setStrokeColor(border)
                 pdf.setLineWidth(.6)
-                pdf.roundRect(x, PAGE_HEIGHT - y - height, width, height, radius, fill=1, stroke=1)
+                pdf.roundRect(x, page_size[1] - y - height, width, height, radius, fill=1, stroke=1)
             elif kind == "line":
                 x1, y1, x2, y2, color, width = args
                 pdf.setStrokeColor(color)
                 pdf.setLineWidth(width)
-                pdf.line(x1, PAGE_HEIGHT - y1, x2, PAGE_HEIGHT - y2)
+                pdf.line(x1, page_size[1] - y1, x2, page_size[1] - y2)
             elif kind == "circle":
                 x, y, radius, color = args
                 pdf.setFillColor(color)
-                pdf.circle(x, PAGE_HEIGHT - y, radius, fill=1, stroke=0)
+                pdf.circle(x, page_size[1] - y, radius, fill=1, stroke=0)
             elif kind == "polygon":
                 points, color, fill = args
                 path = pdf.beginPath()
-                path.moveTo(points[0][0], PAGE_HEIGHT - points[0][1])
+                path.moveTo(points[0][0], page_size[1] - points[0][1])
                 for x, y in points[1:]:
-                    path.lineTo(x, PAGE_HEIGHT - y)
+                    path.lineTo(x, page_size[1] - y)
                 path.close()
                 pdf.setStrokeColor(color)
                 pdf.setLineWidth(.8)
@@ -518,13 +518,13 @@ def _render_pdf(pages: list[list[tuple]], report: dict) -> bytes:
     return output.getvalue()
 
 
-def _render_png(pages: list[list[tuple]], font_paths: tuple[Path, Path]) -> bytes:
-    width, height = _check_png_size(len(pages))
+def _render_png(pages: list[list[tuple]], font_paths: tuple[Path, Path], page_size=A4) -> bytes:
+    width, height = _check_png_size(len(pages), page_size)
     image = Image.new("RGB", (width, height), "white")
     try:
         draw = ImageDraw.Draw(image)
         fonts: dict[tuple[float, bool], Any] = {}
-        page_height = math.ceil(PAGE_HEIGHT * PNG_SCALE)
+        page_height = math.ceil(page_size[1] * PNG_SCALE)
         for index, page in enumerate(pages):
             y_offset = page_height * index
             def point(x: float, y: float) -> tuple[float, float]:

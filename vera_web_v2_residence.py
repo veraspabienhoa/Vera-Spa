@@ -85,32 +85,53 @@ def filtered(records, department='', search=''):
 
 
 def workbook(records):
+    from openpyxl.styles import Border, Side
+    from openpyxl.worksheet.page import PageMargins
+    from openpyxl.utils import get_column_letter
+    from vera_web_v2_residence_export import EXPORT_COLUMNS, export_rows, TITLE, BUSINESS, ADDRESS, WIDTHS
     wb = Workbook()
     ws = wb.active
     ws.title = 'Tạm trú'
-    ws.append(['STT'] + [label for _, label in COLUMNS])
-    for index, row in enumerate(records, 1):
-        ws.append([index] + [row[key] for key, _ in COLUMNS])
-        # Preserve identity/phone leading zeroes and disable formula interpretation.
-        for cell in ws[ws.max_row]:
-            if isinstance(cell.value, str):
-                cell.data_type = 's'
-                cell.number_format = '@'
-            cell.alignment = Alignment(vertical='top', wrap_text=True)
-    for cell in ws[1]:
-        cell.font = Font(bold=True, color='FFFFFF')
-        cell.fill = PatternFill('solid', fgColor='14645F')
-        ws.column_dimensions[cell.column_letter].width = 23 if cell.column > 1 else 7
-    ws.freeze_panes = 'C2'
-    ws.auto_filter.ref = ws.dimensions
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.orientation = 'landscape'
-    ws.page_setup.paperSize = ws.PAPERSIZE_A3
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
-    stream = BytesIO()
-    wb.save(stream)
-    stream.seek(0)
+    for number, value in enumerate((BUSINESS, ADDRESS, TITLE), 1):
+        ws.merge_cells(start_row=number,start_column=1,end_row=number,end_column=9)
+        cell=ws.cell(number,1,value)
+        cell.font=Font(name='Times New Roman',size=14 if number==3 else 11,bold=number!=2)
+        cell.alignment=Alignment(horizontal='center' if number==3 else 'left',vertical='center')
+        ws.row_dimensions[number].height=30 if number==3 else 20
+    ws.append(['STT']+[label for _,label in EXPORT_COLUMNS])
+    side=Side(style='thin',color='000000')
+    border=Border(left=side,right=side,top=side,bottom=side)
+    for index, record in enumerate(export_rows(records),1):
+        ws.append([index]+[record[k] for k,_ in EXPORT_COLUMNS])
+    last=ws.max_row
+    for cells in ws.iter_rows(min_row=4,max_row=last):
+        for cell in cells:
+            cell.font=Font(name='Times New Roman',size=11,bold=cell.row==4)
+            cell.border=border
+            cell.alignment=Alignment(vertical='center',wrap_text=True,
+                horizontal='center' if cell.row==4 or cell.column in {1,4,5,6,7} else 'left')
+            if isinstance(cell.value,str): cell.data_type='s'; cell.number_format='@'
+        # Excel does not reliably autofit wrapped rows at print time.
+        import math
+        lines=max(sum(max(1,math.ceil(len(part)/(WIDTHS[c.column-1]/5))) for part in str(c.value or '').split('\n')) for c in cells)
+        ws.row_dimensions[cells[0].row].height=max(32,lines*15+8)
+    for index,w in enumerate(WIDTHS,1): ws.column_dimensions[get_column_letter(index)].width=w/5
+    for offset,value in ((2,'Ngày..........tháng..........năm..........'),(4,'Xác nhận của đơn vị')):
+        n=last+offset
+        ws.merge_cells(start_row=n,start_column=8,end_row=n,end_column=9)
+        c=ws.cell(n,8,value); c.font=Font(name='Times New Roman',size=11,bold=offset==4)
+        c.alignment=Alignment(horizontal='center')
+    ws.freeze_panes='C5'
+    ws.auto_filter.ref=f'A4:I{last}'
+    ws.print_title_rows='1:4'
+    ws.print_area=f'A1:I{last+6}'
+    ws.sheet_properties.pageSetUpPr.fitToPage=True
+    ws.page_setup.orientation='landscape'
+    ws.page_setup.paperSize=ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth=1
+    ws.page_setup.fitToHeight=0
+    ws.page_margins=PageMargins(left=.25,right=.25,top=.75,bottom=.75,header=.3,footer=.3)
+    stream=BytesIO(); wb.save(stream); stream.seek(0)
     return stream
 
 
