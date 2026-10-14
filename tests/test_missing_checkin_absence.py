@@ -357,3 +357,18 @@ def test_mapping_removed_at_write_recheck_never_creates_absence(scenario, monkey
     monkeypatch.setattr(fg, 'project_evidence', lambda *_: next(calls))
     assert rule.process(s.conn, now=s.now)['added'] == 0
     assert not s.saved and not s.notices
+
+
+def test_targeted_recheck_does_not_process_other_employees(scenario):
+    assert rule.process(scenario.conn, now=scenario.now, employee_names={'Someone else'})['added'] == 0
+    assert not scenario.saved
+    assert rule.process(scenario.conn, now=scenario.now, employee_names={'Test'})['added'] == 1
+
+
+def test_explicit_deleted_day_uses_its_cutoff_without_backfilling_other_dates():
+    day = date(2026, 10, 13)
+    now = datetime(2026, 10, 14, 10, tzinfo=VN_TZ)
+    args = dict(row=dict(employee_username='Test', shift_code='Ca 1'), now=now, synced=now,
+                policy=POLICY, mapped={'Test'}, checked=set(), leave_names=set())
+    assert rule.eligible_schedule(**args, work_date=day)
+    assert not rule.eligible_schedule(**args)
