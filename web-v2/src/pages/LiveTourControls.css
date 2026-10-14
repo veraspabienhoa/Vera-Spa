@@ -333,15 +333,17 @@
   font-size: 13px;
   line-height: 1.4;
 }
-.live-tour-payment-reminder-copy { min-width: 0; overflow-wrap: anywhere; }
+.live-tour-payment-reminder > svg { grid-column: 1; grid-row: 1; }
+.live-tour-payment-reminder-copy { grid-column: 2; grid-row: 1; min-width: 0; overflow-wrap: anywhere; }
 .live-tour-payment-reminder-copy strong, .live-tour-payment-reminder-copy span { display: block; }
 .live-tour-payment-reminder-copy span { margin-top: 4px; }
 .live-tour-payment-reminder .live-tour-payment-reminder-close {
+  grid-column: 3; grid-row: 1; align-self: start; justify-self: end;
   display: grid; place-items: center; width: 30px; height: 30px;
   padding: 0; border: 1px solid #d79d48; border-radius: 7px;
   color: inherit; background: transparent; cursor: pointer;
 }
-.live-tour-payment-reminder .live-tour-payment-reminder-open { grid-column: 2 / -1; justify-self: start; }
+.live-tour-payment-reminder .live-tour-payment-reminder-open { grid-column: 2 / -1; grid-row: 2; justify-self: end; }
 .live-tour-payment-reminder button:hover { transform: none; }
 .live-tour-payment-reminder button:focus-visible { outline: 2px solid #64350d; outline-offset: 2px; }
 @media print { .live-tour-payment-reminder { display: none; } }
