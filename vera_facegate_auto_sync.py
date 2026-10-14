@@ -49,8 +49,6 @@ def process_arrival_penalties(engine, today):
     from vera_facegate_runtime import worker_frames
     with engine.begin() as conn:
         cfg = ts.auto_check.load_config(conn)
-        if cfg['status'] == 'PAUSED':
-            return {'added': 0, 'skipped': 'auto_penalty_paused'}
         frames = worker_frames(conn, [today])
         catalog = ts.auto_check.load_catalog(conn)
     employees = {ts._employee_key(name): name for _, frame in frames
@@ -60,7 +58,17 @@ def process_arrival_penalties(engine, today):
         return ts.process_timesoft_penalties(engine, cfg, employees, catalog, frames, include_synced_history=True)
 
 
-def reconcile_day(day):
+def process_break_penalties(engine, day):
+    import io
+    from contextlib import redirect_stdout
+    import timesoft_sync_job as ts
+    with engine.begin() as conn:
+        catalog = ts.auto_check.load_catalog(conn)
+    with redirect_stdout(io.StringIO()):
+        return ts.process_break_return_penalties(engine, catalog, work_date=day)
+
+
+def reconcile_day(day, engine=None):
     """Commit one successful archive projection before its canonical writers."""
     from vera_attendance_source import enabled
     if not enabled():
@@ -69,7 +77,8 @@ def reconcile_day(day):
     from vera_facegate_cutover import runtime_engine
     from vera_missing_checkin_absence import process as process_absences
     from vera_hc_rules import process as process_hc_rules
-    engine = runtime_engine()
+    owns_engine = engine is None
+    engine = engine or runtime_engine()
     failures = []
     try:
         # These own separate transactions. A failed rule cannot roll back or
@@ -83,6 +92,7 @@ def reconcile_day(day):
         for name, operation in (
             ('published', publication),
             ('arrival_rule', lambda: process_arrival_penalties(engine, day)),
+            ('break_rule', lambda: process_break_penalties(engine, day)),
             ('hc_rules', lambda: transactional(process_hc_rules)),
             ('absence_rule', lambda: transactional(process_absences)),
         ):
@@ -94,7 +104,8 @@ def reconcile_day(day):
             except Exception as exc:
                 failures.append({'date': day.isoformat(), 'stage': name, 'reason': type(exc).__name__})
     finally:
-        engine.dispose()
+        if owns_engine:
+            engine.dispose()
     return failures
 
 
@@ -120,10 +131,7 @@ def archive_days():
             continue
         print(json.dumps({'date': day.isoformat(), 'inserted_count': summary['inserted_count'],
                           'stored_day_count': summary['stored_day_count']}))
-        try:
-            failures.extend(reconcile_day(day))
-        except Exception as exc:
-            failures.append({'date': day.isoformat(), 'stage': 'reconciliation', 'reason': type(exc).__name__})
+        failures.extend(summary.get('reconciliation_failures', []))
     print(json.dumps({'ok': not failures, 'source': 'facegate', 'failures': failures}))
     return int(bool(failures))
 

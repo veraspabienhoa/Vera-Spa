@@ -60,8 +60,8 @@ def evaluate(conn, employee, day):
 
     if source_for(day) != 'facegate':
         raise EvidencePending('attendance_source_not_facegate')
-    if day > datetime.now(VN_TZ).date() or auto.penalties_paused(conn):
-        raise EvidencePending('future_day_or_paused')
+    if day > datetime.now(VN_TZ).date():
+        raise EvidencePending('future_day')
     if not auto.automatic_penalty_employee_eligible(conn, employee, day):
         return
     evidence = [row for row in runtime.records(conn, day, day)
@@ -84,7 +84,7 @@ def evaluate(conn, employee, day):
         missing = absence(conn, work_date=day, employee_names={employee})
     if arrival.get('errors') or breaks.get('errors') or missing.get('review_required'):
         raise EvidencePending('rule_inputs_pending')
-    if missing.get('reason') in {'stale_evidence', 'incomplete_or_ambiguous_evidence', 'auto_penalty_paused'}:
+    if missing.get('reason') in {'stale_evidence', 'incomplete_or_ambiguous_evidence'}:
         raise EvidencePending('attendance_evidence_changed')
 
 
@@ -107,7 +107,7 @@ def process_one(engine_instance):
             evaluate(conn, employee, day)
         queue.mark_done(engine_instance, item)
     except (EvidencePending, EvidenceError):
-        # Missing/stale device evidence or a pause must not lose the request.
+        # Missing/stale device evidence must not lose the request.
         queue.reschedule(engine_instance, item, delay_seconds=60)
     except Exception as exc:
         # Queue diagnostics contain no names, raw scans or SQL parameters.

@@ -2847,3 +2847,41 @@ Outbox delivery remains outside the transaction. UI acknowledges queued recheck.
 Focused regressions cover manual/automatic classification, targeted rule scope,
 queue rollback/deduplication, pending evidence, financial rollback and lease
 completion. CI PostgreSQL and production deployment remain pending.
+
+
+## 14-10-2026 — Immediate penalties independent of Auto Check; residence roster
+
+User explicitly requires verified attendance penalties to run as soon as evidence
+is available, independently of the Auto Check scan status. Applied FaceGate sync
+now commits raw capture, releases the archive transaction/lock, and immediately
+publishes/evaluates arrival, confirmed break-return, HC and absence rules on the
+same engine. Both manual and scheduled captures use this path. The minute sync
+remains the retry/deadline evaluation path; no claim is made that VERA receives
+a physical device scan before the device capture completes. Failed reconciliation
+is reported separately from a successfully archived capture. Rule transactions
+remain independent and notification delivery remains outside their transactions.
+
+Remove the Auto Check pause gate from these canonical financial rules and from
+manual-leave-deletion rechecks. Keep per-rule/department controls, selected source,
+identity, freshness/completeness, authoritative VERA shifts, holiday exemptions,
+write-time evidence revalidation, outbox and deduplication. Auto Check still has
+its own scan controls; its UI now states that pause does not stop direct penalties.
+A positive adjusted arrival delay above 120 minutes uses the official Đi trễ
+KHÔNG phép catalog entry, including its configured amount and progressive rules.
+Exactly 120 retains the <=120 band. No fallback amount or historical fine rewrite.
+The existing arrival event key also covers this reason, preventing double fines;
+verified Ca 1 cleaning remains supplementary.
+
+Tạm trú is a separately permissioned page for selecting/removing roster members,
+searching names, filtering actual HR departments, and exporting the filtered
+roster. Membership is a durable employee payload flag, updated under a row lock;
+profile edits/renames keep the flag. Read-time projections use current profiles
+and explicit field allowlists. Banking fields, passwords and session credentials
+are never loaded or returned. Existing hidden/management profile restrictions
+remain. Dates render dd-mm-yyyy; workbook identity/phone values stay text and
+formula-like strings are exported as text. No production data changed or deployed.
+
+Local tests exercise immediate post-commit execution, pause independence, exact
+120-minute boundaries, unchanged stale/ambiguous evidence guards, roster filters,
+modal cancellation, and workbook identity/bank exclusion. Real PostgreSQL roster
+CRUD, permission denial, fresh-profile reads and idempotent fines run in CI.

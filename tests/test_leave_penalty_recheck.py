@@ -103,11 +103,11 @@ def test_recheck_scopes_all_rules_and_reuses_one_connection(monkeypatch, state):
     monkeypatch.setattr(sync,'process_timesoft_penalties',arrival)
     monkeypatch.setattr(sync,'process_break_return_penalties',breaks)
     monkeypatch.setattr(absence,'process',missing)
-    if state in {'stale','paused','rule_error'}:
+    if state in {'stale','rule_error'}:
         with pytest.raises(recheck.EvidencePending): recheck.evaluate(conn,'Synthetic',DAY)
     else:
         recheck.evaluate(conn,'Synthetic',DAY)
-    assert calls == ([] if state in {'stale','paused'} else ['arrival','break','absence'])
+    assert calls == ([] if state in {'stale'} else ['arrival','break','absence'])
 
 
 def test_existing_rules_adapter_never_opens_another_connection():

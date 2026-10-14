@@ -413,9 +413,6 @@ def process(conn, *, now=None):
     if not any(rule_switch(current, d, r).get('enabled') and r['enabled'] and r['kind'] != 'manual'
                for d in current['departments'] for r in current.get('rules', default_rules())):
         return {**result, 'reason': 'disabled'}
-    from vera_auto_check import penalties_paused
-    if penalties_paused(conn):
-        return {**result, 'reason': 'auto_penalty_paused'}
     ensure_schema(conn)
     current['eligible_departments'] = set(definitions(conn))
     configs = pay._employee_config_map(conn)

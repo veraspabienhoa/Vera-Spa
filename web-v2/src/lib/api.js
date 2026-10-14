@@ -212,6 +212,9 @@ function liveTourExportParams(kind, query = {}) {
 }
 
 export const veraApi = {
+  residence: () => request('/v2/residence'),
+  saveResidence: body => request('/v2/residence', { method: 'PUT', body: JSON.stringify(body) }),
+  exportResidence: params => download(`/v2/residence/export.xlsx?${new URLSearchParams(params)}`, 'VERA_TamTru.xlsx'),
   createOnlineBooking: body => request('/v2/online-bookings', { method: 'POST', body: JSON.stringify(body) }),
   onlineBookingStaff: () => request('/v2/online-bookings/staff'),
   deleteOnlineBooking: (id, revision) => request(`/v2/online-bookings/${id}`, { method: 'DELETE', body: JSON.stringify({ revision }) }),

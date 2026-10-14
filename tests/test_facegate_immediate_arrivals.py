@@ -34,14 +34,14 @@ def test_minute_arrival_worker_releases_read_connection_before_writing(monkeypat
         assert not active
         assert include_synced_history is True
         assert names == {job._employee_key('Synthetic Employee'): 'Synthetic Employee'}
-        assert cfg['status'] == 'RUNNING' and catalog == {'catalog': True}
+        assert cfg['status'] == ('PAUSED' if paused else 'RUNNING') and catalog == {'catalog': True}
         written.append(frames)
         print('Synthetic Employee must not reach minute-worker logs')
         return {'added': 1, 'errors': 0}
     monkeypatch.setattr(job, 'process_timesoft_penalties', write)
     result = sync.process_arrival_penalties(SimpleNamespace(begin=begin), day)
-    assert result['added'] == int(not paused)
-    assert len(written) == int(not paused)
+    assert result['added'] == 1
+    assert len(written) == 1
     assert not capsys.readouterr().out
 
 
@@ -59,7 +59,7 @@ def test_archive_reconciles_today_before_yesterday_and_keeps_successful_day_on_f
     monkeypatch.setattr(sync.subprocess,'run',archive)
     monkeypatch.setattr(sync,'reconcile_day',lambda day:calls.append(('reconcile',day)) or [])
     assert sync.archive_days()==1
-    assert calls==[('archive',today),('reconcile',today),('archive',today-timedelta(days=1))]
+    assert calls==[('archive',today),('archive',today-timedelta(days=1))]
     assert 'sync_failed' in capsys.readouterr().out
 
 
@@ -82,8 +82,49 @@ def test_failed_rule_does_not_suppress_other_committed_rules(monkeypatch):
         assert transactions[-1]=='closed'
         calls.append('arrival');raise RuntimeError('private detail')
     monkeypatch.setattr(sync,'process_arrival_penalties',bad)
+    monkeypatch.setattr(sync,'process_break_penalties',lambda *a:calls.append('break') or {'added':0})
     monkeypatch.setattr(hc,'process',lambda c:calls.append('hc') or {'added':1})
     monkeypatch.setattr(absence,'process',lambda c:calls.append('absence') or {'added':0})
     result=sync.reconcile_day(date(2026,10,12))
-    assert calls==['publish','arrival','hc','absence','disposed']
+    assert calls==['publish','arrival','break','hc','absence','disposed']
     assert result==[{'date':'2026-10-12','stage':'arrival_rule','reason':'RuntimeError'}]
+
+
+def test_apply_reconciles_only_after_archive_commit_without_waiting_for_auto_check(monkeypatch):
+    import vera_facegate_sync as archive
+    import vera_web_v2_devices as devices
+    state = {'active': False, 'committed': False, 'calls': []}
+    class Conn:
+        def execute(self, sql, params=None):
+            sql = str(sql)
+            value = [] if 'value_json' in sql else None if 'last_observed_count' in sql else True
+            return SimpleNamespace(scalar=lambda: value)
+    @contextmanager
+    def connection():
+        assert not state['active']
+        state['active'] = True
+        try: yield Conn()
+        finally: state['active'] = False
+    @contextmanager
+    def transaction():
+        with connection() as conn: yield conn
+        state['committed'] = True
+    @contextmanager
+    def address(*args): yield 'synthetic'
+    engine = SimpleNamespace(connect=connection, begin=transaction)
+    monkeypatch.setattr(archive.device, 'mapping_device_id', lambda: 'synthetic')
+    monkeypatch.setattr(devices, 'active_facegate_mappings', lambda c, m: [])
+    monkeypatch.setattr(devices, 'use_registered_facegate', address)
+    monkeypatch.setattr(archive, 'prepare_batch', lambda *a: [])
+    monkeypatch.setattr(archive, 'summarize', lambda *a: {'confirmed_mapping_count':0,'sample_reference_matches':0})
+    monkeypatch.setattr(archive, 'ensure_schema', lambda c: None)
+    monkeypatch.setattr(archive, 'persist_batch', lambda *a: {})
+    def reconcile(day, **kwargs):
+        assert not state['active'] and state['committed'] and kwargs['engine'] is engine
+        state['calls'].append(day)
+        return []
+    monkeypatch.setattr(sync, 'reconcile_day', reconcile)
+    archive.sync_day(engine, '2026-10-14', apply=False, fetch=lambda *a: {'total_count':0})
+    assert not state['calls']
+    archive.sync_day(engine, '2026-10-14', apply=True, fetch=lambda *a: {'total_count':0})
+    assert state['calls'] == [date(2026,10,14)]
