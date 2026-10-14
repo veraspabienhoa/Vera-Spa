@@ -52,16 +52,7 @@ export default function ResidencePage({ user }) {
   }
   return <section className="panel residence-page">
     <h1>Tạm trú</h1>
-    <div className="residence-toolbar">
-      <label>Bộ phận<select value={department} onChange={e => { setDepartment(e.target.value); setSelected('') }}>
-        <option value="">Tất cả bộ phận</option>{data?.departments.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
-      </select></label>
-      <label>Tìm trong bảng<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tên nhân viên" /></label>
-      <button className="secondary-button" type="button" disabled={busy} onClick={load}><RefreshCw size={16} />Làm mới</button>
-      {canExport && <button className="secondary-button" type="button" disabled={busy || !data || !!error} onClick={exportExcel}><Download size={16} />Xuất Excel</button>}
-    </div>
-    {error && <p role="alert">{error}</p>}
-    {!data && !error && <p role="status">Đang tải…</p>}
+    <div className="residence-toolbar residence-toolbar-top">
     {canManage && data && <div className="residence-picker">
       <LiveTourSearchSelect label="Tìm và thêm nhân viên" value={selected} onChange={setSelected}
         options={candidates.map(row => ({ value: row.username, label: row.username, detail: `${row.full_name} · ${row.department}`, searchText: `${row.username} ${row.full_name}` }))}
@@ -69,8 +60,20 @@ export default function ResidencePage({ user }) {
       <button className="primary-button" type="button" disabled={busy || !!error || !selected}
         onClick={() => save({ username: selected }, true)}><Plus size={16} />Thêm</button>
     </div>}
+
+      <label>Bộ phận<select value={department} onChange={e => { setDepartment(e.target.value); setSelected('') }}>
+        <option value="">Tất cả bộ phận</option>{data?.departments.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
+      </select></label>
+      <button className="secondary-button" type="button" disabled={busy} onClick={load}><RefreshCw size={16} />Làm mới</button>
+      {canExport && <button className="secondary-button" type="button" disabled={busy || !data || !!error} onClick={exportExcel}><Download size={16} />Xuất Excel</button>}
+    </div>
+    <div className="residence-toolbar residence-toolbar-bottom">
+      <label>Tìm trong bảng<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tên nhân viên" /></label>
     {canExport && <button className="secondary-button residence-export" type="button" disabled={busy || !data || !!error}
       onClick={() => setExportScope({ kind: 'residence', filters: { department, search } })}><Share2 size={16} />Xem / tải / chia sẻ PNG và PDF</button>}
+    </div>
+    {error && <p role="alert">{error}</p>}
+    {!data && !error && <p role="status">Đang tải…</p>}
     {canExport && exportScope && <EmployeeProfileModal labelledBy="residence-export-title" busy={sharing} onClose={() => setExportScope(null)}>
       <h2 id="residence-export-title">Bảng tạm trú · PNG / PDF</h2>
       <TrainingReportFiles scope={exportScope} onSharingChange={setSharing} onDenied={err => {

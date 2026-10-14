@@ -1,70 +1,82 @@
-"""Complete paginated residence tables from the authorized, bank-free projection."""
-from vera_web_v2_training_report_export import (
-    _fonts, _wrap, _render_pdf, _render_png, PAGE_WIDTH, PAGE_HEIGHT,
-)
+"""Residence print template: A4 landscape, one page across, repeated headers."""
+from reportlab.lib.pagesizes import A4, landscape
+from vera_web_v2_training_report_export import _fonts, _wrap, _render_pdf, _render_png
+
+EXPORT_COLUMNS = [('username','Tên nhân viên'),('full_name','Họ và tên'),
+    ('birth_date','Ngày sinh'),('gender','Giới tính'),('cccd_number','Số CCCD'),
+    ('cccd_issue_date','Ngày cấp CCCD'),('cccd_issue_place','Nơi cấp CCCD'),('address','Địa chỉ')]
+TITLE = 'DANH SÁCH CẬP NHẬT NƠI CƯ TRÚ MỚI CỦA NHÂN VIÊN'
+BUSINESS = 'HỘ KINH DOANH VERA'
+ADDRESS = 'Địa chỉ: 193 Trương Định, Tam Hiệp, Đồng Nai'
+WIDTHS = [28, 70, 114, 66, 42, 90, 66, 95, 235]
+
+
+def export_rows(records):
+    output = []
+    for row in records:
+        projected = {k: row.get(k, '') for k, _ in EXPORT_COLUMNS}
+        if not projected['address']:
+            projected['address'] = ', '.join(str(row[k]) for k in
+                ('address_detail','ward','district','province') if row.get(k))
+        output.append(projected)
+    return output
 
 
 def render_residence(records, columns, format):
     fonts = _fonts()
+    size = landscape(A4)
+    width, height = size
+    left, top, bottom = 18, 54, height - 54
+    widths = [n / sum(WIDTHS) * (width - left * 2) for n in WIDTHS]
+    fields = [('stt','STT'), *EXPORT_COLUMNS]
     pages = []
-    width = PAGE_WIDTH - 64
-    groups = [columns[1:][i:i + 4] for i in range(0, len(columns) - 1, 4)]
-    for group_index, group in enumerate(groups, 1):
-        fields = [columns[0], *group]
-        cell_width = width / len(fields)
-        page = []
-        y = 0
+    page, y = [], top
 
-        def text(value, x, top, size=9, bold=False):
-            page.append(('text', value, x, top, size, bold, '#173d2f', 'left'))
+    def text(value, x, at, fs=8, bold=False, anchor='left'):
+        page.append(('text',str(value),x,at,fs,bold,'#000000',anchor))
 
-        def line(x1, y1, x2, y2):
-            page.append(('line', x1, y1, x2, y2, '#879c98', .6))
+    def line(x1,y1,x2,y2):
+        page.append(('line',x1,y1,x2,y2,'#000000',.5))
 
-        def draw_row(lines, height, header=False):
-            nonlocal y
-            if header:
-                page.append(('rect', 32, y, width, height, '#e3efeb'))
-            for index, values in enumerate(lines):
-                x = 32 + index * cell_width
-                line(x, y, x, y + height)
-                for offset, value in enumerate(values):
-                    text(value, x + 5, y + 5 + offset * 12, bold=header)
-            line(32 + width, y, 32 + width, y + height)
-            line(32, y, 32 + width, y)
-            y += height
-            line(32, y, 32 + width, y)
+    def row(lines, count, bold=False):
+        nonlocal y
+        h = count * 11 + 10
+        x = left
+        for w, values in zip(widths, lines):
+            line(x,y,x,y+h)
+            for n, value in enumerate(values): text(value,x+4,y+5+n*11,bold=bold)
+            x += w
+        line(x,y,x,y+h); line(left,y,x,y); line(left,y+h,x,y+h)
+        y += h
 
-        def start_page():
-            nonlocal page, y
-            page = []
-            pages.append(page)
-            text('VERA SPA · DANH SÁCH TẠM TRÚ', 32, 24, 14, True)
-            text(f'{len(records)} nhân viên · Nhóm thông tin {group_index}/{len(groups)}', 32, 46)
-            y = 70
-            headers = [_wrap(label, cell_width - 10, 9, True) for _, label in fields]
-            draw_row(headers, max(map(len, headers)) * 12 + 10, True)
+    def start_page():
+        nonlocal page,y
+        page=[]; pages.append(page)
+        text(BUSINESS,left,top,11,True)
+        text(ADDRESS,left,top+17,9)
+        text(TITLE,width/2,top+42,12,True,'center')
+        y=top+68
+        headers=[_wrap(label,w-8,8,True) for (_,label),w in zip(fields,widths)]
+        row(headers,max(map(len,headers)),True)
 
-        start_page()
-        if not records:
-            text('Chưa có nhân viên tạm trú phù hợp.', 32, y + 12)
-        for record in records:
-            values = [_wrap(str(record.get(key, '') or '—'), cell_width - 10, 9) for key, _ in fields]
-            # Split exceptionally long profile fields across pages without clipping.
-            while any(values):
-                available = int((PAGE_HEIGHT - 44 - y - 10) // 12)
-                if available < 1:
-                    start_page()
-                    continue
-                count = min(max(map(len, values)), available)
-                draw_row([v[:count] for v in values], count * 12 + 10)
-                values = [v[count:] for v in values]
-                if any(values):
-                    start_page()
-                    text(f"Tiếp theo: {record.get('username', '')}", 32, 58, 8)
-    for number, page in enumerate(pages, 1):
-        page.append(('text', f'Trang {number}/{len(pages)}', PAGE_WIDTH - 32,
-                     PAGE_HEIGHT - 28, 8, False, '#62766c', 'right'))
-    if format == 'pdf':
-        return _render_pdf(pages, {'document_title': 'VERA SPA - Danh sách tạm trú'})
-    return _render_png(pages, fonts)
+    start_page()
+    for i,record in enumerate(export_rows(records),1):
+        values=[str(i)]+[str(record[k] or '—') for k,_ in EXPORT_COLUMNS]
+        lines=[_wrap(v,w-8,8) for v,w in zip(values,widths)]
+        needed=max(map(len,lines))*11+10
+        if y+needed>bottom and needed<bottom-(top+110): start_page()
+        while any(lines):
+            available=int((bottom-y-10)//11)
+            if available<1: start_page(); continue
+            count=min(available,max(map(len,lines)))
+            row([v[:count] for v in lines],count)
+            lines=[v[count:] for v in lines]
+            if any(lines):
+                start_page()
+                text(f'Tiếp theo: {record["username"]}',left,top+58,7)
+    if y+80>bottom: start_page()
+    text('Ngày..........tháng..........năm..........',width-140,y+18,9,False,'center')
+    text('Xác nhận của đơn vị',width-140,y+42,10,True,'center')
+    for n,p in enumerate(pages,1):
+        p.append(('text',f'Trang {n}/{len(pages)}',width-left,height-30,8,False,'#000000','right'))
+    return _render_pdf(pages,{'document_title':TITLE},size) if format=='pdf' else _render_png(pages,fonts,size)
