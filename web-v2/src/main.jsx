@@ -18,6 +18,7 @@ import { startLeaveListDateFilterSync } from './lib/leaveListDateFilterSync'
 import { startDepartmentSalaryAdvanceTransportGuard } from './lib/departmentSalaryAdvanceTransportGuard'
 import { startDepartmentSalaryAdvanceLedger } from './lib/departmentSalaryAdvanceLedger'
 import { startAttendanceTimesoftRefreshGuard } from './lib/attendanceTimesoftRefreshGuard'
+import { startTableColumnResize } from './lib/tableColumnResize'
 import { startSearchableDropdowns } from './lib/searchableDropdowns'
 import './styles.css'
 import './searchable-dropdowns.css'
@@ -39,6 +40,7 @@ startEmployeeProfileSwitchGuard()
 startEmployeeProfileCompletionAndIssuerFix()
 startEmployeeDirectoryUx()
 startSearchableDropdowns()
+startTableColumnResize()
 startEmployeeProfileHeaderSaveFix()
 startEmployeeToolbarRecovery()
 startLeaveListDateFilterSync()
