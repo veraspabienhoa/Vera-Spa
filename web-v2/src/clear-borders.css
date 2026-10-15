@@ -821,3 +821,22 @@ body .attendance-page .attendance-filter-buttons .vera-date-picker-button {
   body .attendance-workspace .attendance-tabs > button { white-space: normal; }
   body .attendance-workspace .attendance-refresh { margin-left: auto; max-width: 100%; }
 }
+
+/* Shared column grips: resize adjacent columns without changing the table frame. */
+body table th > .vera-column-resize-handle,
+body table td > .vera-column-resize-handle {
+  position:absolute; inset:0 0 0 auto; width:9px; height:100%; z-index:8;
+  display:block; padding:0; margin:0; border:0!important; border-radius:0;
+  background:transparent; cursor:col-resize; touch-action:none; user-select:none;
+}
+body table .vera-column-resize-handle::after {
+  content:''; position:absolute; right:1px; top:20%; height:60%; width:2px;
+  background:currentColor; opacity:.25;
+}
+body table .vera-column-resize-handle:hover::after,
+body table .vera-column-resize-handle:focus-visible::after { opacity:1; }
+body table .vera-column-resize-handle:focus-visible { outline:2px solid #b88616; outline-offset:-2px; }
+body.vera-column-resizing, body.vera-column-resizing * { cursor:col-resize!important; user-select:none!important; }
+body table.vera-columns-sized { table-layout:fixed!important; }
+body table.vera-columns-sized :is(th,td) { overflow:hidden; text-overflow:ellipsis; overflow-wrap:anywhere; }
+@media print { body table .vera-column-resize-handle { display:none!important; } }

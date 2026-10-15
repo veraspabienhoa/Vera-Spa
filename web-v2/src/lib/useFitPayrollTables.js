@@ -3,6 +3,8 @@ import './fitPayrollTables.css'
 
 // Scale the whole table together: all columns and full amounts remain visible.
 export function fitPayrollTable(table) {
+  // A user column drag already preserves the fitted outer width and zoom.
+  if (table.classList?.contains('vera-columns-sized')) return
   // Editable configuration tables scroll at full size and keep names sticky.
   if (table.closest?.('.department-config-table') || table.closest?.('.department-payroll-source-table')) {
     table.style.zoom = '1'

@@ -94,6 +94,11 @@ test('configuration renews an expired session before saving',async t=>{
  assert.match(document.body.textContent,/Đã lưu cấu hình/)
 })
 
+test('column resizing keeps the existing payroll zoom and outer frame',()=>{
+ const table={classList:{contains:name=>name==='vera-columns-sized'},parentElement:{clientWidth:800},scrollWidth:2000,style:{zoom:'0.4',width:'2000px'}}
+ fitPayrollTable(table);assert.equal(table.style.zoom,'0.4');assert.equal(table.style.width,'2000px')
+})
+
 test('wide payroll tables fit the available width and restore full size after resizing',()=>{
  const table={parentElement:{clientWidth:800},scrollWidth:2000,style:{}}
  fitPayrollTable(table);assert.equal(table.style.zoom,'0.4')
