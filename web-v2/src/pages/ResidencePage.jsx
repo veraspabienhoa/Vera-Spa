@@ -65,12 +65,14 @@ export default function ResidencePage({ user }) {
         <option value="">Tất cả bộ phận</option>{data?.departments.map(item => <option key={item.code} value={item.code}>{item.name}</option>)}
       </select></label>
       <button className="secondary-button" type="button" disabled={busy} onClick={load}><RefreshCw size={16} />Làm mới</button>
-      {canExport && <button className="secondary-button" type="button" disabled={busy || !data || !!error} onClick={exportExcel}><Download size={16} />Xuất Excel</button>}
     </div>
     <div className="residence-toolbar residence-toolbar-bottom">
       <label>Tìm trong bảng<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tên nhân viên" /></label>
+      <div className="residence-export-actions">
+      {canExport && <button className="secondary-button" type="button" disabled={busy || !data || !!error} onClick={exportExcel}><Download size={16} />Xuất Excel</button>}
     {canExport && <button className="secondary-button residence-export" type="button" disabled={busy || !data || !!error}
       onClick={() => setExportScope({ kind: 'residence', filters: { department, search } })}><Share2 size={16} />Xem / tải / chia sẻ PNG và PDF</button>}
+      </div>
     </div>
     {error && <p role="alert">{error}</p>}
     {!data && !error && <p role="status">Đang tải…</p>}
