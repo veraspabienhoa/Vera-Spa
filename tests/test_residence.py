@@ -13,17 +13,21 @@ def test_excel_preserves_ids_and_never_executes_formula_or_exposes_banks():
     row.update(username='Synthetic', full_name='=1+1', cccd_number='001234567890', phone='0900000000',
                bank_name='PRIVATE', bank_account='PRIVATE')
     ws = load_workbook(residence.workbook([row])).active
-    headers = [cell.value for cell in ws[4]]
-    values = [cell.value for cell in ws[5]]
+    headers = [cell.value for cell in ws[5]]
+    values = [cell.value for cell in ws[6]]
     assert 'PRIVATE' not in values
     assert all('ngân hàng' not in str(x).lower() for x in headers)
-    assert ws.cell(5, headers.index('Họ và tên')+1).data_type == 's'
+    assert ws.cell(6, headers.index('Họ và tên')+1).data_type == 's'
     assert values[headers.index('Số CCCD')] == '001234567890'
     assert headers == ['STT', 'Tên nhân viên', 'Họ và tên', 'Ngày sinh', 'Giới tính', 'Số CCCD', 'Ngày cấp CCCD', 'Nơi cấp CCCD', 'Địa chỉ']
-    assert ws.freeze_panes == 'C5'
+    assert ws['A1'].value == 'HỘ KINH DOANH VERA'
+    assert ws['A4'].value == 'DANH SÁCH NHÂN VIÊN ĐĂNG KÝ TẠM TRÚ'
+    assert 'E1:I1' in str(ws.merged_cells)
+    assert ws['A5'].fill.fgColor.rgb != '001F4E3D'
+    assert ws.freeze_panes == 'C6'
     assert str(ws.page_setup.paperSize) == ws.PAPERSIZE_A4
     assert ws.page_setup.fitToWidth == 1
-    assert ws.print_title_rows == '$1:$4'
+    assert ws.print_title_rows == '$1:$5'
 
 
 def test_filter_uses_hr_department_and_accent_insensitive_name():
@@ -63,7 +67,7 @@ def test_roster_membership_profile_refresh_export_and_authorization(database):
     assert client.get('/v2/residence').json()['records'][0]['full_name'] == 'Updated'
     exported = client.get('/v2/residence/export.xlsx?department=nhanvien')
     from io import BytesIO
-    assert load_workbook(BytesIO(exported.content)).active['A5'].value is None
+    assert load_workbook(BytesIO(exported.content)).active['A6'].value is None
     allowed.remove('residence_manage')
     assert client.put('/v2/residence', json={'username':'Test','included':False}).status_code == 403
     assert client.get('/v2/residence/export?format=pdf').content.startswith(b'%PDF')

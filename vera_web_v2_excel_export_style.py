@@ -102,6 +102,9 @@ def install_excel_export_style(app) -> None:
             or "spreadsheetml" in content_type
             or ".xlsx" in disposition
         )
+        # The residence roster is an approved print form, not a styled data grid.
+        if path == '/v2/residence/export.xlsx':
+            return response
         if not is_excel or response.status_code < 200 or response.status_code >= 300:
             return response
 

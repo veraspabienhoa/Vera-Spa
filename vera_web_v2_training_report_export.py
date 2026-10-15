@@ -150,8 +150,9 @@ def _width(value: str, size: float, bold: bool = False) -> float:
     return pdfmetrics.stringWidth(value, BOLD_FONT if bold else REGULAR_FONT, size)
 
 
-def _wrap(value: Any, width: float, size: float, bold: bool = False) -> list[str]:
+def _wrap(value: Any, width: float, size: float, bold: bool = False, *, font_names=None) -> list[str]:
     """Wrap all text, including unbroken identifiers, without truncation."""
+    measure = lambda value, size, bold: pdfmetrics.stringWidth(value, font_names[int(bold)], size) if font_names else _width(value, size, bold)
     result: list[str] = []
     for paragraph in _text(value).split("\n"):
         if not paragraph.strip():
@@ -160,18 +161,18 @@ def _wrap(value: Any, width: float, size: float, bold: bool = False) -> list[str
         line = ""
         for word in re.findall(r"\S+", paragraph):
             candidate = f"{line} {word}" if line else word
-            if _width(candidate, size, bold) <= width:
+            if measure(candidate, size, bold) <= width:
                 line = candidate
                 continue
             if line:
                 result.append(line)
                 line = ""
-            if _width(word, size, bold) <= width:
+            if measure(word, size, bold) <= width:
                 line = word
                 continue
             part, part_width = "", 0.0
             for char in word:
-                char_width = _width(char, size, bold)
+                char_width = measure(char, size, bold)
                 if part and part_width + char_width > width:
                     result.append(part)
                     part, part_width = "", 0.0
@@ -466,7 +467,7 @@ def _build_layout(report: dict, *, png: bool = False) -> list[list[tuple]]:
     return layout.finish()
 
 
-def _render_pdf(pages: list[list[tuple]], report: dict, page_size=A4) -> bytes:
+def _render_pdf(pages: list[list[tuple]], report: dict, page_size=A4, *, font_names=None) -> bytes:
     output = BytesIO()
     pdf = canvas.Canvas(output, pagesize=page_size, pageCompression=1)
     employee = report.get("employee") or {}
@@ -478,7 +479,7 @@ def _render_pdf(pages: list[list[tuple]], report: dict, page_size=A4) -> bytes:
             kind, *args = command
             if kind == "text":
                 value, x, y, size, bold, color, anchor = args
-                pdf.setFont(BOLD_FONT if bold else REGULAR_FONT, size)
+                pdf.setFont(font_names[int(bold)] if font_names else BOLD_FONT if bold else REGULAR_FONT, size)
                 pdf.setFillColor(color)
                 draw = pdf.drawRightString if anchor == "right" else pdf.drawCentredString if anchor == "center" else pdf.drawString
                 draw(x, page_size[1] - y - size, value)
