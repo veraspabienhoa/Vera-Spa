@@ -112,7 +112,7 @@ def render_roster(records, format, *, labor=False):
     text('Xác nhận của đơn vị',width-140,y+42,10,True,'center')
     if labor:
         for offset,value in enumerate(('Số…../XN-TB.TBXH', 'Phòng lao động - TBXH TP Biên Hòa', 'Cơ sở đăng ký:…..HĐLĐ (…….Nam/…….Nữ)', 'Biên Hòa, ngày…..tháng…..năm…..', 'Trưởng phòng')):
-            text(value,left+140,y+18+offset*15,9,bold=offset in {1,4})
+            text(value,left+90,y+18+offset*15,9,bold=offset in {1,4})
     for n,p in enumerate(pages,1):
         p.append(('text',f'Trang {n}/{len(pages)}',width-left,height-30,8,False,'#000000','right'))
     return _render_pdf(pages,{'document_title':title},size,font_names=font_names) if format=='pdf' else _render_png(pages,fonts,size)
