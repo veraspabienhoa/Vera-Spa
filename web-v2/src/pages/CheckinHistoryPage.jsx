@@ -161,8 +161,8 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
     {dirty && records && <p role="status">Bộ lọc đã thay đổi. Bấm Xem lịch sử để cập nhật bảng và xuất Excel.</p>}
     {lookupError && <p role="alert">{lookupError}</p>}
     <StableFeedback>{error && <p role="alert">{error}</p>}</StableFeedback>
+      <div className="checkin-loaded-row">{records && <p>Dữ liệu đã tải: {formatVeraDate(loadedQuery.start)} – {formatVeraDate(loadedQuery.end)}.</p>}<button className="secondary-button" type="button" disabled={busy || exporting || !records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} /><span>{exporting ? 'Đang xuất…' : 'Xuất excel'}</span></button></div>
     {records && <>
-      <div className="checkin-loaded-row"><p>Dữ liệu đã tải: {formatVeraDate(loadedQuery.start)} – {formatVeraDate(loadedQuery.end)}.</p><button className="secondary-button" type="button" disabled={busy || exporting || !records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} /><span>{exporting ? 'Đang xuất…' : 'Xuất excel'}</span></button></div>
       
       {(source === 'facegate' || source === 'facegate_saved') ? <>
         {source === 'facegate_saved' && <p role="status">Đã khớp: {visible.filter(item => item.mapping_status === 'reference_match').length} · Chưa ánh xạ: {visible.filter(item => item.mapping_status !== 'reference_match').length}.</p>}
