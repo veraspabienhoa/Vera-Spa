@@ -1,6 +1,6 @@
 import { confirmDialog } from '../lib/systemDialogs'
 import StableFeedback from '../components/StableFeedback'
-import { Camera, ScanLine, Smartphone, RefreshCw } from 'lucide-react'
+import { Camera, CameraOff, ScanLine, Smartphone, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { veraApi } from '../lib/api'
 import { formatVeraDateTime } from '../lib/veraDate'
@@ -172,11 +172,12 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
       <label>Tên đăng nhập nhân viên<input value={employee} onChange={event => setEmployee(event.target.value)} maxLength={200} placeholder="Nhập chính xác tên đăng nhập"/></label>
       <label>Mã cần quét<input value={barcode} onChange={event => setBarcode(event.target.value)} maxLength={256} placeholder="Mã QR hoặc barcode"/></label>
     </div>
-    <div className="device-actions">{canRegister && <button type="button" className="secondary-button" disabled={busy} onClick={registerPhone}><Smartphone size={16}/>Đăng ký điện thoại này</button>}<button type="button" className="secondary-button" onClick={() => setCamera(value => !value)}><Camera size={16}/>{camera ? 'Tắt camera' : 'Bật camera'}</button></div>
+    <div className="device-actions">{canRegister && <button type="button" className="secondary-button" disabled={busy} onClick={registerPhone}><Smartphone size={16}/>Đăng ký điện thoại này</button>}<button type="button" className="secondary-button" disabled={camera} onClick={() => setCamera(true)}><Camera size={16}/>Bật camera</button></div>
     <div className="device-mobile-camera-facing" role="group" aria-label="Lựa chọn camera trước hoặc camera sau">
       <span>Chọn camera</span>
       <button type="button" aria-pressed={facingMode === 'user'} className={facingMode === 'user' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('user')} disabled={cameraStarting || busy}><Camera size={16}/> Camera trước</button>
       <button type="button" aria-pressed={facingMode === 'environment'} className={facingMode === 'environment' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('environment')} disabled={cameraStarting || busy}><Camera size={16}/> Camera sau</button>
+      {camera && <button type="button" className="secondary-button danger-button" onClick={() => setCamera(false)}><CameraOff size={16}/> Tắt camera</button>}
     </div>
     {camera && <div className="device-mobile-camera-frame"><video ref={videoRef} onLoadedData={() => setCameraReady(Boolean(videoRef.current?.videoWidth))} playsInline muted autoPlay className="device-mobile-preview" style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }}/>{cameraStarting && <span role="status">Đang mở camera…</span>}</div>}
     <div className="device-actions">
