@@ -46,7 +46,8 @@ const formatDateInput = (date) => {
   return `${year}-${month}-${day}`
 }
 
-const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+const businessDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' })
+const today = () => businessDateFormatter.format(new Date())
 const addDays = (date, days) => {
   const next = new Date(date)
   next.setDate(next.getDate() + days)
@@ -182,7 +183,8 @@ export default function LeaveRegistrationPage({ user }) {
     || user?.permissions?.leave_manage_delete === true
     || user?.permissions?.leave_detail_delete === true
     || user?.permissions?.leave_today_khong_phep_edit_delete === true
-  const recordReasonChoices = (item) => manageCreatedToday && isLeaveCreatedToday(item?.created_at, today()) ? null : letanReasonChoices(role, item?.leave_date, item?.leave_reason, today(), letanLeavePolicy)
+  const renderToday = today()
+  const recordReasonChoices = (item) => manageCreatedToday && isLeaveCreatedToday(item?.created_at, renderToday) ? null : letanReasonChoices(role, item?.leave_date, item?.leave_reason, renderToday, letanLeavePolicy)
   const recordPermissionContext = (item) => ({
     role,
     allowedByPermission: canEdit,
@@ -191,14 +193,14 @@ export default function LeaveRegistrationPage({ user }) {
     createdAt: item?.created_at,
     currentReason: item?.leave_reason,
     currentLeaveType: item?.leave_type,
-    today: today(),
+    today: renderToday,
     isOwnRecord: normalizeSearch(item?.employee_name) === normalizeSearch(user?.employee_username),
     employeeSelfServicePolicy,
     letanLeavePolicy,
   })
   const canEditRecord = (item) => canEditLeaveRecord(recordPermissionContext(item))
   const canDeleteRecord = (item) => canDeleteLeaveRecord({ ...recordPermissionContext(item), allowedByPermission: canDelete })
-  const dateIsPast = role !== 'admin' && date < today()
+  const dateIsPast = role !== 'admin' && date < renderToday
   const canCreate = isApiConfigured
     && (canChooseEmployee || ['leader', 'nhanvien'].includes(role))
     && loadState.reasons === 'ready' && loadState.employees === 'ready'

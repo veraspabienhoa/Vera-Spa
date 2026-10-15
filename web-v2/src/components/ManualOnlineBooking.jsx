@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import EmployeeProfileModal from './EmployeeProfileModal'
 import LiveTourSearchSelect from './LiveTourSearchSelect'
+import VeraTimeInput from './VeraTimeInput'
 import VeraDateInput from './VeraDateInput'
 import { veraApi } from '../lib/api'
 import { bookingDateRange } from '../lib/bookingDateRange'
@@ -78,7 +79,7 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
         {catalogError && <p className="wide" role="status">{catalogError}</p>}
         <label className="wide">Số khách *<input aria-label="Số khách" type="number" required min="1" max="50" step="1" disabled={busy} value={draft.guests} onChange={event => set('guests', event.target.value === '' ? '' : Number(event.target.value))}/></label>
         <label>Ngày đến *<VeraDateInput aria-label="Ngày đến" required disabled={busy} min={booking ? undefined : bookingDateRange('today').date_from} value={draft.appointment_date} onChange={event => set('appointment_date', event.target.value)}/></label>
-        <label>Giờ đến mong muốn *<input aria-label="Giờ đến mong muốn" type="time" step="900" required disabled={busy} value={draft.appointment_time} onChange={event => set('appointment_time', event.target.value)}/></label>
+        <label>Giờ đến mong muốn *<VeraTimeInput aria-label="Giờ đến mong muốn" required disabled={busy} value={draft.appointment_time} onChange={event => set('appointment_time', event.target.value)}/></label>
         {['customer_name', 'phone'].map(field => {
           const label = field === 'phone' ? 'Số điện thoại' : 'Tên khách hàng'
           const required = field === 'customer_name'
