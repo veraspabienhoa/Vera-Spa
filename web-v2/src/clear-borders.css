@@ -851,3 +851,10 @@ body .staff-page .staff-primary-actions .staff-face-switch span { min-width:0; w
 .labor-report-options label,.labor-report-options input { min-width:0; width:100%; box-sizing:border-box; }
 .labor-report-options button { grid-column:1/-1; justify-self:end; }
 @media(max-width:600px) { .labor-report-options { grid-template-columns:1fr; } }
+
+/* Residence exports share the second toolbar row. */
+body .residence-toolbar-top { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto; }
+body .residence-toolbar-bottom { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); }
+body .residence-export-actions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); gap:10px; min-width:0; align-items:stretch; }
+body .residence-export-actions button { width:100%; }
+@media(max-width:700px) { body .residence-toolbar-top, body .residence-toolbar-bottom { grid-template-columns:minmax(0,1fr); } }
