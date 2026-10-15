@@ -28,6 +28,7 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
   const [camera, setCamera] = useState(false)
   const [facingMode, setFacingMode] = useState('environment')
   const [cameraStarting, setCameraStarting] = useState(false)
+  const [cameraReady, setCameraReady] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [records, setRecords] = useState(null)
@@ -54,6 +55,7 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
   }, [])
 
   useEffect(() => {
+    setCameraReady(false)
     if (!camera) { setCameraStarting(false); return undefined }
     let active = true
     const video = videoRef.current
@@ -77,6 +79,11 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
       if (video) video.srcObject = null
     }
   }, [camera, facingMode])
+
+  const checkinHint = !stations.some(device => device.id === stationId) ? 'Chọn điện thoại đã đăng ký và đang bật.'
+    : !employee.trim() ? 'Nhập tên đăng nhập nhân viên để gửi chấm công có ảnh.'
+    : !camera ? 'Bật camera để chụp ảnh chấm công.'
+    : !cameraReady || cameraStarting ? 'Chờ camera sẵn sàng trước khi gửi chấm công.' : ''
 
   const photo = () => new Promise((resolve, reject) => {
     const video = videoRef.current
@@ -151,7 +158,7 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
       onRegistryChange(updated)
       setStationId(id)
       localStorage.setItem('vera-mobile-station-id', id)
-      setMessage('Đã đăng ký điện thoại này. Bật camera để bắt đầu.')
+      setMessage('Đã đăng ký điện thoại này. Nhập tên đăng nhập nhân viên, bật camera rồi gửi chấm công có ảnh.')
     } catch (cause) { setMessage(cause.message || 'Không đăng ký được điện thoại; tải lại danh sách và thử lại.') }
     finally { setBusy(false) }
   }
@@ -171,12 +178,13 @@ export default function MobileStationPanel({ registry, onRegistryChange, canRegi
       <button type="button" aria-pressed={facingMode === 'user'} className={facingMode === 'user' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('user')} disabled={cameraStarting || busy}><Camera size={16}/> Camera trước</button>
       <button type="button" aria-pressed={facingMode === 'environment'} className={facingMode === 'environment' ? 'primary-button compact' : 'secondary-button compact'} onClick={() => setFacingMode('environment')} disabled={cameraStarting || busy}><Camera size={16}/> Camera sau</button>
     </div>
-    {camera && <div className="device-mobile-camera-frame"><video ref={videoRef} playsInline muted autoPlay className="device-mobile-preview" style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }}/>{cameraStarting && <span role="status">Đang mở camera…</span>}</div>}
+    {camera && <div className="device-mobile-camera-frame"><video ref={videoRef} onLoadedData={() => setCameraReady(Boolean(videoRef.current?.videoWidth))} playsInline muted autoPlay className="device-mobile-preview" style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }}/>{cameraStarting && <span role="status">Đang mở camera…</span>}</div>}
     <div className="device-actions">
       <button type="button" className="secondary-button" disabled={busy || !camera || cameraStarting} onClick={() => submit('photo')}>Chụp & gửi ảnh</button>
       <button type="button" className="secondary-button" disabled={busy} onClick={() => submit('scan')}><ScanLine size={16}/>{barcode.trim() ? 'Lưu mã' : 'Quét mã'}</button>
-      <button type="button" className="primary-button" disabled={busy || !camera || !employee.trim()} onClick={() => submit('checkin')}>Gửi chấm công có ảnh</button>
+      <button type="button" className="primary-button" aria-describedby="mobile-checkin-guidance" disabled={busy || Boolean(checkinHint)} onClick={() => submit('checkin')}>Gửi chấm công có ảnh</button>
     </div>
+    <p id="mobile-checkin-guidance" aria-live="polite">{checkinHint || 'Sẵn sàng gửi chấm công có ảnh.'} Ảnh cần được Admin xem và xác nhận để ghi nhận chấm công; camera điện thoại không tự nhận diện nhân viên. Mã QR/barcode không bắt buộc khi chấm công có ảnh.</p>
     </>}
     <StableFeedback>{message && <p role="status">{message}</p>}</StableFeedback>
     <div className="device-actions"><h3>Sự kiện từ điện thoại</h3><button type="button" className="secondary-button" disabled={busy} onClick={async () => { try { await refreshRecords() } catch (cause) { setMessage(cause.message) } }}><RefreshCw size={16}/>Làm mới</button></div>

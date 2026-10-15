@@ -3,7 +3,7 @@ import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
 import { formatVeraDate } from '../lib/veraDate'
 import VeraDateTimeInput from './VeraDateTimeInput'
-import { isComboRedemption } from '../lib/paymentPresentation'
+import { isComboRedemption, usesComboTicket } from '../lib/paymentPresentation'
 import { invoiceLocalTime } from '../lib/liveTourFilters'
 import { useState } from 'react'
 import { Trash2, X } from 'lucide-react'
@@ -58,7 +58,7 @@ export default function LiveTourPaidInvoiceDialog({ context, catalog = [], busy,
   return <div className="live-tour-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section data-ui-key="u-022439885343" ref={dialog} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={`${deleting ? 'Hủy' : 'Sửa'} hóa đơn đã thanh toán`} onClick={(event) => event.stopPropagation()}>
       <div className="live-tour-modal-head"><strong>{deleting ? 'Xóa / hủy' : 'Sửa'} hóa đơn đã thanh toán</strong><button data-dialog-close="true" data-ui-key="u-9dbbb3e4bef1" type="button" className="icon-button" aria-label="Đóng" disabled={busy} onClick={onClose}><X size={18}/></button></div>
-      <p><strong>{item.bill_no} · {item.customer_name || 'Khách lẻ'}</strong><br/>{formatVeraDate(item.business_date)} · {item.payment_method} · {money(item.total)}</p>
+      <p className={usesComboTicket(item) ? 'vera-combo-ticket' : undefined}>{usesComboTicket(item) && <strong className="vera-combo-badge">VÉ COMBO</strong>}<strong>{item.bill_no} · {item.customer_name || 'Khách lẻ'}</strong><br/>{formatVeraDate(item.business_date)} · {item.payment_method} · {money(item.total)}</p>
       <StableFeedback>{error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất.</p>}</StableFeedback>
       <p className={deleting ? 'error-box' : 'setup-note'}>{deleting
         ? isAdmin

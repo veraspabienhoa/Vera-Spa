@@ -1926,7 +1926,7 @@ function LiveTourWorkspace({ user, navigationToggle = null }) {
               <div className="live-tour-checkout-total" aria-live="polite"><span>Tiền dịch vụ</span><strong>{Number.isFinite(checkoutEffectiveSubtotal) ? formatMoney(checkoutEffectiveSubtotal) : 'Chọn dịch vụ'}</strong><span>Tiền Tip</span><strong>{formatMoney(checkoutTipPreview)}</strong><span>Tổng thanh toán</span><strong>{Number.isFinite(checkoutPreviewTotal) ? formatMoney(checkoutPreviewTotal) : 'Chọn dịch vụ'}</strong></div>
             </div>
             <label className="live-tour-field"><span>Phương thức thanh toán</span><select value={form.payment_method} onChange={(event) => setForm((current) => ({ ...current, payment_method: event.target.value, ...(event.target.value === 'COMBO' ? {} : { combo_purchase_id: '' }) }))}><option>TIỀN MẶT</option><option>CHUYỂN KHOẢN</option><option>THẺ</option><option value="COMBO" disabled={!form.combo_purchase_id}>COMBO · chọn combo đã mua</option></select></label>
-            <label className="live-tour-field"><span>Trừ vé combo</span><select value={form.combo_purchase_id} onChange={(event) => {
+            <label className={`live-tour-field${form.combo_purchase_id ? ' vera-combo-ticket' : ''}`}><span>{form.combo_purchase_id ? 'VÉ COMBO · Trừ vé combo' : 'Trừ vé combo'}</span><select value={form.combo_purchase_id} onChange={(event) => {
               setForm((current) => ({
                 ...current, ...(manualQuickBooking ? { service_id: '' } : {}), combo_purchase_id: event.target.value, discount: event.target.value ? '0' : current.discount, discount_mode: 'amount', discount_percent: '0',
                 payment_method: event.target.value ? 'COMBO' : current.payment_method === 'COMBO' ? 'TIỀN MẶT' : current.payment_method,

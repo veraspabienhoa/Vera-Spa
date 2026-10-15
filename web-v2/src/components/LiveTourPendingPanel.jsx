@@ -1,3 +1,4 @@
+import { usesComboTicket } from '../lib/paymentPresentation'
 import { memo } from "react";
 import UiToolbar from "../components/UiToolbar";
 import { Download } from "lucide-react";
@@ -32,9 +33,11 @@ function LiveTourPendingPanel({
           booked_at: item.booked_at,
           started_at: item.started_at
         }];
-        return <article className="live-tour-data-card" key={itemId(item, index)}>
+        return <article className={`live-tour-data-card${usesComboTicket(item) ? ' vera-combo-ticket' : ''}`} key={itemId(item, index)}>
+          {usesComboTicket(item) && <strong className="vera-combo-badge">VÉ COMBO</strong>}
             {cardEntries.map((entry, entryIndex) => <strong key={entryIndex}>{entry.employee_name || 'Chưa có nhân viên'} – {entry.service || 'Chưa ghi dịch vụ'} – {entry.room || 'Chưa có phòng'}</strong>)}
             <small>{item?.customer_name || item?.customer || 'Khách lẻ'} {item?.customer_phone || item?.phone ? `· ${item?.customer_phone || item?.phone}` : ''}</small>
+          {usesComboTicket(item) && <strong className="vera-combo-badge">VÉ COMBO</strong>}
             {cardEntries.map((entry, entryIndex) => <small key={entryIndex}>Booking: {bookingTimeLabel(entry.booked_at || item.effective_at || item.booked_at || item.created_at)} · Thực hiện: {bookingTimeLabel(entry.started_at)}</small>)}
             <UiToolbar data-ui-key="u-5c381f1b69d9" className="live-tour-card-actions"><button data-ui-key="u-d3f310ed4bc5" data-ui-label-default="Thanh toán" type="button" className="primary-button" disabled={!canPayment || Boolean(actionBusy)} onClick={() => openModal('checkout', {
               item,

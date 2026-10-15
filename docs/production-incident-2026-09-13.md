@@ -1,3 +1,18 @@
+## 15-10-2026 — Phone check-in guidance and combo identity (source only)
+
+Supplied phone recording shows successful registration and a working camera,
+but an empty employee username keeps photo check-in disabled. Registration does
+not enable face recognition: mobile events still require an employee identity
+and Admin photo confirmation. Show the missing prerequisite inline and wait for
+video frame readiness before enabling submission. Preserve server validation,
+confirmation, permissions and attendance writes.
+
+Booking, pending/paid invoice cards and editors now distinguish actual combo
+redemptions/reservations with a purple background and explicit ticket label.
+Mixed combo plus retail payments retain this identity; combo sales and customers
+merely owning tickets are not marked. Financial calculations are unchanged.
+Production runtime and deployment are unverified.
+
 ## 13-10-2026 — Permitted HC lateness has zero fine (source only)
 
 New Admin approvals store a zero fine and version-2 audit, retaining immutable

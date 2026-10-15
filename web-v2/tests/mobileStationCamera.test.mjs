@@ -4,7 +4,7 @@ import { build } from 'esbuild'
 import { JSDOM } from 'jsdom'
 
 const built = await build({
-  stdin: { contents: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Panel from './src/pages/MobileStationPanel';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=()=>act(async()=>root.render(<Panel registry={{revision:1,devices:[]}} canRegister={false}/>));window.unmount=()=>act(async()=>root.unmount());`, resolveDir: process.cwd(), loader: 'jsx' },
+  stdin: { contents: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Panel from './src/pages/MobileStationPanel';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=()=>act(async()=>root.render(<Panel registry={{revision:1,devices:[{id:'phone',kind:'camera',enabled:true,name:'Điện thoại'}]}} canRegister={false}/>));window.unmount=()=>act(async()=>root.unmount());`, resolveDir: process.cwd(), loader: 'jsx' },
   bundle: true, write: false, format: 'iife', jsx: 'automatic', loader: { '.css': 'empty' },
   plugins: [{ name: 'api', setup(b) {
     b.onResolve({ filter: /\/lib\/api$/ }, () => ({ path: 'api', namespace: 'mock' }))
@@ -25,9 +25,12 @@ test('switching front and rear cameras stops the previous stream and mirrors the
     return { getTracks: () => [{ stop: () => { request.stopped = true } }] }
   } } })
   try {
+    w.localStorage.setItem('vera-mobile-station-id', 'phone')
     w.eval(built.outputFiles[0].text)
     await w.mount()
     const button = label => [...w.document.querySelectorAll('button')].find(node => node.textContent.trim() === label)
+    assert.match(w.document.getElementById('mobile-checkin-guidance').textContent, /Nhập tên đăng nhập/)
+    assert.equal(button('Gửi chấm công có ảnh').disabled, true)
     assert.equal(button('Camera sau').getAttribute('aria-pressed'), 'true')
     await w.act(async () => button('Bật camera').click())
     assert.deepEqual(requests.map(item => item.mode), ['environment'])
@@ -36,6 +39,17 @@ test('switching front and rear cameras stops the previous stream and mirrors the
     assert.equal(requests[0].stopped, true)
     assert.equal(button('Camera trước').getAttribute('aria-pressed'), 'true')
     assert.equal(w.document.querySelector('video').style.transform, 'scaleX(-1)')
+    const employee = w.document.querySelector('input[placeholder="Nhập chính xác tên đăng nhập"]')
+    await w.act(async () => {
+      Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(employee, 'worker')
+      employee.dispatchEvent(new w.Event('input', { bubbles: true }))
+    })
+    assert.equal(button('Gửi chấm công có ảnh').disabled, true)
+    assert.match(w.document.getElementById('mobile-checkin-guidance').textContent, /Chờ camera/)
+    const video = w.document.querySelector('video')
+    Object.defineProperty(video, 'videoWidth', { value: 640, configurable: true })
+    await w.act(async () => video.dispatchEvent(new w.Event('loadeddata')))
+    assert.equal(button('Gửi chấm công có ảnh').disabled, false)
     await w.act(async () => button('Tắt camera').click())
     assert.equal(requests[1].stopped, true)
     assert.equal(w.document.querySelector('video'), null)
