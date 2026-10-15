@@ -12,7 +12,7 @@ export function startScopedReconciler(selector, reconcile, attributes = []) {
     })
   }
   const discover = node => {
-    if (!(node instanceof Element)) return
+    if (!(node instanceof window.Element)) return
     const candidates = [...(node.matches(selector) ? [node] : []), ...node.querySelectorAll(selector)]
     for (const root of candidates) {
       if (roots.has(root)) continue
