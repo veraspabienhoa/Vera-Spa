@@ -231,3 +231,5 @@
 .employee-revenue-chart-columns{display:grid;grid-template-columns:32px 1fr;gap:8px;align-items:center;font-size:10px;font-weight:800}
 .employee-revenue-chart-index{display:flex;align-items:center;justify-content:center;align-self:stretch;text-align:center;font-variant-numeric:tabular-nums;min-width:0}
 @media(max-width:760px){.employee-revenue-chart-columns{gap:5px}}
+
+.live-tour-reports-page .report-export-actions.report-history-actions{flex-wrap:nowrap}
