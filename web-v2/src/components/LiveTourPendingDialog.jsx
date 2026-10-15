@@ -1,3 +1,4 @@
+import { usesComboTicket } from '../lib/paymentPresentation'
 import CompactCode from './CompactCode'
 import { availableBookingPurchase, customerPurchases, customerTicketLabel } from '../lib/liveTourComboBooking'
 import { customerOptionMatches } from '../lib/customerSearch'
@@ -57,6 +58,7 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
       <StableFeedback>{error && <p className="error-box" role="alert">{error} Nếu dữ liệu đã thay đổi, hãy đóng cửa sổ và mở lại bản mới nhất trước khi sửa.</p>}
       {deleting && <p className="error-box">Xóa phiếu khỏi Chờ thanh toán và giải phóng vé combo đang giữ chỗ. Không trừ vé, không đổi doanh thu đã thu. Bản cũ và lý do được lưu trong lịch sử để đối chiếu.</p>}</StableFeedback>
       {editing && <p>Giữ nguyên nhân viên và kết quả hoàn thành. Đổi khách hàng, combo hoặc dịch vụ sẽ kiểm tra lại vé giữ chỗ; chỉ trừ vé khi thanh toán.</p>}
+      {(editing && canChangeCustomer ? Boolean(comboId) : usesComboTicket(item)) && <p className="vera-combo-ticket"><strong className="vera-combo-badge">VÉ COMBO</strong>Hóa đơn sử dụng vé combo.</p>}
       <form onSubmit={submit}><fieldset disabled={busy} className="tour-booking-form">
         {!deleting && canEditDate && editing && <label className="live-tour-field wide"><span>Ngày giờ hóa đơn (giờ Việt Nam)</span><VeraDateTimeInput required value={invoiceAt} onChange={e => setInvoiceAt(e.target.value)}/></label>}
         {editing && canChangeCustomer && <div className="wide">
@@ -64,7 +66,7 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
             options={customers.map(row => ({value:row.id,label:row.name,detail:row.phone,badge:customerTicketLabel(row)}))} value={customerId}
             onChange={value => {setCustomerId(value);setComboId('');onCustomerSelect?.(value)}}/>
           <button type="button" className="secondary-button" onClick={() => {setCustomerId('');setComboId('');onCustomerSelect?.('')}}>Chuyển thành khách lẻ</button>
-          {customerId && <label className="live-tour-field"><span>Combo của khách</span><select aria-label="Combo của khách" value={comboId} onChange={event => setComboId(event.target.value)}>
+          {customerId && <label className={`live-tour-field${comboId ? ' vera-combo-ticket' : ''}`}><span>{comboId ? 'VÉ COMBO · Combo của khách' : 'Combo của khách'}</span><select aria-label="Combo của khách" value={comboId} onChange={event => setComboId(event.target.value)}>
             <option value="">Dịch vụ lẻ · không dùng combo</option>
             {comboId && !purchases.some(row => row.id === comboId) && <option value={comboId}>Combo hiện tại · đang tải thông tin</option>}
             {purchases.map(row => <option key={row.id} value={row.id}>{row.combo_name || 'Combo'} · còn {row.remaining} vé có thể dùng</option>)}

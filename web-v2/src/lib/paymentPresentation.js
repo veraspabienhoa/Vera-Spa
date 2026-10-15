@@ -8,3 +8,6 @@ export function paymentQrUrl(bank, amount, reference = 'VERA SPA') {
   const params = new URLSearchParams({ amount: String(amount), addInfo: receiptNumber(reference), accountName: bank.account_name || '' })
   return `https://img.vietqr.io/image/${bank.bank_id}-${bank.account_no}-compact2.png?${params}`
 }
+
+// Presentation only: also covers reserved tickets and mixed combo/extra payments.
+export const usesComboTicket = record => Boolean(record && !record.purchased_combo_id && (record.combo_purchase_id || isComboRedemption(record) || record.entries?.some(entry => entry.combo_purchase_id)))
