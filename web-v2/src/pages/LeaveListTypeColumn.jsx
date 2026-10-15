@@ -1,3 +1,4 @@
+import { startScopedReconciler } from '../lib/scopedReconciler'
 import { useEffect, useState } from 'react'
 import { getCurrentSession } from '../lib/supabase'
 import { displayLeaveType } from '../lib/leaveStats'
@@ -54,10 +55,8 @@ export default function LeaveListTypeColumn() {
   }, [])
 
   useEffect(() => {
-    let scheduled = false
 
     const syncTable = () => {
-      scheduled = false
       const table = document.querySelector('.leave-list-panel .leave-records-table')
       if (!table) return
       table.classList.add('with-leave-type-column')
@@ -110,20 +109,7 @@ export default function LeaveListTypeColumn() {
       }
     }
 
-    const scheduleSync = () => {
-      if (scheduled) return
-      scheduled = true
-      window.requestAnimationFrame(syncTable)
-    }
-
-    syncTable()
-    const observer = new MutationObserver(scheduleSync)
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
-    document.addEventListener('change', scheduleSync, true)
-    return () => {
-      observer.disconnect()
-      document.removeEventListener('change', scheduleSync, true)
-    }
+    return startScopedReconciler('.leave-list-panel', syncTable, ['hidden'])
   }, [catalog])
 
   return <style>{`

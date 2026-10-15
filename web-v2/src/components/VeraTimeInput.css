@@ -1,0 +1,7 @@
+.vera-time-input { display:block; min-width:0; width:100%; }
+.vera-time-entry { display:flex; align-items:stretch; gap:4px; min-width:0; }
+.vera-time-entry input { min-width:0; flex:1; width:0; }
+.vera-time-entry button { flex:none; display:grid; place-items:center; padding:8px; }
+.vera-time-picker { display:flex; align-items:center; gap:6px; padding-top:6px; min-width:0; }
+.vera-time-picker select { flex:1; min-width:0; width:0; }
+.vera-time-picker button { flex:none; padding:8px; }
