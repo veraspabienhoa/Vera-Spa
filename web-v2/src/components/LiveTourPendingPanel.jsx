@@ -34,7 +34,6 @@ function LiveTourPendingPanel({
           started_at: item.started_at
         }];
         return <article className={`live-tour-data-card${usesComboTicket(item) ? ' vera-combo-ticket' : ''}`} key={itemId(item, index)}>
-          {usesComboTicket(item) && <strong className="vera-combo-badge">VÉ COMBO</strong>}
             {cardEntries.map((entry, entryIndex) => <strong key={entryIndex}>{entry.employee_name || 'Chưa có nhân viên'} – {entry.service || 'Chưa ghi dịch vụ'} – {entry.room || 'Chưa có phòng'}</strong>)}
             <small>{item?.customer_name || item?.customer || 'Khách lẻ'} {item?.customer_phone || item?.phone ? `· ${item?.customer_phone || item?.phone}` : ''}</small>
           {usesComboTicket(item) && <strong className="vera-combo-badge">VÉ COMBO</strong>}
