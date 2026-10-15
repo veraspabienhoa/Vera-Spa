@@ -188,7 +188,7 @@ test('manual booking searches customer phone, fills both fields, retries with sa
   assert.ok(w.document.querySelector('.manual-booking-services .tour-search-inline'))
   assert.deepEqual([...w.document.querySelector('.manual-booking-services [role="listbox"]').querySelectorAll('[role="option"]')].map(o=>o.textContent.split(' · ')[0]),['Chưa chọn dịch vụ','Basic','Premium','VIP'])
   await w.act(async()=>[...w.document.querySelectorAll('[role="option"]')].find(option=>option.textContent.includes('VIP')).click())
-  await change(w.document.querySelector('input[type="time"]'),'14:00')
+  await change(w.document.querySelector('input[aria-label="Giờ đến mong muốn"]'),'14:00')
   const staffLabel=[...w.document.querySelectorAll('label')].find(label=>label.textContent==='YC nhân viên')
   const staff=w.document.getElementById(staffLabel.htmlFor)
   assert.ok(staff.compareDocumentPosition(w.document.querySelector('textarea'))&w.Node.DOCUMENT_POSITION_FOLLOWING)
@@ -203,6 +203,7 @@ test('manual booking searches customer phone, fills both fields, retries with sa
   assert.equal(w.sent[1].customer_name,'Khách Mẫu')
   assert.equal(w.sent[1].phone,'0900000001')
   assert.equal(w.sent[1].requested_staff,'AN AN')
+  assert.equal(w.sent[1].appointment_time,'14:00')
  }finally{await w.unmount();w.close()}
 })
 
@@ -214,7 +215,7 @@ for(const role of ['letan','quanly']) test(`${role} edits and deletes booking wi
   await w.act(async()=>button('Chi tiết').click())
   await w.act(async()=>button('Sửa lịch hẹn').click())
   assert.equal(w.document.querySelectorAll('[role="dialog"]').length,1)
-  const time=w.document.querySelector('input[type="time"]')
+  const time=w.document.querySelector('input[aria-label="Giờ đến mong muốn"]')
   await w.act(async()=>{Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(time,'19:30');time.dispatchEvent(new w.Event('input',{bubbles:true}))})
   await w.act(async()=>w.document.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})))
   assert.equal(w.updated.revision,0);assert.equal(w.updated.booking.appointment_time,'19:30')
