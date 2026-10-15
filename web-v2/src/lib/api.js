@@ -222,7 +222,7 @@ export const veraApi = {
   readLaborReportExport: async (format, filters = {}, options = {}) => {
     const response = await binaryResponse(`/v2/staff/labor-report/export?${new URLSearchParams({ format })}`, {
       ...options, method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usernames: filters.usernames || [] }),
+      body: JSON.stringify({ usernames: filters.usernames || [], contract_signed: filters.contract_signed, contract_end: filters.contract_end }),
     })
     const blob = await response.blob()
     options.signal?.throwIfAborted()

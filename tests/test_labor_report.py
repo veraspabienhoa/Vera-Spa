@@ -24,6 +24,13 @@ def test_labor_route_checks_permissions_and_selection(monkeypatch):
         return client.post('/v2/staff/labor-report/export?format='+fmt, json={'usernames': names})
     response = export(['A', 'A', ' B '])
     assert response.status_code == 200 and calls[-1] == ['A', 'B']
+    captured = []
+    monkeypatch.setattr(labor, 'render_labor', lambda records, fmt: captured.extend(records) or b'%PDF-test')
+    assert client.post('/v2/staff/labor-report/export', json={'usernames':['A'], 'contract_signed':'2026-10-01', 'contract_end':'2026-12-31'}).status_code == 200
+    assert captured[0]['contract_signed'] == '01-10-2026'
+    assert captured[0]['contract_end'] == '31-12-2026'
+    for dates in ({'contract_signed':'2026-10-01'}, {'contract_signed':'2026-10-01','contract_end':'2026-09-30'}, {'contract_signed':'2026-02-30','contract_end':'2026-03-31'}):
+        assert client.post('/v2/staff/labor-report/export', json={'usernames':['A'], **dates}).status_code == 422
     assert response.headers['cache-control'] == 'private, no-store'
     assert export(['missing']).status_code == 404
     assert export([]).status_code == 422

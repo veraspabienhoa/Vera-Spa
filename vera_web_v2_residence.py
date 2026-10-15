@@ -1,5 +1,5 @@
 """Persistent residence roster, projected from employee profiles without bank data."""
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 
 from fastapi import Depends, HTTPException
@@ -41,6 +41,8 @@ class Membership(BaseModel):
 
 class LaborReportRequest(BaseModel):
     usernames: list[str] = Field(min_length=1, max_length=1000)
+    contract_signed: date | None = None
+    contract_end: date | None = None
 
 
 def display_date(value):
@@ -208,6 +210,8 @@ def install_residence_routes(app, *, engine_instance, current_identity, require_
             raise HTTPException(403, 'Chỉ Admin được xuất danh sách khai trình lao động.')
         if format not in {'pdf','png'}:
             raise HTTPException(422, 'Chọn định dạng PDF hoặc PNG.')
+        if bool(body.contract_signed) != bool(body.contract_end) or (body.contract_signed and body.contract_end < body.contract_signed):
+            raise HTTPException(422, 'Ngày hết hạn phải từ ngày ký hợp đồng trở đi.')
         names = list(dict.fromkeys(name.strip() for name in body.usernames if name.strip()))
         if not names:
             raise HTTPException(422, 'Chưa chọn nhân viên cần xuất.')
@@ -218,6 +222,8 @@ def install_residence_routes(app, *, engine_instance, current_identity, require_
         if len(records) != len(names):
             raise HTTPException(404, 'Danh sách nhân viên đã thay đổi. Vui lòng tải lại trước khi xuất.')
         try:
+            if body.contract_signed:
+                records = [{**row, 'contract_signed': display_date(body.contract_signed), 'contract_end': display_date(body.contract_end)} for row in records]
             content = render_labor(records, format)
         except ReportExportTooLarge:
             raise HTTPException(413, 'Ảnh quá lớn. Hãy chọn ít nhân viên hơn hoặc tải PDF.')
