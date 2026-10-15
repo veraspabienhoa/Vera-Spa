@@ -869,3 +869,18 @@ body .attendance-page .attendance-filter-buttons > button { min-width:0; width:1
   body .attendance-page .attendance-filter-buttons.date-search-toolbar { grid-template-columns:repeat(7,minmax(0,1fr)); }
   body .attendance-page .attendance-filter-buttons > .date-search-field { grid-column:1/-1; }
 }
+
+/* Check-in actions beside the heading and loaded date range. */
+body .checkin-history-page .checkin-heading, body .checkin-loaded-row { display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+body .checkin-heading > div:first-child { min-width:0; }
+body .checkin-heading-actions { display:flex; gap:8px; margin-left:auto; min-width:0; }
+body .checkin-heading-actions button, body .checkin-loaded-row button { min-width:0; white-space:normal; overflow-wrap:anywhere; }
+body .checkin-loaded-row > p { min-width:0; }
+body .checkin-loaded-row > button { margin-left:auto; flex-shrink:0; }
+@media(max-width:600px) {
+ body .checkin-heading { gap:6px; }
+ body .checkin-heading h1, body .checkin-heading h2 { font-size:18px; }
+ body .checkin-heading-actions { flex:1 1 55%; gap:5px; }
+ body .checkin-heading-actions button { flex:1 1 0; padding:7px 5px; font-size:12px; }
+ body .checkin-loaded-row > button { max-width:38%; }
+}
