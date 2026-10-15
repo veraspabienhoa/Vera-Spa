@@ -48,10 +48,11 @@ test('history reloads the selected dates directly from the FaceGate device', asy
     queries.push(query)
     return { records: [{ event_id: 27, occurred_at: '2026-10-02T09:15:00+07:00' }], options: { statuses: ['1'], types: ['0'] } }
   } }, context)
-  assert.deepEqual([...dom.window.document.querySelectorAll('.checkin-history-actions > button')].map(node => node.textContent.trim()), ['Xem lịch sử', 'Tải từ Face ID', 'Xuất excel'])
+  assert.deepEqual([...dom.window.document.querySelectorAll('.checkin-heading-actions > button')].map(node => node.textContent.trim()), ['Xem lịch sử', 'Tải từ Face ID'])
   assert.equal(queries.length, 0, 'rendering the toolbar must not request a device refresh')
   await dom.window.testAct(async () => button(dom, 'Tải từ Face ID').click())
   assert.equal(queries.length, 1)
+  assert.equal(dom.window.document.querySelector('.checkin-loaded-row > button').textContent.trim(), 'Xuất excel')
   assert.equal(queries[0].source, 'facegate')
   assert.ok(queries[0].start)
   assert.ok(queries[0].end)
