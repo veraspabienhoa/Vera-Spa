@@ -2,7 +2,7 @@ import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import StableFeedback from '../components/StableFeedback'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
-import TrainingReportFiles from '../components/TrainingReportFiles'
+import LaborReportFiles from '../components/LaborReportFiles'
 import EmployeeProfileModal from '../components/EmployeeProfileModal'
 import FaceIdBulkUpload from './FaceIdBulkUpload'
 import UiToolbar from '../components/UiToolbar'
@@ -579,7 +579,7 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
 
       {isAdmin && permissions.staff_export && laborReport && <EmployeeProfileModal labelledBy="labor-report-title" busy={laborSharing} onClose={() => setLaborReport(null)}>
         <h2 id="labor-report-title">Danh sách khai trình sử dụng lao động</h2>
-        <TrainingReportFiles scope={laborReport} onSharingChange={setLaborSharing} onDenied={error => { setLaborReport(null); setNotice({ type: 'error', message: error.message }) }}/>
+        <LaborReportFiles scope={laborReport} onSharingChange={setLaborSharing} onDenied={error => { setLaborReport(null); setNotice({ type: 'error', message: error.message }) }}/>
         <button data-dialog-close="true" type="button" className="secondary-button" disabled={laborSharing} onClick={() => setLaborReport(null)}>Đóng</button>
       </EmployeeProfileModal>}
       <details className="staff-tools">

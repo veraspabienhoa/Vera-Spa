@@ -82,10 +82,10 @@ def render_roster(records, format, *, labor=False):
         text(BUSINESS,left,top,11,True)
         text(ADDRESS,left,top+17,9)
         text(INDUSTRY,left,top+34,9)
-        text(NATIONAL,width*.74,top,9,True,'center')
-        text(MOTTO,width*.74,top+17,9,True,'center')
-        text(title,width/2,top+57,12,True,'center')
-        y=top+83
+        text(NATIONAL,width/2,top+51,9,True,'center')
+        text(MOTTO,width/2,top+68,9,True,'center')
+        text(title,width/2,top+91,12,True,'center')
+        y=top+117
         headers=[_wrap(label,w-8,8,True,font_names=font_names) for (_,label),w in zip(fields,widths)]
         row(headers,max(map(len,headers)),True)
 
@@ -97,7 +97,7 @@ def render_roster(records, format, *, labor=False):
         values=[str(i)]+[str(record.get(k) if record.get(k) is not None else '') for k,_ in columns]
         lines=[_wrap(v or ' ',w-8,8,font_names=font_names) for v,w in zip(values,widths)]
         needed=max(map(len,lines))*11+10
-        if y+needed>bottom and needed<bottom-(top+130): start_page()
+        if y+needed>bottom and needed<bottom-(top+164): start_page()
         while any(lines):
             available=int((bottom-y-10)//11)
             if available<1: start_page(); continue
@@ -106,7 +106,7 @@ def render_roster(records, format, *, labor=False):
             lines=[v[count:] for v in lines]
             if any(lines):
                 start_page()
-                text(f'Tiếp theo: {record["username"]}',left,top+73,7)
+                text(f'Tiếp theo: {record["username"]}',left,top+107,7)
     if y+(100 if labor else 80)>bottom: start_page()
     text('Ngày..........tháng..........năm..........',width-140,y+18,9,False,'center')
     text('Xác nhận của đơn vị',width-140,y+42,10,True,'center')
