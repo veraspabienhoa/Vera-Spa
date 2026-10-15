@@ -16,7 +16,7 @@ import './PurchasePage.css'
 
 const money = value => `${Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}đ`
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
-const presets = [['all','Tất cả'],['yesterday','Hôm qua'],['today','Hôm nay'],['last_week','Tuần trước'],['this_week','Tuần này'],['last_month','Tháng trước'],['this_month','Tháng này'],['custom','Tùy chỉnh']]
+const presets = [['all','Tất cả'],['today','Hôm nay'],['yesterday','Hôm qua'],['this_week','Tuần này'],['last_week','Tuần trước'],['this_month','Tháng này'],['last_month','Tháng trước'],['custom','Tùy chỉnh']]
 const blank = () => ({ purchase_date: today(), item: '', quantity: 1, unit_price: '', note: '' })
 const enteredDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
 const enteredDisplayFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -140,13 +140,13 @@ function PurchaseAccountPage({ user, embedded = false, initialPreset = 'this_mon
       <article className="purchase-filter-total"><TrendingDown size={18}/><div><span>Tổng mua</span><strong>{money(total)}</strong></div></article>
       <UiToolbar data-ui-key="purchases:actions" className="purchase-actions">
       {allowed('create') && <button data-ui-key="purchases:create" className="primary-button" disabled={busy || loading} onClick={()=>open()}><Plus size={16} /> Nhập mua hàng</button>}
-      <button data-ui-key="purchases:refresh" className="secondary-button" type="button" disabled={busy || loading} onClick={()=>setReload(n=>n+1)}><RefreshCw size={16} className={loading?'spin':''} /> Làm mới</button>
-      {admin && <button data-ui-key="purchases:history" className="secondary-button" disabled={busy} onClick={()=>run(async()=>setHistory((await veraApi.purchaseAudit()).rows))}><History size={16} /> Lịch sử sửa, xóa</button>}
         {allowed('edit') && <button data-ui-key="purchases:edit" className="secondary-button compact" disabled={busy || loading || picked.length!==1 || !editable(picked[0])} onClick={()=>open(picked[0])}>Sửa dòng đã chọn</button>}
         {allowed('delete') && <button data-ui-key="purchases:delete" className="secondary-button compact danger-button" disabled={busy || loading || !picked.length || !picked.every(editable)} onClick={remove}>Xóa dòng đã chọn</button>}
         {admin && <button data-ui-key="purchases:import-append" className="secondary-button compact" disabled={busy} onClick={()=>chooseImport('append')}><Upload size={14}/> Import thêm mới</button>}
         {admin && <button data-ui-key="purchases:import-replace" className="secondary-button compact danger-button" disabled={busy} onClick={()=>chooseImport('replace')}><Upload size={14}/> Import thay toàn bộ</button>}
+      {admin && <button data-ui-key="purchases:history" className="secondary-button" disabled={busy} onClick={()=>run(async()=>setHistory((await veraApi.purchaseAudit()).rows))}><History size={16} /> Lịch sử sửa, xóa</button>}
         <button data-ui-key="purchases:export" className="secondary-button compact purchase-export" title="Xuất excel theo thời gian đang chọn" disabled={busy || loading} onClick={()=>run(()=>veraApi.exportPurchases(params))}><Download size={14}/> Xuất excel</button>
+      <button data-ui-key="purchases:refresh" className="secondary-button" type="button" disabled={busy || loading} onClick={()=>setReload(n=>n+1)}><RefreshCw size={16} className={loading?'spin':''} /> Làm mới</button>
       </UiToolbar>
     </div>
     </section>

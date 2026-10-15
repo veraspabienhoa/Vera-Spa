@@ -858,3 +858,14 @@ body .residence-toolbar-bottom { grid-template-columns:minmax(0,1.4fr) minmax(0,
 body .residence-export-actions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); gap:10px; min-width:0; align-items:stretch; }
 body .residence-export-actions button { width:100%; }
 @media(max-width:700px) { body .residence-toolbar-top, body .residence-toolbar-bottom { grid-template-columns:minmax(0,1fr); } }
+
+/* Keep Custom immediately after Previous month without wrapping to another row. */
+body .attendance-page .attendance-filter-buttons.date-search-toolbar {
+  display:grid !important; grid-template-columns:minmax(170px,1.7fr) repeat(7,minmax(0,1fr)); gap:7px;
+}
+body .attendance-page .attendance-filter-buttons > .date-search-field { width:100%; min-width:0; grid-column:auto; }
+body .attendance-page .attendance-filter-buttons > button { min-width:0; width:100%; padding:8px 5px; white-space:normal; overflow-wrap:anywhere; }
+@media(max-width:1000px) {
+  body .attendance-page .attendance-filter-buttons.date-search-toolbar { grid-template-columns:repeat(7,minmax(0,1fr)); }
+  body .attendance-page .attendance-filter-buttons > .date-search-field { grid-column:1/-1; }
+}

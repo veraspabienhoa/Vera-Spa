@@ -98,7 +98,7 @@ test('purchase page no longer bundles the PNG capture engine', () => {
   assert.ok(!Object.keys(built.metafile.inputs).some(path => path.includes('clipboardImage')))
 })
 
-const adminActions = ['create', 'refresh', 'history', 'edit', 'delete', 'import-append', 'import-replace', 'export']
+const adminActions = ['create', 'edit', 'delete', 'import-append', 'import-replace', 'history', 'export', 'refresh']
 const actionNames = () => [...document.querySelectorAll('[data-ui-key="purchases:actions"] button')]
   .map(button => button.dataset.uiKey.replace('purchases:', ''))
 function assertNoPng() {
@@ -136,7 +136,7 @@ for (const permissions of [{}, { purchase_create: true, purchase_edit: true, pur
   test(`purchase action permissions remain intact with ${Object.keys(permissions).length ? 'explicit grants' : 'read-only access'}`, async () => {
     const f = await fixture({ permissions, user: { role: 'quanly', id: 'manager' } })
     try {
-      const expected = Object.keys(permissions).length ? ['create', 'refresh', 'edit', 'delete', 'export'] : ['refresh', 'export']
+      const expected = Object.keys(permissions).length ? ['create', 'edit', 'delete', 'export', 'refresh'] : ['export', 'refresh']
       assert.deepEqual(actionNames(), expected)
       assertNoPng()
       await act(async () => f.action('export').click())
