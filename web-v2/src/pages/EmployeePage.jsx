@@ -2,6 +2,7 @@ import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import StableFeedback from '../components/StableFeedback'
 import StableDataRegion from '../components/StableDataRegion'
 import usePageRefresh from '../lib/usePageRefresh'
+import TrainingReportFiles from '../components/TrainingReportFiles'
 import EmployeeProfileModal from '../components/EmployeeProfileModal'
 import FaceIdBulkUpload from './FaceIdBulkUpload'
 import UiToolbar from '../components/UiToolbar'
@@ -9,7 +10,7 @@ import UiCustomText from '../components/UiCustomText'
 import { searchTextMatches } from '../lib/searchText'
 import {
   BriefcaseBusiness, Download, Eye, EyeOff, FileDown, FilePenLine, LoaderCircle,
-  PencilLine, Plus, RefreshCw, Save, Trash2, UserCheck, UserRoundCog, UsersRound, X,
+  Share2, PencilLine, Plus, RefreshCw, Save, Trash2, UserCheck, UserRoundCog, UsersRound, X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
@@ -164,6 +165,8 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
   const [faceSettings, setFaceSettings] = useState(null)
   const [drafts, setDrafts] = useState({})
   const [selected, setSelected] = useState([])
+  const [laborReport, setLaborReport] = useState(null)
+  const [laborSharing, setLaborSharing] = useState(false)
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -246,6 +249,7 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
         && (visibilityFilter === 'all' || (visibilityFilter === 'hidden' ? employee.profile_hidden : !employee.profile_hidden))
     })
   }, [data, roleFilter, search, shiftFilter, statusFilter, visibilityFilter])
+  const laborUsernames = visible.filter(row => !selected.length || selected.includes(row.username)).map(row => row.username)
   const shiftOptions = useMemo(() => Array.from(new Set([
     ...(data?.employees || []).map((employee) => employee.work_shift),
     ...Object.values(data?.shifts_by_department || {}).flat(),
@@ -274,6 +278,7 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkBusy, setBulkBusy] = useState(false)
   const isAdmin = user?.role === 'admin'
+  useEffect(() => { setLaborReport(null) }, [user?.id, user?.username, user?.employee_username, user?.role, permissions.staff_export])
   useEffect(() => {
     if (!isAdmin || !API_BASE) return
     let active = true
@@ -572,6 +577,11 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
         ))}
       </div>
 
+      {isAdmin && permissions.staff_export && laborReport && <EmployeeProfileModal labelledBy="labor-report-title" busy={laborSharing} onClose={() => setLaborReport(null)}>
+        <h2 id="labor-report-title">Danh sách khai trình sử dụng lao động</h2>
+        <TrainingReportFiles scope={laborReport} onSharingChange={setLaborSharing} onDenied={error => { setLaborReport(null); setNotice({ type: 'error', message: error.message }) }}/>
+        <button data-dialog-close="true" type="button" className="secondary-button" disabled={laborSharing} onClick={() => setLaborReport(null)}>Đóng</button>
+      </EmployeeProfileModal>}
       <details className="staff-tools">
         <summary>Bộ lọc và thao tác nhân viên</summary>
       <section data-ui-key="u-ff418fa84752" className="panel staff-control-panel">
@@ -599,6 +609,7 @@ export default function EmployeePage({ user, registerNavigationGuard }) {
           {permissions.staff_export && <button data-ui-key="u-72a7e0c083db" data-ui-label-default="Xuất excel" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter))}><Download size={17} /><UiCustomText uiKey="u-72a7e0c083db"> Xuất excel</UiCustomText></button>}
           {isAdmin && permissions.staff_export && <button type="button" className="secondary-button" disabled={busy === 'export'} onClick={() => run('export', () => veraApi.exportStaffExcel(search, roleFilter, statusFilter, shiftFilter, true))}><Download size={17} /> Excel kèm ảnh 3 × 4 cm</button>}
           {isAdmin && permissions.staff_export && <button data-ui-key="u-facc0987c3af" className="secondary-button" disabled={busy === 'profiles-pdf' || !selected.length} onClick={exportSelectedProfiles}>{busy === 'profiles-pdf' ? <LoaderCircle className="spin" size={17}/> : <FileDown size={17}/>} Xuất đồng loạt PDF ({selected.length})</button>}
+          {isAdmin && permissions.staff_export && <button type="button" className="secondary-button staff-labor-export" disabled={Boolean(busy) || !laborUsernames.length} onClick={() => setLaborReport({ kind: 'labor', filters: { usernames: laborUsernames } })}><Share2 size={17}/>Xem / tải / chia sẻ PNG và PDF</button>}
         </div>
         </div>
         {canSelectRows && <div className="staff-list-action-rows"><UiToolbar data-ui-key="u-09533736332c" className="staff-list-selection-actions">

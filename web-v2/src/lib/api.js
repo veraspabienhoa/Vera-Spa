@@ -219,6 +219,15 @@ export const veraApi = {
     options.signal?.throwIfAborted()
     return { blob, filename: `VERA_TamTru.${format}` }
   },
+  readLaborReportExport: async (format, filters = {}, options = {}) => {
+    const response = await binaryResponse(`/v2/staff/labor-report/export?${new URLSearchParams({ format })}`, {
+      ...options, method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernames: filters.usernames || [] }),
+    })
+    const blob = await response.blob()
+    options.signal?.throwIfAborted()
+    return { blob, filename: `VERA_KhaiTrinhLaoDong.${format}` }
+  },
   saveResidence: body => request('/v2/residence', { method: 'PUT', body: JSON.stringify(body) }),
   exportResidence: params => download(`/v2/residence/export.xlsx?${new URLSearchParams(params)}`, 'VERA_TamTru.xlsx'),
   createOnlineBooking: body => request('/v2/online-bookings', { method: 'POST', body: JSON.stringify(body) }),

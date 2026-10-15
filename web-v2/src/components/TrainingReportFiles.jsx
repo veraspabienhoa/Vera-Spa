@@ -11,7 +11,9 @@ function useReportFile(scope, format, onDenied) {
   useEffect(() => {
     const controller = new AbortController(); let active = true, url
     setResult(null)
-    const request = scope.kind === 'residence'
+    const request = scope.kind === 'labor'
+      ? veraApi.readLaborReportExport(format, scope.filters, { signal: controller.signal })
+      : scope.kind === 'residence'
       ? veraApi.readResidenceExport(format, scope.filters, { signal: controller.signal })
       : scope.kind === 'performance'
       ? veraApi.readPerformanceReportExport(format, scope.filters, { signal: controller.signal })
@@ -48,19 +50,19 @@ export default function TrainingReportFiles({ scope, onDenied, onSharingChange }
     const fail = error => { if (current === session.current && error?.name !== 'AbortError') setFeedback({ error: true, text: `Không mở được chia sẻ ${format.toUpperCase()}. Bạn có thể tải file để gửi.` }) }
     try {
       // Prepared files keep native sharing inside the original user click.
-      Promise.resolve(navigator.share({ files: [report.file], title: scope.kind === 'residence' ? 'Tạm trú · VERA SPA' : scope.kind === 'performance' ? 'Thời gian thực hiện · VERA SPA' : 'Báo cáo đào tạo · VERA SPA' })).then(() => {
+      Promise.resolve(navigator.share({ files: [report.file], title: scope.kind === 'labor' ? 'Khai trình lao động · VERA SPA' : scope.kind === 'residence' ? 'Tạm trú · VERA SPA' : scope.kind === 'performance' ? 'Thời gian thực hiện · VERA SPA' : 'Báo cáo đào tạo · VERA SPA' })).then(() => {
         if (current === session.current) setFeedback({ text: 'Đã chuyển file sang ứng dụng chia sẻ.' })
       }).catch(fail).finally(finish)
     } catch (error) { fail(error); finish() }
   }
   return <section className="training-report-files" aria-label="Xem, tải và chia sẻ báo cáo">
-    {scope.kind !== 'residence' && <p>{scope.kind === 'performance' ? 'Toàn bộ dịch vụ khớp bộ lọc đang xem.' : scope.kind === 'overview' ? 'Toàn bộ nhân viên theo khoảng ngày đã chọn. Tổng giờ cộng từ các buổi đào tạo; danh sách chưa đào tạo chỉ gồm bộ phận nhanvien.' : 'Toàn bộ dữ liệu theo nhân viên và khoảng ngày đang xem.'} PDF khổ A4 có lề; PNG là ảnh toàn bộ báo cáo.</p>}
+    {!['residence', 'labor'].includes(scope.kind) && <p>{scope.kind === 'performance' ? 'Toàn bộ dịch vụ khớp bộ lọc đang xem.' : scope.kind === 'overview' ? 'Toàn bộ nhân viên theo khoảng ngày đã chọn. Tổng giờ cộng từ các buổi đào tạo; danh sách chưa đào tạo chỉ gồm bộ phận nhanvien.' : 'Toàn bộ dữ liệu theo nhân viên và khoảng ngày đang xem.'} PDF khổ A4 có lề; PNG là ảnh toàn bộ báo cáo.</p>}
     {['overview', 'performance'].includes(scope.kind) && <p>Chọn Zalo trong bảng chia sẻ của thiết bị. Nếu không có Zalo hoặc trình duyệt không hỗ trợ chia sẻ file, hãy tải PDF/PNG rồi đính kèm trong Zalo.</p>}
     {feedback && <p role={feedback.error ? 'alert' : 'status'} className={feedback.error ? 'error-box' : ''}>{feedback.text}</p>}
     {[['pdf',pdf],['png',png]].map(([format,report]) => <div className="training-report-file" key={format}>
       {!report.file && !report.error && <p role="status">Đang tạo {format.toUpperCase()}…</p>}
       {report.error && <><p role="alert" className="error-box">{report.error}</p><button type="button" className="secondary-button" disabled={Boolean(sharing)} onClick={report.retry}>Thử tạo lại {format.toUpperCase()}</button></>}
-      {report.file && <>{scope.kind !== 'residence' && <strong>{format === 'pdf' ? 'PDF A4' : 'Ảnh PNG'} · {(report.file.size/1024).toFixed(0)} KB</strong>}<div className="training-report-file-actions">
+      {report.file && <>{!['residence', 'labor'].includes(scope.kind) && <strong>{format === 'pdf' ? 'PDF A4' : 'Ảnh PNG'} · {(report.file.size/1024).toFixed(0)} KB</strong>}<div className="training-report-file-actions">
         <a className="secondary-button" href={report.url} target="_blank" rel="noopener noreferrer">Xem {format.toUpperCase()}</a>
         <a className="secondary-button" href={report.url} download={report.file.name}>Tải {format.toUpperCase()}</a>
         {canShare(report.file) ? <button type="button" className="primary-button" disabled={Boolean(sharing)} onClick={() => share(report,format)}>{sharing === format ? 'Đang mở chia sẻ…' : `Chia sẻ ${format.toUpperCase()}${['overview', 'performance'].includes(scope.kind) ? ' qua Zalo / ứng dụng khác' : ''}`}</button> : <small>Tải {format.toUpperCase()} rồi đính kèm trong ứng dụng cần chia sẻ.</small>}

@@ -5,7 +5,7 @@ from io import BytesIO
 from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse, Response
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Font, Alignment
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
@@ -37,6 +37,10 @@ DATE_FIELDS = {'birth_date', 'cccd_issue_date', 'employment_start_date', 'employ
 class Membership(BaseModel):
     username: str = Field(min_length=1, max_length=300)
     included: bool = True
+
+
+class LaborReportRequest(BaseModel):
+    usernames: list[str] = Field(min_length=1, max_length=1000)
 
 
 def display_date(value):
@@ -92,38 +96,39 @@ def workbook(records):
     wb = Workbook()
     ws = wb.active
     ws.title = 'Tạm trú'
-    for number, value in enumerate((BUSINESS, ADDRESS, TITLE), 1):
-        ws.merge_cells(start_row=number,start_column=1,end_row=number,end_column=9)
-        cell=ws.cell(number,1,value)
-        cell.font=Font(name='Times New Roman',size=14 if number==3 else 11,bold=number!=2)
-        cell.alignment=Alignment(horizontal='center' if number==3 else 'left',vertical='center')
-        ws.row_dimensions[number].height=30 if number==3 else 20
+    from vera_web_v2_residence_export import NATIONAL, MOTTO, INDUSTRY
+    for cell_ref,value in [('A1',BUSINESS),('A2',ADDRESS),('A3',INDUSTRY),('E1',NATIONAL),('E2',MOTTO),('A4',TITLE)]:
+        cell=ws[cell_ref]; cell.value=value
+        cell.font=Font(name='Times New Roman',size=14 if cell_ref=='A4' else 11,bold=cell_ref in {'A1','E1','E2','A4'})
+        cell.alignment=Alignment(horizontal='center' if cell_ref in {'E1','E2','A4'} else 'left',vertical='center')
+    for merged in ('E1:I1','E2:I2','A3:E3','A4:I4'): ws.merge_cells(merged)
+    for number in range(1,5): ws.row_dimensions[number].height=30 if number==4 else 20.1
     ws.append(['STT']+[label for _,label in EXPORT_COLUMNS])
     side=Side(style='thin',color='000000')
     border=Border(left=side,right=side,top=side,bottom=side)
     for index, record in enumerate(export_rows(records),1):
         ws.append([index]+[record[k] for k,_ in EXPORT_COLUMNS])
     last=ws.max_row
-    for cells in ws.iter_rows(min_row=4,max_row=last):
+    for cells in ws.iter_rows(min_row=5,max_row=last):
         for cell in cells:
-            cell.font=Font(name='Times New Roman',size=11,bold=cell.row==4)
+            cell.font=Font(name='Times New Roman',size=11,bold=cell.row==5)
             cell.border=border
             cell.alignment=Alignment(vertical='center',wrap_text=True,
-                horizontal='center' if cell.row==4 or cell.column in {1,4,5,6,7} else 'left')
+                horizontal='center' if cell.row==5 or cell.column in {1,4,5,6,7} else 'left')
             if isinstance(cell.value,str): cell.data_type='s'; cell.number_format='@'
         # Excel does not reliably autofit wrapped rows at print time.
         import math
-        lines=max(sum(max(1,math.ceil(len(part)/(WIDTHS[c.column-1]/5))) for part in str(c.value or '').split('\n')) for c in cells)
+        lines=max(sum(max(1,math.ceil(len(part)/(WIDTHS[c.column-1]))) for part in str(c.value or '').split('\n')) for c in cells)
         ws.row_dimensions[cells[0].row].height=max(32,lines*15+8)
-    for index,w in enumerate(WIDTHS,1): ws.column_dimensions[get_column_letter(index)].width=w/5
+    for index,w in enumerate(WIDTHS,1): ws.column_dimensions[get_column_letter(index)].width=w
     for offset,value in ((2,'Ngày..........tháng..........năm..........'),(4,'Xác nhận của đơn vị')):
         n=last+offset
         ws.merge_cells(start_row=n,start_column=8,end_row=n,end_column=9)
         c=ws.cell(n,8,value); c.font=Font(name='Times New Roman',size=11,bold=offset==4)
         c.alignment=Alignment(horizontal='center')
-    ws.freeze_panes='C5'
-    ws.auto_filter.ref=f'A4:I{last}'
-    ws.print_title_rows='1:4'
+    ws.freeze_panes='C6'
+    ws.auto_filter.ref=f'A5:I{last}'
+    ws.print_title_rows='1:5'
     ws.print_area=f'A1:I{last+6}'
     ws.sheet_properties.pageSetUpPr.fitToPage=True
     ws.page_setup.orientation='landscape'
@@ -194,3 +199,30 @@ def install_residence_routes(app, *, engine_instance, current_identity, require_
         return Response(content, media_type='application/pdf' if format == 'pdf' else 'image/png',
                         headers={'Content-Disposition': f'inline; filename="VERA_TamTru.{format}"',
                                  'Cache-Control': 'no-store'})
+
+    @app.post('/v2/staff/labor-report/export')
+    def labor_report(body: LaborReportRequest, format: str = 'pdf', ident: identity_type = Depends(current_identity)):
+        from vera_web_v2_labor_report import labor_rows, render_labor
+        from vera_web_v2_training_report_export import ReportExportTooLarge, ReportExportUnavailable
+        if ident.role != 'admin':
+            raise HTTPException(403, 'Chỉ Admin được xuất danh sách khai trình lao động.')
+        if format not in {'pdf','png'}:
+            raise HTTPException(422, 'Chọn định dạng PDF hoặc PNG.')
+        names = list(dict.fromkeys(name.strip() for name in body.usernames if name.strip()))
+        if not names:
+            raise HTTPException(422, 'Chưa chọn nhân viên cần xuất.')
+        with engine_instance().connect() as conn:
+            require_feature(conn, ident, 'staff_list')
+            require_feature(conn, ident, 'staff_export')
+            records = labor_rows(conn, ident, names)
+        if len(records) != len(names):
+            raise HTTPException(404, 'Danh sách nhân viên đã thay đổi. Vui lòng tải lại trước khi xuất.')
+        try:
+            content = render_labor(records, format)
+        except ReportExportTooLarge:
+            raise HTTPException(413, 'Ảnh quá lớn. Hãy chọn ít nhân viên hơn hoặc tải PDF.')
+        except ReportExportUnavailable as exc:
+            raise HTTPException(503, str(exc))
+        return Response(content, media_type='application/pdf' if format=='pdf' else 'image/png',
+                        headers={'Content-Disposition': f'inline; filename="VERA_KhaiTrinhLaoDong.{format}"',
+                                 'Cache-Control':'private, no-store'})

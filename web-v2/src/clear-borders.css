@@ -840,3 +840,9 @@ body.vera-column-resizing, body.vera-column-resizing * { cursor:col-resize!impor
 body table.vera-columns-sized { table-layout:fixed!important; }
 body table.vera-columns-sized :is(th,td) { overflow:hidden; text-overflow:ellipsis; overflow-wrap:anywhere; }
 @media print { body table .vera-column-resize-handle { display:none!important; } }
+
+/* Employee actions share one contained row, including the labor report export. */
+body .staff-page .staff-primary-actions { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:4px; box-sizing:border-box; }
+body .staff-page .staff-primary-actions :is(.staff-face-toolbar,.staff-face-actions,.staff-actionbar) { display:contents; }
+body .staff-page .staff-primary-actions :is(button,.staff-face-switch) { min-width:0; max-width:100%; width:100%; height:auto; margin:0; padding:7px 3px; flex-direction:column; white-space:normal; overflow-wrap:anywhere; word-break:normal; font-size:clamp(9px,.8vw,12px); line-height:1.25; }
+body .staff-page .staff-primary-actions .staff-face-switch span { min-width:0; width:100%; }
