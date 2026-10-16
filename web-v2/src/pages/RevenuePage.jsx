@@ -748,10 +748,9 @@ export default function RevenuePage({ user }) {
     </section>}
 
     {canViewAdminRevenueSummary && <div className="admin-revenue-summary">
-      {commonReport && !tipRangeValid && <p role="status">Chọn đủ kỳ TIP hợp lệ; ngày bắt đầu không được sau ngày kết thúc.</p>}
       {commonReport && busy && <p role="status">Đang tính báo cáo và TIP theo cùng kỳ đã chọn…</p>}
       <section data-ui-key="u-a4c778e6c2bb" className="revenue-grid" aria-live="polite" aria-busy={busy}>
-        {cards.map(({ key, label, value, icon: Icon }) => <article className={`revenue-card ${key}`} key={key}><div data-ui-key="u-2ffef07af4fc" className="revenue-card-head"><Icon size={18} aria-hidden="true" /> {label}</div><AutoFitMoney>{!datedReportReady ? '—' : busy && !data ? '…' : money(value)}</AutoFitMoney></article>)}
+        {cards.map(({ key, label, value, icon: Icon }) => <article className={`revenue-card ${key}${key === 'balance' && !hybridMode ? ' revenue-remaining' : ''}`} key={key}><div data-ui-key="u-2ffef07af4fc" className="revenue-card-head"><Icon size={18} aria-hidden="true" /> {label}</div><AutoFitMoney>{!datedReportReady ? '—' : busy && !data ? '…' : money(value)}</AutoFitMoney></article>)}
       </section>
       {data && datedReportReady && <div className="revenue-formula">{hybridMode ? <>Tổng doanh thu = Tiền dịch vụ {hybridMode ? '(Manual)' : ''} + Tiền tip (Auto) = <strong>{money(data.total_revenue)}</strong></> : <>Tổng thu - Tổng chi = <strong>{money(data.net_income ?? (Number(data.total_income || 0) - Number(data.total_expense || 0)))}</strong> · Còn lại = (Tổng thu - Tổng chi) - Tiền TIP trong kỳ = <strong>{money(data.balance)}</strong></>}</div>}
     </div>}

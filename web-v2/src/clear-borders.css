@@ -907,3 +907,12 @@ body .checkin-loaded-row > button { margin-left:auto; flex-shrink:0; }
   margin-bottom: 8px;
   font-weight: 800;
 }
+
+/* Make the remaining balance distinct from the other revenue totals. */
+.revenue-page .revenue-card.balance.revenue-remaining {
+  background: #174b3b;
+  border: 2px solid #c5a65b;
+  box-shadow: 0 5px 16px #174b3b26;
+}
+.revenue-page .revenue-remaining .revenue-card-head { color: #ffe2a0; }
+.revenue-page .revenue-remaining .revenue-card-value { color: #fff; }
