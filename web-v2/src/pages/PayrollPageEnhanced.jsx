@@ -1,3 +1,4 @@
+import { preservePayrollEdits } from '../lib/payrollDraftEdits'
 import { confirmDialog } from '../lib/systemDialogs'
 import PayrollHistorySearch from '../components/PayrollHistorySearch'
 import usePageRefresh from '../lib/usePageRefresh'
@@ -329,7 +330,8 @@ function PayrollAccountPage({ user, activeTab = 'calculate', onTabChange, config
   }
 
   const calculate = () => run('calculate', async () => {
-    const result = await veraApi.calculatePayrollFromTips(month, periodNo)
+    const fresh = await veraApi.calculatePayrollFromTips(month, periodNo)
+    const result = preservePayrollEdits(fresh, draft, Object.keys(EDIT_LABELS), recalculate)
     let calculated = result
     if (canSave) {
       try {
@@ -361,7 +363,8 @@ function PayrollAccountPage({ user, activeTab = 'calculate', onTabChange, config
 
   const recalculatePayroll = () => run('recalculate', async () => {
     if (!draft?.rows?.length) throw new Error('Chưa có bảng lương nháp để tính lại.')
-    const result = await veraApi.calculatePayrollFromTips(month, periodNo)
+    const fresh = await veraApi.calculatePayrollFromTips(month, periodNo)
+    const result = preservePayrollEdits(fresh, draft, Object.keys(EDIT_LABELS), recalculate)
     let calculated = result
     if (canSave) {
       try {
@@ -398,7 +401,7 @@ function PayrollAccountPage({ user, activeTab = 'calculate', onTabChange, config
       saved_at: '',
       saved_by: '',
       rows: current.rows.map((row) => row['Tên Hệ thống'] === username
-        ? recalculate({ ...row, [field]: Number(value || 0) }) : row),
+        ? recalculate({ ...row, [field]: Number(value || 0), __manual_overrides: { ...(row.__manual_overrides ?? Object.fromEntries(Object.keys(EDIT_LABELS).map(key => [key, row[key]]))), [field]: Number(value || 0) } }) : row),
     }) : current)
   }
 
@@ -486,7 +489,7 @@ function PayrollAccountPage({ user, activeTab = 'calculate', onTabChange, config
       }),
     })
     const nextRows = draft.rows.map((item) => item['Tên Hệ thống'] === row['Tên Hệ thống']
-      ? recalculate({ ...item, 'Tiền phạt trong tháng': 0 }) : item)
+      ? recalculate({ ...item, 'Tiền phạt trong tháng': 0, __manual_overrides: { ...(item.__manual_overrides ?? Object.fromEntries(Object.keys(EDIT_LABELS).map(key => [key, item[key]]))), 'Tiền phạt trong tháng': 0 } }) : item)
     const nextDraft = { ...draft, rows: nextRows, saved_at: '', saved_by: '' }
     setDraft(nextDraft)
     try {
