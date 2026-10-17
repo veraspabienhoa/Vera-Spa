@@ -2942,3 +2942,14 @@ remain unchanged. The Ca 1 cleaning supplement uses the same eligibility guard.
 Existing supported-arrival reconciliation revokes automatic arrival and linked
 cleaning records below the threshold; manual fines remain untouched. No raw
 attendance or payroll is changed. Production correction/deployment is unverified.
+
+## 18-10-2026 — Payroll A4 portrait exports (source only)
+
+KTV draft exports add PDF/PNG behind the same export permission, participant
+validation, row visibility and bank-field restrictions as Excel. Administrative
+exports retain their existing frozen-row/evidence guards. Rendering occurs after
+releasing the database connection. Shared portrait layout repeats employee identity
+across groups of four value columns, paginates with margins and retains totals.
+PNG uses the same page commands with bounded dimensions; oversized images report
+an error while PDF remains available. No payroll save, email or financial mutation
+is performed by preview/download/share. Production deployment is not verified.

@@ -1237,7 +1237,10 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         return await run_in_threadpool(process)
 
     @app.post("/v2/payroll/draft/export.xlsx")
-    def payroll_draft_export(body: PayrollExport, ident: identity_type = Depends(current_identity)):
+    @app.post("/v2/payroll/draft/export.{file_type}")
+    def payroll_draft_export(body: PayrollExport, ident: identity_type = Depends(current_identity), file_type: str = "xlsx"):
+        if file_type not in {"xlsx", "pdf", "png"}:
+            raise HTTPException(400, "Định dạng không hợp lệ.")
         label = _period_label(body.start, body.end)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "payroll_export")
@@ -1258,6 +1261,14 @@ def install_payroll_routes(app, *, engine_instance: Callable[[], Any], current_i
         ]
         if str(ident.role or "").lower() != "admin":
             fields = [field for field in fields if field not in {"Số tài khoản ngân hàng", "Tên ngân hàng"}]
+        if file_type in {'pdf', 'png'}:
+            from vera_payroll_print import render_payroll
+            totals = {'Tên Hệ thống': 'TỔNG'}
+            for field in EDITABLE_FIELDS | {'Tiền Lương', 'Số tiền thực nhận'}:
+                totals[field] = sum(float(row.get(field) or 0) for row in records)
+            content = render_payroll([*records, totals], [(field, field) for field in fields], f'BẢNG LƯƠNG KTV - {label}', file_type)
+            return StreamingResponse(BytesIO(content), media_type='application/pdf' if file_type == 'pdf' else 'image/png',
+                headers={'Content-Disposition': f'attachment; filename=VERA_BangLuong_KTV.{file_type}'})
         filename = f"VERA_BangLuong_{label.replace(' ', '_').replace('/', '-')}.xlsx"
         return StreamingResponse(
             BytesIO(_new_payroll_workbook(records, fields, body.start, body.end)),

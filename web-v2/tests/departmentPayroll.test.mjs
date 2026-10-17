@@ -132,9 +132,9 @@ test('payroll actions precede table and share offers prepared PNG or PDF',async 
  const f=await fixture(t);await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương theo cấu hình')
  const toolbar=document.querySelector('.department-payroll-top-actions'),table=document.querySelector('.department-payroll-table')
  assert.ok(toolbar.compareDocumentPosition(table)&window.Node.DOCUMENT_POSITION_FOLLOWING)
- const buttons=[...toolbar.querySelectorAll('button')];const exportIndex=buttons.findIndex(b=>b.textContent.trim()==='Xuất excel');assert.equal(buttons[exportIndex+1].textContent.trim(),'Chia sẻ')
- await f.click('Chia sẻ');assert.equal(document.querySelector('dialog[aria-label="Chia sẻ bảng lương"]').open,true);assert.ok(f.requests.some(r=>r.path.endsWith('/export.png')));assert.ok(f.requests.some(r=>r.path.endsWith('/export.pdf')))
- assert.equal([...document.querySelectorAll('button')].find(b=>b.textContent==='Ảnh PNG').disabled,false)
+ const buttons=[...toolbar.querySelectorAll('button')];const exportIndex=buttons.findIndex(b=>b.textContent.trim()==='Xuất excel');assert.equal(buttons[exportIndex+1].textContent.trim(),'Xem / tải / chia sẻ PNG và PDF')
+ await f.click('Xem / tải / chia sẻ PNG và PDF');assert.equal(document.querySelector('dialog[aria-label="Chia sẻ bảng lương"]').open,true);assert.ok(f.requests.some(r=>r.path.endsWith('/export.png')));assert.ok(f.requests.some(r=>r.path.endsWith('/export.pdf')))
+ assert.equal([...document.querySelectorAll('button')].find(b=>b.textContent==='Chia sẻ PNG').disabled,false)
 })
 
 test('save image and PDF download prepared files even when native sharing is available',async t=>{
@@ -145,19 +145,19 @@ test('save image and PDF download prepared files even when native sharing is ava
  URL.revokeObjectURL=()=>{}
  t.after(()=>{URL.createObjectURL=originalCreate;URL.revokeObjectURL=originalRevoke})
  window.HTMLAnchorElement.prototype.click=function(){downloads.push({name:this.download,connected:this.isConnected})}
- await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương theo cấu hình');await f.click('Chia sẻ')
+ await f.render(h(Panel,{user:{role:'admin'}}));await f.click('Tính lương theo cấu hình');await f.click('Xem / tải / chia sẻ PNG và PDF')
  const month=document.querySelector('.department-payroll-toolbar input[type="month"]').value
  const exportCalls=()=>f.requests.filter(r=>/\/export\.(png|pdf)$/.test(r.path)).length
  assert.equal(exportCalls(),2)
  const groups=[...document.querySelectorAll('.department-payroll-share-format')].map(group=>[...group.querySelectorAll('button')].map(button=>button.textContent.trim()))
- assert.deepEqual(groups,[['Ảnh PNG','Lưu ảnh'],['PDF','Lưu PDF']])
- await f.click('Lưu ảnh');await f.click('Lưu PDF')
+ assert.deepEqual(groups,[['Xem PDF','Tải PDF','Chia sẻ PDF'],['Xem PNG','Tải PNG','Chia sẻ PNG']])
+ await f.click('Tải PNG');await f.click('Tải PDF')
  assert.deepEqual(downloads.map(item=>item.name),[`Luong_hanh_chanh_${month}.png`,`Luong_hanh_chanh_${month}.pdf`])
  assert.ok(downloads.every(item=>item.connected));assert.equal(document.querySelectorAll('a[download]').length,0)
  assert.deepEqual(files.map(file=>file.type),['image/png','application/pdf'])
  assert.equal(shares.length,0);assert.equal(exportCalls(),2)
  assert.equal(document.querySelector('dialog[aria-label="Chia sẻ bảng lương"]').open,true)
- await f.click('Ảnh PNG');assert.equal(shares.length,1);assert.equal(shares[0].files[0],files[0])
+ await f.click('Chia sẻ PNG');assert.equal(shares.length,1);assert.equal(shares[0].files[0],files[0])
  assert.equal(document.querySelector('dialog[aria-label="Chia sẻ bảng lương"]').open,false)
 })
 
@@ -289,7 +289,7 @@ for (const pending of ['attendance_pending', 'configuration_pending']) test(`${p
   const f = await fixture(t, false, [{ ...rows[0], [pending]: true, salary: null, total_salary: null, net_salary: null }])
   await f.render(h(Panel, { user: admin })); await f.click('Tính lương theo cấu hình')
   assert.equal(button('Hoàn thành bảng lương').disabled, true)
-  assert.equal(button('Xuất excel').disabled, true); assert.equal(button('Chia sẻ').disabled, true)
+  assert.equal(button('Xuất excel').disabled, true); assert.equal(button('Xem / tải / chia sẻ PNG và PDF').disabled, true)
   assert.equal(document.querySelector('[aria-label="Chọn gửi email Nhân Viên A"]').disabled, true)
   assert.match(document.querySelector('.department-payroll-summary').textContent, /Chờ đủ dữ liệu/)
   await f.change(document.querySelector('[aria-label="Trách nhiệm Nhân Viên A"]'), '100.000')
@@ -377,7 +377,7 @@ for (const scope of ['month', 'account', 'permission', 'unmount', 'cancel', 'fil
   const f = await fixture(t); await f.render(h(Panel, { user: admin })); await f.click('Tính lương theo cấu hình')
   const gate = deferRequest(url => /\/export\.(png|pdf)$/.test(url.pathname))
   let downloads = 0; window.HTMLAnchorElement.prototype.click = () => { downloads++ }
-  await f.click('Chia sẻ'); assert.ok(gate.captured())
+  await f.click('Xem / tải / chia sẻ PNG và PDF'); assert.ok(gate.captured())
   if (scope === 'cancel') await f.click('Đóng')
   else if (scope === 'filter') await f.change(document.querySelector('.department-payroll-department-filter select'), 'letan')
   else await invalidatePanel(f, scope)
@@ -385,12 +385,12 @@ for (const scope of ['month', 'account', 'permission', 'unmount', 'cancel', 'fil
   await gate.release()
   assert.notEqual(document.querySelector('dialog[aria-label="Chia sẻ bảng lương"]')?.open, true)
   assert.equal(downloads, 0)
-  if (button('Lưu ảnh')) assert.equal(button('Lưu ảnh').disabled, true)
+  if (button('Tải PNG')) assert.equal(button('Tải PNG').disabled, true)
 })
 
 test('completed share files cannot be downloaded after changing the payroll filter', async t => {
-  const f = await fixture(t); await f.render(h(Panel, { user: admin })); await f.click('Tính lương theo cấu hình'); await f.click('Chia sẻ')
-  const download = button('Lưu ảnh'); assert.equal(download.disabled, false)
+  const f = await fixture(t); await f.render(h(Panel, { user: admin })); await f.click('Tính lương theo cấu hình'); await f.click('Xem / tải / chia sẻ PNG và PDF')
+  const download = button('Tải PNG'); assert.equal(download.disabled, false)
   let downloads = 0; window.HTMLAnchorElement.prototype.click = () => { downloads++ }
   await f.change(document.querySelector('.department-payroll-department-filter select'), 'letan')
   await act(() => download.click())
@@ -623,10 +623,10 @@ for (const mode of ['old-backend', 'missing-capability', 'missing-revision', 'fu
   assert.equal(button('Xóa bảng lương nháp').disabled, true)
   await f.click('Tính lương theo cấu hình'); await f.click('Xóa bảng lương nháp')
   await f.click('Mở bảng nháp'); assert.equal(rowCount(), 3)
-  for (const label of ['Lưu bảng nháp', 'Hoàn thành bảng lương', 'Xuất excel', 'Chia sẻ']) assert.equal(button(label).disabled, true)
+  for (const label of ['Lưu bảng nháp', 'Hoàn thành bảng lương', 'Xuất excel', 'Xem / tải / chia sẻ PNG và PDF']) assert.equal(button(label).disabled, true)
   assert.equal(document.querySelector('[aria-label="Trách nhiệm Nhân Viên A"]').disabled, true)
   assert.equal(document.querySelector('[aria-label="Chọn gửi email Nhân Viên A"]').disabled, true)
-  for (const label of ['Lưu bảng nháp', 'Hoàn thành bảng lương', 'Xuất excel', 'Chia sẻ']) await f.click(label)
+  for (const label of ['Lưu bảng nháp', 'Hoàn thành bảng lương', 'Xuất excel', 'Xem / tải / chia sẻ PNG và PDF']) await f.click(label)
   assert.equal(f.requests.some(r => r.options.method && r.options.method !== 'GET'), false)
   assert.equal(f.requests.some(r => r.path.endsWith('/calculate')), false)
   await f.render(h(Settings, { user: admin }))

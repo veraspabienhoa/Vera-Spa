@@ -1,3 +1,5 @@
+import EmployeeProfileModal from '../components/EmployeeProfileModal'
+import TrainingReportFiles from '../components/TrainingReportFiles'
 import { preservePayrollEdits } from '../lib/payrollDraftEdits'
 import { confirmDialog } from '../lib/systemDialogs'
 import PayrollHistorySearch from '../components/PayrollHistorySearch'
@@ -106,6 +108,8 @@ function PayrollAccountPage({ user, activeTab = 'calculate', onTabChange, config
   const canEmail = isAdmin || permissions.payroll_email
   const canExport = isAdmin || permissions.payroll_export
 
+  const [exportScope, setExportScope] = useState(null)
+  const [sharing, setSharing] = useState(false)
   const [batch, setBatch] = useState('')
   const [employee, setEmployee] = useState('')
   const [history, setHistory] = useState({ records: [], batches: [], employees: [] })
@@ -285,6 +289,7 @@ function PayrollAccountPage({ user, activeTab = 'calculate', onTabChange, config
   useEffect(() => { setHistorySelected([]) }, [historySearch, historyNonPositiveOnly, historyFormerOnly])
   const draftTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Số tiền thực nhận'] || 0), 0), [draft])
   const draftSalaryTotal = useMemo(() => (draft?.rows || []).reduce((sum, item) => sum + Number(item['Tiền Lương'] || 0), 0), [draft])
+  useEffect(() => { setExportScope(null) }, [draft, month, periodNo, canExport])
   const draftRows = draft?.rows || EMPTY_ROWS
   const draftNeedle = normalizeSearch(draftSearch)
   const visibleDraftRows = useMemo(() => draftRows.filter((row) => {
@@ -709,7 +714,7 @@ function PayrollAccountPage({ user, activeTab = 'calculate', onTabChange, config
     </section>}
 
     {draft?.rows?.length > 0 && <section data-ui-key="u-b5130dabd90f" className="panel payroll-draft-panel">
-      <div data-ui-key="u-1fea30877196" className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><UiToolbar data-ui-key="u-62395aec935b" className="list-actions">{canSave && <button data-ui-key="u-ffb464f0cbcc" className="primary-button" onClick={completePayroll} disabled={isBusy || draftSalaryTotal <= 0}><CheckCircle2 size={16} /> {busy === 'complete' ? 'Đang hoàn thành…' : 'Hoàn thành bảng lương'}</button>}{canEmail && <button data-ui-key="u-83cf7f0e45eb" className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> {busy === 'email' && emailProgress ? `Đang gửi ${emailProgress.processed}/${emailProgress.total}…` : `Gửi email (${selected.length})`}</button>}{canExport && <button data-ui-key="u-44591d8d625e" className="secondary-button" type="button" onClick={exportDraft} disabled={isBusy || !draftRows.length}><Download size={16} /> {busy === 'export-draft' ? 'Đang xuất…' : 'Xuất excel'}</button>}</UiToolbar></div>
+      <div data-ui-key="u-1fea30877196" className="panel-title-row"><div><h2>{draft.period_label}</h2><p>{draft.rows.length} nhân viên · Tổng Tiền Lương {money(draftSalaryTotal)} · Tổng thực nhận {money(draftTotal)}</p></div><UiToolbar data-ui-key="u-62395aec935b" className="list-actions">{canSave && <button data-ui-key="u-ffb464f0cbcc" className="primary-button" onClick={completePayroll} disabled={isBusy || draftSalaryTotal <= 0}><CheckCircle2 size={16} /> {busy === 'complete' ? 'Đang hoàn thành…' : 'Hoàn thành bảng lương'}</button>}{canEmail && <button data-ui-key="u-83cf7f0e45eb" className="secondary-button" onClick={emailDraft} disabled={isBusy}><Mail size={16} /> {busy === 'email' && emailProgress ? `Đang gửi ${emailProgress.processed}/${emailProgress.total}…` : `Gửi email (${selected.length})`}</button>}{canExport && <button data-ui-key="u-44591d8d625e" className="secondary-button" type="button" onClick={exportDraft} disabled={isBusy || !draftRows.length}><Download size={16} /> {busy === 'export-draft' ? 'Đang xuất…' : 'Xuất excel'}</button>}{canExport && <button className="secondary-button" type="button" disabled={isBusy || !draftRows.length} onClick={() => setExportScope({ kind:'payroll', filters:{start:draft.start,end:draft.end,rows:draftRows} })}>Xem / tải / chia sẻ PNG và PDF</button>}{canExport && exportScope && <EmployeeProfileModal labelledBy="payroll-export-title" busy={sharing} onClose={() => setExportScope(null)}><h2 id="payroll-export-title">Bảng lương KTV · PNG / PDF</h2><TrainingReportFiles scope={exportScope} onSharingChange={setSharing} onDenied={() => setExportScope(null)}/><button data-dialog-close="true" type="button" className="secondary-button" disabled={sharing} onClick={() => setExportScope(null)}>Đóng</button></EmployeeProfileModal>}</UiToolbar></div>
       <UiToolbar data-ui-key="u-4f690860c619" className="payroll-search-toolbar">
         <label className="payroll-search-box">Tìm tên nhân viên<Search size={16} /><ClearableSearchInput type="search" value={draftSearch} disabled={isBusy} placeholder={`Tìm trong ${draft.period_label}`} onChange={(event) => setDraftSearch(event.target.value)} /></label>
         <UiToolbar data-ui-key="u-879165f77c07" className="payroll-quick-filters">
