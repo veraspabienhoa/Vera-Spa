@@ -62,6 +62,10 @@ def mutate(conn, request_id, body, ident, *, cancel, request_row, norm,
         payload.update({'Từ ngày': body.start_date.strftime('%d/%m/%Y'),
             'Đến ngày': body.end_date.strftime('%d/%m/%Y'),
             'Lý do nghỉ dài hạn': body.reason.strip(), 'Chi tiết': body.detail.strip()})
+        # A rescheduled request must be evaluated against its new dates.
+        if payload.get('Nguồn kết thúc kỳ nghỉ') == 'scheduled':
+            for key in ('Trạng thái kỳ nghỉ', 'Nguồn kết thúc kỳ nghỉ', 'Kết thúc lúc'):
+                payload.pop(key, None)
     else:
         if not body.note.strip():
             raise HTTPException(400, 'Cần nhập lý do hủy đơn.')

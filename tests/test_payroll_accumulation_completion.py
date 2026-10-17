@@ -183,3 +183,16 @@ def test_unsaved_draft_honors_completed_source_but_official_replacement_keeps_la
     assert payroll._employee_accumulation_balances(None, [employee], norm, (START, END), saved_only=True)[norm('A')]['remaining'] == 0
     records.append(history_row(START, END, contribution=500_000))
     assert payroll._employee_accumulation_balances(None, [employee], norm, (START, END), saved_only=True)[norm('A')]['remaining'] == 500_000
+
+
+def test_new_ktv_without_source_contributes_and_respects_remaining(monkeypatch):
+    for role in ('nhanvien', 'leader'):
+        employee = {'username': 'New', 'role': role, 'employment_start_date': '2026-09-01'}
+        balance = personal._accumulation_balance(employee, [], [], [], norm)
+        monkeypatch.setattr(payroll, '_employee_accumulation_balances', lambda *a: {norm('New'): balance})
+        assert balance['enrolled'] is True
+        assert payroll._tichluy_map(None, [employee], START, END, norm)[norm('New')] == 500_000
+        balance = personal._accumulation_balance(employee, [], [{'Tên nhân viên': 'New', 'Đã tích lũy': 4_800_000}], [], norm)
+        assert payroll._tichluy_map(None, [employee], START, END, norm)[norm('New')] == 200_000
+        balance = personal._accumulation_balance(employee, [], [{'Tên nhân viên': 'New', 'Đã tích lũy': 5_000_000}], [], norm)
+        assert payroll._tichluy_map(None, [employee], START, END, norm)[norm('New')] == 0

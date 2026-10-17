@@ -144,7 +144,7 @@ def test_no_ad_hoc_background_thread_or_import_start_remains():
     root = Path(__file__).parents[1]
     for name in ('vera_web_v2_live_tour.py', 'vera_web_v2_leave_sync_queue.py',
                  'vera_leave_quota_alerts.py', 'vera_web_v2_notification_settings.py',
-                 'vera_technical_retention_scheduler.py'):
+                 'vera_technical_retention_scheduler.py', 'vera_leave_scheduled_completion.py'):
         source = (root / name).read_text()
         assert 'Thread(' not in source
         assert 'register_worker(' in source
@@ -156,7 +156,7 @@ def test_full_runtime_requires_the_complete_existing_job_inventory():
     names = set()
     for filename in ('vera_web_v2_live_tour.py', 'vera_web_v2_leave_sync_queue.py',
                      'vera_leave_quota_alerts.py', 'vera_web_v2_notification_settings.py',
-                     'vera_technical_retention_scheduler.py'):
+                     'vera_technical_retention_scheduler.py', 'vera_leave_scheduled_completion.py'):
         tree = ast.parse((root / filename).read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'register_worker':

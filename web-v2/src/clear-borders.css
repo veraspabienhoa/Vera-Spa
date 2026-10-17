@@ -916,3 +916,25 @@ body .checkin-loaded-row > button { margin-left:auto; flex-shrink:0; }
 }
 .revenue-page .revenue-remaining .revenue-card-head { color: #ffe2a0; }
 .revenue-page .revenue-remaining .revenue-card-value { color: #fff; }
+
+/* Attendance heading separators only; table grids remain intact. */
+body .attendance-workspace > .page-heading,
+body .attendance-workspace > .attendance-tab-actions { border-top: 0 !important; border-bottom: 0 !important; box-shadow: none; }
+body .attendance-workspace > .page-heading::after,
+body .attendance-workspace > .attendance-tab-actions::after { display: none; }
+body .approved-request-modal { width: min(1100px, calc(100vw - 24px)); }
+.approved-request-modal .approved-request-editor { margin: 0; }
+.approved-request-modal .approved-request-actions { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 12px; }
+body .leave-list-search-fields { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); grid-column: 1 / -1; gap: 10px; min-width: 0; max-width: 100%; }
+body .leave-list-search-fields > label { display: grid; gap: 5px; min-width: 0; width: auto; max-width: 100%; }
+body .leave-list-search-fields input { min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; }
+body .online-booking-range-actions { display: grid; grid-template-columns: repeat(2,minmax(0,240px)) minmax(180px,240px); align-items: end; }
+body .online-booking-range-actions > label { min-width: 0; width: 100%; }
+body .online-booking-range-actions input { min-width: 0; }
+body .online-booking-range-actions .online-booking-filter-buttons { align-self: end; }
+@media(max-width:640px) {
+  body .leave-list-search-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  body .online-booking-range-actions { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  body .online-booking-range-actions .online-booking-filter-buttons { grid-column: 1 / -1; }
+  .approved-request-modal .approved-request-editor form { grid-template-columns: minmax(0,1fr); }
+}

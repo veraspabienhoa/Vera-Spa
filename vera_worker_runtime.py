@@ -27,7 +27,7 @@ ROLES = frozenset({'combined', 'api', 'worker'})
 EXPECTED_WORKERS = frozenset({
     'live-tour-projection-scheduler', 'live-tour-projection-worker',
     'live-tour-queue-alert-monitor', 'vera-leave-sheet-sync',
-    'leave-quota-monitor', 'vera-notification-delivery', 'technical-retention-monitor',
+    'leave-completion-monitor', 'leave-quota-monitor', 'vera-notification-delivery', 'technical-retention-monitor',
 })
 LOG = logging.getLogger(__name__)
 

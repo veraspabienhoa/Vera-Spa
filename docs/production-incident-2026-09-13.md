@@ -2919,3 +2919,15 @@ registered leave, support adjustments, existing fines and prior reversals must
 also be checked. The browser failed under credential protection during the
 leave-list comparison. No historical fine was added, no complete audit result is
 claimed, and no deployment of these source changes has been verified.
+
+### 17-10-2026 — scheduled leave completion (source verification)
+
+Added the managed `leave-completion-monitor`: approved annual leave completes after
+its inclusive final Vietnam date; resignation completes on its effective date.
+The worker reuses one caller transaction and the existing long-leave advisory lock,
+updates each completion once, and performs no network calls or employee reactivation.
+Editing a scheduled completion clears only its automatic marker for reevaluation.
+Local verification: 37 focused backend tests, 16 connection/auth/notification/runtime
+regressions, and 69 frontend tests passed. PostgreSQL persistence is covered by an
+isolated integration test for CI. These are source/test findings, not observations
+of a deployed production runtime.

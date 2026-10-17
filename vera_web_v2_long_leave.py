@@ -318,6 +318,7 @@ def _approved_resignation_rows(conn) -> list[dict[str, Any]]:
             "employee_name": str(payload.get("Tên nhân viên") or "").strip(),
             "request_type": REQUEST_TYPE_RESIGNATION,
             "start_date": start_date.isoformat() if start_date else "",
+            "leave_completed": payload.get("Trạng thái kỳ nghỉ") == "Đã kết thúc",
             "reason": str(payload.get("Lý do nghỉ dài hạn") or "").strip(),
             "detail": str(payload.get("Chi tiết") or "").strip(),
             "approved_by": str(payload.get("Người duyệt") or "").strip(),
@@ -459,6 +460,9 @@ def install_long_leave_routes(
     api_module=None,
 ):
     """Install leave-request routes into the authenticated Web V2 API."""
+
+    from vera_leave_scheduled_completion import install as install_completion
+    install_completion(app, engine_instance)
 
     def permissions(conn, ident) -> tuple[bool, bool, bool, bool]:
         can_form = bool(feature_allowed(conn, ident, "long_leave_form"))

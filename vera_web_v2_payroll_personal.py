@@ -195,7 +195,10 @@ def _accumulation_balance(employee, history, tichluy_rows, adjustments, norm, ex
     base_paid = max(history_paid, source_paid)
     delta = sum(_number(row.get("delta")) for row in adjustments if norm(row.get("employee_name")) in keys)
     paid = max(0, base_paid + delta)
-    enrolled = bool(item or history_paid or delta or omitted)
+    # New KTVs participate from their first eligible payroll, even before
+    # the first tichluy/history row exists. Completed balances still cap at zero.
+    enrolled = bool(item or history_paid or delta or omitted or
+                    norm(employee.get("role")) in {norm("leader"), norm("nhanvien")})
     target = max(0, _number(item.get("Mục tiêu tích lũy"))) or _DEFAULT_ACCUMULATION_TARGET
     refunded = sum(row["refund"] for row in periods)
     return {"target": target, "enrolled": enrolled, "base_paid_total": base_paid, "manual_adjustment_total": delta,

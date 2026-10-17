@@ -2401,6 +2401,7 @@ def export_leave_excel(
     end_date: date = Query(alias="end"),
     employee: str = Query(default="", max_length=200),
     ident: Identity = Depends(current_identity),
+    leave_reason: str = "", leave_type: str = "", detail: str = "",
 ):
     if ident.role != "admin":
         raise HTTPException(403, "Chỉ tài khoản admin được xuất danh sách Excel.")
@@ -2428,6 +2429,9 @@ def export_leave_excel(
         }).mappings().all()
     if needle:
         rows = [row for row in rows if _employee_name_matches(row["employee_name"], needle)]
+
+    from vera_leave_list_filters import filter_rows
+    rows = filter_rows(rows, leave_reason, leave_type, detail)
 
     workbook = Workbook()
     sheet = workbook.active

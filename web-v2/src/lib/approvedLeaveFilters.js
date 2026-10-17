@@ -22,7 +22,9 @@ export function vietnamToday(value = new Date()) {
 
 export function approvedLeaveStatus(item, today = vietnamToday()) {
   if (item?.source === 'resignation' || item?.request_type === RESIGNATION) {
-    return { id: 'resignation', label: RESIGNATION }
+    return item?.leave_completed || (item?.start_date && item.start_date <= today)
+      ? { id: 'completed', label: 'Đã kết thúc kỳ nghỉ' }
+      : { id: 'resignation', label: RESIGNATION }
   }
   if (item?.leave_completed || (item?.end_date && item.end_date < today)) {
     return { id: 'completed', label: 'Đã kết thúc kỳ nghỉ' }
