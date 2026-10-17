@@ -25,6 +25,16 @@ DATASETS = {"leave", "payroll", "attendance"}
 DELETE_CONFIRMATION = "XÓA DỮ LIỆU"
 
 
+class CleanupDelete(BaseModel):
+    dataset: str
+    scope: str = "range"
+    start: date | None = None
+    end: date | None = None
+    expected_count: int = Field(ge=0)
+    fingerprint: str = Field(min_length=64, max_length=64)
+    confirmation: str
+
+
 class StorageDelete(BaseModel):
     dataset: str = Field(min_length=1, max_length=30)
     start: date
@@ -170,6 +180,34 @@ def install_storage_routes(
         if str(ident.role or "").lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được quản lý bộ nhớ hệ thống.")
         require_feature(conn, ident, feature)
+
+    @app.get("/v2/storage/cleanup/preview")
+    def cleanup_preview(dataset: str = "all", scope: str = "range",
+                        start: date | None = None, end: date | None = None,
+                        ident: identity_type = Depends(current_identity)):
+        from vera_storage_cleanup import snapshot, LABELS
+        with engine_instance().connect() as conn:
+            require_admin(conn, ident, "storage_admin_view")
+            result = snapshot(conn, dataset, scope, start, end)
+        return {**result, "labels": LABELS}
+
+    @app.delete("/v2/storage/cleanup")
+    def cleanup_delete(body: CleanupDelete, ident: identity_type = Depends(current_identity)):
+        from vera_storage_cleanup import delete_checked
+        with engine_instance().begin() as conn:
+            require_admin(conn, ident, "storage_delete")
+            if body.confirmation != DELETE_CONFIRMATION:
+                raise HTTPException(400, f"Vui lòng nhập đúng: {DELETE_CONFIRMATION}")
+            result = delete_checked(conn, body.dataset, body.scope, body.start, body.end,
+                                    body.expected_count, body.fingerprint)
+            conn.execute(text("""INSERT INTO vera_sync_event(dataset_key,event_type,detail,created_at)
+                VALUES(:dataset,'admin_retention_delete',:detail,NOW())"""), {
+                "dataset": body.dataset,
+                "detail": json.dumps({"actor": ident.employee_username, "scope": body.scope,
+                    "start": body.start, "end": body.end, "counts": result["counts"]}, default=str),
+            })
+        return {"ok": True, "deleted": result["total"], "counts": result["counts"],
+                "message": f"Đã xóa {result['total']} bản ghi lưu trữ trong phạm vi đã xác nhận."}
 
     @app.get("/v2/storage/preview")
     def storage_preview(

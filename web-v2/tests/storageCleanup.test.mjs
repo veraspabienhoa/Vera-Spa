@@ -1,0 +1,10 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { build } from 'esbuild'
+import { JSDOM } from 'jsdom'
+const built=await build({stdin:{contents:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Page from './src/pages/StorageAdminPage';const root=createRoot(document.getElementById('root'));window.act=act;window.mount=()=>act(()=>root.render(<Page/>));window.unmount=()=>act(()=>root.unmount());`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'mock',setup(b){b.onResolve({filter:/\/lib\/(api|systemDialogs|usePageRefresh)$/},a=>({path:a.path.split('/').pop(),namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},a=>({contents:a.path==='api'?`export const veraApi={storageCleanupPreview:q=>window.preview(q),deleteStorageCleanup:q=>window.remove(q)}`:a.path==='systemDialogs'?`export const confirmDialog=()=>Promise.resolve(window.confirmed)`:`export default function usePageRefresh(){}`}))}}]})
+test('stale previews cannot enable deletion',async()=>{
+ const d=new JSDOM('<div id="root"></div>',{url:'https://test.local',runScripts:'dangerously',pretendToBeVisual:true}),w=d.window,pending=[]
+ w.IS_REACT_ACT_ENVIRONMENT=true;w.MessageChannel=class{constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}};w.preview=q=>new Promise(resolve=>pending.push({q,resolve}));w.remove=()=>{throw Error('must not delete')}
+ try{w.eval(built.outputFiles[0].text);await w.mount();const select=w.document.querySelector('.storage-range-panel select');await w.act(()=>{select.value='all_time';select.dispatchEvent(new w.Event('change',{bubbles:true}))});assert.equal(pending.length,2);await w.act(()=>pending[0].resolve({total:2,counts:{leave:2},fingerprint:'a'.repeat(64)}));assert.equal(w.document.querySelector('.danger-zone button').disabled,true);assert.equal(pending[1].q.start,null)}finally{await w.unmount();w.close()}
+})

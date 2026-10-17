@@ -518,6 +518,8 @@ export const veraApi = {
   updateNotificationSetting: (key, changes) => request(`/v2/notification-settings/${encodeURIComponent(key)}`, {
     method: 'PUT', body: JSON.stringify(typeof changes === 'boolean' ? { enabled: changes } : changes),
   }),
+  storageCleanupPreview: (params) => request(`/v2/storage/cleanup/preview?${new URLSearchParams(Object.entries(params).filter(([, value]) => value != null))}`),
+  deleteStorageCleanup: (body) => request('/v2/storage/cleanup', { method: 'DELETE', body: JSON.stringify(body) }),
   storagePreview: (start, end) => request(`/v2/storage/preview?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   exportStorageExcel: (start, end, dataset = 'all') => download(`/v2/storage/export.xlsx?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&dataset=${encodeURIComponent(dataset)}`, 'VERA_LuuTru.xlsx'),
   deleteStorageData: (body) => request('/v2/storage', { method: 'DELETE', body: JSON.stringify(body) }),
