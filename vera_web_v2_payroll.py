@@ -551,6 +551,11 @@ def _clean_draft_rows(
             continue
         seen.add(key)
         row = _net({field: supplied.get(field, "") for field in DRAFT_FIELDS})
+        if isinstance(supplied.get("__manual_overrides"), dict):
+            row["__manual_overrides"] = {
+                field: _number(row.get(field)) for field in EDITABLE_FIELDS
+                if field in supplied["__manual_overrides"]
+            }
         if isinstance(supplied.get("__earnings"), dict):
             row["__earnings"] = {key: _number(supplied["__earnings"].get(key)) for key in ("tip", "service", "product")}
         row.update({
@@ -999,7 +1004,7 @@ def _saved_draft(conn, start: date, end: date, norm) -> dict[str, Any] | None:
     valid_rows = [item for item in valid_rows
                   if not suspended(employees[norm(item.get('Tên Hệ thống'))]['username'], start, end)]
     removed_employee_count = len(supplied_rows) - len(valid_rows)
-    rows = _clean_draft_rows(conn, valid_rows, norm, period=(start, end), refresh_financial=True) if valid_rows else []
+    rows = _clean_draft_rows(conn, valid_rows, norm, period=(start, end)) if valid_rows else []
     if not rows:
         return None
     return {
