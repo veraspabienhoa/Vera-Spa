@@ -245,13 +245,11 @@ def is_automatic_late_reason(reason: str) -> bool:
 
 
 def automatic_late_penalty_eligible(reason: str, minutes) -> bool:
-    """Arrival lateness is immediate; existing return-from-break grace remains."""
+    """Require five adjusted minutes for arrival and return-from-break fines."""
     if not is_automatic_late_reason(reason):
         return True
     try:
         value = float(minutes or 0)
-        if _norm(reason).startswith("di tre"):
-            return math.isfinite(value) and value > 0
         return math.isfinite(value) and value >= MIN_AUTOMATIC_LATE_PENALTY_MINUTES
     except (TypeError, ValueError):
         return False

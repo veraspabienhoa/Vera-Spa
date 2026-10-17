@@ -13,7 +13,7 @@ def test_boundary_uses_exact_official_catalog_row(minutes, index):
     catalog[auto._norm('Đi trễ KHÔNG phép')] = {'name': 'Đi trễ KHÔNG phép', 'penalty': 300000, 'days': 0}
     expected = 'Đi trễ KHÔNG phép' if index == 3 else auto.ARRIVAL_BAND_REASONS[index]
     assert auto.arrival_reason(catalog, minutes) is catalog[auto._norm(expected)]
-    assert auto.automatic_late_penalty_eligible(auto.ARRIVAL_BAND_REASONS[index], minutes)
+    assert auto.automatic_late_penalty_eligible(auto.ARRIVAL_BAND_REASONS[index], minutes) == (minutes >= 5)
 
 
 @pytest.mark.parametrize('minutes', [0,-1,None,'bad',float('nan'),float('inf')])
