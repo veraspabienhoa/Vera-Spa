@@ -1021,3 +1021,21 @@ for (const change of ['day rollover', 'permission reduction', 'permission increa
     assert.equal(calls.length, 2, 'the same policy must not cause a reload loop')
   } finally { await f.dispose() }
 })
+
+
+test('weekly shift opens on click, stays open after mouseleave and restores scrolling on close', async () => {
+  const f = await fixture()
+  try {
+    const button = document.querySelector('.live-tour-weekly-shift-button')
+    await act(async () => button.click())
+    const dialog = document.querySelector('[role="dialog"][aria-label="Ca tuần này"]')
+    assert.ok(dialog)
+    assert.equal(dialog.parentElement.parentElement, document.body)
+    assert.equal(document.body.style.overflow, 'hidden')
+    await act(async () => button.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true })))
+    assert.ok(document.querySelector('[aria-label="Ca tuần này"][role="dialog"]'))
+    await act(async () => dialog.querySelector('[aria-label="Đóng bảng ca tuần này"]').click())
+    assert.equal(document.querySelector('[aria-label="Ca tuần này"][role="dialog"]'), null)
+    assert.equal(document.body.style.overflow, '')
+  } finally { await f.dispose() }
+})
