@@ -695,8 +695,8 @@ export default function RevenuePage({ user }) {
       @media(max-width:760px){.revenue-entry-form{grid-template-columns:1fr;grid-template-areas:"title" "date" "income" "income-note" "expense" "expense-note" "save"}.revenue-entry-form .entry-date,.revenue-entry-form .entry-note,.revenue-entry-form > button{grid-column:auto}.revenue-entry-form > button{width:100%}.revenue-tip-editor .vera-date-input{position:relative;width:100%;max-width:100%;min-width:0;overflow:hidden}.revenue-tip-editor .vera-date-input>input[type="text"]{display:block;width:100%;min-width:0;padding-right:48px!important;color:#173329;background:#fff;font-size:16px;font-weight:800;opacity:1}.revenue-tip-editor .vera-date-picker-button{right:4px;width:38px}.revenue-tip-editor .vera-native-date-picker{left:auto!important;right:4px!important;width:38px!important;max-width:38px!important}}
     `}</style>
 
-    <div data-ui-key="u-6a3dd201fbe6" className="page-heading">
-      <div><span className="eyebrow"><CircleDollarSign size={14} /> Tài chính</span><h1>DOANH THU</h1><p className="revenue-source">Dữ liệu Thu/Chi được lưu trực tiếp trên server VERA SPA.</p></div>
+    <div data-ui-key="u-6a3dd201fbe6" className="page-heading revenue-heading">
+      <div><h1>DOANH THU</h1><p className="revenue-source">Dữ liệu Thu/Chi được lưu trực tiếp trên server VERA SPA.</p></div>
       <button data-ui-key="u-416bf407a667" data-ui-label-default="Làm mới" className="secondary-button" type="button" onClick={() => { setNotice(''); setRevision((value) => value + 1); setReconcileRevision((value) => value + 1) }} disabled={busy || reconcileBusy}><RefreshCw size={16} className={(busy || reconcileBusy) ? 'spin' : ''} /><UiCustomText uiKey="u-416bf407a667"> Làm mới</UiCustomText></button>
     </div>
     <StableFeedback>{(error || realtimeError) && <div className="error-box">{error || realtimeError}</div>}

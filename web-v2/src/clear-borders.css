@@ -980,3 +980,12 @@ body .weekly-shift-dialog-layer .live-tour-weekly-shift-popover { position:relat
 body .department-payroll-share-format { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; min-width:0; }
 body .department-payroll-share-format .primary-button { grid-column:1 / -1; }
 body .department-payroll-share-format button { min-width:0; white-space:normal; }
+
+/* Revenue title, permissions and refresh share one responsive row. */
+body .revenue-page .revenue-heading { flex-wrap: nowrap; align-items: center; gap: 8px; }
+body .revenue-heading > div { flex: 1; min-width: 0; }
+body .revenue-heading > button { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 600px) {
+  body .revenue-heading h1 { font-size: clamp(16px, 4.6vw, 24px); gap: 6px; }
+  body .revenue-heading > button { font-size: 10px; padding: 7px; min-height: 32px; gap: 4px; }
+}
