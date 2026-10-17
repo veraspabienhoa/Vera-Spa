@@ -948,3 +948,11 @@ body .payroll-accumulation-filters { min-width:0; max-width:100%; box-sizing:bor
 body .payroll-accumulation-filters button { min-width:0; white-space:normal; overflow-wrap:anywhere; padding-inline:8px; }
 body .payroll-accumulation-cell-lines { display:grid; gap:3px; }
 body .payroll-accumulation-cell-lines > * { display:block; margin:0; }
+
+/* Side-by-side weekly shifts fit the mobile popover without horizontal overflow. */
+body .live-tour-weekly-shift-popover .weekly-shift-summary-table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; margin-top:12px; font-size:12px; }
+body .weekly-shift-summary-table col.weekly-shift-number { width:11%; }
+body .live-tour-weekly-shift-popover .weekly-shift-summary-table :is(th,td) { border:1px solid #789486 !important; padding:7px 4px; white-space:normal; overflow-wrap:anywhere; vertical-align:middle; }
+body .weekly-shift-summary-table :is(th,td):nth-child(odd) { text-align:center; }
+body .weekly-shift-summary-table thead { background:#dceee3; color:#173f2e; }
+body .weekly-shift-summary-table tfoot { background:#fff0cc; color:#173f2e; font-weight:800; }
