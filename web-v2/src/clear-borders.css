@@ -938,3 +938,9 @@ body .online-booking-range-actions .online-booking-filter-buttons { align-self: 
   body .online-booking-range-actions .online-booking-filter-buttons { grid-column: 1 / -1; }
   .approved-request-modal .approved-request-editor form { grid-template-columns: minmax(0,1fr); }
 }
+
+/* Accumulation controls remain bounded; paired final actions share a row. */
+body .payroll-accumulation-filters { min-width:0; max-width:100%; box-sizing:border-box; }
+body .payroll-accumulation-filters button { min-width:0; white-space:normal; overflow-wrap:anywhere; padding-inline:8px; }
+body .payroll-accumulation-cell-lines { display:grid; gap:3px; }
+body .payroll-accumulation-cell-lines > * { display:block; margin:0; }

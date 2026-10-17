@@ -105,3 +105,22 @@ test('accumulation filters intersect employee, employment status and payment gro
  assert.deepEqual(filterAccumulationRows(rows),rows)
  assert.equal(JSON.stringify(rows),before)
 })
+
+test('former staff with unpaid balances sort last and never enter active contributions',()=>{
+ const employees=[
+  {employee_name:'An',role:'nhanvien',employment_status:'Đã nghỉ việc',remaining:500000,full_name:'Nguyễn An'},
+  {employee_name:'Kim Tiền',role:'nhanvien',employment_status:'Đang làm việc',remaining:500000},
+  {employee_name:'Bình',role:'leader',employment_status:'Nghỉ việc',remaining:300000},
+  {employee_name:'Thảo',role:'nhanvien',employment_status:'Tạm thời nghỉ',remaining:500000},
+ ]
+ const rows=accumulationRows(employees,[],[])
+ assert.deepEqual(rows.map(r=>r.employee_name),['Kim Tiền','Thảo','An','Bình'])
+ assert.deepEqual(filterAccumulationRows(rows,{group:'active'}).map(r=>r.employee_name),['Kim Tiền','Thảo'])
+ assert.equal(filterAccumulationRows(rows,{status:'Đã nghỉ việc',group:'active'}).length,0)
+ assert.equal(filterAccumulationRows(rows,{status:'Đã nghỉ việc'})[0].remaining,500000)
+})
+
+test('former-only employees keep full names from their profile',()=>{
+ const rows=accumulationRows([],[{employee_name:'Kim Tiền',full_name:'Nguyễn Thị Cẩm Tiền',employment_status:'Đã nghỉ việc'}],[])
+ assert.equal(rows[0].full_name,'Nguyễn Thị Cẩm Tiền')
+})
