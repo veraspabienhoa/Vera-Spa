@@ -2931,3 +2931,14 @@ Local verification: 37 focused backend tests, 16 connection/auth/notification/ru
 regressions, and 69 frontend tests passed. PostgreSQL persistence is covered by an
 isolated integration test for CI. These are source/test findings, not observations
 of a deployed production runtime.
+
+## 17-10-2026 — Restore arrival grace after support (source only)
+
+User evidence reports a 12:01:05 scan for a 10:00 shift with 120 minutes support.
+Source confirmed direct FaceGate eligibility and the shared writer accepted any
+positive arrival delay. Both now require the grace threshold (at least five
+minutes), after support adjustment. Immediate processing and pause independence
+remain unchanged. The Ca 1 cleaning supplement uses the same eligibility guard.
+Existing supported-arrival reconciliation revokes automatic arrival and linked
+cleaning records below the threshold; manual fines remain untouched. No raw
+attendance or payroll is changed. Production correction/deployment is unverified.

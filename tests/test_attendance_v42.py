@@ -137,7 +137,7 @@ class SupportedLatePenaltyThresholdTests(unittest.TestCase):
         self.assertIsNone(supported_late_minutes(200, None))
         self.assertFalse(late_penalty_eligible(200, 5, None))
 
-    def test_arrival_is_immediate_and_return_rules_keep_four_minute_grace(self):
+    def test_arrival_and_return_rules_keep_four_minute_grace(self):
         reasons = (
             "Đi trễ không phép",
             "Đi trễ nhỏ hơn hoặc bằng 30 phút",
@@ -146,7 +146,7 @@ class SupportedLatePenaltyThresholdTests(unittest.TestCase):
         )
         for reason in reasons:
             for minute in range(1, 5):
-                self.assertEqual(auto_check.automatic_late_penalty_eligible(reason, minute), reason.startswith("Đi trễ"))
+                self.assertFalse(auto_check.automatic_late_penalty_eligible(reason, minute))
             self.assertTrue(auto_check.automatic_late_penalty_eligible(reason, 5))
 
     def test_shared_writer_refuses_four_minute_penalty_before_database_write(self):
@@ -186,4 +186,4 @@ def test_grace_cleanup_retains_new_subminute_arrival_fine(monkeypatch):
 def test_immediate_arrival_rejects_zero_negative_and_nonfinite_minutes():
     for value in [0, -1, float('nan'), float('inf'), 'invalid', None]:
         assert not auto_check.automatic_late_penalty_eligible('Đi trễ không phép', value)
-    assert auto_check.automatic_late_penalty_eligible('Đi trễ không phép', 1/60)
+    assert not auto_check.automatic_late_penalty_eligible('Đi trễ không phép', 1/60)

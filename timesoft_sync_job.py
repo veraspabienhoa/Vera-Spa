@@ -5,7 +5,7 @@ Mỗi lần Cloud Scheduler gọi:
 2) Đọc trạng thái Auto Check và Nội quy từ PostgreSQL.
 3) Nếu PAUSED: không ghi phạt.
 4) Nếu RUNNING:
-   - Chấm công: chọn mức đi trễ theo số phút trong Nội quy; FaceGate phạt khi trễ > 0.
+   - Chấm công: chọn mức đi trễ theo số phút trong Nội quy; phạt từ 5 phút sau khi trừ hỗ trợ.
    - Nghỉ giữa ca: Ra ngoài vào muộn ngay khi có FaceID vào lại trễ.
    - Bảng tour: Ra ngoài vào muộn khi cột Vào trễ >= 5 phút.
    - Cẩm Nhung * được đối chiếu như Cẩm Nhung.
@@ -1445,11 +1445,10 @@ def process_timesoft_penalties(
     result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
     threshold = max(AUTO_PENALTY_MINUTES, int(cfg.get("threshold_minutes", AUTO_PENALTY_MINUTES)))
     def arrival_eligible(minutes, work_date):
-        # Any positive, canonical FaceGate arrival delay is immediately eligible.
-        from vera_attendance_source import source_for
+        # Process immediately, but only after the configured grace threshold.
         try:
             value = float(minutes)
-            return math.isfinite(value) and (value > 0 if source_for(work_date) == 'facegate' else value >= threshold)
+            return math.isfinite(value) and value >= threshold
         except (TypeError, ValueError):
             return False
     today = datetime.now(VN_TZ).date()

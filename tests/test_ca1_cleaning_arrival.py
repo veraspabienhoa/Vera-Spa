@@ -52,10 +52,10 @@ def test_worker_adds_cleaning_only_from_verified_ca1_and_replays_once(monkeypatc
         return job.process_timesoft_penalties(SimpleNamespace(begin=begin), {},
             {job._employee_key('Synthetic Employee'): 'Synthetic Employee'}, catalog(),
             [(DAY, pd.DataFrame([row]))])
-    assert run()['added'] == 1 + (shift == 'Ca 1')
+    assert run()['added'] == (1 + (shift == 'Ca 1') if minutes >= 5 else 0)
     assert run()['added'] == 0
-    assert len(writes) == 1 + (shift == 'Ca 1')
-    if shift == 'Ca 1':
+    assert len(writes) == (1 + (shift == 'Ca 1') if minutes >= 5 else 0)
+    if shift == 'Ca 1' and minutes >= 5:
         cleaning = writes[-1]
         assert cleaning['reason_item'] == catalog()[auto._norm(auto.CLEANING_CA1_REASON)]
         assert cleaning['source'] == auto.CLEANING_CA1_SOURCE
