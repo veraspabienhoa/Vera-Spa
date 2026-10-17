@@ -339,7 +339,7 @@ export default function RevenuePage({ user }) {
 
   useEffect(() => {
     if (!incomeNoteEdited) setEntryIncomeNote(defaultRevenueNote('Doanh thu', entryDate))
-    if (!expenseNoteEdited) setEntryExpenseNote(defaultRevenueNote('Chi phí', entryDate))
+    if (!expenseNoteEdited) setEntryExpenseNote(defaultRevenueNote('Mua đồ', entryDate))
   }, [entryDate, expenseNoteEdited, incomeNoteEdited])
 
   useEffect(() => {
@@ -516,7 +516,7 @@ export default function RevenuePage({ user }) {
       setIncomeNoteEdited(false)
       setExpenseNoteEdited(false)
       setEntryIncomeNote(defaultRevenueNote('Doanh thu', entryDate))
-      setEntryExpenseNote(defaultRevenueNote('Chi phí', entryDate))
+      setEntryExpenseNote(defaultRevenueNote('Mua đồ', entryDate))
       if (commonReport) setManualLedger(true)
       setEntryModalOpen(false)
       setNotice(result.message || 'Đã ghi Thu Chi vào Chi tiết Doanh thu - Chi phí.')
@@ -726,7 +726,7 @@ export default function RevenuePage({ user }) {
       <label className="entry-amount">Số tiền Thu<VeraMoneyInput value={entryIncomeAmount} onChange={(event) => setEntryIncomeAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
       <label className="entry-note">Ghi chú Thu<input className={!entryIncomeAmount && !incomeNoteEdited ? 'auto-note-empty' : ''} type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => { setIncomeNoteEdited(true); setEntryIncomeNote(event.target.value) }} placeholder="Doanh thu + ngày giao dịch" disabled={savingEntry}/></label>
       <label className="entry-amount entry-expense">Số tiền Chi<VeraMoneyInput value={entryExpenseAmount} onChange={(event) => setEntryExpenseAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
-      <label className="entry-note entry-expense-note">Ghi chú Chi<input className={!entryExpenseAmount && !expenseNoteEdited ? 'auto-note-empty' : ''} type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => { setExpenseNoteEdited(true); setEntryExpenseNote(event.target.value) }} placeholder="Chi phí + ngày giao dịch" disabled={savingEntry}/></label>
+      <label className="entry-note entry-expense-note">Ghi chú Chi<input className={!entryExpenseAmount && !expenseNoteEdited ? 'auto-note-empty' : ''} type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => { setExpenseNoteEdited(true); setEntryExpenseNote(event.target.value) }} placeholder="Mua đồ + ngày giao dịch" disabled={savingEntry}/></label>
       <button data-ui-key="u-4c1eb92b9b18" type="submit" className="primary-button" disabled={savingEntry}><Save size={16}/>{savingEntry ? 'Đang ghi…' : 'Lưu Thu + Chi'}</button>
       </form>
     </EmployeeProfileModal>}

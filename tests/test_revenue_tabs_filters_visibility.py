@@ -52,7 +52,7 @@ def test_revenue_entry_defaults_notes_fits_kpis_and_exports_excel():
     page = read_ui_source(Path("web-v2/src/pages/RevenuePage.jsx"))
     money_input = read_ui_source(Path("web-v2/src/components/VeraMoneyInput.jsx"))
     assert "defaultRevenueNote('Doanh thu', entryDate)" in page
-    assert "defaultRevenueNote('Chi phí', entryDate)" in page
+    assert "defaultRevenueNote('Mua đồ', entryDate)" in page
     assert "setIncomeNoteEdited(true)" in page
     assert "setExpenseNoteEdited(true)" in page
     assert "function AutoFitMoney" in page
