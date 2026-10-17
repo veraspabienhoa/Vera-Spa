@@ -213,6 +213,14 @@ function liveTourExportParams(kind, query = {}) {
 }
 
 export const veraApi = {
+  readPayrollReportExport: async (format, payload, options = {}) => {
+    const response = await binaryResponse(`/v2/payroll/draft/export.${format}`, {
+      ...options, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    })
+    const blob = await response.blob()
+    options.signal?.throwIfAborted()
+    return { blob, filename: `VERA_BangLuong_KTV_${payload.start}_${payload.end}.${format}` }
+  },
   residence: () => request('/v2/residence'),
   readResidenceExport: async (format, filters = {}, options = {}) => {
     const response = await binaryResponse(`/v2/residence/export?${new URLSearchParams({ ...filters, format })}`, options)

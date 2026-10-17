@@ -1842,8 +1842,11 @@ def install_department_payroll_routes(app, *, engine_instance, current_identity,
             if rows is None:
                 rows = _clean_combined_rows(conn, body.rows, norm, month=body.month, history_id=body.history_id)
                 _require_complete_attendance(conn, body.month, rows, norm)
-        from vera_department_payroll_share import payroll_pdf, payroll_png
-        content = (payroll_pdf if file_type == 'pdf' else payroll_png)(_printable_rows(rows), label, EXCEL_COLUMNS)
+        from vera_payroll_print import render_payroll
+        from vera_department_payroll_share import export_values
+        values = export_values(_printable_rows(rows), EXCEL_COLUMNS)[1:]
+        printable = [dict(zip([key for key, _ in EXCEL_COLUMNS], row)) for row in values]
+        content = render_payroll(printable, EXCEL_COLUMNS, f'BẢNG LƯƠNG HÀNH CHÁNH - {label}', file_type)
         return StreamingResponse(BytesIO(content), media_type='application/pdf' if file_type == 'pdf' else 'image/png',
                                  headers={'Content-Disposition': f'attachment; filename=Luong_hanh_chanh_{body.month}.{file_type}'})
 

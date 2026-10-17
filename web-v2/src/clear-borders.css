@@ -976,3 +976,7 @@ body .weekly-shift-dialog-layer .live-tour-weekly-shift-popover { position:relat
   body .weekly-shift-dialog-layer { padding:0; }
   body .weekly-shift-dialog-layer .live-tour-weekly-shift-popover { position:fixed; inset:0; width:100%; height:100dvh; max-height:100dvh; }
 }
+
+body .department-payroll-share-format { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; min-width:0; }
+body .department-payroll-share-format .primary-button { grid-column:1 / -1; }
+body .department-payroll-share-format button { min-width:0; white-space:normal; }
