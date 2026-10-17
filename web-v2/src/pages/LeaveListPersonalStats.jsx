@@ -5,7 +5,7 @@ import { veraApi } from '../lib/api'
 import { emptyLeaveDaySummary, formatLeaveDays } from '../lib/leaveStats'
 import { formatVeraDate } from '../lib/veraDate'
 
-const sameContext = (a, b) => a.start === b.start && a.end === b.end && a.employee === b.employee && a.displayStart === b.displayStart && a.displayEnd === b.displayEnd
+const sameContext = (a, b) => a.start === b.start && a.end === b.end && a.employee === b.employee && a.displayStart === b.displayStart && a.displayEnd === b.displayEnd && a.filters === b.filters
 
 export default function LeaveListPersonalStats({ user }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin'
@@ -33,7 +33,7 @@ export default function LeaveListPersonalStats({ user }) {
       const start = panel.dataset.leaveStart || ''
       const end = panel.dataset.leaveEnd || ''
       const next = { start, end, employee: String(panel.dataset.leaveEmployee || '').trim(),
-        displayStart: formatVeraDate(start), displayEnd: formatVeraDate(end) }
+        filters: panel.dataset.leaveFilters || '{}', displayStart: formatVeraDate(start), displayEnd: formatVeraDate(end) }
       if (!next.start || !next.end) return
       if (sameContext(contextRef.current, next)) return
       contextRef.current = next
@@ -54,7 +54,7 @@ export default function LeaveListPersonalStats({ user }) {
     syncFromList()
     const observer = new MutationObserver(scheduleSync); observer.observe(document.body, {
       childList: true, subtree: true, attributes: true,
-      attributeFilter: ['data-leave-start', 'data-leave-end', 'data-leave-employee'],
+      attributeFilter: ['data-leave-start', 'data-leave-end', 'data-leave-employee', 'data-leave-filters'],
     })
     document.addEventListener('input', scheduleSync, true); document.addEventListener('change', scheduleSync, true); document.addEventListener('click', scheduleSync, true)
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); observer.disconnect(); document.removeEventListener('input', scheduleSync, true); document.removeEventListener('change', scheduleSync, true); document.removeEventListener('click', scheduleSync, true); if (ownedHost?.isConnected) ownedHost.remove() }
@@ -67,7 +67,7 @@ export default function LeaveListPersonalStats({ user }) {
     const load = async () => {
       setBusy(true); setError(''); setSummary(emptyLeaveDaySummary()); setAllowances([])
       try {
-        const result = await veraApi.leaveListStats(context.start, context.end, context.employee)
+        const result = await veraApi.leaveListStats(context.start, context.end, context.employee, JSON.parse(context.filters || '{}'))
         if (!cancelled && revision === requestRevisionRef.current) { setSummary({ ...emptyLeaveDaySummary(), ...(result.summary || {}) }); setAllowances(result.monthly_allowances || []) }
       } catch (err) {
         if (!cancelled && revision === requestRevisionRef.current) { setSummary(emptyLeaveDaySummary()); setAllowances([]); setError(err.message || 'Không tải được thống kê nghỉ.') }
@@ -76,7 +76,7 @@ export default function LeaveListPersonalStats({ user }) {
       }
     }
     void load(); return () => { cancelled = true }
-  }, [context.start, context.end, context.employee])
+  }, [context.start, context.end, context.employee, context.filters])
 
   const subtitle = useMemo(() => {
     const range = context.displayStart && context.displayEnd ? `${context.displayStart} – ${context.displayEnd}` : ''

@@ -1,3 +1,4 @@
+import { matchesLeaveDetails } from '../lib/leaveListFilters'
 import PagePermissionActions from '../components/PagePermissionActions'
 import { confirmDialog, promptDialog } from '../lib/systemDialogs'
 import ActionSuccessDialog from '../components/ActionSuccessDialog'
@@ -126,6 +127,7 @@ export default function LeaveRegistrationPage({ user }) {
   const [statsEmployeeSearch, setStatsEmployeeSearch] = useState('')
   const [statsEmployeeFilter, setStatsEmployeeFilter] = useState('')
   const [employeeSearch, setEmployeeSearch] = useState('')
+  const [listFilters, setListFilters] = useState({ leave_reason: '', leave_type: '', detail: '' })
   const [dailyStats, setDailyStats] = useState([])
   const [records, setRecords] = useState([])
   const [reasons, setReasons] = useState([])
@@ -413,9 +415,9 @@ export default function LeaveRegistrationPage({ user }) {
   }, [reasons])
 
   const filteredRecords = useMemo(() => {
-    if (!normalizeSearch(employeeSearch)) return records
-    return records.filter((item) => matchesEmployeeName(item.employee_name, employeeSearch))
-  }, [employeeSearch, records])
+    return records.filter(item => (!normalizeSearch(employeeSearch) || matchesEmployeeName(item.employee_name, employeeSearch))
+      && matchesLeaveDetails(item, listFilters))
+  }, [employeeSearch, records, listFilters])
   const watchedDateSet = useMemo(() => new Set(watchDates.map((item) => item.date)), [watchDates])
   const unreadWatchDates = useMemo(() => watchDates.filter((item) => item.has_unread), [watchDates])
   const unreadWatchDateSet = useMemo(() => new Set(unreadWatchDates.map((item) => item.date)), [unreadWatchDates])
@@ -616,7 +618,7 @@ export default function LeaveRegistrationPage({ user }) {
     setExporting(true)
     setError('')
     try {
-      await veraApi.exportLeaveExcel(listRangeStart, listRangeEnd, employeeSearch)
+      await veraApi.exportLeaveExcel(listRangeStart, listRangeEnd, employeeSearch, listFilters)
     } catch (err) {
       setError(err.message || 'Không xuất được danh sách Excel.')
     } finally {
@@ -1044,7 +1046,7 @@ export default function LeaveRegistrationPage({ user }) {
         </section>
 
         <section data-ui-key="u-6a4d9baaa43d" className="panel leave-list-panel" id="leave-panel-list" role="tabpanel" aria-labelledby="leave-tab-list" hidden={activeTab !== 'list'}
-          data-leave-start={listRangeStart} data-leave-end={listRangeEnd} data-leave-employee={employeeSearch}>
+          data-leave-start={listRangeStart} data-leave-end={listRangeEnd} data-leave-employee={employeeSearch} data-leave-filters={JSON.stringify(listFilters)}>
           <div data-ui-key="u-8b2d8ad1d8f1" className="panel-title-row">
             <div className="leave-list-title-actions">
               <h2>DANH SÁCH</h2>
@@ -1102,7 +1104,7 @@ export default function LeaveRegistrationPage({ user }) {
                 <DatePickerControl label="Đến ngày" value={listRangeEnd} onChange={changeListCustomEnd} />
               </div>
             )}
-            <label className="employee-search-field">
+            <div className="leave-list-search-fields"><label className="employee-search-field">
               <span><Search size={15} aria-hidden="true" /> Tên nhân viên</span>
               <ClearableSearchInput
                 type="search"
@@ -1116,6 +1118,11 @@ export default function LeaveRegistrationPage({ user }) {
                 list="list-employee-options"
               />
             </label>
+            {Object.entries({ leave_reason: 'Lý do nghỉ', leave_type: 'Loại nghỉ', detail: 'Chi tiết' }).map(([key, label]) => <label key={key}>
+              <span>{label}</span><ClearableSearchInput type="search" aria-label={`Lọc ${label}`} placeholder={`Tìm ${label.toLocaleLowerCase('vi-VN')}`} value={listFilters[key]}
+                onChange={event => { setListFilters(current => ({ ...current, [key]: event.target.value })); setSelectedUids([]) }} />
+            </label>)}
+            </div>
             <datalist id="list-employee-options">
               {employees.map((employee) => <option key={employee.username} value={employee.username}>{shortEmployeeName(employee.username)}</option>)}
             </datalist>

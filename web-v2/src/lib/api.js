@@ -1,3 +1,4 @@
+import { matchesLeaveDetails } from './leaveListFilters'
 import { trainingReportResponseFilename } from './trainingReport'
 import { invalidateSharedReads } from './sharedRead'
 import { notifyLeaveChange } from './leaveRefresh'
@@ -277,17 +278,18 @@ export const veraApi = {
       days: Array.isArray(rows) ? rows.map((row) => ({ ...row, date: row.date || row.day })) : [],
     }
   },
-  leaveListStats: async (start, end, employee = '') => {
+  leaveListStats: async (start, end, employee = '', filters = {}) => {
     if (isApiConfigured) {
       const params = new URLSearchParams({ start, end })
       if (employee.trim()) params.set('employee', employee.trim())
+      for (const key of ['leave_reason', 'leave_type', 'detail']) if (filters[key]?.trim()) params.set(key, filters[key].trim())
       return request(`/v2/leave/list-stats?${params}`)
     }
     const batches = await Promise.all(datesBetween(start, end).map(async (date) => {
       const rows = await rpc('vera_v2_leave_records', { p_date: date })
       return (Array.isArray(rows) ? rows : []).map((row) => ({ ...row, leave_date: row.leave_date || date }))
     }))
-    return { summary: summarizeLeaveRecordDays(batches.flat(), employee) }
+    return { summary: summarizeLeaveRecordDays(batches.flat().filter(row => matchesLeaveDetails(row, filters)), employee) }
   },
   leaveRecords: async (start, end = start, options = {}) => {
     if (isApiConfigured) {
@@ -704,9 +706,10 @@ export const veraApi = {
   syncTourLeave: (action) => request('/v2/tour-leave-sync', {
     method: 'POST', body: JSON.stringify({ action }),
   }),
-  exportLeaveExcel: (start, end, employee = '') => {
+  exportLeaveExcel: (start, end, employee = '', filters = {}) => {
     const params = new URLSearchParams({ start, end })
     if (employee.trim()) params.set('employee', employee.trim())
+      for (const key of ['leave_reason', 'leave_type', 'detail']) if (filters[key]?.trim()) params.set(key, filters[key].trim())
     return download(`/v2/leave/export.xlsx?${params}`, `vera-lich-nghi-${start}-${end}.xlsx`)
   },
   syncLeaveSource: () => request('/v2/leave/source-sync', { method: 'POST' }).then(notifyLeaveChange),

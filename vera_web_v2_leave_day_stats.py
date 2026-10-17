@@ -115,6 +115,7 @@ def install_leave_day_stats_routes(
         end_date: date = Query(alias="end"),
         employee: str = Query(default="", max_length=200),
         ident: identity_type = Depends(current_identity),
+        leave_reason: str = "", leave_type: str = "", detail: str = "",
     ):
         if end_date < start_date:
             raise HTTPException(400, "Khoảng thời gian không hợp lệ.")
@@ -128,7 +129,7 @@ def install_leave_day_stats_routes(
             require_feature(conn, ident, "leave")
             can_view_penalty = feature_allowed(conn, ident, "employee_penalty_view")
             rows = conn.execute(text("""
-                SELECT employee_name, leave_reason, leave_type, calculated_days,
+                SELECT employee_name, leave_reason, leave_type, detail, calculated_days,
                        COALESCE(penalty, 0) AS penalty
                 FROM leave_records
                 WHERE leave_date BETWEEN :start_date AND :end_date
@@ -156,6 +157,8 @@ def install_leave_day_stats_routes(
 
         if employee_filter:
             rows = [row for row in rows if employee_name_matches(row["employee_name"], employee_filter)]
+        from vera_leave_list_filters import filter_rows
+        rows = filter_rows(rows, leave_reason, leave_type, detail)
         summary = summarize_leave_days(rows)
         if not can_view_penalty:
             summary.pop("total_penalty", None)

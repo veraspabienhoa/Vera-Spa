@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isApiConfigured, veraApi } from '../lib/api'
 import { APPROVED_LEAVE_FILTERS, approvedLeaveStatus, filterApprovedLeaveItems, vietnamToday } from '../lib/approvedLeaveFilters'
 import VeraDateInput from './VeraDateInput'
+import EmployeeProfileModal from './EmployeeProfileModal'
 
 const ANNUAL = 'Nghỉ Phép năm'
 const LONG = 'Nghỉ làm đẹp'
@@ -404,8 +405,8 @@ function LongLeaveContent({ user, refreshRevision }) {
       )}
 
       {pendingSync && role === 'admin' && <button type="button" className="secondary-button" disabled={approvedBusy || loading || Boolean(returnBusyId)} onClick={retrySync}>Đồng bộ lại đơn {pendingSync}</button>}
-      {approvedEditor && role === 'admin' && <section className="panel approved-request-editor">
-        <h3>Sửa đơn đã duyệt · {approvedEditor.employee_name} · {approvedEditor.request_type}</h3>
+      {approvedEditor && role === 'admin' && <EmployeeProfileModal className="approved-request-modal" labelledBy="approved-request-title" busy={approvedBusy} onClose={() => setApprovedEditor(null)}><section className="panel approved-request-editor">
+        <h3 id="approved-request-title">Sửa đơn đã duyệt · {approvedEditor.employee_name} · {approvedEditor.request_type}</h3>
         <form noValidate onSubmit={saveApproved}>
           <label>Từ ngày<VeraDateInput required disabled={approvedBusy} value={approvedEditor.start_date}
             onChange={event => setApprovedEditor(current => ({ ...current, start_date: event.target.value,
@@ -420,7 +421,7 @@ function LongLeaveContent({ user, refreshRevision }) {
           <div className="approved-request-actions"><button type="submit" className="primary-button" disabled={approvedBusy}>Lưu thay đổi</button>
             <button data-dialog-close="true" type="button" className="secondary-button" disabled={approvedBusy} onClick={() => setApprovedEditor(null)}>Đóng</button></div>
         </form>
-      </section>}
+      </section></EmployeeProfileModal>}
       {canViewApproved && (
         <section data-ui-key="u-4b4ef7220440" className="panel approved-leave-panel">
           <div data-ui-key="u-d06aabe803eb" className="panel-title-row">

@@ -173,6 +173,8 @@ test('approved edit failure keeps its editor and drafts through modal Close; suc
   const f = await fixture(admin, call => call.method === 'PUT' ? (++count === 1 ? response({ detail: 'Đơn đã thay đổi, vui lòng kiểm tra.' }, 409) : wait.promise) : undefined)
   try {
     await click(button('Sửa đơn'))
+    assert.equal(document.querySelector('.approved-request-modal').getAttribute('aria-modal'), 'true')
+    assert.equal(document.querySelector('.long-leave-section .approved-request-editor'), null)
     await change(document.querySelector('.approved-request-editor textarea'), 'Chi tiết đã sửa')
     await submit('.approved-request-editor form')
     assert.equal(modal().dataset.systemDialog, 'error')
