@@ -376,3 +376,14 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-ba
     display: none !important;
   }
 }
+
+/* Keep appointment text proportional to the compact mobile Live Tour table. */
+@media (max-width: 820px) {
+  html body .live-tour-page .responsive-data-table.tour-table td.tour-col-appointment,
+  html body .live-tour-page .responsive-data-table.tour-table td.tour-col-appointment .live-tour-appointment-editor input[type="text"] {
+    font-size: clamp(6px, 1.6vw, 8px) !important;
+    line-height: 1.2 !important;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+}
