@@ -109,7 +109,7 @@ assert runtime.state == 'stopped'
 assert all(not worker.thread or not worker.thread.is_alive() for worker in runtime.workers.values())
 with engine.connect() as conn:
     count = conn.execute(text('SELECT count(*) FROM synthetic_worker_seen')).scalar_one()
-assert count == (0 if runtime.role == 'api' else 7)
+assert count == (0 if runtime.role == 'api' else 8)
 engine.dispose()
 print(json.dumps({'role':runtime.role,'registered':len(runtime.workers),'executed':count,'stopped':True}))
 '''
@@ -130,4 +130,4 @@ def test_real_canonical_entrypoint_import_registration_and_lifespan(database, ro
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr[-6000:]
     assert json.loads(result.stdout.strip().splitlines()[-1]) == {
-        'role':role, 'registered':7, 'executed':0 if role == 'api' else 7, 'stopped':True}
+        'role':role, 'registered':8, 'executed':0 if role == 'api' else 8, 'stopped':True}
