@@ -116,3 +116,14 @@ def test_untrusted_role_cannot_stamp_or_enqueue():
 
 def test_worker_without_ui_break_wrapper_uses_canonical_faceid_groups():
     assert rule.qualifying_break(evidence(break_out=''), [leave()], DAY) == OUT
+
+
+def test_no_manual_confirmation_does_not_require_auto_event_schema():
+    calls = []
+    class Conn:
+        def execute(self, sql, params):
+            calls.append(str(sql))
+            assert 'vera_auto_check_event' not in str(sql)
+            return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: []))
+    assert rule.exemption(Conn(), 'worker', DAY) is None
+    assert len(calls) == 1

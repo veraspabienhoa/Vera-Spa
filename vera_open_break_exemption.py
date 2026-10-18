@@ -81,11 +81,21 @@ def qualifying_break(item, rows, day):
 
 
 def registrations(conn, employee, day):
-    return conn.execute(text('''
-        SELECT r.*, EXISTS (SELECT 1 FROM vera_auto_check_event e
-            WHERE e.leave_record_uid=r.record_uid) AS automatic
-        FROM leave_records r WHERE r.employee_name=:employee AND r.leave_date=:day
-    '''), {'employee': employee, 'day': day}).mappings().all()
+    rows = [dict(r) for r in conn.execute(text('''
+        SELECT r.* FROM leave_records r
+        WHERE r.employee_name=:employee AND r.leave_date=:day
+    '''), {'employee': employee, 'day': day}).mappings().all()]
+    # Standalone workers bootstrap auto-check tables only when saving their
+    # first event. Ordinary days must not depend on that schema already existing.
+    if not any((r.get('payload') or {}).get(MARKER) for r in rows):
+        return rows
+    linked = set(conn.execute(text('''
+        SELECT leave_record_uid FROM vera_auto_check_event
+        WHERE employee_name=:employee AND work_date=:day
+    '''), {'employee': employee, 'day': day}).scalars().all())
+    for row in rows:
+        row['automatic'] = row.get('record_uid') in linked
+    return rows
 
 
 def exemption(conn, employee, day, item=None):
