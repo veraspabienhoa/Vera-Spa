@@ -104,7 +104,11 @@ def process_one(engine_instance):
             conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('vera:missing-checkin-absence'))"))
             from vera_resource_concurrency import lock_transition
             lock_transition(conn, [('leave_employee', employee)], legacy_keys=['vera:phase4:leave_primary'])
-            evaluate(conn, employee, day)
+            if payload.get('mode') == 'open-break':
+                from vera_open_break_exemption import reconcile
+                reconcile(conn, employee, day)
+            else:
+                evaluate(conn, employee, day)
         queue.mark_done(engine_instance, item)
     except (EvidencePending, EvidenceError):
         # Missing/stale device evidence must not lose the request.

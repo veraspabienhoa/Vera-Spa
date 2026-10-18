@@ -2964,3 +2964,20 @@ blocked until the current query succeeds. Manual reload/direct-device reads and
 server-side permissions remain intact. No attendance writes or connection/pool
 behavior changed. Frontend regression covers automatic reload, overlapping
 responses and export of the latest applied query. Production is unverified.
+
+## 18-10-2026 — Open-break exemption after manual unauthorized departure (source only)
+
+The former outside-leave rule explicitly penalized a break when early departure
+was registered afterwards. The confirmed replacement exempts an open FaceID
+break for Ca 1/Ca 2 only when no other leave schedule exists that day and an
+Admin/quanly/letan subsequently records unauthorized early departure. A return
+scan, preexisting schedule, or approved benefit leave blocks the exemption.
+
+The manual API stamps authenticated actor provenance in PostgreSQL, attempts
+reconciliation in a caller-owned savepoint, and commits a durable retry with the
+registration. No device/network request or nested pool checkout is introduced.
+The common automatic writer checks the same predicate to prevent recreation.
+Revocation requires the linked untouched automatic row and exact recorded break
+out time; early-departure fines, manual edits, and other break events are kept.
+Older registrations without trusted provenance are not guessed from editable
+actor labels. No production data backfill or deployment was performed.
