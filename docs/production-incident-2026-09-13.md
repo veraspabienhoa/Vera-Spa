@@ -2953,3 +2953,14 @@ across groups of four value columns, paginates with margins and retains totals.
 PNG uses the same page commands with bounded dimensions; oversized images report
 an error while PDF remains available. No payroll save, email or financial mutation
 is performed by preview/download/share. Production deployment is not verified.
+
+## 18-10-2026 — Check-in history automatically applies filters (source only)
+
+Check-in history previously kept the applied table until an explicit submit.
+Filter changes now invalidate the visible results immediately and schedule a
+validated read after 250 ms. Request generations prevent older replies from
+replacing a newer selection. Inputs remain editable during reads; Excel remains
+blocked until the current query succeeds. Manual reload/direct-device reads and
+server-side permissions remain intact. No attendance writes or connection/pool
+behavior changed. Frontend regression covers automatic reload, overlapping
+responses and export of the latest applied query. Production is unverified.
