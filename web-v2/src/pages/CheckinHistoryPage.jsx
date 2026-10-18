@@ -3,7 +3,7 @@ import LiveTourSearchSelect from '../components/LiveTourSearchSelect'
 import { checkinLookupOptions } from '../lib/checkinHistory'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Download, RefreshCw } from 'lucide-react'
 import VeraDateInput from '../components/VeraDateInput'
 import { veraApi } from '../lib/api'
@@ -75,9 +75,11 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
   const [dirty, setDirty] = useState(false)
   const formRef = useRef(null)
   const requestId = useRef(0)
+  const autoLoadTimer = useRef(null)
   useEffect(() => () => { requestId.current += 1 }, [])
   const source = filters.source
-  const change = patch => { setFilters(value => ({ ...value, ...patch })); setDirty(true); setError('') }
+  const invalidate = () => { requestId.current += 1; setDirty(true); setRecords(null); setBusy(false); window.clearTimeout(autoLoadTimer.current) }
+  const change = patch => { invalidate(); setFilters(value => ({ ...value, ...patch })); setError('') }
   const lookupQuery = checkinQuery({ ...filters, employee: '', event_id: '' })
   const lookupKey = JSON.stringify(lookupQuery)
   const hasLookupText = Boolean(filters.employee || filters.event_id)
@@ -95,7 +97,8 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
   const lookupRows = lookup.key === lookupKey ? lookup.rows : []
   const lookupOptions = checkinLookupOptions(lookupRows)
   const preset = value => change({ preset: value, ...checkinDateRange(value), event_date: '' })
-  const load = async (event, queryFilters = filters) => {
+  const load = useCallback(async (event, queryFilters = filters) => {
+    window.clearTimeout(autoLoadTimer.current)
     event?.preventDefault()
     if (!formRef.current?.reportValidity()) return
     const invalid = checkinRangeError(queryFilters)
@@ -117,7 +120,14 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
         if ([401, 403].includes(cause.status)) setRecords(null)
       }
     } finally { if (requestId.current === id) setBusy(false) }
-  }
+  }, [filters])
+  useEffect(() => {
+    if (!dirty) return undefined
+    autoLoadTimer.current = window.setTimeout(() => {
+      if (formRef.current?.checkValidity() && !checkinRangeError(filters)) void load()
+    }, 250)
+    return () => window.clearTimeout(autoLoadTimer.current)
+  }, [filters, dirty, load])
   const loadFromFacegate = async () => {
     const directFilters = { ...filters, source: 'facegate', status: '', event_type: '' }
     setFilters(directFilters)
@@ -139,8 +149,8 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
 
   return <section className="checkin-history-page">
     <div className="page-heading checkin-heading"><div>{embedded ? <h2>LỊCH SỬ CHECK IN</h2> : <h1>LỊCH SỬ CHECK IN</h1>}</div><div className="checkin-heading-actions"><button className="secondary-button" type="button" disabled={busy || exporting} onClick={() => formRef.current?.requestSubmit()}><RefreshCw size={16} className={busy ? 'spin' : ''} /><span>{busy ? 'Đang tải…' : 'Xem lịch sử'}</span></button><button className="secondary-button checkin-live-device-button" type="button" disabled={busy || exporting} onClick={loadFromFacegate}><RefreshCw size={16} className={busy && source === 'facegate' ? 'spin' : ''} /><span>{busy && source === 'facegate' ? 'Đang tải từ máy…' : 'Tải từ Face ID'}</span></button></div></div>
-    <form ref={formRef} className="checkin-filters" onSubmit={load} onInput={() => setDirty(true)}>
-      <fieldset disabled={busy || exporting}>
+    <form ref={formRef} className="checkin-filters" onSubmit={load} onInput={invalidate}>
+      <fieldset disabled={exporting}>
         <div className="checkin-filter-dates">
           <label>Thời gian<select value={filters.preset} onChange={event => preset(event.target.value)}>{CHECKIN_PRESETS.map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></label>
           <label>Từ ngày<VeraDateInput value={filters.date_from} max={filters.date_to} onChange={event => change({ date_from: event.target.value, preset: 'custom' })} required /></label>
@@ -150,15 +160,14 @@ export default function CheckinHistoryPage({ user, embedded = false }) {
           <label>Ngày cụ thể<VeraDateInput value={filters.event_date} min={filters.date_from} max={filters.date_to} onChange={event => change({ event_date: event.target.value })} /></label>
           <label>Nguồn dữ liệu<select value={source} onChange={event => { change({ source: event.target.value, ...EMPTY_CHECKIN_DETAILS }); setRecords(null); setOptions({ statuses: [], types: [] }) }}><option value="facegate_saved">FaceGate · Đã lưu trong VERA</option><option value="facegate">FaceGate · Trực tiếp từ máy</option><option value="capture">FaceGate · Capture Log</option><option value="timesoft">TimeSoft · Đã đồng bộ VERA</option></select></label>
           <label>{source === 'timesoft' ? 'Trạng thái ra' : 'Loại sự kiện'}<select value={filters.event_type} onChange={event => change({ event_type: event.target.value })}><option value="">Tất cả</option>{options.types.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-          <label>{source === 'facegate' ? 'Tên trên máy' : 'Tên / mã nhân viên'}<LiveTourSearchSelect hideLabel label={source === 'facegate' ? 'Tên trên máy' : 'Tên / mã nhân viên'} value={filters.employee} searchValue={filters.employee} disabled={busy || exporting || source === 'capture'} options={lookupOptions.employees} onSearch={value => change({ employee: value.slice(0, 200) })} onChange={value => change({ employee: value })} placeholder={source === 'capture' ? 'Capture không có mã nhân viên' : 'Tìm tên hoặc mã'} emptyLabel="Tất cả nhân viên" /></label>
-          <label>Mã sự kiện<LiveTourSearchSelect hideLabel label="Mã sự kiện" value={filters.event_id} searchValue={filters.event_id} disabled={busy || exporting || source === 'timesoft'} options={lookupOptions.events} onSearch={value => change({ event_id: value.slice(0, 64) })} onChange={value => change({ event_id: value })} placeholder="Tìm mã sự kiện" emptyLabel="Tất cả sự kiện" /></label>
+          <label>{source === 'facegate' ? 'Tên trên máy' : 'Tên / mã nhân viên'}<LiveTourSearchSelect hideLabel label={source === 'facegate' ? 'Tên trên máy' : 'Tên / mã nhân viên'} value={filters.employee} searchValue={filters.employee} disabled={exporting || source === 'capture'} options={lookupOptions.employees} onSearch={value => change({ employee: value.slice(0, 200) })} onChange={value => change({ employee: value })} placeholder={source === 'capture' ? 'Capture không có mã nhân viên' : 'Tìm tên hoặc mã'} emptyLabel="Tất cả nhân viên" /></label>
+          <label>Mã sự kiện<LiveTourSearchSelect hideLabel label="Mã sự kiện" value={filters.event_id} searchValue={filters.event_id} disabled={exporting || source === 'timesoft'} options={lookupOptions.events} onSearch={value => change({ event_id: value.slice(0, 64) })} onChange={value => change({ event_id: value })} placeholder="Tìm mã sự kiện" emptyLabel="Tất cả sự kiện" /></label>
           <label>{source === 'timesoft' ? 'Trạng thái vào' : 'Trạng thái'}<select value={filters.status} onChange={event => change({ status: event.target.value })}><option value="">Tất cả</option>{options.statuses.map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         </div>
         <div className="checkin-quick-dates">{CHECKIN_PRESETS.filter(([id]) => id !== 'custom').map(([id, label]) => <button key={id} type="button" className="secondary-button" aria-pressed={filters.preset === id} onClick={() => preset(id)}>{label}</button>)}<button type="button" className="secondary-button" onClick={() => change(EMPTY_CHECKIN_DETAILS)}>Xóa lọc chi tiết</button></div>
 
       </fieldset>
     </form>
-    {dirty && records && <p role="status">Bộ lọc đã thay đổi. Bấm Xem lịch sử để cập nhật bảng và xuất Excel.</p>}
     {lookupError && <p role="alert">{lookupError}</p>}
     <StableFeedback>{error && <p role="alert">{error}</p>}</StableFeedback>
       <div className="checkin-loaded-row">{records && <p>Dữ liệu đã tải: {formatVeraDate(loadedQuery.start)} – {formatVeraDate(loadedQuery.end)}.</p>}<button className="secondary-button" type="button" disabled={busy || exporting || !records?.length || dirty || truncated} onClick={exportExcel}><Download size={16} /><span>{exporting ? 'Đang xuất…' : 'Xuất excel'}</span></button></div>

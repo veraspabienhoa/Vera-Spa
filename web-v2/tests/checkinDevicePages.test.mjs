@@ -136,3 +136,28 @@ test('history hides removed explanatory copy for every attendance source',async 
  policy={source:'unknown'};await reload()
  assert.doesNotMatch(dom.window.document.body.textContent,/Xem nguồn tính công hiện tại tại Quản lý thiết bị/)
 })
+
+test('history automatically applies filters and ignores older responses', async context => {
+  const pending = []
+  let exported
+  const dom = await page('history', {
+    checkinHistory: query => new Promise(resolve => pending.push({query, resolve})),
+    exportCheckinHistory: async query => { exported = query },
+  }, context)
+  const wait = () => dom.window.testAct(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+  await dom.window.testAct(async () => button(dom, 'Hôm qua').click())
+  await wait()
+  assert.equal(pending.length, 1)
+  assert.equal(dom.window.document.querySelector('fieldset').disabled, false)
+  await dom.window.testAct(async () => button(dom, 'Hôm nay').click())
+  await wait()
+  assert.equal(pending.length, 2)
+  const response = id => ({records:[{event_id:id, occurred_at:'2026-10-18T10:00:00+07:00'}], options:{statuses:[],types:[]}})
+  await dom.window.testAct(async () => pending[1].resolve(response(222)))
+  await dom.window.testAct(async () => pending[0].resolve(response(111)))
+  assert.match(dom.window.document.querySelector('tbody').textContent, /222/)
+  assert.doesNotMatch(dom.window.document.querySelector('tbody').textContent, /111/)
+  assert.doesNotMatch(dom.window.document.body.textContent, /Bộ lọc đã thay đổi/)
+  await dom.window.testAct(async () => button(dom, 'Xuất excel').click())
+  assert.equal(exported.start, pending[1].query.start)
+})
