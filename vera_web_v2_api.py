@@ -1519,7 +1519,11 @@ def _update_record(
             leave_type=:leave_type, detail=:detail, calculated_days=:calculated_days,
             accumulated_leave=:accumulated_leave, penalty=:penalty,
             update_date=:update_date, update_time=:update_time, updated_by=:updated_by,
-            weekday_label=:weekday_label, payload=CAST(:payload AS jsonb), updated_at=NOW()
+            weekday_label=:weekday_label, payload=CAST(:payload AS jsonb) ||
+                CASE WHEN leave_reason=:leave_reason AND leave_date=:leave_date AND employee_name=:employee_name
+                    AND payload ? '_vera_manual_early_departure'
+                THEN jsonb_build_object('_vera_manual_early_departure', payload->'_vera_manual_early_departure')
+                ELSE '{}'::jsonb END, updated_at=NOW()
         WHERE record_uid=:record_uid
     """), {**record, "payload": json_text(payload)})
     if int(result.rowcount or 0) != 1:
@@ -2701,6 +2705,8 @@ def update_leave(record_uid: str, body: LeaveUpdate, ident: Identity = Depends(c
             allow_inactive_employee=(ident.role == "admin"),
         )
         _update_record(conn, record, source_row, str(old.get("source_sheet_id") or ""))
+        from vera_open_break_exemption import register as register_open_break
+        register_open_break(conn, record, ident)
         rebalanced = _rebalance_progressive_rows(conn, old["leave_date"], {old_key, new_key})
 
         # PostgreSQL is canonical. Commit the validated edit before attempting

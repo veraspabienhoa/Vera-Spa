@@ -8,9 +8,9 @@ Business rule:
   break stack may then fall back to TourVera R=Break, S=Giờ ra, U=Giờ vào.
 - A Về sớm record that already existed before a TimeSoft checkout at/after
   17:00 means that FaceID is the employee's final early checkout, not a break.
-- If the employee went outside first and the late/early record was entered
-  afterwards, Auto Check still catches it on the next attendance poll.
-  Violation minutes are calculated from the actual Giờ ra through 17:00.
+- A trusted manual unauthorized departure entered after an open FaceID break
+  exempts that break when no other leave exists that day (Ca 1 and Ca 2).
+  Otherwise violation minutes run from the actual Giờ ra through 17:00.
 - If a real outside Giờ ra is after 17:00, use
   "Ra ngoài chỉ có dữ liệu một lần".
 
@@ -268,6 +268,25 @@ def _apply_restrictions_and_penalties(
             output.append(item)
             continue
 
+        if not item.get('break_in'):
+            from vera_open_break_exemption import exemption, revoke
+            try:
+                with conn.begin_nested():
+                    exempt_out = exemption(conn, str(item.get('employee_name') or ''), work_day, item)
+                    if exempt_out:
+                        revoke(conn, str(item.get('employee_name') or ''), work_day, exempt_out)
+                if exempt_out:
+                    item['break_alert_suppressed'] = True
+                    item['break_restricted_reason'] = 'Về sớm KHÔNG phép'
+                    item['break_status'] = 'MIỄN PHẠT RA NGOÀI · Về sớm không phép, không vào lại'
+                    item['break_open_departure_exempt'] = True
+                    output.append(item)
+                    continue
+            except Exception as exc:
+                item['break_auto_penalty_error'] = type(exc).__name__
+                output.append(item)
+                continue
+
         reasons = list(restriction.get("reasons") or [])
         if any(_early_leave_reason(reason) for reason in reasons):
             item['scheduled_early_leave_time'] = daily_clock(conn, work_day, item.get('employee_name'), 'early') or '17:00'
@@ -413,7 +432,7 @@ def install_outside_leave_rule(
             "exact_reason_match": True,
             "permission_independent": True,
             "scheduled_early_checkout_rule": "Về sớm registered before >=17:00 TimeSoft checkout is final checkout, not break",
-            "late_entered_early_leave_rule": "outside first, Về sớm entered later keeps outside penalty",
+            "late_entered_early_leave_rule": "open FaceID break followed by trusted manual unauthorized departure is exempt only without other leave",
             "before_or_at_1700": "penalty minutes = 17:00 - Giờ ra",
             "after_1700": "Ra ngoài chỉ có dữ liệu một lần",
             "source_priority": ["TimeSoft", "TourVera R=Break S=Giờ ra U=Giờ vào"],

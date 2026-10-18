@@ -304,6 +304,8 @@ def install_leave_sync_queue(app, *, engine_instance, current_identity, require_
             source_row = _allocate_source_row(conn, api_module.LEAVE_SHEET_ID)
             record["source_row"] = source_row
             _insert_leave_and_queue(conn, api_module=api_module, record=record, source_row=source_row)
+            from vera_open_break_exemption import register as register_open_break
+            register_open_break(conn, record, ident)
             tx.commit()
             return {"ok": True, "record_uid": record["record_uid"], "record": record, "warnings": warnings, "mirror_pending": True, "message": "Đã ghi lịch nghỉ THÀNH CÔNG"}
         except HTTPException:

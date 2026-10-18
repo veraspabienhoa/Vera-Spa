@@ -444,6 +444,11 @@ def save_violation(conn, *, work_date: date, employee: str, reason_item: dict, d
         return True, "SKIP_GRACE_PERIOD"
     if not automatic_penalty_employee_eligible(conn, employee, work_date):
         return True, "SKIP_ROLE_NOT_ELIGIBLE"
+    if _norm(reason).startswith('ra ngoai '):
+        from vera_open_break_exemption import exemption, matches_event
+        out = exemption(conn, employee, work_date)
+        if out and matches_event(reason, detail, out):
+            return True, 'SKIP_OPEN_BREAK_EARLY_DEPARTURE'
     from vera_holiday_leave import approved_day as holiday_approved_day, intervals as holiday_intervals
     if ((approved_window and holiday_intervals(conn, *approved_window, [employee]).get(employee))
             or (_norm(reason).startswith('nghi ') and holiday_approved_day(conn, employee, work_date))):
