@@ -466,6 +466,20 @@ def install_notification_settings_routes(app, *, engine_instance, current_identi
                 raise HTTPException(404, 'Thông báo không tồn tại hoặc bạn không còn quyền xem.')
             return {**dict(row), 'payload': public_payload(row['payload'])}
 
+    @app.post('/v2/notification-inbox/read-all')
+    def mark_all_read(ident: identity_type = Depends(current_identity)):
+        with engine_instance().begin() as conn:
+            conn.execute(text(f'''UPDATE vera_notification_delivery target SET read_at=NOW()
+                WHERE target.recipient=:recipient AND target.read_at IS NULL
+                AND (target.event_key,target.rule_key) IN (
+                    SELECT d.event_key,d.rule_key {delivery_joins()}
+                    WHERE d.recipient=:recipient AND d.channel IN ('in_app','push','popup')
+                    AND d.read_at IS NULL AND {delivery_access_sql()}
+                    AND COALESCE(d.payload->>'kind','') NOT IN ('attendance-break-cleared','attendance-break-global-disabled')
+                    AND d.created_at >= date_trunc('day',NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'
+                )'''), {'recipient':str(ident.auth_user_id)})
+        return {'ok':True}
+
     @app.post('/v2/notification-inbox/{notification_id}/read')
     def mark_read(notification_id: int, ident: identity_type = Depends(current_identity)):
         with engine_instance().begin() as conn:
