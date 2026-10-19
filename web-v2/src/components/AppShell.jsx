@@ -119,7 +119,7 @@ export default function AppShell({ user, currentPage, standalone = false, onPage
   }
   const [mobileOpen, setMobileOpen] = useState(false)
   const layoutTrigger = useRef(null)
-  const [layoutDesignerOpen, setLayoutDesignerOpen] = useState(currentPage === 'appearance')
+  const [layoutDesignerOpen, setLayoutDesignerOpen] = useState(currentPage === 'appearance' || (user?.role === 'admin' && new URLSearchParams(window.location.search).get('layoutPreview') === 'mobile'))
   const [standaloneMenuOpen, setStandaloneMenuOpen] = useState(false)
   const [birthdayNotice, setBirthdayNotice] = useState(null)
   const [notificationSettings, setNotificationSettings] = useState(null)

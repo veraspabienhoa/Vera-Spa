@@ -1,3 +1,5 @@
+import LayoutMobilePreview from './LayoutMobilePreview'
+import { flowDrop } from '../lib/layoutFlowDrop'
 import { confirmDialog } from '../lib/systemDialogs'
 import { observeLayoutNodes } from '../lib/observeLayoutNodes'
 import { customKinds, isCustomContainer, selectionNodes, boundingSelection, alignSelection, distributeSelection, removeLayoutItems, translateSelection } from '../lib/layoutSelection'
@@ -37,7 +39,8 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   const admin = user?.role === 'admin'
   const [editingEnabled, setEditing] = useState(false)
   const editing = admin && open && editingEnabled
-  const [device, setDevice] = useState('desktop')
+  const [device, setDevice] = useState(() => new URLSearchParams(window.location.search).get('layoutPreview') === 'mobile' ? 'mobile' : 'desktop')
+  const [mobilePreview, setMobilePreview] = useState(false)
   const [saved, setSaved] = useState({ layout: { mobile: {}, desktop: {} }, revision: 0 })
   const [draft, setDraft] = useState(null)
   const [selected, setPrimary] = useState(null)
@@ -53,7 +56,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   const [alignReference, setAlignReference] = useState('selection')
   const [nudgeStep, setNudgeStep] = useState(1)
   const [multiSelect, setMultiSelect] = useState(false)
-  const [freeMove, setFreeMove] = useState(true)
+  const [freeMove, setFreeMove] = useState(false)
   const [guides, setGuides] = useState(null)
   const dragging = useRef(null)
   const preview = useMemo(() => editing && draft ? draft : saved.layout._enabled === false ? {} : saved.layout[device] || {}, [editing, draft, saved.layout, device])
@@ -229,7 +232,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
   const relocateRef = useRef(relocate); relocateRef.current = relocate
   useEffect(() => {
     if (!editing) return undefined
-    const candidate = target => target?.closest?.('.nav-list > a[data-layout-editable="true"]') || target?.closest?.('[data-ui-key^="l-custom-"][data-layout-editable="true"]') || target?.closest?.('[data-layout-editable="true"]')
+    const candidate = target => (!freeMove && target?.closest?.('[data-ui-origin][data-layout-editable="true"]')) || target?.closest?.('.nav-list > a[data-layout-editable="true"]') || target?.closest?.('[data-ui-key^="l-custom-"][data-layout-editable="true"]') || target?.closest?.('[data-layout-editable="true"]')
     const down = event => {
       if (event.button !== 0 || event.target.closest('.layout-designer,.layout-resize-overlay,.system-dialog,[data-layout-inspector-popup="true"]')) return
       const element = candidate(event.target)
@@ -269,12 +272,10 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       if(freeMove && destination===current && (!peer || Math.abs(peer.getBoundingClientRect().top-start.rect.top)<8))return null
       const peers=[...destination.querySelectorAll('[data-ui-origin]')].filter(node=>node!==start.element && node.closest('[data-ui-dropzone]')===destination)
       const vertical=getComputedStyle(destination).flexDirection==='column'
-      const r=peer?.getBoundingClientRect()
-      const after=r && (vertical ? event.clientY>(r.top+r.bottom)/2 : event.clientX>(r.left+r.right)/2)
       const ordered=peers.sort((a,b)=>(dragPreview.current[a.dataset.layoutKey]?.order ?? peers.indexOf(a))-(dragPreview.current[b.dataset.layoutKey]?.order ?? peers.indexOf(b)))
-      const before=peer ? (after ? ordered[ordered.indexOf(peer)+1] : peer) : null
+      const result = flowDrop(ordered, event.clientX, event.clientY, vertical)
       const rect=destination.getBoundingClientRect()
-      return {destination,before,line:r ? (vertical?{x:r.left,y:after?r.bottom:r.top,width:r.width,height:2}:{x:after?r.right:r.left,y:r.top,width:2,height:r.height}):{x:rect.left,y:rect.top,width:rect.width,height:2}}
+      return {destination,...result,line:result.line || {x:rect.left,y:rect.top,width:rect.width,height:2}}
     }
     const motion = event => {
       const start = dragging.current
@@ -406,6 +407,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
     } catch (error) { setMessage(error.message) } finally { setBusy(false) }
   }
   return <>
+    {admin && open && mobilePreview && <LayoutMobilePreview page={page} onClose={()=>{setMobilePreview(false);window.dispatchEvent(new Event('focus'))}}/>}
     <LayoutCustomElements items={preview} page={page} editing={editing}/>
     <style>{layoutCss(preview)}{editing ? selection.map(key=>`[data-layout-key="${key}"]{outline:3px solid #c49524!important;outline-offset:2px}`).join('') : ''}</style>
     {admin && open && <aside className={`layout-designer ${['rooms','columns','history'].includes(tab) ? 'layout-designer-wide' : ''}`} style={{ ...panelFrame.style, ...toolScale.style, ...(panelHidden ? {width:'auto',height:'auto'} : {}) }} aria-label="Giao diện Admin" onFocusCapture={event=>{
@@ -426,7 +428,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       </div>
       <div className="layout-fixed-actions"><button type="button" aria-pressed={tab === 'rooms'} onClick={()=>chooseTab('rooms')}>Phòng Live Tour</button><button type="button" aria-pressed={tab === 'columns'} onClick={()=>chooseTab('columns')}>Cấu hình cột</button><button type="button" disabled={busy || !editing} onClick={async () => { if ((await confirmDialog('Khôi phục toàn bộ bố cục thiết bị này? Bấm Lưu để áp dụng.'))) setDraft({}) }}>Mặc định</button><button type="button" disabled={busy || !editing} onClick={() => { setEditing(false); setDraft(null); setSelected(null) }}>Hủy</button><button className="layout-save" title="Lưu cho tất cả người dùng" type="button" disabled={busy || !editing} onClick={save}>{busy ? 'Đang lưu…' : 'Lưu'}</button></div>
       <label className="layout-tool-scale">Cỡ nút công cụ · {toolScale.value}%<input type="range" aria-label="Cỡ nút công cụ" min="70" max="110" step="5" value={toolScale.value} onChange={event => toolScale.setValue(Number(event.target.value))}/></label>
-      <div className="layout-device-toolbar">        {['desktop','mobile'].map(mode=><label key={mode}><input type="checkbox" aria-label={mode === 'desktop' ? 'Desktop' : 'Mobile'} checked={device === mode} disabled={busy} onChange={()=>changeDevice(mode)}/>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</label>)}
+      <div className="layout-device-toolbar">{window.self === window.top && <button type="button" disabled={busy || editing || appearanceDirty} onClick={()=>setMobilePreview(true)}>Chỉnh Mobile trên desktop</button>}        {['desktop','mobile'].map(mode=><label key={mode}><input type="checkbox" aria-label={mode === 'desktop' ? 'Desktop' : 'Mobile'} checked={device === mode} disabled={busy || (new URLSearchParams(window.location.search).get('layoutPreview') === 'mobile' && mode !== 'mobile')} onChange={()=>changeDevice(mode)}/>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</label>)}
       <button data-dialog-close="true" type="button" disabled={busy} onClick={close} className="layout-close" aria-label="Đóng Giao diện">Đóng ✕</button></div>
       </div>
       <div className="layout-panel-content" hidden={panelHidden}>
@@ -437,7 +439,7 @@ export default function LayoutDesigner({ user, page, open = false, onClose, init
       {!editing ? <>{message && <small role="status" data-system-feedback>{message}</small>}</> : <>
         <label className="layout-free-mode"><input type="checkbox" checked={snapEnabled} onChange={e=>setSnapEnabled(e.target.checked)}/>Bắt dính cạnh và tâm</label>
         <label className="layout-free-mode"><input type="checkbox" checked={centerLines} onChange={e=>setCenterLines(e.target.checked)}/>Đường tâm ngang/dọc</label>
-        <label className="layout-free-mode"><input type="checkbox" aria-label="Kéo tự do" checked={freeMove} onChange={event=>setFreeMove(event.target.checked)}/>Kéo tự do</label>
+        <label className="layout-free-mode"><input type="checkbox" aria-label="Kéo tự do" checked={freeMove} onChange={event=>setFreeMove(event.target.checked)}/>Kéo tự do</label><p>Kéo sắp xếp trong dòng hoặc sang dòng khác; vạch xanh đánh dấu vị trí thả.</p>
         <label className="layout-free-mode"><input type="checkbox" checked={multiSelect} onChange={e=>setMultiSelect(e.target.checked)}/>Chọn nhiều đối tượng</label>
         <fieldset className="layout-align-tools" aria-label="Căn chỉnh đối tượng"><legend>Căn chỉnh đối tượng</legend>
           <label>Căn theo<select aria-label="Căn theo" value={alignReference} onChange={e=>setAlignReference(e.target.value)}><option value="page">Khung trang (Align to Slide)</option><option value="selection">Đối tượng đang chọn (Align Selected Objects)</option></select></label>
