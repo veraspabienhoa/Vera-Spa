@@ -80,3 +80,31 @@ def test_self_popup_owner_is_taken_from_authenticated_identity_not_query(monkeyp
     assert response.status_code==200
     assert response.json()['missing_checkins']==[{'employee':'self'}]
     assert calls==['self']
+
+
+def test_mark_all_read_scoped_to_authenticated_recipient_without_feed_limit():
+    identity = Identity(role='nhanvien', employee_username='self')
+    calls, transactions = [], []
+    class Engine:
+        @contextmanager
+        def begin(self):
+            transactions.append(self)
+            yield self
+        def execute(self, statement, params):
+            calls.append((str(statement), params))
+            return Result()
+    app = FastAPI()
+    settings.install_notification_settings_routes(app, engine_instance=Engine,
+        current_identity=lambda:identity, identity_type=Identity)
+    response = TestClient(app).post('/v2/notification-inbox/read-all?recipient=other')
+    assert response.status_code == 200, response.text
+    assert response.json() == {'ok': True}
+    assert len(transactions) == len(calls) == 1
+    sql, params = calls[0]
+    assert params == {'recipient': str(identity.auth_user_id)}
+    assert 'target.recipient=:recipient' in sql and 'd.recipient=:recipient' in sql
+    assert 'target.read_at IS NULL' in sql
+    assert '(target.event_key,target.rule_key)' in sql
+    assert 'LIMIT' not in sql
+    assert 'p.is_active' in sql and 'COALESCE(s.enabled,TRUE)' in sql
+    assert "Asia/Ho_Chi_Minh" in sql

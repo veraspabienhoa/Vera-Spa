@@ -31,3 +31,8 @@ dialog.notification-dialog { box-sizing: border-box; width: min(960px, calc(100v
 .notification-dialog footer { display: flex; justify-content: flex-end; padding: 12px 20px; }
 @media(max-width:600px) { .topbar-actions .topbar-open-tab-button { width: 128px; min-height: 30px; } .notification-row small { display: none; } .notification-dialog > header { padding: 12px; } .notification-dialog-content { padding: 10px; } .notification-entry { gap: 2px; min-width: 0; } .notification-dialog .notification-row { overflow: hidden; padding: 9px 5px; font-size: 12px; } .notification-entry .notification-viewed span { display: none; } }
 @media(max-width:600px){.topbar-actions .topbar-open-tab-button{width:32px;min-width:32px;height:32px;min-height:32px;padding:0}.topbar-actions .topbar-open-tab-button span:not(.notification-unread-dot){display:none}}
+
+.notification-header-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.notification-dialog header .notification-mark-all { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; min-width: 36px; min-height: 36px; padding: 6px; }
+.notification-dialog header .notification-mark-all:disabled { opacity: .5; cursor: default; }
+@media(max-width:600px) { .notification-dialog > header { gap: 8px; } .notification-heading { gap: 8px; flex: 1; } .notification-heading > div { min-width: 0; } .notification-heading h2 { overflow-wrap: anywhere; } .notification-heading-icon { width: 32px; height: 32px; } .notification-header-actions { gap: 6px; } }

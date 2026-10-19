@@ -62,3 +62,16 @@ test('running web opens repeated push details and rejects external links', async
  }
  dom.window.close()
 })
+
+for (const failure of [false,true]) test(`mark all icon handles success/error and duplicate clicks: ${failure}`,async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://app.veraspa.vn/',runScripts:'dangerously',pretendToBeVisual:true});let calls=0,done=false,resolve,reject;
+ dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true};
+ dom.window.api={notificationFeed:async()=>({inbox:done?[]:[{id:7,payload:{title:'Test'},created_at:'2026-10-19T00:00:00Z'}]}),readAllNotifications:()=>{calls++;return new Promise((yes,no)=>{resolve=()=>{done=true;yes({ok:true})};reject=no})}};
+ dom.window.eval(bundle.outputFiles[0].text);dom.window.mount(true);await tick();
+ dom.window.document.querySelector('.notification-inbox-trigger').click();await tick();
+ const button=dom.window.document.querySelector('.notification-mark-all');assert.equal(button.textContent,'');assert.ok(button.getAttribute('aria-label'));button.click();button.click();await tick();assert.equal(calls,1);assert.equal(button.disabled,true);
+ if(failure)reject(new Error('Không thể lưu'));else resolve();await tick();await tick();
+ assert.equal(dom.window.document.querySelectorAll('.notification-entry').length,failure?1:0);
+ if(failure){assert.match(dom.window.document.querySelector('[role="alert"]').textContent,/Không thể lưu/);assert.equal(button.disabled,false)}
+ dom.window.close();
+})

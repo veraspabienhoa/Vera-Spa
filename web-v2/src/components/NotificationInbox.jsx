@@ -5,7 +5,7 @@ import { veraApi } from '../lib/api'
 import { subscribeNotificationFeed, refreshNotificationFeed } from '../lib/notificationFeed'
 import { notificationPage } from '../lib/notificationNavigation'
 import { formatVeraDateTime } from '../lib/veraDate'
-import { Bell, Check, X } from 'lucide-react'
+import { Bell, Check, CheckCheck, X } from 'lucide-react'
 import './NotificationInbox.css'
 const requested = () => { const id = new URLSearchParams(window.location.search).get('notification') || ''; return /^[1-9][0-9]{0,18}$/.test(id) ? id : '' }
 const cleanTitle = title => String(title || 'Thông báo').replace(/^VERA SPA(?:\s*[·:–-]\s*|\s+)/i, '') || 'Thông báo'
@@ -20,6 +20,8 @@ export default function NotificationInbox({ showTrigger = true, user, onPageChan
   const [error, setError] = useState(''), [retry, setRetry] = useState(0)
   const [marking, setMarking] = useState(() => new Set())
   const pendingReads = useRef(new Set())
+  const [markingAll, setMarkingAll] = useState(false)
+  const pendingAll = useRef(false)
   const lifecycle = useRef(0)
   const selectedRef = useRef(selected)
   selectedRef.current = selected
@@ -96,6 +98,7 @@ export default function NotificationInbox({ showTrigger = true, user, onPageChan
     setDetail(null); setError(''); setSelected(String(item.id))
   }
   const markViewed = async id => {
+    if (pendingAll.current) return
     const key = String(id)
     if (pendingReads.current.has(key)) return
     pendingReads.current.add(key)
@@ -113,16 +116,34 @@ export default function NotificationInbox({ showTrigger = true, user, onPageChan
       if (generation === lifecycle.current) setMarking(new Set(pendingReads.current))
     }
   }
+  const markAllViewed = async () => {
+    if (pendingAll.current || pendingReads.current.size) return
+    pendingAll.current = true
+    const generation = lifecycle.current
+    const visibleIds = new Set(items.map(item => String(item.id)))
+    setMarkingAll(true); setError('')
+    try {
+      await veraApi.readAllNotifications()
+      if (generation !== lifecycle.current) return
+      setItems(rows => rows.filter(row => !visibleIds.has(String(row.id))))
+      void refreshNotificationFeed()
+    } catch (err) {
+      if (generation === lifecycle.current) setError(err.message || 'Chưa đánh dấu được toàn bộ thông báo. Vui lòng thử lại.')
+    } finally {
+      pendingAll.current = false
+      if (generation === lifecycle.current) setMarkingAll(false)
+    }
+  }
   const unread = items.filter(item => !item.read_at).length
   return <section className="notification-inbox">
     {showTrigger && <button type="button" className="topbar-refresh-button topbar-open-tab-button notification-inbox-trigger" aria-label={unread ? `Thông báo hệ thống, ${unread} chưa đọc` : 'Thông báo hệ thống'} aria-expanded={open} onClick={() => { navigationTaken.current = false; setSelected(''); setError(''); setOpen(true) }}><Bell size={15}/><span>Thông báo hệ thống</span>{unread > 0 && <span className="notification-unread-dot" aria-hidden="true"/>}</button>}
     {open && createPortal(<dialog ref={dialog} className="notification-dialog" aria-labelledby="notification-heading" onCancel={close} onClick={event => { if (event.target === dialog.current) close() }}>
-      <header><div className="notification-heading"><span className="notification-heading-icon"><Bell size={20}/></span><div><small>TRUNG TÂM THÔNG BÁO</small><h2 id="notification-heading">{selected ? 'Chi tiết thông báo' : 'Thông báo hệ thống'}</h2></div></div><button data-dialog-close="true" type="button" aria-label="Đóng thông báo" onClick={close}><X size={20}/></button></header>
+      <header><div className="notification-heading"><span className="notification-heading-icon"><Bell size={20}/></span><div><small>TRUNG TÂM THÔNG BÁO</small><h2 id="notification-heading">{selected ? 'Chi tiết thông báo' : 'Thông báo hệ thống'}</h2></div></div><div className="notification-header-actions">{showTrigger && !selected && <button type="button" className="notification-mark-all" aria-label="Đánh dấu đã xem toàn bộ thông báo" title="Đánh dấu đã xem toàn bộ thông báo" disabled={markingAll || marking.size > 0 || !unread} aria-busy={markingAll} onClick={markAllViewed}><CheckCheck size={19}/></button>}<button data-dialog-close="true" type="button" aria-label="Đóng thông báo" onClick={close}><X size={20}/></button></div></header>
       <div className="notification-dialog-content">
         <StableFeedback>{error && <div role="alert"><p>{error}</p>{selected && <button type="button" onClick={() => { setError(''); setRetry(n => n + 1) }}>Thử lại</button>}</div>}</StableFeedback>
         {selected ? detail ? <article className="notification-detail"><h3>{cleanTitle(detail.payload?.title)}</h3><p>{detail.payload?.body}</p><small>{formatVeraDateTime(detail.created_at)}</small>{showTrigger && <button type="button" className="notification-viewed" disabled={marking.size > 0} onClick={() => markViewed(detail.id)}><Check size={16}/> Đã xem</button>}</article> : !error && <p role="status">Đang tải chi tiết…</p> : <>
           {!items.length && <p>Chưa có thông báo.</p>}
-          {items.map(item => <div className="notification-entry" key={item.id}><button type="button" className="notification-row unread" onClick={() => openItem(item)} title={`${cleanTitle(item.payload?.title)} — ${item.payload?.body || ''}`}><span className="notification-row-text"><strong>{cleanTitle(item.payload?.title)}</strong><span> — {item.payload?.body}</span></span><small>{formatVeraDateTime(item.created_at)}</small></button><button type="button" className="notification-viewed" disabled={marking.has(String(item.id))} onClick={() => markViewed(item.id)} aria-label={`Đã xem ${cleanTitle(item.payload?.title)}`}><Check size={15}/><span>Đã xem</span></button></div>)}
+          {items.map(item => <div className="notification-entry" key={item.id}><button type="button" className="notification-row unread" onClick={() => openItem(item)} title={`${cleanTitle(item.payload?.title)} — ${item.payload?.body || ''}`}><span className="notification-row-text"><strong>{cleanTitle(item.payload?.title)}</strong><span> — {item.payload?.body}</span></span><small>{formatVeraDateTime(item.created_at)}</small></button><button type="button" className="notification-viewed" disabled={markingAll || marking.has(String(item.id))} onClick={() => markViewed(item.id)} aria-label={`Đã xem ${cleanTitle(item.payload?.title)}`}><Check size={15}/><span>Đã xem</span></button></div>)}
         </>}
       </div>
       {selected && showTrigger && <footer><button type="button" onClick={() => { setSelected(''); setDetail(null); setError('') }}>Về danh sách</button></footer>}
