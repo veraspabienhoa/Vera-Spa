@@ -1165,7 +1165,7 @@ export default function LeaveRegistrationPage({ user }) {
                           : <small role="status">Đang tải lý do nghỉ cho ngày {formatDateDisplay(item.leave_date)}…</small>
                       )}
                     </td>
-                    <td className="detail-cell"><ArrivalDetail value={item.detail}/></td>
+                    <td className="detail-cell"><ArrivalDetail value={item.detail || '—'}/></td>
                     {canViewPenalty && <td className="right">{Number(item.penalty || 0).toLocaleString('vi-VN')}đ</td>}
                   </tr>
                 ))}
