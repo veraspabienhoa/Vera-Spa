@@ -129,3 +129,18 @@
 .live-tour-filters-room-search>*{min-width:0;max-width:100%}
 .live-tour-filters-room-search input{width:100%;min-width:0;box-sizing:border-box}
 @media(max-width:760px){.live-tour-filters-search.live-tour-filters-room-search{gap:3px}.live-tour-filters-room-search label{font-size:9px}.live-tour-filters-room-search input{font-size:10px;padding-inline:3px}.live-tour-filters-room-search .clearable-search-input>input{padding-right:18px!important}.live-tour-filters-room-search .search-clear-button{font-size:0;width:16px;min-width:16px;padding:0}.live-tour-filters-room-search .search-clear-button:after{content:'×';font-size:12px}}
+
+/* Six report filters: employee sits directly below the date on mobile. */
+@media (max-width: 680px) {
+  .live-tour-filters-search.live-tour-filters-six-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .live-tour-filters-six-fields > .live-tour-filter-employee {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .live-tour-filters-six-fields label {
+    white-space: normal;
+  }
+}
