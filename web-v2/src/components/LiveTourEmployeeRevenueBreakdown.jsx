@@ -92,7 +92,7 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows, summary }) {
     setNotice('')
     try {
       await copyPngToClipboard(() => elementToPngBlob(tipChartRef.current))
-      setNotice('Đã chụp toàn bộ Biểu đồ tiền TIP và lưu ảnh PNG vào clipboard. Cột số tiền đã được loại khỏi ảnh.')
+      setNotice('Đã chụp toàn bộ Biểu đồ tiền TIP, bao gồm cột số tiền, và lưu ảnh PNG vào clipboard.')
     } catch (error) {
       setNotice(error?.message || 'Không chụp được Biểu đồ tiền TIP theo nhân viên.')
     } finally {
@@ -126,7 +126,6 @@ export default function LiveTourEmployeeRevenueBreakdown({ rows, summary }) {
       captureRef={tipChartRef}
       onCapture={copyTipChart}
       copying={copyingTip}
-      hideValuesInSnapshot
       captureLabel="Chụp toàn bảng"
     />
     {notice && <p data-snapshot-ignore data-system-feedback className="employee-revenue-copy-status">{notice}</p>}
