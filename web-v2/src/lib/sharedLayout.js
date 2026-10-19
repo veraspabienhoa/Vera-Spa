@@ -21,7 +21,7 @@ export function layoutCss(items) {
     const offset = v => Number.isInteger(v) && Math.abs(v) <= 2400 ? v : 0
     if (offset(value.offset_x) || offset(value.offset_y)) declarations.push(`translate:${offset(value.offset_x)}px ${offset(value.offset_y)}px!important`)
     if (value.hidden === true) declarations.push('display:none!important')
-    if (Number.isInteger(value.order) && value.order >= 0 && value.order <= 10000) declarations.push(`order:${value.order}!important`)
+    if (Number.isInteger(value.order) && value.order >= 0 && value.order <= 10000) declarations.push(`order:${value.order}!important;grid-area:auto!important`)
     if (Number.isInteger(value.width) && value.width >= 32 && value.width <= 2400) declarations.push(`width:min(${value.width}px,100%)!important;max-width:100%!important;min-width:0!important;box-sizing:border-box;flex:0 1 auto!important`)
     if (Number.isInteger(value.height) && value.height >= 24 && value.height <= 1600) declarations.push(`min-height:${value.height}px!important;height:auto!important;overflow-wrap:anywhere`)
     if (['left','center','right','justify'].includes(value.text_align)) declarations.push(`text-align:${value.text_align}!important`)

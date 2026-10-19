@@ -11,7 +11,20 @@ export default forwardRef(function UiToolbar({ children, ...props }, forwardedRe
   const groupKey = props['data-ui-key']
   useEffect(() => registerLayoutTarget(groupKey, ref.current, slot.current), [groupKey])
   useImperativeHandle(forwardedRef, () => ref.current)
-  const raw = Children.toArray(children)
+  const original = Children.toArray(children)
+  // Label-based IDs remain stable when optional fields appear/disappear.
+  const fieldKey = child => {
+    if (!isValidElement(child) || child.props['data-ui-key']) return null
+    const label = child.props.label || (child.type === 'label' ? Children.toArray(child.props.children).find(node => typeof node === 'string' || node?.type === 'span') : null)
+    const text = typeof label === 'string' ? label : label?.props?.children
+    if (typeof text !== 'string' || !text.trim()) return null
+    let hash = 2166136261
+    for (const char of `${groupKey}|${text}`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619)
+    return `l-field-${(hash >>> 0).toString(36)}`
+  }
+  const keys = original.map(fieldKey)
+  const raw = original.map((child, index) => keys[index] && keys.filter(key => key === keys[index]).length === 1
+    ? cloneElement(child, { 'data-ui-key': keys[index] }) : child)
   const prepared = raw.map(child => {
     const base = child?.props?.['data-ui-key']
     if (!base || raw.filter(node => node?.props?.['data-ui-key'] === base).length < 2) return child
