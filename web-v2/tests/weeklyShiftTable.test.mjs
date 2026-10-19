@@ -20,3 +20,23 @@ test('weekly shift table has four columns, independent numbering and totals incl
  assert.equal(doc.querySelectorAll('tfoot').length,0)
  assert.equal(render([]).querySelector('.weekly-shift-totals').textContent,'Tổng0 nhân viênTổng0 nhân viên')
 })
+
+test('fixed shift labels with blank cycles go into the lower table and update totals', async () => {
+ const {isFixedWeeklyShift}=await import('../src/lib/liveTourShiftReady.js')
+ const fixedNames=['An An','Kiều Hương','Quỳnh Phương','Mỹ Duyên']
+ const rows=[
+  ...fixedNames.map(name=>({name,current:'Ca 1',fixed:isFixedWeeklyShift({_work_shift:'Cố định Ca 1 (10:00 - 23:00)',_rotation_cycle:''})})),
+  {name:'Fixed by cycle',current:'Ca 1',fixed:isFixedWeeklyShift({_work_shift:'Ca 1',_rotation_cycle:'Cố định (Không đổi)'})},
+  {name:'Fixed Ca 2',current:'Ca 2',fixed:isFixedWeeklyShift({_work_shift:'Ca 2 (Không đổi)'})},
+  {name:'Rotating',current:'Ca 1',fixed:isFixedWeeklyShift({_work_shift:'Ca 1',_rotation_cycle:'Theo chu kỳ Tuần',_scheduled_week_shift:'Ca 1',_scheduled_next_shift:'Ca 1'})},
+ ]
+ const built=await build({entryPoints:['src/components/WeeklyShiftTable.jsx'],bundle:true,write:false,format:'cjs',platform:'node',jsx:'automatic',external:['react','react/jsx-runtime']})
+ const mod={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),mod,mod.exports)
+ const doc=new JSDOM(renderToStaticMarkup(React.createElement(mod.exports.default,{rows}))).window.document
+ const tables=doc.querySelectorAll('table')
+ for(const name of fixedNames){assert.ok(tables[1].textContent.includes(name));assert.ok(!tables[0].textContent.includes(name))}
+ assert.equal(tables[0].querySelector('.weekly-shift-totals').textContent,'Tổng1 nhân viênTổng0 nhân viên')
+ assert.equal(tables[1].querySelector('.weekly-shift-totals').textContent,'Tổng5 nhân viênTổng1 nhân viên')
+ assert.equal(isFixedWeeklyShift({_work_shift:'Ca 1',_rotation_cycle:''}),false)
+ assert.equal(isFixedWeeklyShift({_work_shift:'CỐ ĐỊNH CA 2',_rotation_cycle:'Theo chu kỳ Tuần'}),true)
+})

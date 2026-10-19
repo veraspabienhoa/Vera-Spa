@@ -2981,3 +2981,13 @@ Revocation requires the linked untouched automatic row and exact recorded break
 out time; early-departure fines, manual edits, and other break events are kept.
 Older registrations without trusted provenance are not guessed from editable
 actor labels. No production data backfill or deployment was performed.
+
+## 19-10-2026 — Weekly fixed-shift classification (source only)
+
+Confirmed source mismatch: the staff summary classifies fixed employees from
+both `work_shift` and `rotation_cycle`, while the Live Tour weekly modal only
+checked the cycle. A “Cố định Ca 1” assignment with a blank cycle therefore
+appeared in the rotating table. Roster reconciliation now carries the original
+assignment label through the board projection, and the modal checks both fields.
+This changes weekly grouping/counts only; shift resolution, daily overrides and
+active services retain their existing rules. No production deployment performed.

@@ -63,6 +63,7 @@ def reconcile(state, directory, make_employee, *, today=''):
             worker['scheduled_week_shift'] = row.get('scheduled_week_shift') or shift_label(row.get('work_shift'), row.get('shift_definitions'))
             worker['scheduled_next_shift'] = row.get('scheduled_next_shift') or worker['scheduled_week_shift']
             worker['rotation_cycle'] = str(row.get('rotation_cycle') or '')
+            worker['work_shift'] = str(row.get('work_shift') or '')
             if 'daily_shift' in row:
                 worker['shift_checkin_date'] = row['shift_checkin_date']
             if 'work_shift' in row or 'daily_shift' in row:
@@ -86,6 +87,7 @@ def reconcile(state, directory, make_employee, *, today=''):
             worker['scheduled_week_shift'] = row.get('scheduled_week_shift') or shift_label(row.get('work_shift'), row.get('shift_definitions'))
             worker['scheduled_next_shift'] = row.get('scheduled_next_shift') or worker['scheduled_week_shift']
             worker['rotation_cycle'] = str(row.get('rotation_cycle') or '')
+            worker['work_shift'] = str(row.get('work_shift') or '')
             if 'daily_shift' in row:
                 worker['shift_checkin_date'] = row['shift_checkin_date']
             worker['roster_eligible'] = True

@@ -21,7 +21,7 @@ import UiCustomText from '../components/UiCustomText'
 import { formatVeraDateTime } from '../lib/veraDate'
 import VeraDateInput from '../components/VeraDateInput'
 import ClearableSearchInput from '../components/ClearableSearchInput'
-import { isBeforeShiftReady } from '../lib/liveTourShiftReady'
+import { isBeforeShiftReady, isFixedWeeklyShift } from '../lib/liveTourShiftReady'
 import { watchLeaveChanges } from '../lib/leaveRefresh'
 import { canChangeEmployee } from '../lib/liveTourEmployeeChange'
 import LiveTourPaymentQr from '../components/LiveTourPaymentQr'
@@ -1284,7 +1284,7 @@ function LiveTourWorkspace({ user, navigationToggle = null }) {
       current: record._scheduled_week_shift || cellValue(record, findColumn(columns, ['VAO CA'])) || 'Chưa xếp',
       next: record._scheduled_next_shift || record._scheduled_week_shift || 'Chưa xếp',
       cycle: record._rotation_cycle || '',
-      fixed: normalizedColumn(record._rotation_cycle || '').includes('CO DINH') || normalizedColumn(record._rotation_cycle || '').includes('KHONG DOI'),
+      fixed: isFixedWeeklyShift(record),
     })).filter(row => row.name)
     const start = new Date(clockMs); start.setHours(0,0,0,0); start.setDate(start.getDate() - ((start.getDay() + 6) % 7))
     const finish = new Date(start); finish.setDate(start.getDate() + 6)
