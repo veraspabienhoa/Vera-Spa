@@ -386,3 +386,16 @@
   outline: 3px solid #ad852b;
   outline-offset: 2px;
 }
+
+/* Keep the first shift table close to the heading on mobile. */
+@media (max-width: 820px) {
+  body .live-tour-weekly-shift-popover > .weekly-shift-popover-heading {
+    padding-bottom: 0;
+  }
+  body .live-tour-weekly-shift-popover > .weekly-shift-popover-heading + .weekly-shift-summary-table {
+    margin-top: 0;
+  }
+  body .live-tour-weekly-shift-popover > .weekly-shift-popover-heading + .weekly-shift-summary-table > caption {
+    padding-top: 0;
+  }
+}
