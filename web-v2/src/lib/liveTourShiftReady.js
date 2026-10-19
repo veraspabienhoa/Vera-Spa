@@ -20,3 +20,10 @@ export function defaultBookingRequest(employee, settings, clockMs = Date.now()) 
     _daily_support_reason: employee?.synced_leave_reason,
   }, settings, clockMs) ? 'YC' : ''
 }
+
+// Match the staff directory: fixed assignment labels take precedence even
+// when the optional rotation cycle is blank. Never infer from equal weeks.
+export function isFixedWeeklyShift(record) {
+  const label = normalize(`${record?._work_shift || ''} ${record?._rotation_cycle || ''}`.toLowerCase())
+  return label.includes('co dinh') || label.includes('khong doi')
+}
