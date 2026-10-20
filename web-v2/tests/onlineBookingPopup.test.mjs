@@ -278,3 +278,36 @@ test('locker receives popup and reads details but cannot edit, delete or create'
     assert.ok(w.document.querySelector('textarea').disabled)
   } finally { await w.unmount(); w.close() }
 })
+
+for (const role of ['admin', 'letan', 'quanly']) test(`${role} opens status from popup, retries and saves revision`, async () => {
+ const dom=await mount(role),w=dom.window
+ try {
+  const button=text=>[...w.document.querySelectorAll('button')].find(b=>b.textContent===text)
+  assert.deepEqual([...w.document.querySelectorAll('.online-booking-popup-actions > button')].map(b=>b.textContent),['Trạng thái','Sửa lịch hẹn','Đã xem','Mở Booking online'])
+  await w.act(async()=>button('Trạng thái').click())
+  assert.equal(w.document.querySelectorAll('[role="dialog"]').length,1)
+  assert.equal(w.document.querySelector('.manual-booking-form'),null)
+  assert.equal(w.seen.length,0)
+  assert.equal(button('Lưu').disabled,true)
+  const select=w.document.querySelector('select')
+  await w.act(async()=>{select.value='cancelled';select.dispatchEvent(new w.Event('change',{bubbles:true}))})
+  w.fail=true
+  await w.act(async()=>button('Lưu').click())
+  assert.match(w.document.querySelector('[role="alert"]').textContent,/Xung đột/)
+  assert.equal(select.value,'cancelled')
+  w.fail=false
+  await w.act(async()=>button('Lưu').click())
+  assert.equal(w.updated.id,1);assert.equal(w.updated.status,'cancelled');assert.equal(w.updated.revision,0);assert.equal(w.updated.note,'')
+ } finally {await w.unmount();w.close()}
+})
+test('closing status keeps popup unread and locker cannot change status',async()=>{
+ const dom=await mount(),w=dom.window
+ try {
+  const button=text=>[...w.document.querySelectorAll('button')].find(b=>b.textContent===text)
+  await w.act(async()=>button('Trạng thái').click())
+  await w.act(async()=>button('Đóng').click())
+  assert.ok(button('Trạng thái'));assert.equal(w.seen.length,0)
+  await w.mount({id:'locker-account',role:'locker'})
+  assert.equal(button('Trạng thái'),undefined)
+ } finally {await w.unmount();w.close()}
+})

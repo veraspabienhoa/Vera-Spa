@@ -101,7 +101,7 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     } catch (err) { setError(err.message) }
     finally { setBusy(false) }
   }
-  if (editing && canEditOnlineBookings(user)) return <RequestCard key={`${editing.id}:${editing.revision}`} user={user} row={editing} initialEditing onClose={() => setEditing(null)} reload={() => window.dispatchEvent(new Event('vera-online-bookings-changed'))}/>
+  if (editing && canEditOnlineBookings(user)) return <RequestCard key={`${editing.row.id}:${editing.row.revision}`} user={user} row={editing.row} initialEditing={editing.mode === 'edit'} onClose={() => setEditing(null)} reload={() => window.dispatchEvent(new Event('vera-online-bookings-changed'))}/>
   return <>{showUpcomingReminder && <UpcomingOnlineBookings user={user} onClose={() => setShowUpcomingReminder(false)}/>}
   {!rows.length || showUpcomingReminder ? null : <NotificationModal key={row.id} title="Yêu cầu từ website" onClose={() => { if (!busy) void dismiss() }}><aside ref={panel} className={`online-booking-popup${hidden ? ' is-minimized' : ''}`} style={position ? { left: position.left, top: position.top, right: 'auto' } : undefined} role="region" aria-label="Yêu cầu từ website">
     <div className="online-booking-popup-header">
@@ -113,7 +113,14 @@ export default function OnlineBookingPopup({ user, onOpen }) {
     </div>
     {!hidden && <>
       <OnlineBookingDetails row={row}/>
-      <div className="online-booking-actions">{row.kind === 'booking' && canEditOnlineBookings(user) && <button disabled={busy} onClick={() => setEditing(row)}>Sửa lịch hẹn</button>}<button disabled={busy} onClick={() => dismiss()}>Đã xem</button><button disabled={busy} onClick={() => dismiss(true)}>Mở Booking online</button></div>
+      <div className="online-booking-popup-actions">
+        {row.kind === 'booking' && canEditOnlineBookings(user) && <>
+          <button type="button" disabled={busy} aria-haspopup="dialog" onClick={() => setEditing({ row, mode: 'status' })}>Trạng thái</button>
+          <button type="button" disabled={busy} aria-haspopup="dialog" onClick={() => setEditing({ row, mode: 'edit' })}>Sửa lịch hẹn</button>
+        </>}
+        <button type="button" disabled={busy} onClick={() => dismiss()}>Đã xem</button>
+        <button type="button" disabled={busy} onClick={() => dismiss(true)}>Mở Booking online</button>
+      </div>
     </>}
     {error && <p role="alert">{error}</p>}
   </aside></NotificationModal>}
