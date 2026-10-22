@@ -1,5 +1,6 @@
 import PagePermissionActions from '../components/PagePermissionActions'
-import StableFeedback from '../components/StableFeedback'
+import { showSystemDialog } from '../lib/systemDialogs'
+import VeraTimeInput from '../components/VeraTimeInput'
 import usePageRefresh from '../lib/usePageRefresh'
 import TrainingNoticeDetail from '../components/TrainingNoticeDetail'
 import TrainingProgressReports from '../components/TrainingProgressReports'
@@ -20,7 +21,14 @@ const emptySession = { employee_username: '', training_date: today(), start_time
 const emptyEvaluation = { craft_score: 3, communication_score: 3, attitude_score: 3, discipline_score: 3, appearance_score: 3, hygiene_score: 3, attendance_score: 3, strengths: '', improvements: '', comments: '' }
 const formatDate = value => formatVeraDate(value, '—')
 
-function Notice({ value }) { return <StableFeedback>{value && <p className={`training-notice ${value.type}`}>{value.text}</p>}</StableFeedback> }
+function Notice({ value }) {
+  useEffect(() => {
+    if (!value?.text) return
+    const dialog = showSystemDialog({ kind: value.type || 'info', message: value.text })
+    return () => dialog.close()
+  }, [value])
+  return null
+}
 
 
 export default function TrainingPage({ user }) {
@@ -98,7 +106,7 @@ function TrainingPageContent({ user }) {
       {permissions.training_session_create && <form className="training-card" onSubmit={saveSession}><h2>Ghi nhận buổi đào tạo</h2>
         <div className="training-form-grid"><label>Học viên được đào tạo<select required value={session.employee_username} onChange={e => setSession({ ...session, employee_username: e.target.value })}><option value="">Chọn học viên</option>{data?.training_students?.map(x => <option key={x.username} value={x.username}>{x.full_name}</option>)}</select></label>
         <label>Ngày đào tạo<VeraDateInput required value={session.training_date} onChange={e => setSession({ ...session, training_date: e.target.value })}/></label>
-        <label>Từ giờ<input required type="time" value={session.start_time} onChange={e => setSession({ ...session, start_time: e.target.value })}/></label><label>Đến giờ<input required type="time" value={session.end_time} onChange={e => setSession({ ...session, end_time: e.target.value })}/></label>
+        <label>Từ giờ<VeraTimeInput required aria-label="Từ giờ" value={session.start_time} onChange={e => setSession({ ...session, start_time: e.target.value })}/></label><label>Đến giờ<VeraTimeInput required aria-label="Đến giờ" value={session.end_time} onChange={e => setSession({ ...session, end_time: e.target.value })}/></label>
         <label className="wide">Nội dung/kỹ năng đào tạo<input value={session.topic} onChange={e => setSession({ ...session, topic: e.target.value })} placeholder="Ví dụ: Massage cổ vai gáy"/></label>
         <label>Tinh thần học tập<select value={session.learning_attitude} onChange={e => setSession({ ...session, learning_attitude: e.target.value })}>{['Tốt','Khá','Trung bình','Kém'].map(x => <option key={x}>{x}</option>)}</select></label>
         <label>Điểm kỹ năng<select value={session.skill_grade} onChange={e => setSession({ ...session, skill_grade: e.target.value })}>{['A+','A','B','C','D','E'].map(x => <option key={x}>{x}</option>)}</select></label>

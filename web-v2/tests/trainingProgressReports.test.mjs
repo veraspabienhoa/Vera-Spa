@@ -222,3 +222,30 @@ test('performance binary transport excludes blank numeric filters and keeps sele
  assert.equal(params.get('date_from'),'2026-10-01');assert.equal(params.get('employee'),'An')
  assert.equal(params.has('total_amount'),false);assert.equal(params.has('tip_amount'),false)
 })
+
+test('training saves show repeatable modals and use the Booking time picker', async()=>{
+ let fail=false
+ const f=await fixture({createTrainingSession:async()=>{if(fail)throw Error('Không lưu được buổi đào tạo');return {ok:true}}})
+ try{
+  await f.render({...user,permissions:{...user.permissions,training_session_create:true}})
+  assert.equal(document.querySelector('input[type=time]'),null)
+  await f.type(document.querySelector('input[aria-label="Từ giờ"]'),'1317')
+  await f.click(document.querySelector('[aria-label="Chọn đến giờ"]'))
+  const hour=document.querySelector('select[aria-label="Đến giờ · Giờ"]'),minute=document.querySelector('select[aria-label="Đến giờ · Phút"]')
+  assert.equal(hour.options.length,25);assert.equal(minute.options.length,61)
+  await act(async()=>{hour.value='14';hour.dispatchEvent(new f.w.Event('change',{bubbles:true}))})
+  await act(async()=>{minute.value='59';minute.dispatchEvent(new f.w.Event('change',{bubbles:true}))})
+  await f.click(f.button('Xong'))
+  const submit=()=>act(async()=>document.querySelector('form.training-card').dispatchEvent(new f.w.Event('submit',{bubbles:true,cancelable:true})))
+  await submit()
+  const sent=f.calls.find(c=>c.method==='createTrainingSession').args[0]
+  assert.equal(sent.start_time,'13:17');assert.equal(sent.end_time,'14:59')
+  assert.match(document.querySelector('.system-dialog-success').textContent,/Đã lưu nhật ký đào tạo/)
+  assert.equal(document.querySelector('.training-notice'),null)
+  await f.click(f.button('Đã hiểu'));assert.equal(document.querySelector('.system-dialog'),null)
+  await submit();assert.ok(document.querySelector('.system-dialog-success'),'same success opens again')
+  await f.click(f.button('Đã hiểu'));fail=true
+  await submit();assert.match(document.querySelector('.system-dialog-error').textContent,/Không lưu được/)
+  await f.render({...user,id:'new-account'});assert.equal(document.querySelector('.system-dialog'),null)
+ }finally{await f.dispose()}
+})
