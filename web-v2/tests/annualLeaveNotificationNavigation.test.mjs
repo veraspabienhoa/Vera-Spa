@@ -22,7 +22,7 @@ const built = await build({
   plugins: [{ name: 'offline-api-fixtures', setup(b) {
     b.onResolve({ filter: /\/(api|supabase)$/ }, args => ({ path: args.path.split('/').at(-1), namespace: 'fixture' }))
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ loader: 'js', contents: path === 'api'
-      ? 'export const apiRequest=async()=>({}); export const apiBinaryResponse=async()=>new Response(); export const isApiConfigured=true; export const isReadConfigured=true; export const veraApi=globalThis.__notificationApi;'
+      ? 'export const apiRequest=async()=>({}); export const apiBinaryResponse=async()=>new Response(); export const isApiConfigured=true; export const isReadConfigured=true; export const veraApi=globalThis.__notificationApi; export const quangNgaiApi=globalThis.__notificationApi;'
       : `export const isAuthConfigured=true;export const isSupabaseConfigured=false;export const supabase=null;
         export const getCurrentSession=async()=>({access_token:'synthetic',user:{id:'admin-fixture'}});
         export const refreshCurrentSession=getCurrentSession;
