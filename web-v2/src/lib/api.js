@@ -726,3 +726,13 @@ export const veraApi = {
 }
 
 export { request as apiRequest, binaryResponse as apiBinaryResponse }
+
+export const quangNgaiApi = {
+  purchases: params => request(`/v2/quang-ngai/purchases?${new URLSearchParams(params)}`),
+  createPurchases: body => request('/v2/quang-ngai/purchases', { method: 'POST', body: JSON.stringify(body) }),
+  editPurchase: (id, body) => request(`/v2/quang-ngai/purchases/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deletePurchase: (id, revision) => request(`/v2/quang-ngai/purchases/${id}?revision=${revision}`, { method: 'DELETE' }),
+  importPurchases: (file, mode) => upload('/v2/quang-ngai/purchases/import', file, { mode, request_id: crypto.randomUUID() }),
+  exportPurchases: params => download(`/v2/quang-ngai/purchases/export.xlsx?${new URLSearchParams(params)}`, 'QuangNgai_NhapMua.xlsx'),
+  purchaseAudit: () => request('/v2/quang-ngai/purchases/audit'),
+}

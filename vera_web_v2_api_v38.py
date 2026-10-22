@@ -224,6 +224,8 @@ install_break_return_penalty(_shared.app, engine_instance=_api._engine_instance,
 install_attendance_break_dispatch(_shared.app, engine_instance=_api._engine_instance, api_module=_api, vn_tz=_api.VN_TZ)
 install_operations_v41(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, require_feature=_api._require_feature, identity_type=_api.Identity)
 install_admin_change_push(_shared.app, engine_instance=_api._engine_instance, api_module=_api, current_identity=_api.current_identity, identity_type=_api.Identity, leave_create_type=_api.LeaveCreate, leave_update_type=_api.LeaveUpdate, leave_delete_type=_api.LeaveDelete)
+from vera_web_v2_quang_ngai import install_quang_ngai_routes
+install_quang_ngai_routes(_shared.app, engine_instance=_api._engine_instance, current_identity=_api.current_identity, norm=_api._norm)
 install_excel_export_style(_shared.app)
 
 app = _shared.app
