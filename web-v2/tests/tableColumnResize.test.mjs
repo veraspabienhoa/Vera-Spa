@@ -3,11 +3,19 @@ import assert from 'node:assert/strict'
 import { JSDOM } from 'jsdom'
 import { headerColumnMap, resizeColumnPair, startTableColumnResize } from '../src/lib/tableColumnResize.js'
 
-function fixture({ grouped = false, scale = 1, colgroup = false } = {}) {
+function fixture({ grouped = false, scale = 1, colgroup = false, identity = '', saved = null, hidden = false, autoIdentity = '' } = {}) {
   const head = grouped ? '<tr><th rowspan="2">Nhân viên</th><th colspan="2">Tháng 10</th></tr><tr><th>01</th><th>02</th></tr>' : '<tr><th>A</th><th>B</th><th>C</th></tr>'
-  const dom = new JSDOM(`<table style="width:400px">${colgroup ? '<colgroup><col style="width:25%"><col style="width:30%"><col style="width:45%"></colgroup>' : ''}<thead>${head}</thead><tbody><tr><td><input value="Không thay đổi"></td><td>120</td><td>180</td></tr></tbody></table>`, { pretendToBeVisual: true })
+  const dom = new JSDOM(`<table style="width:400px">${colgroup ? '<colgroup><col style="width:25%"><col style="width:30%"><col style="width:45%"></colgroup>' : ''}<thead>${head}</thead><tbody><tr><td><input value="Không thay đổi"></td><td>120</td><td>180</td></tr></tbody></table>`, { pretendToBeVisual: true, url: 'https://example.test' })
   const { window: win } = dom, doc = win.document, table = doc.querySelector('table')
-  Object.defineProperty(table, 'offsetWidth', { get: () => 400 })
+  let notifySize = () => {}
+  win.ResizeObserver = class {
+    constructor(callback) { notifySize = () => callback([{ target: table }]) }
+    observe() {} unobserve() {} disconnect() {}
+  }
+  if (autoIdentity) table.dataset.veraNode = autoIdentity
+  if (identity) table.dataset.tableResizeKey = identity
+  if (saved) for (const [key,value] of saved) win.localStorage.setItem(key,value)
+  Object.defineProperty(table, 'offsetWidth', { get: () => hidden ? 0 : 400 })
   table.getBoundingClientRect = () => ({ width: 400 * scale, left: 0, right: 400 * scale })
   const widths = () => {
     const cols = [...table.querySelectorAll('col')]
@@ -23,7 +31,7 @@ function fixture({ grouped = false, scale = 1, colgroup = false } = {}) {
     const event = new win.Event(type, { bubbles: true, cancelable: true })
     Object.assign(event, { clientX: x, button: 0, pointerId: id }); target.dispatchEvent(event)
   }
-  return { win, doc, table, widths, pointer, stop: () => { stop(); win.close() } }
+  return { win, doc, table, widths, pointer, show: () => { hidden = false; notifySize() }, stop: () => { stop(); win.close() } }
 }
 
 test('adjacent columns compensate exactly, including narrow columns and extreme drags', () => {
@@ -85,11 +93,11 @@ test('dynamically mounted dialog tables get grips and unmount safely during a dr
   f.stop()
 })
 
-test('viewport resize releases fixed pixels so existing responsive CSS can fit again', () => {
+test('viewport resize retains saved column proportions', () => {
   const f = fixture();f.pointer('pointerdown',100,f.table.querySelector('.vera-column-resize-handle'));f.pointer('pointermove',140);f.pointer('pointerup',140)
   f.win.dispatchEvent(new f.win.Event('resize'))
-  assert.equal(f.table.classList.contains('vera-columns-sized'),false)
-  assert.equal(f.table.querySelector('colgroup'),null);f.stop()
+  assert.equal(f.table.classList.contains('vera-columns-sized'),true)
+  assert.deepEqual(f.widths(),[140,80,180]);f.stop()
 })
 
 test('React-style header replacement installs one set of grips and restores sizing', async () => {
@@ -99,4 +107,42 @@ test('React-style header replacement installs one set of grips and restores sizi
   assert.equal(f.table.querySelectorAll('.vera-column-resize-handle').length,1)
   assert.equal(f.table.querySelector('colgroup'),null)
   assert.equal(f.doc.querySelector('input').value,'Không thay đổi');f.stop()
+})
+
+const savedWidths = f => Object.entries(f.win.localStorage)
+test('completed drag survives fresh document and viewport resize, separately per table', () => {
+  const first=fixture({identity:'training-trained'})
+  first.pointer('pointerdown',100,first.table.querySelector('.vera-column-resize-handle'));first.pointer('pointermove',140);first.pointer('pointerup',140)
+  const saved=savedWidths(first);assert.equal(saved.length,1);first.stop()
+  const next=fixture({identity:'training-trained',saved})
+  assert.deepEqual(next.widths(),[140,80,180])
+  next.win.dispatchEvent(new next.win.Event('resize'))
+  assert.deepEqual(next.widths(),[140,80,180]);next.stop()
+  const other=fixture({identity:'training-untrained',saved});assert.deepEqual(other.widths(),[100,120,180]);other.stop()
+})
+test('keyboard persists but canceled drag never overwrites saved widths', () => {
+  const f=fixture({identity:'keyboard'}),grip=f.table.querySelector('.vera-column-resize-handle')
+  grip.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}))
+  const saved=savedWidths(f)
+  f.pointer('pointerdown',100,grip);f.pointer('pointermove',160);f.pointer('pointercancel',160)
+  assert.deepEqual(savedWidths(f),saved);f.stop()
+  const next=fixture({identity:'keyboard',saved})
+  assert.ok(next.widths().every((w,i)=>Math.abs(w-[108,112,180][i])<1e-6));next.stop()
+})
+test('corrupt saved preference is ignored without breaking resize', () => {
+  const f=fixture({identity:'broken'})
+  f.pointer('pointerdown',100,f.table.querySelector('.vera-column-resize-handle'));f.pointer('pointerup',100)
+  const saved=savedWidths(f).map(([key])=>[key,'[null,-1,2]']);f.stop()
+  const next=fixture({identity:'broken',saved});assert.deepEqual(next.widths(),[100,120,180]);next.stop()
+})
+
+for (const autoIdentity of ['', 'generated-table-node']) test(`all tables persist and hidden tabs restore on becoming visible (${autoIdentity || 'DOM fallback'})`, () => {
+  const first = fixture({ autoIdentity })
+  first.pointer('pointerdown',100,first.table.querySelector('.vera-column-resize-handle'))
+  first.pointer('pointermove',140); first.pointer('pointerup',140)
+  const saved = savedWidths(first); assert.equal(saved.length,1); first.stop()
+  const next = fixture({ autoIdentity, saved, hidden: true })
+  assert.deepEqual(next.widths(),[100,120,180])
+  next.show()
+  assert.deepEqual(next.widths(),[140,80,180]); next.stop()
 })

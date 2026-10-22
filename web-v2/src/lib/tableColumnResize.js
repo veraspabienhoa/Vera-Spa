@@ -36,6 +36,46 @@ export function startTableColumnResize(doc = document) {
   const win = doc.defaultView
   if (win.__veraTableColumnResizeStop) return win.__veraTableColumnResizeStop
   const states = new Map(), pending = new Set()
+  const storageKey = state => {
+    const table = state.table
+    // JSX tables receive veraNode at build time; DOM-created tables use a stable
+    // structural path. Include keyed ancestor instances to separate reused views.
+    const context = []
+    for (let node = table; node && node !== doc.body; node = node.parentElement) {
+      if (node.dataset.veraItem) context.push(node.dataset.veraItem)
+    }
+    let identity = table.dataset.tableResizeKey || table.dataset.veraNode || table.id
+    if (!identity) {
+      const path = []
+      for (let node = table; node && node !== doc.body; node = node.parentElement) {
+        if (node.id || node.dataset.veraNode) { path.unshift(node.id || node.dataset.veraNode); break }
+        const siblings = [...(node.parentElement?.children || [])].filter(sibling => sibling.tagName === node.tagName)
+        path.unshift(`${node.tagName}:${siblings.indexOf(node)}`)
+      }
+      identity = `${win.location.pathname}:${path.join('/')}`
+    }
+    if (context.length) identity += `:${JSON.stringify(context)}`
+    const schema = state.map.cells.map(({ cell, start, end }) => [cell.textContent.trim(), start, end])
+    return `vera:column-widths:v1:${JSON.stringify([identity, win.innerWidth <= 640 ? 'mobile' : 'desktop', schema])}`
+  }
+  const remember = session => {
+    const key = storageKey(session.state)
+    if (!key || !session.latestWidths) return
+    const total = session.latestWidths.reduce((sum, width) => sum + width, 0)
+    try { win.localStorage.setItem(key, JSON.stringify(session.latestWidths.map(width => width / total))) } catch { /* Storage may be unavailable. Dragging still works. */ }
+  }
+  const recall = state => {
+    const key = storageKey(state)
+    if (!key) return
+    try {
+      const ratios = JSON.parse(win.localStorage.getItem(key))
+      if (!Array.isArray(ratios) || ratios.length !== state.map.count || ratios.some(n => !Number.isFinite(n) || n <= 0 || n >= 1) || Math.abs(ratios.reduce((a,b) => a+b,0)-1) > .001) return
+      const session = prepare(state)
+      if (!session) return
+      const total = session.widths.reduce((a,b) => a+b,0)
+      paint(session, ratios.map(n => n * total))
+    } catch { /* Ignore invalid or unavailable saved preferences. */ }
+  }
   let active = null, frame = 0, suppressClick = false, clickTimer = 0
   const restoreStyle = (node, value) => value === null ? node.removeAttribute('style') : node.setAttribute('style', value)
   const saveStyle = node => node.getAttribute('style')
@@ -54,6 +94,7 @@ export function startTableColumnResize(doc = document) {
     state.grips.forEach(grip => grip.remove())
     state.positioned.forEach(cell => cell.style.removeProperty('position'))
     restoreSizing(state)
+    visibilityObserver?.unobserve(state.table)
     states.delete(state.table)
   }
   function prepare(state) {
@@ -90,6 +131,7 @@ export function startTableColumnResize(doc = document) {
     return { state, widths, scale, priorTable, priorCols, initial }
   }
   function paint(session, widths) {
+    session.latestWidths = widths
     const total = widths.reduce((sum, width) => sum + width, 0)
     session.state.sizing.cols.forEach((col, index) => {
       set(col, 'width', `${widths[index] / total * 100}%`)
@@ -104,6 +146,7 @@ export function startTableColumnResize(doc = document) {
       session.state.sizing.cols.forEach((col, index) => restoreStyle(col, session.priorCols[index]))
       if (session.initial) restoreSizing(session.state)
     }
+    if (!cancel) remember(session)
     doc.body.classList.remove('vera-column-resizing')
     clickTimer = win.setTimeout(() => { suppressClick = false }, 0)
   }
@@ -129,6 +172,8 @@ export function startTableColumnResize(doc = document) {
       cell.append(grip); state.grips.push(grip)
     })
     states.set(table, state)
+    visibilityObserver?.observe(table)
+    recall(state)
   }
   function onDown(event) {
     const grip = event.target.closest?.('.vera-column-resize-handle')
@@ -155,13 +200,16 @@ export function startTableColumnResize(doc = document) {
     if (!grip || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return
     event.preventDefault(); event.stopPropagation()
     const state = states.get(grip.closest('table')), session = state && prepare(state)
-    if (session) paint(session, resizeColumnPair(session.widths, Number(grip.dataset.columnBoundary), (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 20 : 8)))
+    if (session) {
+      paint(session, resizeColumnPair(session.widths, Number(grip.dataset.columnBoundary), (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 20 : 8)))
+      remember(session)
+    }
   }
   function onClick(event) {
     if (suppressClick || event.target.closest?.('.vera-column-resize-handle')) { event.preventDefault(); event.stopPropagation(); suppressClick = false }
   }
   const onBlur = () => finish(true)
-  const onResize = () => { finish(true); states.forEach(restoreSizing) }
+  const onResize = () => { finish(true); states.forEach(state => { restoreSizing(state); recall(state) }) }
   const listeners = [[doc, 'pointerdown', onDown], [doc, 'pointermove', onMove], [doc, 'pointerup', onUp], [doc, 'pointercancel', onUp], [doc, 'keydown', onKey], [doc, 'click', onClick], [doc, 'dblclick', onClick], [win, 'blur', onBlur], [win, 'resize', onResize]]
   listeners.forEach(([target, name, handler]) => target.addEventListener(name, handler, true))
   const flush = () => {
@@ -181,10 +229,18 @@ export function startTableColumnResize(doc = document) {
     }
     if (!frame) frame = win.requestAnimationFrame(flush)
   })
+  // Hidden tabs/modals may be mounted before they have measurable columns.
+  // Retry on becoming visible without changing already sized tables (no loops).
+  const visibilityObserver = win.ResizeObserver ? new win.ResizeObserver(entries => {
+    for (const { target } of entries) {
+      const state = states.get(target)
+      if (state && !state.sizing && active?.state !== state) recall(state)
+    }
+  }) : null
   doc.querySelectorAll('table').forEach(scan)
   observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['colspan', 'rowspan'] })
   const stop = () => {
-    finish(true); observer.disconnect(); win.cancelAnimationFrame(frame); win.clearTimeout(clickTimer)
+    finish(true); observer.disconnect(); visibilityObserver?.disconnect(); win.cancelAnimationFrame(frame); win.clearTimeout(clickTimer)
     listeners.forEach(([target, name, handler]) => target.removeEventListener(name, handler, true))
     states.forEach(remove); pending.clear(); delete win.__veraTableColumnResizeStop
   }
