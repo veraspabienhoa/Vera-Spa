@@ -144,7 +144,6 @@ async function importRevenueExcel(file, mode) {
   return payload
 }
 
-const defaultRevenueNote = (kind, transactionDate) => `${kind} ${formatVeraDate(transactionDate) || ''}`.trim()
 
 function AutoFitMoney({ children }) {
   const ref = useRef(null)
@@ -208,10 +207,8 @@ function QuangNgaiContent({ user }) {
   const [importingRevenue, setImportingRevenue] = useState('')
   const [entryIncomeAmount, setEntryIncomeAmount] = useState('')
   const [entryIncomeNote, setEntryIncomeNote] = useState('')
-  const [incomeNoteEdited, setIncomeNoteEdited] = useState(false)
   const [entryExpenseAmount, setEntryExpenseAmount] = useState('')
   const [entryExpenseNote, setEntryExpenseNote] = useState('')
-  const [expenseNoteEdited, setExpenseNoteEdited] = useState(false)
   const [savingEntry, setSavingEntry] = useState(false)
   const [entryModalOpen, setEntryModalOpen] = useState(false)
   const [entryError, setEntryError] = useState('')
@@ -292,11 +289,6 @@ function QuangNgaiContent({ user }) {
   }, { income: 0, expense: 0 })
   const ledgerTypes = [...new Set((detailData?.ledger_rows || []).map(row => row.type).filter(Boolean))]
   const selectedLedgerRow = ledgerRows.find(row => row.id === selectedLedgerId) || null
-
-  useEffect(() => {
-    if (!incomeNoteEdited) setEntryIncomeNote(defaultRevenueNote('Doanh thu', entryDate))
-    if (!expenseNoteEdited) setEntryExpenseNote(defaultRevenueNote('Mua đồ', entryDate))
-  }, [entryDate, expenseNoteEdited, incomeNoteEdited])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -406,10 +398,8 @@ function QuangNgaiContent({ user }) {
       }
       setEntryIncomeAmount('')
       setEntryExpenseAmount('')
-      setIncomeNoteEdited(false)
-      setExpenseNoteEdited(false)
-      setEntryIncomeNote(defaultRevenueNote('Doanh thu', entryDate))
-      setEntryExpenseNote(defaultRevenueNote('Mua đồ', entryDate))
+      setEntryIncomeNote('')
+      setEntryExpenseNote('')
       if (commonReport) setManualLedger(true)
       setEntryModalOpen(false)
       setNotice(result.message || 'Đã ghi Thu Chi vào Chi tiết Doanh thu - Chi phí.')
@@ -587,9 +577,9 @@ function QuangNgaiContent({ user }) {
       <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
       <label className="entry-date">Ngày giao dịch<VeraDateInput aria-label="Ngày giao dịch" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
       <label className="entry-amount">Số tiền Thu<VeraMoneyInput value={entryIncomeAmount} onChange={(event) => setEntryIncomeAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
-      <label className="entry-note">Ghi chú Thu<input className={!entryIncomeAmount && !incomeNoteEdited ? 'auto-note-empty' : ''} type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => { setIncomeNoteEdited(true); setEntryIncomeNote(event.target.value) }} placeholder="Doanh thu + ngày giao dịch" disabled={savingEntry}/></label>
+      <label className="entry-note">Ghi chú Thu<input type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => { setEntryIncomeNote(event.target.value) }} disabled={savingEntry}/></label>
       <label className="entry-amount entry-expense">Số tiền Chi<VeraMoneyInput value={entryExpenseAmount} onChange={(event) => setEntryExpenseAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
-      <label className="entry-note entry-expense-note">Ghi chú Chi<input className={!entryExpenseAmount && !expenseNoteEdited ? 'auto-note-empty' : ''} type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => { setExpenseNoteEdited(true); setEntryExpenseNote(event.target.value) }} placeholder="Mua đồ + ngày giao dịch" disabled={savingEntry}/></label>
+      <label className="entry-note entry-expense-note">Ghi chú Chi<input type="text" maxLength={1000} value={entryExpenseNote} onChange={(event) => { setEntryExpenseNote(event.target.value) }} disabled={savingEntry}/></label>
       <button data-ui-key="qn-u-4c1eb92b9b18" type="submit" className="primary-button" disabled={savingEntry}><Save size={16}/>{savingEntry ? 'Đang ghi…' : 'Lưu Thu + Chi'}</button>
       </form>
     </EmployeeProfileModal>}
@@ -610,8 +600,6 @@ function QuangNgaiContent({ user }) {
 
     <UiToolbar data-ui-key="qn-u-10492b384942" className="revenue-tabs" role="tablist" aria-label="Doanh thu và chi phí">
       <button data-ui-key="qn-u-f01408c2e75b" data-ui-label-default="Doanh thu-Chi phí" type="button" className={`revenue-tab ${activeTab === 'ledger' ? 'active' : ''}`} onClick={() => setActiveTab('ledger')}><UiCustomText uiKey="qn-u-f01408c2e75b">Doanh thu-Chi phí</UiCustomText></button>
-      <button data-ui-key="qn-u-b828ccc54b6c" data-ui-label-default="Báo cáo mua hàng" type="button" className={`revenue-tab ${activeTab === 'purchase' ? 'active' : ''}`} onClick={() => setActiveTab('purchase')}><UiCustomText uiKey="qn-u-b828ccc54b6c">Báo cáo mua hàng</UiCustomText></button>
-      {canViewAdminRevenueSummary && <button data-ui-key="qn-u-3a9aa4e685fc" data-ui-label-default="Tổng quan" type="button" className={`revenue-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}><UiCustomText uiKey="qn-u-3a9aa4e685fc">Tổng quan</UiCustomText></button>}
       {isAdmin && <button data-ui-key="qn-u-c1d88cedf5da" data-ui-label-default="Lịch sử sửa, xóa" type="button" className={`revenue-tab ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}><UiCustomText uiKey="qn-u-c1d88cedf5da">Lịch sử sửa, xóa</UiCustomText></button>}
       {isAdmin && <button data-ui-key="qn-u-3b0a4c838849" data-ui-label-default="Kiểm tra dữ liệu trùng" type="button" className={`revenue-tab ${activeTab === 'duplicates' ? 'active' : ''}`} onClick={() => setActiveTab('duplicates')}><UiCustomText uiKey="qn-u-3b0a4c838849">Kiểm tra dữ liệu trùng</UiCustomText></button>}
     </UiToolbar>
