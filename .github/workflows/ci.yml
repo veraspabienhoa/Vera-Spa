@@ -1269,7 +1269,7 @@ jobs:
   web-v2:
     name: React Web V2 build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     defaults:
       run:

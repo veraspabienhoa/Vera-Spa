@@ -104,3 +104,28 @@ for (const [page,label,path] of [['Schedule','Ngày lịch làm việc','/v2/wor
   } finally {await w.act(async()=>w.root.unmount());w.close()}
  })
 }
+
+test('Changes: loading and failures never masquerade as empty results; pages reset with filters',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true}),w=dom.window
+ w.MessageChannel=class{constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}}
+ w.Headers=Headers;w.IS_REACT_ACT_ENVIRONMENT=true
+ let resolveRead,rejectRead;const calls=[]
+ w.fetch=url=>{calls.push(new URL(url));return new Promise((resolve,reject)=>{resolveRead=resolve;rejectRead=reject})}
+ w.eval(built.outputFiles[0].text)
+ try{
+  await w.act(async()=>w.mount('Changes'))
+  assert.match(w.document.body.textContent,/Đang tải thay đổi/)
+  assert.doesNotMatch(w.document.body.textContent,/Không có thay đổi|0 thay đổi/)
+  await w.act(async()=>resolveRead({json:async()=>({changes:[{id:1,employee_name:'Test',event_type:'insert'}],archive:[],has_more:true})}))
+  const next=()=>w.document.querySelector('[aria-label="Trang thay đổi hệ thống"]').querySelectorAll('button')[1]
+  await w.act(async()=>next().click())
+  assert.equal(calls.at(-1).searchParams.get('page'),'2')
+  await w.act(async()=>rejectRead(Error('Timeout test')))
+  assert.match(w.document.body.textContent,/Timeout test/)
+  assert.doesNotMatch(w.document.body.textContent,/Không có thay đổi/)
+  await w.act(async()=>[...w.document.querySelectorAll('button')].find(b=>b.textContent==='Hôm qua').click())
+  assert.equal(calls.at(-1).searchParams.get('page'),'1')
+  await w.act(async()=>resolveRead({json:async()=>({changes:[],archive:[]})}))
+  assert.match(w.document.body.textContent,/Không có thay đổi phù hợp/)
+ }finally{await w.act(async()=>w.root.unmount());w.close()}
+})

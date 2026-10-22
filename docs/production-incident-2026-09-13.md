@@ -2991,3 +2991,24 @@ appeared in the rotating table. Roster reconciliation now carries the original
 assignment label through the board projection, and the modal checks both fields.
 This changes weekly grouping/counts only; shift resolution, daily overrides and
 active services retain their existing rules. No production deployment performed.
+
+## 22-10-2026 — System change feed read performance (source diagnosis)
+
+The supplied mobile recording shows an empty change feed while changing date
+filters; it does not establish production query timings. Source confirmed every
+v41 GET deleted expired audit rows before reading, applied a date conversion to
+indexed timestamps, and loaded up to 5,000 full JSON rows for each of two lists.
+This can block a read behind cleanup locks and makes read-only execution fail.
+The UI also presented initial/pending/error states as an empty result.
+
+The v41 reader now performs SELECT only, excludes expired records in SQL, uses
+half-open Vietnam timestamp bounds, and limits each list to 100 plus one lookahead
+row. Actor matching precedes pagination. Existing capture/retention triggers stay
+unchanged. Field serialization happens after releasing the caller connection.
+Exports still read the full selected scope up to 5,000 rows and reject larger
+results explicitly instead of silently truncating. UI loading/error states are
+separate from confirmed-empty results; filters reset pages and abort stale reads.
+
+Regression coverage includes read-only PostgreSQL execution, midnight boundaries,
+expiry, deterministic ID ordering, role denial, pagination, export overflow and
+slow/error UI responses. Production timings and deployment are unverified.
