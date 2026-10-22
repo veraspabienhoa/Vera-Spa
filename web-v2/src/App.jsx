@@ -25,7 +25,7 @@ import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera
 
 
 const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
-const VALID_PAGES = new Set(['online-bookings', 'system', 'hr', 'leave', 'schedule', 'long-leave', 'residence', 'employees', 'contract-1', 'rules', 'hc-rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
+const VALID_PAGES = new Set(['online-bookings', 'system', 'hr', 'leave', 'schedule', 'long-leave', 'residence', 'employees', 'contract-1', 'rules', 'hc-rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'quang-ngai', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
 const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
 
@@ -62,6 +62,7 @@ const RulesPage = lazyPage(() => import('./pages/RulesPage'))
 const ProfilePage = lazyPage(() => import('./pages/ProfilePage'))
 const PermissionsPage = lazyPage(() => import('./pages/PermissionsPage'))
 const PayrollPage = lazyPage(() => import('./pages/PayrollPageV38'))
+const QuangNgaiPage = lazyPage(() => import('./pages/QuangNgaiPage'))
 const RevenuePage = lazyPage(() => import('./pages/RevenuePage'))
 const AttendancePage = lazyPage(() => import('./pages/AttendancePage'))
 const DevicePage = lazyPage(() => import('./pages/DevicePage'))
@@ -88,7 +89,7 @@ const pageModules = {
   leave: LeaveRegistrationPage, schedule: WorkSchedulePage, 'long-leave': LongLeaveSection,
   residence: ResidencePage, employees: EmployeePage, 'contract-1': ContractPage, rules: RulesPage, 'hc-rules': HcRulesPage, profile: ProfilePage,
   hr: HumanResourcesPage, payroll: PayrollPage, 'department-payroll': DepartmentPayrollPanel,
-  'payroll-config': DepartmentPayrollSettingsPage, revenue: RevenuePage, purchases: PurchasePage,
+  'payroll-config': DepartmentPayrollSettingsPage, revenue: RevenuePage, 'quang-ngai': QuangNgaiPage, purchases: PurchasePage,
   training: TrainingPage, snapshot: AttendancePage, devices: DevicePage, 'checkin-history': AttendancePage,
   birthday: BirthdayPage, tour: TourPage, reports: LiveTourReportsPage, 'live-tour': LiveTourPage,
   'milk-tea': MilkTeaPage, customers: SpaManagementPage, settings: SettingsPage,
@@ -268,7 +269,7 @@ export default function App() {
   return (
     <PagePermissionProvider user={shellUser} page={page}><AppShell user={shellUser} currentPage={page} standalone={standaloneRequest.enabled} onPageChange={changePage} onPageIntent={preloadPage} onRefreshCurrentPage={refreshCurrentPage} onSignOut={signOut}>
       {(navigationToggle) => <>
-        {page !== 'live-tour' && <PagePermissionActions primary page={page}/>}
+        {page !== 'live-tour' && page !== 'quang-ngai' && <PagePermissionActions primary page={page}/>}
         {page !== 'live-tour' && <ProfileCompletionReminder user={shellUser} onOpenProfile={() => changePage('profile')} />}
         <PageErrorBoundary key={page} page={page} onRetry={() => pageModules[page]?.reset()}>
         <Suspense fallback={<div className="page-loading" role="status">Đang mở chức năng…</div>} key={page}>
@@ -287,6 +288,7 @@ export default function App() {
         {page === 'hr' && <HumanResourcesPage user={shellUser} />}
         {(page === 'payroll' || page === 'department-payroll' || page === 'payroll-config') && <PayrollTabs user={shellUser} initialTab={page === 'payroll-config' ? 'configuration' : page === 'department-payroll' ? 'administrative' : 'ktv'} ktv={<PayrollPage user={shellUser} />} administrative={<DepartmentPayrollPanel user={shellUser} />} configuration={<DepartmentPayrollSettingsPage user={shellUser} />} />}
         {page === 'revenue' && <RevenuePage user={shellUser} />}
+        {page === 'quang-ngai' && <QuangNgaiPage user={shellUser} />}
         {page === 'purchases' && <PurchasePage user={shellUser} />}
         {page === 'training' && <TrainingPage user={shellUser} />}
         {page === 'snapshot' && <AttendancePage key="snapshot" user={shellUser} />}

@@ -1,0 +1,172 @@
+import { confirmDialog } from '../lib/systemDialogs'
+import StableDataRegion from '../components/StableDataRegion'
+import usePageRefresh from '../lib/usePageRefresh'
+import StableFeedback from '../components/StableFeedback'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { ShoppingCart, RefreshCw, Upload, Download, TrendingDown, Plus, History } from 'lucide-react'
+import { quangNgaiApi as veraApi } from '../lib/api'
+import VeraDateInput from '../components/VeraDateInput'
+import VeraMoneyInput from '../components/VeraMoneyInput'
+import UiToolbar from '../components/UiToolbar'
+import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
+import TablePager from '../components/TablePager'
+import useTablePage from '../lib/useTablePage'
+import './PurchasePage.css'
+
+const money = value => `${Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}đ`
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+const presets = [['all','Tất cả'],['today','Hôm nay'],['yesterday','Hôm qua'],['this_week','Tuần này'],['last_week','Tuần trước'],['this_month','Tháng này'],['last_month','Tháng trước'],['custom','Tùy chỉnh']]
+const blank = () => ({ purchase_date: today(), item: '', quantity: 1, unit_price: '', note: '' })
+const enteredDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })
+const enteredDisplayFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' })
+const enteredTimeFormatter = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+const filtersEmpty = { date: '', item: '', amount: '', note: '', entered: '', user: '' }
+
+function Modal({ title, busy, close, children }) {
+  const ref = useRef(null), state = useRef({ busy, close })
+  state.current = { busy, close }
+  useEffect(() => {
+    const node = ref.current, opener = document.activeElement, overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'; node.showModal()
+    const cancel = event => { event.preventDefault(); if (!state.current.busy) state.current.close() }
+    node.addEventListener('cancel', cancel)
+    return () => { node.removeEventListener('cancel', cancel); node.close(); document.body.style.overflow = overflow; opener?.focus({ preventScroll: true }) }
+  }, [])
+  return createPortal(<dialog className="purchase-modal" ref={ref} aria-labelledby="purchase-modal-title">
+    <header><h2 id="purchase-modal-title">{title}</h2><button data-dialog-close="true" disabled={busy} onClick={close} aria-label="Đóng">✕</button></header>{children}
+  </dialog>, document.body)
+}
+
+function PurchaseTable({ rows, data, total, selectedIds, onSelect }) {
+  return <table><caption>QUẢNG NGÃI · NHẬP MUA · {data.start ? formatVeraDate(data.start) : 'Tất cả'}{data.end ? ` – ${formatVeraDate(data.end)}` : ''} · Tổng mua: {money(total)}</caption><thead><tr>{['Chọn','Ngày mua','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt','Ngày nhập','Giờ nhập','Người nhập'].map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>
+      {rows.map(row=><tr key={row.id} className={selectedIds.has(row.id)?'purchase-selected-row':''}><td><input type="checkbox" aria-label={`Chọn ${row.item}`} checked={selectedIds.has(row.id)} onChange={e=>onSelect?.(row.id, e.target.checked)} disabled={!onSelect} /></td>
+        <td>{formatVeraDate(row.purchase_date)}</td><td>{row.item}</td><td>{row.quantity}</td><td>{money(row.unit_price)}</td><td>{money(row.amount)}</td><td>{row.note}</td><td>{row.entered_at ? enteredDisplayFormatter.format(new Date(row.entered_at)).replaceAll('/','-') : '—'}</td><td>{row.entered_at ? enteredTimeFormatter.format(new Date(row.entered_at)) : '—'}</td><td>{row.entered_by || '—'}</td></tr>)}
+      {!rows.length && <tr><td colSpan={10}>Không có dữ liệu trong khoảng đang chọn.</td></tr>}
+    </tbody></table>
+}
+
+export default function PurchasePage(props) {
+  const user = props.user
+  const accountScope = JSON.stringify([user?.id || '', user?.employee_username || '', user?.email || ''])
+  return <PurchaseAccountPage key={accountScope} {...props} />
+}
+
+function PurchaseAccountPage({ user, embedded = false, initialPreset = 'this_month' }) {
+  usePageRefresh(() => setReload(value => value + 1), () => Boolean(loading || busy || editor))
+  const admin = ['admin', 'giamdoc'].includes(user?.role)
+  const [data,setData] = useState({ rows: [], permissions: {} }), [error,setError] = useState(''), [message,setMessage] = useState('')
+  const [preset,setPreset] = useState(initialPreset), [start,setStart] = useState(today()), [end,setEnd] = useState(today())
+  const [filters,setFilters] = useState(filtersEmpty), [selected,setSelected] = useState([]), [busy,setBusy] = useState(false)
+  const [editor,setEditor] = useState(null), [draft,setDraft] = useState([]), [modalError,setModalError] = useState(''), [history,setHistory] = useState(null)
+  const [reload,setReload] = useState(0), [loading,setLoading] = useState(true)
+  const importInput = useRef(null), importMode = useRef('append'), requestId = useRef('')
+  const params = useMemo(() => ({ preset, ...(preset === 'custom' ? { start, end } : {}) }), [preset,start,end])
+  useEffect(() => {
+    let active = true
+    setLoading(true); setError(''); setSelected([])
+    veraApi.purchases(params).then(result => { if (active) setData(result) }).catch(e => { if (active) { setError(e.message); setData({ rows: [], permissions: {} }) } }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [params,reload])
+  const rows = useMemo(() => data.rows.filter(row => (!filters.date || row.purchase_date === filters.date)
+    && row.item.toLocaleLowerCase('vi').includes(filters.item.toLocaleLowerCase('vi'))
+    && (!filters.amount || String(row.amount).includes(filters.amount))
+    && row.note.toLocaleLowerCase('vi').includes(filters.note.toLocaleLowerCase('vi'))
+    && (!filters.entered || (row.entered_at && enteredDateFormatter.format(new Date(row.entered_at)) === filters.entered))
+    && row.entered_by.toLocaleLowerCase('vi').includes(filters.user.toLocaleLowerCase('vi'))), [data.rows, filters])
+  const total = useMemo(() => rows.reduce((sum, row) => sum + Number(row.amount), 0), [rows])
+  const page = useTablePage(rows, JSON.stringify([params, filters]), 100)
+  const selectedIds = useMemo(() => new Set(selected), [selected])
+  const picked = useMemo(() => rows.filter(row => selectedIds.has(row.id)), [rows, selectedIds])
+  const allowed = key => admin || data.permissions[`purchase_${key}`] === true
+  const editable = row => admin || (row.entered_at && enteredDateFormatter.format(new Date(row.entered_at)) === today())
+  function open(row) {
+    setEditor(row || {}); setDraft(row ? [{ ...row }] : [blank()]); setModalError(''); requestId.current = crypto.randomUUID()
+  }
+  async function save(event) {
+    event.preventDefault(); setBusy(true); setModalError('')
+    try {
+      if (editor.id) await veraApi.editPurchase(editor.id, { ...draft[0], quantity: String(draft[0].quantity), revision: editor.revision })
+      else await veraApi.createPurchases({ request_id: requestId.current, rows: draft })
+      setEditor(null); setReload(n => n+1); setMessage('Đã lưu mua hàng trên server.')
+    } catch(e) { setModalError(e.message) } finally { setBusy(false) }
+  }
+  async function run(action) {
+    setBusy(true); setError(''); setMessage('')
+    try { await action() } catch(e) { setError(e.message) } finally { setBusy(false) }
+  }
+  async function remove() {
+    if (!(await confirmDialog(`Xóa ${picked.length} dòng đã chọn?`))) return
+    await run(async () => {
+      try { for (const row of picked) await veraApi.deletePurchase(row.id,row.revision) }
+      finally { setReload(n => n+1) }
+    })
+  }
+  async function chooseImport(mode) {
+    if (mode === 'replace' && !(await confirmDialog('Thay toàn bộ dữ liệu Nhập mua bằng file được chọn? Dữ liệu cũ được lưu trong lịch sử.'))) return
+    importMode.current = mode; importInput.current.click()
+  }
+  async function importFile(event) {
+    const file = event.target.files[0]; event.target.value = ''; if (!file) return
+    await run(async () => {
+      const result = await veraApi.importPurchases(file,importMode.current)
+      setPreset('all'); setFilters(filtersEmpty); setSelected([])
+      setMessage(`Đã xử lý ${result.source_rows} dòng; thêm mới ${result.inserted}, đã có ${result.skipped}. Tổng file: ${money(result.total)}.`)
+      setReload(n => n+1)
+    })
+  }
+  const filter = (key,value) => setFilters(old => ({ ...old,[key]:value }))
+  return <section className="purchase-page" data-ui-key="page:purchases">
+    <div className="page-heading">
+      <div><span className="eyebrow"><ShoppingCart size={14} /> Tài chính</span>{embedded ? <h2>BÁO CÁO MUA HÀNG</h2> : <h1>NHẬP MUA</h1>}</div>
+    </div>
+    <StableFeedback>{error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}</StableFeedback>
+    <div className="purchase-filters">
+      <label>Thời gian<select value={preset} onChange={e=>setPreset(e.target.value)}>{presets.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+      <label>Từ ngày<VeraDateInput value={preset === 'custom' ? start : data.start || ''} onChange={e=>{ setStart(e.target.value); if (preset !== 'custom' && data.end) setEnd(data.end); setPreset('custom') }} /></label>
+      <label>Đến ngày<VeraDateInput value={preset === 'custom' ? end : data.end || ''} onChange={e=>{ setEnd(e.target.value); if (preset !== 'custom' && data.start) setStart(data.start); setPreset('custom') }} /></label>
+      <div className="purchase-filter-secondary">
+      <label>Ngày mua<VeraDateInput value={filters.date} onChange={e=>filter('date',e.target.value)} /></label>
+      <label>Hàng hóa<input value={filters.item} onChange={e=>filter('item',e.target.value)} placeholder="Tìm hàng hóa" /></label>
+      <label>Thành tiền<input value={filters.amount} onChange={e=>filter('amount',e.target.value)} placeholder="Tìm số tiền" /></label>
+      <label>Ghi chú / Người đặt<input value={filters.note} onChange={e=>filter('note',e.target.value)} /></label>
+      <label>Ngày nhập<VeraDateInput value={filters.entered} onChange={e=>filter('entered',e.target.value)} /></label>
+      <label>Người nhập<input value={filters.user} onChange={e=>filter('user',e.target.value)} /></label>
+      </div>
+    </div>
+    <section className="purchase-controls" data-ui-key="quang-ngai-purchases:controls" aria-label="Bộ lọc và thao tác mua hàng">
+      <UiToolbar data-ui-key="quang-ngai-purchases:periods" className="purchase-periods">{presets.slice(0,-1).map(([key,label])=><button data-ui-key={`purchases:period:${key}`} key={key} className={`secondary-button ${preset===key?'active':''}`} onClick={()=>setPreset(key)}>{label}</button>)}</UiToolbar>
+    <div className="purchase-summary-head">
+      <article className="purchase-filter-total"><TrendingDown size={18}/><div><span>Tổng mua</span><strong>{money(total)}</strong></div></article>
+      <UiToolbar data-ui-key="quang-ngai-purchases:actions" className="purchase-actions">
+      {allowed('create') && <button data-ui-key="quang-ngai-purchases:create" className="primary-button" disabled={busy || loading} onClick={()=>open()}><Plus size={16} /> Nhập mua hàng</button>}
+        {allowed('edit') && <button data-ui-key="quang-ngai-purchases:edit" className="secondary-button compact" disabled={busy || loading || picked.length!==1 || !editable(picked[0])} onClick={()=>open(picked[0])}>Sửa dòng đã chọn</button>}
+        {allowed('delete') && <button data-ui-key="quang-ngai-purchases:delete" className="secondary-button compact danger-button" disabled={busy || loading || !picked.length || !picked.every(editable)} onClick={remove}>Xóa dòng đã chọn</button>}
+        {admin && <button data-ui-key="quang-ngai-purchases:import-append" className="secondary-button compact" disabled={busy} onClick={()=>chooseImport('append')}><Upload size={14}/> Import thêm mới</button>}
+        {admin && <button data-ui-key="quang-ngai-purchases:import-replace" className="secondary-button compact danger-button" disabled={busy} onClick={()=>chooseImport('replace')}><Upload size={14}/> Import thay toàn bộ</button>}
+      {admin && <button data-ui-key="quang-ngai-purchases:history" className="secondary-button" disabled={busy} onClick={()=>run(async()=>setHistory((await veraApi.purchaseAudit()).rows))}><History size={16} /> Lịch sử sửa, xóa</button>}
+        <button data-ui-key="quang-ngai-purchases:export" className="secondary-button compact purchase-export" title="Xuất excel theo thời gian đang chọn" disabled={busy || loading} onClick={()=>run(()=>veraApi.exportPurchases(params))}><Download size={14}/> Xuất excel</button>
+      <button data-ui-key="quang-ngai-purchases:refresh" className="secondary-button" type="button" disabled={busy || loading} onClick={()=>setReload(n=>n+1)}><RefreshCw size={16} className={loading?'spin':''} /> Làm mới</button>
+      </UiToolbar>
+    </div>
+    </section>
+    <input ref={importInput} hidden type="file" accept=".xlsb,.xlsx" onChange={importFile} />
+    <StableDataRegion loading={loading}>
+      <TablePager pagination={page} label="mua hàng" />
+      <div className="purchase-table"><PurchaseTable rows={page.rows} data={data} total={total} selectedIds={selectedIds} onSelect={(id, checked) => setSelected(old => checked ? [...old, id] : old.filter(value => value !== id))} /></div>
+    </StableDataRegion>
+    {editor && <Modal title={editor.id?'Sửa mua hàng':'Nhập mua hàng'} busy={busy} close={()=>setEditor(null)}><form onSubmit={save}>
+      <StableFeedback>{modalError && <p role="alert">{modalError}</p>}</StableFeedback>
+      {draft.map((row,index)=><div className="purchase-entry" key={index}>
+        {['purchase_date','item','quantity','unit_price','amount','note'].map((key,i)=><label key={key}>{['Ngày mua hàng','Chi tiết hàng hóa','Số lượng','Đơn giá','Thành tiền','Ghi chú / Người đặt mua hàng'][i]}
+          {key==='amount' ? (editor.id ? <VeraMoneyInput value={row.amount} disabled={busy} required onChange={e=>setDraft(old=>old.map((entry,n)=>n===index?{...entry,amount:e.target.value}:entry))} /> : <output>{money(Number(row.quantity)*Number(row.unit_price))}</output>) : (()=>{
+            const props={ value:row[key], required:key!=='note', disabled:busy, onChange:e=>setDraft(old=>old.map((entry,n)=>n===index?{...entry,[key]:e.target.value,...(editor.id && ['quantity','unit_price'].includes(key) ? {amount:Math.round(Number(key==='quantity'?e.target.value:entry.quantity)*Number(key==='unit_price'?e.target.value:entry.unit_price)*100)/100} : {})}:entry)) }
+            return key==='purchase_date'?<VeraDateInput {...props}/>:key==='unit_price'?<VeraMoneyInput {...props} max={100000000000}/>:<input {...props} type={key==='quantity' && !editor.id?'number':'text'} min={key==='quantity'?'0.0001':undefined} step={key==='quantity'?'0.0001':undefined} maxLength={key==='item'?2000:4000}/>
+          })()}</label>)}
+        {draft.length>1 && <button type="button" disabled={busy} onClick={()=>setDraft(old=>old.filter((_,n)=>n!==index))}>Bỏ dòng</button>}
+      </div>)}
+      <footer>{!editor.id && <button type="button" disabled={busy || draft.length>=100} onClick={()=>setDraft(old=>[...old,blank()])}>Thêm dòng</button>}<button disabled={busy} type="submit">{busy?'Đang lưu…':editor.id?'Lưu thay đổi':'Thêm hàng'}</button><button type="button" disabled={busy} onClick={()=>setEditor(null)}>Hủy</button></footer>
+    </form></Modal>}
+    {history && <Modal title="Lịch sử mua hàng (500 thao tác gần nhất)" busy={false} close={()=>setHistory(null)}>{history.length?history.map(row=><details key={row.id}><summary>{formatVeraDateTime(row.created_at)} · {row.actor} · {row.action} · #{row.entry_id}</summary><pre>{JSON.stringify({truoc:row.before_payload,sau:row.after_payload},null,2)}</pre></details>):<p>Chưa có thao tác sửa/xóa.</p>}</Modal>}
+  </section>
+}

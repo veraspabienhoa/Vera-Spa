@@ -33,6 +33,7 @@ const items = [
   { id: 'payroll', label: 'Bảng Lương', icon: WalletCards, ready: true, anyPermission: ['payroll_history', 'payroll_calculate'] },
   { id: 'reports', label: 'Báo cáo', icon: FileText, ready: true, permission: 'live_tour_reports_view' },
   { id: 'revenue', label: 'Doanh thu', icon: CircleDollarSign, ready: true, permission: 'revenue_view' },
+  { id: 'quang-ngai', label: 'Quảng Ngãi', icon: CircleDollarSign, ready: true, roles: ['admin', 'giamdoc'] },
   { id: 'employees', label: 'Nhân viên', icon: Users, ready: true, permission: 'staff_list' },
   { id: 'customers', label: 'Khách hàng', icon: Users, ready: true, permission: 'live_tour_customers_view' },
   { id: 'purchases', label: 'Nhập mua', icon: CircleDollarSign, ready: true, permission: 'purchase_view' },

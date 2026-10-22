@@ -48,3 +48,5 @@ def prepare_read_schemas(conn):
     ensure_schema(conn)
     _schema(conn)
     _ensure_identity_table(conn)
+    from vera_web_v2_quang_ngai import prepare_schema
+    prepare_schema(conn)

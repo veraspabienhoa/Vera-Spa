@@ -17,7 +17,7 @@ const built = await build({
     b.onLoad({filter:/\.jsx$/},args=>({loader:'jsx',contents:transformSync(readFileSync(args.path,'utf8'),{filename:args.path,parserOpts:{plugins:['jsx']},plugins:[layoutIdentity],configFile:false,babelrc:false}).code}))
     b.onResolve({filter:/\/(api|supabase)$/},args=>({path:args.path.split('/').at(-1),namespace:'fixture'}))
     b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({loader:'js',contents:path==='api'?
-      'export const apiRequest=async()=>({}); export const apiBinaryResponse=async()=>new Response(); export const isApiConfigured=true; export const isReadConfigured=true; export const veraApi=globalThis.__navigationApi;':
+      'export const apiRequest=async()=>({}); export const apiBinaryResponse=async()=>new Response(); export const isApiConfigured=true; export const isReadConfigured=true; export const veraApi=globalThis.__navigationApi; export const quangNgaiApi=globalThis.__navigationApi;':
       `export const isAuthConfigured=true;export const isSupabaseConfigured=false;export const supabase=null;
        export const getCurrentSession=async()=>({access_token:'synthetic',user:{id:'synthetic'}});
        export const refreshCurrentSession=getCurrentSession;
@@ -74,7 +74,7 @@ for(const entry of ['/', '/?standalone=1&page=leave'])test(`actual application o
   try{
     new Function('require','module','exports',built.outputFiles[0].text)(require,mod,mod.exports)
     await act(async()=>root.render(React.createElement(React.StrictMode,null,React.createElement(Boundary,null,React.createElement(mod.exports.default)))))
-    assert.deepEqual([...document.querySelectorAll('.nav-list .nav-item')].map(node=>node.textContent.trim()),['Live Tour','Đăng ký nghỉ','Lịch làm việc','Booking online','Chấm công','Bảng Lương','Báo cáo','Doanh thu','Nhân viên','Khách hàng','Nhập mua','Hợp đồng','Sinh nhật','Phép năm','Nhân sự','Đào tạo','Hồ sơ','Auto Check','Hệ thống','Cài đặt','Nội qui','Tạm trú','Thiết bị','Giao diện'])
+    assert.deepEqual([...document.querySelectorAll('.nav-list .nav-item')].map(node=>node.textContent.trim()),['Live Tour','Đăng ký nghỉ','Lịch làm việc','Booking online','Chấm công','Bảng Lương','Báo cáo','Doanh thu','Quảng Ngãi','Nhân viên','Khách hàng','Nhập mua','Hợp đồng','Sinh nhật','Phép năm','Nhân sự','Đào tạo','Hồ sơ','Auto Check','Hệ thống','Cài đặt','Nội qui','Tạm trú','Thiết bị','Giao diện'])
     await settle();assert.deepEqual(errors,[]);assert.ok(document.querySelector(entry==='/'?'.live-tour-workspace':'.registration-panel .leave-form'))
     if(entry!=='/')await click('Live Tour')
     await click('Đăng ký nghỉ');assert.deepEqual(errors,[]);assert.ok(document.querySelector('.registration-panel .leave-form'))
