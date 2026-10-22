@@ -36,6 +36,30 @@ export function startTableColumnResize(doc = document) {
   const win = doc.defaultView
   if (win.__veraTableColumnResizeStop) return win.__veraTableColumnResizeStop
   const states = new Map(), pending = new Set()
+  const storageKey = state => {
+    const identity = state.table.dataset.tableResizeKey || state.table.dataset.veraNode || state.table.id
+    if (!identity) return null
+    const schema = state.map.cells.map(({ cell, start, end }) => [cell.textContent.trim(), start, end])
+    return `vera:column-widths:v1:${JSON.stringify([identity, win.innerWidth <= 640 ? 'mobile' : 'desktop', schema])}`
+  }
+  const remember = session => {
+    const key = storageKey(session.state)
+    if (!key || !session.latestWidths) return
+    const total = session.latestWidths.reduce((sum, width) => sum + width, 0)
+    try { win.localStorage.setItem(key, JSON.stringify(session.latestWidths.map(width => width / total))) } catch { /* Storage may be unavailable. Dragging still works. */ }
+  }
+  const recall = state => {
+    const key = storageKey(state)
+    if (!key) return
+    try {
+      const ratios = JSON.parse(win.localStorage.getItem(key))
+      if (!Array.isArray(ratios) || ratios.length !== state.map.count || ratios.some(n => !Number.isFinite(n) || n <= 0 || n >= 1) || Math.abs(ratios.reduce((a,b) => a+b,0)-1) > .001) return
+      const session = prepare(state)
+      if (!session) return
+      const total = session.widths.reduce((a,b) => a+b,0)
+      paint(session, ratios.map(n => n * total))
+    } catch { /* Ignore invalid or unavailable saved preferences. */ }
+  }
   let active = null, frame = 0, suppressClick = false, clickTimer = 0
   const restoreStyle = (node, value) => value === null ? node.removeAttribute('style') : node.setAttribute('style', value)
   const saveStyle = node => node.getAttribute('style')
@@ -90,6 +114,7 @@ export function startTableColumnResize(doc = document) {
     return { state, widths, scale, priorTable, priorCols, initial }
   }
   function paint(session, widths) {
+    session.latestWidths = widths
     const total = widths.reduce((sum, width) => sum + width, 0)
     session.state.sizing.cols.forEach((col, index) => {
       set(col, 'width', `${widths[index] / total * 100}%`)
@@ -104,6 +129,7 @@ export function startTableColumnResize(doc = document) {
       session.state.sizing.cols.forEach((col, index) => restoreStyle(col, session.priorCols[index]))
       if (session.initial) restoreSizing(session.state)
     }
+    if (!cancel) remember(session)
     doc.body.classList.remove('vera-column-resizing')
     clickTimer = win.setTimeout(() => { suppressClick = false }, 0)
   }
@@ -129,6 +155,7 @@ export function startTableColumnResize(doc = document) {
       cell.append(grip); state.grips.push(grip)
     })
     states.set(table, state)
+    recall(state)
   }
   function onDown(event) {
     const grip = event.target.closest?.('.vera-column-resize-handle')
@@ -155,13 +182,16 @@ export function startTableColumnResize(doc = document) {
     if (!grip || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return
     event.preventDefault(); event.stopPropagation()
     const state = states.get(grip.closest('table')), session = state && prepare(state)
-    if (session) paint(session, resizeColumnPair(session.widths, Number(grip.dataset.columnBoundary), (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 20 : 8)))
+    if (session) {
+      paint(session, resizeColumnPair(session.widths, Number(grip.dataset.columnBoundary), (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 20 : 8)))
+      remember(session)
+    }
   }
   function onClick(event) {
     if (suppressClick || event.target.closest?.('.vera-column-resize-handle')) { event.preventDefault(); event.stopPropagation(); suppressClick = false }
   }
   const onBlur = () => finish(true)
-  const onResize = () => { finish(true); states.forEach(restoreSizing) }
+  const onResize = () => { finish(true); states.forEach(state => { restoreSizing(state); recall(state) }) }
   const listeners = [[doc, 'pointerdown', onDown], [doc, 'pointermove', onMove], [doc, 'pointerup', onUp], [doc, 'pointercancel', onUp], [doc, 'keydown', onKey], [doc, 'click', onClick], [doc, 'dblclick', onClick], [win, 'blur', onBlur], [win, 'resize', onResize]]
   listeners.forEach(([target, name, handler]) => target.addEventListener(name, handler, true))
   const flush = () => {
