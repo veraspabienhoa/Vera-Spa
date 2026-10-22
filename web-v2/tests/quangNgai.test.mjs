@@ -117,7 +117,7 @@ async function fixture(role, initial = 'manual', legacy = false, rowCount = 1, s
 }
 
 
-for (const role of ['admin','giamdoc']) test(`${role}: independent ledger, entry form and all tabs without TIP`, async()=>{
+for (const role of ['admin','giamdoc']) test(`${role}: independent ledger, entry form and retained tabs without TIP`, async()=>{
  const f=await fixture(role)
  try {
   assert.equal(f.doc.querySelector('h1').textContent,'Quảng Ngãi')
@@ -127,11 +127,13 @@ for (const role of ['admin','giamdoc']) test(`${role}: independent ledger, entry
   assert.ok(f.button('Import thêm mới'));assert.ok(f.button('Import thay toàn bộ'))
   await act(async()=>f.button('Nhập doanh thu - chi phí').click())
   assert.ok(f.doc.querySelector('.revenue-entry-form'))
+  for (const input of f.doc.querySelectorAll('.entry-note input')) { assert.equal(input.value,''); assert.equal(input.placeholder,'') }
   await f.change(f.doc.querySelector('.entry-amount input'),'123000')
   await act(async()=>f.doc.querySelector('.revenue-entry-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})))
   assert.ok(f.calls.some(c=>c.path==='/v2/quang-ngai/entry' && c.method==='POST' && c.body.income_amount===123000))
-  for (const label of ['Báo cáo mua hàng','Tổng quan','Lịch sử sửa, xóa','Kiểm tra dữ liệu trùng']) await act(async()=>f.button(label).click())
-  assert.ok(f.calls.some(c=>c.path==='/v2/quang-ngai/purchases'))
+  for (const label of ['Lịch sử sửa, xóa','Kiểm tra dữ liệu trùng']) await act(async()=>f.button(label).click())
+  assert.equal(f.button('Báo cáo mua hàng'),undefined)
+  assert.equal(f.button('Tổng quan'),undefined)
   assert.ok(f.calls.some(c=>c.path==='/v2/quang-ngai/audit'))
   assert.ok(f.calls.some(c=>c.path==='/v2/quang-ngai/duplicates'))
   assert.ok(f.calls.every(c=>c.path.startsWith('/v2/quang-ngai/')))
