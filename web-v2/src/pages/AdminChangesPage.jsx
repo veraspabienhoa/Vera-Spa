@@ -96,7 +96,10 @@ export default function AdminChangesPage() {
   const [actorSearch, setActorSearch] = useState('')
   const [actor, setActor] = useState('')
   const [data, setData] = useState({ changes: [], archive: [] })
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const [page, setPage] = useState(1)
+  const [archivePage, setArchivePage] = useState(1)
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
   const [dateDrafts, setDateDrafts] = useState({ day:true, start:true, end:true })
@@ -112,25 +115,28 @@ export default function AdminChangesPage() {
   const loadRequestRef = useRef(null)
   const load = useCallback(async () => {
     loadRequestRef.current?.abort()
-    if (!datesValid) { setBusy(false); return }
+    if (!datesValid) { setBusy(false); setLoaded(false); setData({ changes: [], archive: [] }); return }
     const controller = new AbortController()
     loadRequestRef.current = controller
-    setBusy(true); setError('')
+    setBusy(true); setLoaded(false); setError('')
+    setData({ changes: [], archive: [] })
     try {
-      const result = await requestJson(`/v2/admin/changes-v41?${params()}`, { signal: controller.signal })
-      if (!controller.signal.aborted) setData(result)
+      const result = await requestJson(`/v2/admin/changes-v41?${params()}&page=${page}&archive_page=${archivePage}`, { signal: controller.signal })
+      if (!controller.signal.aborted) { setData(result); setLoaded(true) }
     }
     catch (e) { if (!controller.signal.aborted) setError(e.message || 'Không tải được Thay đổi hệ thống.') }
     finally { if (!controller.signal.aborted) setBusy(false) }
-  }, [params, datesValid])
+  }, [params, datesValid, page, archivePage])
 
   useEffect(() => { void load(); return () => loadRequestRef.current?.abort() }, [load])
   useEffect(() => {
-    const timer = window.setTimeout(() => setActor(actorSearch.trim()), 250)
+    if (actorSearch.trim() === actor) return
+    const timer = window.setTimeout(() => { setActor(actorSearch.trim()); setPage(1); setArchivePage(1) }, 250)
     return () => window.clearTimeout(timer)
-  }, [actorSearch])
+  }, [actorSearch, actor])
 
   const choosePeriod = (next) => {
+    setPage(1); setArchivePage(1)
     setPeriod(next)
     setDateDrafts({ day:true, start:true, end:true })
     if (next === 'Tùy chỉnh') return
@@ -166,19 +172,21 @@ export default function AdminChangesPage() {
       .admin-change-push{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}.admin-change-push>div{min-width:0}.admin-change-push h3{margin:2px 0 4px;font-size:14px}.admin-change-push p{margin:0;color:#68736f;font-size:12px;line-height:1.45}.admin-change-push small{display:block;margin-top:5px;color:#176342;font-weight:800}
       @media(max-width:640px){.audit-detailed article{grid-template-columns:1fr}.audit-detailed time{font-size:11px}.audit-field-grid{grid-template-columns:1fr}.audit-snapshot-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.audit-filter-buttons{display:grid;grid-template-columns:repeat(2,1fr)}.audit-filter-buttons button:last-child{grid-column:1/-1}.audit-search-line label{min-width:100%}.admin-change-push{align-items:stretch;flex-direction:column}.admin-change-push button{width:100%}}
     `}</style>
-    <div data-ui-key="u-e5982f729629" className="page-heading"><div><span className="eyebrow"><Activity size={14} /> Admin</span><h1>THAY ĐỔI HỆ THỐNG</h1></div><div className="audit-heading-actions"><button data-ui-key="u-9b7c0983c926" className="secondary-button" onClick={exportExcel} disabled={exporting || !datesValid}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Xuất excel'}</button><button data-ui-key="u-1dff9f5b8620" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy || !datesValid}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-1dff9f5b8620"> Làm mới</UiCustomText></button></div></div>
-    <StableFeedback>{error && <div className="error-box">{error}</div>}</StableFeedback>
+    <div data-ui-key="u-e5982f729629" className="page-heading"><div><span className="eyebrow"><Activity size={14} /> Admin</span><h1>THAY ĐỔI HỆ THỐNG</h1></div><div className="audit-heading-actions"><button data-ui-key="u-9b7c0983c926" className="secondary-button" onClick={exportExcel} disabled={exporting || busy || !loaded || !datesValid}><Download size={16} /> {exporting ? 'Đang xuất…' : 'Xuất excel'}</button><button data-ui-key="u-1dff9f5b8620" data-ui-label-default="Làm mới" className="secondary-button" onClick={load} disabled={busy || !datesValid}><RefreshCw size={16} className={busy ? 'spin' : ''} /><UiCustomText uiKey="u-1dff9f5b8620"> Làm mới</UiCustomText></button></div></div>
+    <StableFeedback>{busy && <p role="status">Đang tải thay đổi hệ thống…</p>}{error && <div className="error-box">{error}</div>}</StableFeedback>
 
     <section data-ui-key="u-6d7ee12b26b7" className="panel data-toolbar"><UiToolbar data-ui-key="u-3175e389120b" className="audit-toolbar-content">
-      <label className="audit-single-date">Ngày<VeraDateInput aria-label="Ngày thay đổi hệ thống" clearOnFocus={false} value={period === 'Ngày' ? start : ''} onDraftValidity={draftValidity('day')} onChange={event => { const date = event.target.value; if (!date) { choosePeriod('Hôm nay'); return }; setStart(date); setEnd(date); setPeriod('Ngày'); setDateDrafts({ day:true, start:true, end:true }) }}/></label>
+      <label className="audit-single-date">Ngày<VeraDateInput aria-label="Ngày thay đổi hệ thống" clearOnFocus={false} value={period === 'Ngày' ? start : ''} onDraftValidity={draftValidity('day')} onChange={event => { const date = event.target.value; if (!date) { choosePeriod('Hôm nay'); return }; setPage(1); setArchivePage(1); setStart(date); setEnd(date); setPeriod('Ngày'); setDateDrafts({ day:true, start:true, end:true }) }}/></label>
       <div className="audit-filter-buttons" role="group" aria-label="Lọc thời gian thay đổi hệ thống">{FILTERS.map((item) => <button data-ui-key="u-afa1823cde30" type="button" key={item} className={period === item ? 'primary-button' : 'secondary-button'} onClick={() => choosePeriod(item)}>{item}</button>)}</div>
-      {period === 'Tùy chỉnh' && <div className="audit-custom-range"><label><CalendarDays size={15}/> Từ ngày<VeraDateInput aria-label="Từ ngày" clearOnFocus={false} value={start} onDraftValidity={draftValidity('start')} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }}/></label><label><CalendarDays size={15}/> Đến ngày<VeraDateInput aria-label="Đến ngày" clearOnFocus={false} min={start} value={end} onDraftValidity={draftValidity('end')} onChange={(e) => setEnd(e.target.value)}/></label></div>}
+      {period === 'Tùy chỉnh' && <div className="audit-custom-range"><label><CalendarDays size={15}/> Từ ngày<VeraDateInput aria-label="Từ ngày" clearOnFocus={false} value={start} onDraftValidity={draftValidity('start')} onChange={(e) => { setPage(1); setArchivePage(1); setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value) }}/></label><label><CalendarDays size={15}/> Đến ngày<VeraDateInput aria-label="Đến ngày" clearOnFocus={false} min={start} value={end} onDraftValidity={draftValidity('end')} onChange={(e) => { setPage(1); setArchivePage(1); setEnd(e.target.value) }}/></label></div>}
       {!datesValid && <p role="status">Nhập ngày hợp lệ theo định dạng dd-mm-yyyy hoặc chọn trên lịch.</p>}
-      <div className="audit-search-line"><label>Người thực hiện<ClearableSearchInput type="search" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Tìm tên người thực hiện" list="audit-actors"/></label><datalist id="audit-actors">{actors.map((value) => <option key={value} value={value}/>)}</datalist><div className="audit-total">{data.changes?.length || 0} thay đổi</div></div>
+      <div className="audit-search-line"><label>Người thực hiện<ClearableSearchInput type="search" value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Tìm tên người thực hiện" list="audit-actors"/></label><datalist id="audit-actors">{actors.map((value) => <option key={value} value={value}/>)}</datalist><div className="audit-total">{loaded ? `${data.changes?.length || 0} thay đổi · Trang ${page}` : '—'}</div></div>
     </UiToolbar></section>
 
-    <section data-ui-key="u-f139317cc65b" className="panel audit-list audit-detailed">{(data.changes || []).map((item) => <article key={item.id}><span className={`audit-operation ${item.event_type}`}>{labels[item.event_type] || item.event_type}</span><div><strong>{item.employee_name || 'Lịch nghỉ'}</strong><p>{item.detail || 'Thay đổi lịch nghỉ'}</p><FieldChanges item={item} />{item.actor && <small>Người thực hiện: <b>{item.actor}</b></small>}</div><time>{formatTime(item.created_at)}</time></article>)}{!data.changes?.length && <div className="setup-note">Không có thay đổi phù hợp bộ lọc.</div>}</section>
+    <section data-ui-key="u-f139317cc65b" className="panel audit-list audit-detailed">{(data.changes || []).map((item) => <article key={item.id}><span className={`audit-operation ${item.event_type}`}>{labels[item.event_type] || item.event_type}</span><div><strong>{item.employee_name || 'Lịch nghỉ'}</strong><p>{item.detail || 'Thay đổi lịch nghỉ'}</p><FieldChanges item={item} />{item.actor && <small>Người thực hiện: <b>{item.actor}</b></small>}</div><time>{formatTime(item.created_at)}</time></article>)}{loaded && !data.changes?.length && <div className="setup-note">Không có thay đổi phù hợp bộ lọc.</div>}</section>
 
-    <section data-ui-key="u-8c1d7b827c22" className="panel audit-archive"><div data-ui-key="u-10ae031daca6" className="panel-title-row"><div><span className="eyebrow"><Archive size={14} /> Chỉ Admin</span><h2>BẢN LỊCH NGHỈ TRƯỚC KHI SỬA / XÓA · LƯU 30 NGÀY</h2></div><div className="audit-total">{data.archive?.length || 0} bản lưu</div></div><div className="audit-archive-list">{(data.archive || []).map((item) => <article className="audit-archive-item" key={`archive-${item.id}`}><div className="audit-archive-head"><div><span className={`audit-operation ${item.event_type}`}>{item.event_type === 'delete' ? 'BẢN ĐÃ XÓA' : 'BẢN TRƯỚC KHI SỬA'}</span> <strong>{item.employee_name || item.old_data?.employee_name || 'Lịch nghỉ'}</strong></div><small>Lưu đến {formatTime(item.expires_at)}</small></div><Snapshot item={item}/><div style={{marginTop:8}}><small>Thao tác lúc {formatTime(item.created_at)}{item.actor ? ` · ${item.actor}` : ''}</small></div></article>)}{!data.archive?.length && <div className="setup-note">Không có bản lưu phù hợp bộ lọc.</div>}</div></section>
+    {loaded && <nav aria-label="Trang thay đổi hệ thống"><button className="secondary-button" disabled={page === 1 || busy} onClick={() => setPage(value => value - 1)}>Trang trước</button><button className="secondary-button" disabled={!data.has_more || busy} onClick={() => setPage(value => value + 1)}>Trang sau</button></nav>}
+    <section data-ui-key="u-8c1d7b827c22" className="panel audit-archive"><div data-ui-key="u-10ae031daca6" className="panel-title-row"><div><span className="eyebrow"><Archive size={14} /> Chỉ Admin</span><h2>BẢN LỊCH NGHỈ TRƯỚC KHI SỬA / XÓA · LƯU 30 NGÀY</h2></div><div className="audit-total">{loaded ? `${data.archive?.length || 0} bản lưu · Trang ${archivePage}` : '—'}</div></div><div className="audit-archive-list">{(data.archive || []).map((item) => <article className="audit-archive-item" key={`archive-${item.id}`}><div className="audit-archive-head"><div><span className={`audit-operation ${item.event_type}`}>{item.event_type === 'delete' ? 'BẢN ĐÃ XÓA' : 'BẢN TRƯỚC KHI SỬA'}</span> <strong>{item.employee_name || item.old_data?.employee_name || 'Lịch nghỉ'}</strong></div><small>Lưu đến {formatTime(item.expires_at)}</small></div><Snapshot item={item}/><div style={{marginTop:8}}><small>Thao tác lúc {formatTime(item.created_at)}{item.actor ? ` · ${item.actor}` : ''}</small></div></article>)}{loaded && !data.archive?.length && <div className="setup-note">Không có bản lưu phù hợp bộ lọc.</div>}</div></section>
+    {loaded && <nav aria-label="Trang bản lưu"><button className="secondary-button" disabled={archivePage === 1 || busy} onClick={() => setArchivePage(value => value - 1)}>Trang trước</button><button className="secondary-button" disabled={!data.archive_has_more || busy} onClick={() => setArchivePage(value => value + 1)}>Trang sau</button></nav>}
   </div>
 }

@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from vera_search_text import search_text_matches
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time
+from zoneinfo import ZoneInfo
+from sqlalchemy import bindparam
 from io import BytesIO
 import unicodedata
 from typing import Any, Callable
@@ -126,21 +128,39 @@ def _audit_serialize(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _audit_rows(conn, start: date, end: date, actor: str, *, archive_only: bool = False):
+def _audit_rows(conn, start: date, end: date, actor: str, *, archive_only: bool = False,
+                limit: int = 5001, offset: int = 0):
+    # Compare the indexed timestamp directly, using half-open Vietnam boundaries.
     table = audit_module.ARCHIVE_TABLE
-    event_clause = "AND event_type IN ('update','delete') AND expires_at >= NOW()" if archive_only else ""
-    rows = conn.execute(audit_module.text(f"""
+    params = {
+        "start_at": datetime.combine(start, time.min, ZoneInfo("Asia/Ho_Chi_Minh")),
+        "end_at": datetime.combine(end + timedelta(days=1), time.min, ZoneInfo("Asia/Ho_Chi_Minh")),
+        "limit": limit, "offset": offset,
+    }
+    where = "created_at >= :start_at AND created_at < :end_at AND expires_at >= NOW()"
+    if archive_only:
+        where += " AND event_type IN ('update','delete')"
+    # Match the small actor vocabulary before pagination; do not fetch JSON bodies
+    # for thousands of rows only to discard them in Python after LIMIT.
+    if actor.strip():
+        actors = conn.execute(audit_module.text(
+            f"SELECT DISTINCT actor FROM {table} WHERE {where}"
+        ), params).scalars().all()
+        params["actors"] = [value for value in actors if _matches(value, actor)]
+        if not params["actors"]:
+            return []
+        where += " AND actor IN :actors"
+    stmt = audit_module.text(f"""
         SELECT id, event_type, record_uid, employee_name, leave_date,
                actor, source, old_data, new_data, created_at, expires_at
         FROM {table}
-        WHERE (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN :start_date AND :end_date
-          {event_clause}
+        WHERE {where}
         ORDER BY created_at DESC, id DESC
-        LIMIT 5000
-    """), {"start_date": start, "end_date": end}).mappings().all()
-    if actor.strip():
-        rows = [row for row in rows if _matches(row.get("actor"), actor)]
-    return rows
+        LIMIT :limit OFFSET :offset
+    """)
+    if "actors" in params:
+        stmt = stmt.bindparams(bindparam("actors", expanding=True))
+    return conn.execute(stmt, params).mappings().all()
 
 
 def _audit_workbook(changes: list[dict[str, Any]]) -> bytes:
@@ -247,20 +267,26 @@ def install_operations_v41(
         start: date = Query(...),
         end: date = Query(...),
         actor: str = Query(default="", max_length=200),
+        page: int = Query(default=1, ge=1, le=100000),
+        archive_page: int = Query(default=1, ge=1, le=100000),
         ident: identity_type = Depends(current_identity),
     ):
         if str(ident.role or "").strip().lower() != "admin":
             raise HTTPException(403, "Chỉ Admin được xem Thay đổi hệ thống.")
         _validate_range(start, end, max_days=366)
-        with engine_instance().begin() as conn:
+        page_size = 100
+        with engine_instance().connect() as conn:
             require_feature(conn, ident, "audit_admin_view")
-            conn.execute(audit_module.text(
-                f"DELETE FROM {audit_module.ARCHIVE_TABLE} WHERE expires_at < NOW()"
-            ))
-            changes = [_audit_serialize(row) for row in _audit_rows(conn, start, end, actor)]
-            archive = [_audit_serialize(row) for row in _audit_rows(conn, start, end, actor, archive_only=True)]
+            rows = _audit_rows(conn, start, end, actor, limit=page_size + 1, offset=(page - 1) * page_size)
+            archive_rows = _audit_rows(conn, start, end, actor, archive_only=True,
+                                       limit=page_size + 1, offset=(archive_page - 1) * page_size)
+        # Release the connection before building field differences / response JSON.
+        changes = [_audit_serialize(row) for row in rows[:page_size]]
+        archive = [_audit_serialize(row) for row in archive_rows[:page_size]]
         return {
             "changes": changes,
+            "page": page, "archive_page": archive_page, "page_size": page_size,
+            "has_more": len(rows) > page_size, "archive_has_more": len(archive_rows) > page_size,
             "count": len(changes),
             "archive": archive,
             "archive_count": len(archive),
@@ -282,7 +308,10 @@ def install_operations_v41(
         _validate_range(start, end, max_days=366)
         with engine_instance().connect() as conn:
             require_feature(conn, ident, "audit_admin_view")
-            changes = [_audit_serialize(row) for row in _audit_rows(conn, start, end, actor)]
+            rows = _audit_rows(conn, start, end, actor)
+        if len(rows) > 5000:
+            raise HTTPException(400, "Có hơn 5.000 thay đổi. Chọn khoảng ngày ngắn hơn để xuất đầy đủ.")
+        changes = [_audit_serialize(row) for row in rows]
         content = _audit_workbook(changes)
         filename = f"VERA_ThayDoiHeThong_{start.isoformat()}_{end.isoformat()}.xlsx"
         return StreamingResponse(
