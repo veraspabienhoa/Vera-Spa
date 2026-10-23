@@ -1050,3 +1050,15 @@ body :is(.login-password-eye, .password-eye-button):is(:hover, :active, :focus-v
 
 body .booking-requested-staff { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
 body .booking-requested-staff button { max-width:100%; white-space:normal; overflow-wrap:anywhere; padding:8px 12px; }
+
+/* Keep all three profile password fields within the available row width. */
+body .profile-password-box { min-width: 0; }
+body .profile-password-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(4px, 1vw, 11px); align-items: end; }
+body .profile-password-field { min-width: 0; }
+body .profile-password-field > span:first-child { overflow-wrap: anywhere; }
+body .profile-password-control { display: block; position: relative; min-width: 0; }
+body .profile-password-control input { box-sizing: border-box; width: 100%; min-width: 0; padding-right: 42px; }
+body .profile-password-control .profile-password-eye { position: absolute; top: 50%; right: 3px; transform: translateY(-50%); display: grid; place-items: center; width: 36px; min-width: 0; height: 36px; min-height: 0; padding: 0; margin: 0; border: 1px solid transparent; background: transparent; color: var(--green-950); box-shadow: none; }
+body .profile-password-control .profile-password-eye:hover,
+body .profile-password-control .profile-password-eye:active { transform: translateY(-50%); }
+body .profile-password-control .profile-password-eye:focus-visible { outline: 2px solid var(--green-950); outline-offset: -2px; }

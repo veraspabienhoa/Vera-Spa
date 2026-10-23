@@ -3,7 +3,7 @@ import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiCustomText from '../components/UiCustomText'
 import useAutoSave from '../hooks/useAutoSave'
-import { BellRing, CheckCircle2, RefreshCw, Save, ShieldCheck, Smartphone } from 'lucide-react'
+import { BellRing, CheckCircle2, Eye, EyeOff, RefreshCw, Save, ShieldCheck, Smartphone } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { apiRequest, veraApi } from '../lib/api'
 import ScheduleViolations from '../components/ScheduleViolations'
@@ -19,6 +19,19 @@ const toInputDate = (value) => {
 const toVnDate = (value) => {
   const [year, month, day] = String(value || '').split('-')
   return year && month && day ? `${day}-${month}-${year}` : ''
+}
+
+function ProfilePasswordField({ label, ...inputProps }) {
+  const [visible, setVisible] = useState(false)
+  return <label className="profile-password-field">
+    <span>{label}</span>
+    <span className="profile-password-control">
+      <input {...inputProps} type={visible ? 'text' : 'password'} />
+      <button type="button" className="profile-password-eye" aria-label={`${visible ? 'Ẩn' : 'Xem'} ${label.toLowerCase()}`} aria-pressed={visible} title={visible ? 'Ẩn mật khẩu' : 'Xem mật khẩu'} onClick={() => setVisible(value => !value)}>
+        {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+      </button>
+    </span>
+  </label>
 }
 
 export default function ProfilePage({ user, onPasswordChanged, forcePasswordChange = false }) {
@@ -200,9 +213,9 @@ export default function ProfilePage({ user, onPasswordChanged, forcePasswordChan
         <div className="profile-password-box wide-field">
           <h3>{forcePasswordChange ? 'ĐỔI MẬT KHẨU LẦN ĐẦU' : 'THAY ĐỔI MẬT KHẨU (KHÔNG BẮT BUỘC)'}</h3>{forcePasswordChange && <p>Mật khẩu mới tối thiểu 8 ký tự và phải đáp ứng chính sách bảo mật.</p>}
           <div className="profile-password-grid">
-            <label>Mật khẩu hiện tại<input type="password" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} required={passwordRequired} autoComplete="current-password" /></label>
-            <label>Mật khẩu mới<input type="password" minLength="8" required={forcePasswordChange} value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Để trống nếu không đổi" autoComplete="new-password" /></label>
-            <label>Xác nhận mật khẩu mới<input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required={passwordRequired} autoComplete="new-password" /></label>
+            <ProfilePasswordField label="Mật khẩu hiện tại" value={form.current_password} onChange={(e) => setForm({ ...form, current_password: e.target.value })} required={passwordRequired} autoComplete="current-password" />
+            <ProfilePasswordField label="Mật khẩu mới" minLength="8" required={forcePasswordChange} value={form.new_password} onChange={(e) => setForm({ ...form, new_password: e.target.value })} placeholder="Để trống nếu không đổi" autoComplete="new-password" />
+            <ProfilePasswordField label="Xác nhận mật khẩu mới" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required={passwordRequired} autoComplete="new-password" />
           </div>
         </div>
         <EmployeeIdentityPanel username={user?.employee_username || ''} className="wide-field" onIdentityExtracted={(fields) => setForm((current) => ({
