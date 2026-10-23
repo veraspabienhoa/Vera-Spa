@@ -23,6 +23,10 @@ MAX_BODY = 32768
 UPCOMING_WINDOW_SQL = "b.kind='booking' AND b.status IN ('new','confirmed') AND (b.appointment_date + CAST(b.appointment_time AS time)) >= ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Ho_Chi_Minh') - INTERVAL '2 hours')"
 
 
+def requested_staff_names(value):
+    return list(dict.fromkeys(name.strip() for name in str(value or '').split(' · ') if name.strip()))
+
+
 class WebsiteRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     event_id: UUID
@@ -33,8 +37,16 @@ class WebsiteRequest(BaseModel):
     appointment_time: str | None = Field(default=None, pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
     service: str = Field(default='', max_length=500)
     guests: int | None = Field(default=None, ge=1, le=50, strict=True)
-    requested_staff: str = Field(default='', max_length=100)
+    requested_staff: str = Field(default='', max_length=5200)
     message: str = Field(default='', max_length=4000)
+
+    @field_validator('requested_staff')
+    @classmethod
+    def staff_names(cls, value):
+        names = requested_staff_names(value)
+        if len(names) > 50 or any(len(name) > 100 for name in names):
+            raise ValueError('Invalid requested staff')
+        return ' · '.join(names)
 
     @field_validator('phone')
     @classmethod
@@ -173,7 +185,7 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
         if not working_staff_provider:
             raise HTTPException(503, 'Danh sách nhân viên đi làm chưa sẵn sàng.')
         available = working_staff_provider().get('employees', [])
-        if payload.requested_staff not in {row.get('value') for row in available}:
+        if not set(requested_staff_names(payload.requested_staff)).issubset({row.get('value') for row in available}):
             raise HTTPException(422, 'Nhân viên yêu cầu không đi làm hoặc đang nghỉ phép hôm nay. Hãy chọn lại.')
 
     def sync_appointments(payload=None):
@@ -181,7 +193,8 @@ def install_online_booking_routes(app, *, engine_instance, current_identity,
         if sync:
             return sync()
         if payload and payload.requested_staff and payload.appointment_date == datetime.now(VN_TZ).date() and appointment_writer:
-            return appointment_writer(payload.requested_staff, payload.appointment_date, payload.appointment_time)
+            results = [appointment_writer(name, payload.appointment_date, payload.appointment_time) for name in requested_staff_names(payload.requested_staff)]
+            return results[0] if len(results) == 1 else results
         return None
 
     @app.get('/v2/online-bookings/staff')

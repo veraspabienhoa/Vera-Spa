@@ -166,3 +166,11 @@ def test_booking_mutations_sync_only_after_their_transaction_commits(monkeypatch
 ])
 def test_locker_cannot_mutate_or_load_editor_data(method, path, body):
     assert client('locker').request(method, path, json=body).status_code == 403
+
+
+def test_multiple_requested_staff_roundtrip_and_limits():
+    request = booking.WebsiteRequest(**payload(requested_staff='AN AN · LINH · AN AN'))
+    assert request.requested_staff == 'AN AN · LINH'
+    assert booking.WebsiteRequest.model_validate_json(request.model_dump_json()).requested_staff == 'AN AN · LINH'
+    with pytest.raises(ValidationError):
+        booking.WebsiteRequest(**payload(requested_staff=' · '.join(f'Employee {i}' for i in range(51))))

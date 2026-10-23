@@ -65,6 +65,7 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
     } catch (err) { setError(err.message) }
     finally { submitting.current = false; setBusy(false) }
   }
+  const requestedStaff = [...new Set(draft.requested_staff.split(' · ').map(value => value.trim()).filter(Boolean))]
   const catalog = orderedCatalog(hasServices ? services : loadedServices).filter(row => catalogIsAvailable(row))
   const serviceOptions = catalog.map(row => {
     const label = `${row.name}${row.duration ? ` · ${row.duration} phút` : ''}${row.price != null ? ` · ${Number(row.price).toLocaleString('vi-VN')}đ` : ''}`
@@ -86,7 +87,10 @@ export default function ManualOnlineBooking({ services = [], booking, onClose, o
           return <LiveTourSearchSelect key={field} label={required ? `${label} *` : label} placeholder={`Nhập ${label.toLowerCase()}`} required={required} disabled={busy} value="" searchValue={draft[field]} onSearch={value => { set(field, value); setQuery(value) }} onChange={choose} filterOption={() => true} options={customers.map(row => ({ value: row.id, label: field === 'phone' ? row.phone : row.name, detail: field === 'phone' ? row.name : row.phone }))}/>
         })}
         {lookupError && <p className="wide" role="status" data-system-feedback>Chưa tra cứu được khách hàng: {lookupError}. Bạn vẫn có thể nhập thông tin khách.</p>}
-        <LiveTourSearchSelect className="wide" label="YC nhân viên" placeholder={staffLoading ? 'Đang tải nhân viên…' : 'Tìm và chọn nhân viên đi làm hôm nay'} disabled={busy || staffLoading || Boolean(staffError)} value={draft.requested_staff} onChange={value => set('requested_staff', value)} options={staff}/>
+        <div className="wide">
+          <LiveTourSearchSelect label="YC nhân viên" placeholder={staffLoading ? 'Đang tải nhân viên…' : 'Tìm và chọn một hoặc nhiều nhân viên'} disabled={busy || staffLoading || Boolean(staffError)} value="" clearOnSelect emptyLabel="Không chọn thêm" onChange={value => { if (value) set('requested_staff', [...new Set([...requestedStaff, value])].join(' · ')) }} options={staff.filter(item => !requestedStaff.includes(item.value))}/>
+          <div className="booking-requested-staff" aria-label="Nhân viên đã chọn">{requestedStaff.map(value => <button type="button" key={value} disabled={busy} aria-label={`Bỏ chọn ${staff.find(item => item.value === value)?.label || value}`} onClick={() => set('requested_staff', requestedStaff.filter(item => item !== value).join(' · '))}>{staff.find(item => item.value === value)?.label || value} ×</button>)}</div>
+        </div>
         {staffError && <p className="wide" role="status" data-system-feedback>Chưa tải được nhân viên: {staffError}</p>}
         <label className="wide">Lời nhắn<textarea rows="2" aria-label="Lời nhắn" maxLength={4000} disabled={busy} value={draft.message} onChange={event => set('message', event.target.value)}/></label>
         {error && <p className="wide" role="alert">{error}</p>}

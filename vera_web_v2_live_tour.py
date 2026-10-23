@@ -4592,13 +4592,15 @@ def _remember_idempotency(
 
 
 def _sync_online_booking_requests(state, bookings, today):
+    from vera_online_booking import requested_staff_names
     desired = {}
     for booking in bookings:
-        key = _norm(booking.get('requested_staff'))
         token = f"YC {booking.get('appointment_time')}"
-        desired.setdefault(key, [])
-        if token not in desired[key]:
-            desired[key].append(token)
+        for name in requested_staff_names(booking.get('requested_staff')):
+            key = _norm(name)
+            desired.setdefault(key, [])
+            if token not in desired[key]:
+                desired[key].append(token)
     changed = 0
     for employee in state.get('employees', []):
         before = deepcopy(employee)

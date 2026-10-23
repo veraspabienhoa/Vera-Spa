@@ -13,7 +13,7 @@ const built = await build({
   bundle:true, write:false, format:'iife', jsx:'automatic', loader:{'.css':'empty'},
   plugins:[{name:'mock-api',setup(b){
     b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}))
-    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={liveTour:async()=>({services:[{id:'test-service',name:'Test service',duration:60,price:200000}]}),onlineBookingStaff:async()=>({employees:[{value:'AN AN',label:'An An'}]}),deleteOnlineBooking:async(id,revision)=>{if(window.fail)throw Error('Xung đột xóa');window.deleted={id,revision};window.rows=[];return {ok:true}},liveTourCollection:async(panel,params)=>{window.lookup=params.search;return {data:{customers:[{id:'c1',name:'Khách Mẫu',phone:'0900000001'}]}}},createOnlineBooking:async body=>{window.sent.push(body);if(window.fail)throw Error('Mất kết nối');return {ok:true}},updateOnlineBooking:async(id,body)=>{if(window.fail)throw Error('Xung đột cập nhật');window.updated={id,...body};window.rows=[];return {ok:true}},onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
+    b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={liveTour:async()=>({services:[{id:'test-service',name:'Test service',duration:60,price:200000}]}),onlineBookingStaff:async()=>({employees:[{value:'AN AN',label:'An An'},{value:'LINH',label:'Linh'}]}),deleteOnlineBooking:async(id,revision)=>{if(window.fail)throw Error('Xung đột xóa');window.deleted={id,revision};window.rows=[];return {ok:true}},liveTourCollection:async(panel,params)=>{window.lookup=params.search;return {data:{customers:[{id:'c1',name:'Khách Mẫu',phone:'0900000001'}]}}},createOnlineBooking:async body=>{window.sent.push(body);if(window.fail)throw Error('Mất kết nối');return {ok:true}},updateOnlineBooking:async(id,body)=>{if(window.fail)throw Error('Xung đột cập nhật');window.updated={id,...body};window.rows=[];return {ok:true}},onlineBookings:async params=>{window.lastParams=params;return {rows:window.rows,total:window.rows.length}},onlineBookingsUnread:async()=>{window.reads++;return {rows:window.rows}},onlineBookingSeen:async id=>{if(window.fail)throw Error('Mất kết nối');window.seen.push(id)}};`}))
   }}],
 })
 async function mount(role='letan', prepare = () => {}) {
@@ -194,6 +194,9 @@ test('manual booking searches customer phone, fills both fields, retries with sa
   assert.ok(staff.compareDocumentPosition(w.document.querySelector('textarea'))&w.Node.DOCUMENT_POSITION_FOLLOWING)
   await w.act(async()=>staff.click())
   await w.act(async()=>[...w.document.querySelectorAll('[role="option"]')].find(option=>option.textContent==='An An').click())
+  await w.act(async()=>staff.click())
+  await w.act(async()=>[...w.document.querySelectorAll('[role="option"]')].find(option=>option.textContent==='Linh').click())
+  assert.equal(w.document.querySelectorAll('.booking-requested-staff button').length,2)
   const submit=()=>w.act(async()=>w.document.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true})))
   w.fail=true;await submit()
   assert.ok(w.document.querySelector('[role="alert"]'))
@@ -202,7 +205,7 @@ test('manual booking searches customer phone, fills both fields, retries with sa
   assert.equal(w.sent[0].event_id,w.sent[1].event_id)
   assert.equal(w.sent[1].customer_name,'Khách Mẫu')
   assert.equal(w.sent[1].phone,'0900000001')
-  assert.equal(w.sent[1].requested_staff,'AN AN')
+  assert.equal(w.sent[1].requested_staff,'AN AN · LINH')
   assert.equal(w.sent[1].appointment_time,'14:00')
  }finally{await w.unmount();w.close()}
 })
