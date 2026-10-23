@@ -67,7 +67,7 @@ for (const entry of ['/?page=employees&standalone=1', '/']) test(`real employee 
   window.addEventListener('error',event=>{errors.push(String(event.error?.stack||event.error));event.preventDefault()})
   const oldError=console.error;console.error=(...args)=>{errors.push(args.map(x=>String(x?.stack||x)).join(' '))}
   const mod={exports:{}}
-  const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root'))
+  const {createRoot}=await import('react-dom/client');let root=createRoot(document.getElementById('root'))
   const settle=async(count=5)=>{for(let i=0;i<count;i++)await act(async()=>{await new Promise(r=>setTimeout(r,60))})}
   const navigate=async label=>{
     const toggle=document.querySelector('.standalone-menu-toggle[aria-expanded="false"]')
@@ -93,6 +93,11 @@ for (const entry of ['/?page=employees&standalone=1', '/']) test(`real employee 
     await settle()
     if(entry==='/')await navigate('Nhân viên')
     await act(async()=>releaseStaff());await settle();assertOpen()
+    // Recreate App as on F5, retaining only this tab's browser storage.
+    await act(async()=>root.unmount())
+    root=createRoot(document.getElementById('root'))
+    await act(async()=>root.render(React.createElement(mod.exports.default)))
+    await settle();assertOpen()
     assert.equal(document.querySelectorAll('.staff-table tbody tr').length,3)
     assertSummary(3,1)
     for(const selector of ['.staff-table', '.staff-mobile-list']) {
