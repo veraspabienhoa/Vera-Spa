@@ -4820,7 +4820,15 @@ def install_live_tour_routes(
     def website_booking_staff():
         now = datetime.now(timezone)
         with engine_instance().begin() as conn:
-            state, _ = read_board(conn, now)
+            if resource_store.enabled():
+                raw, _, _ = resource_store.read(conn, collections={"employees"})
+                state = _normalize_state({"employees": raw.get("employees", [])}, now)
+            else:
+                row = conn.execute(text("""
+                    SELECT jsonb_build_object('employees', value_json->'employees') AS value_json
+                    FROM vera_app_setting WHERE category=:category AND setting_key=:key
+                """), {"category": STATE_CATEGORY, "key": STATE_KEY}).mappings().first()
+                state = _normalize_state(row["value_json"], now) if row else read_board(conn, now)[0]
         employees = [
             {"value": str(row.get("username") or row.get("name") or "").strip(),
              "label": str(row.get("name") or row.get("username") or "").strip()}
