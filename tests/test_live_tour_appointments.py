@@ -237,3 +237,22 @@ def test_multi_staff_booking_reconciles_each_employee_and_removes_deselected():
     live._sync_online_booking_requests(state, [{'requested_staff':'B','appointment_time':'19:30'}], '2026-10-01')
     assert a['appointment'] == 'Khách riêng'
     assert b['appointment'] == 'Khách riêng · YC 19:30'
+
+
+def test_booking_staff_reads_only_employees_and_keeps_eligibility(monkeypatch):
+    client, _ = appointment_client(monkeypatch, "letan")
+    calls = []
+
+    def read_staff(conn, collections=None):
+        calls.append(collections)
+        return {"employees": [
+            {"id": "a", "username": "AN", "name": "An", "work_status": "Đi làm"},
+            {"id": "b", "username": "BINH", "name": "Bình", "work_status": "Nghỉ phép"},
+            {"id": "c", "username": "CHI", "name": "Chi", "work_status": "Đi làm", "roster_eligible": False},
+        ]}, 1, {}
+
+    monkeypatch.setattr(live.resource_store, "enabled", lambda: True)
+    monkeypatch.setattr(live.resource_store, "read", read_staff)
+    result = client.app.state.website_booking_staff_provider()
+    assert calls == [{"employees"}]
+    assert result["employees"] == [{"value": "AN", "label": "An"}]

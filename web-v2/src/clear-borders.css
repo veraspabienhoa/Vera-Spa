@@ -1062,3 +1062,15 @@ body .profile-password-control .profile-password-eye { position: absolute; top: 
 body .profile-password-control .profile-password-eye:hover,
 body .profile-password-control .profile-password-eye:active { transform: translateY(-50%); }
 body .profile-password-control .profile-password-eye:focus-visible { outline: 2px solid var(--green-950); outline-offset: -2px; }
+
+/* Override shared button borders/motion for the profile visibility controls. */
+body .profile-password-control button.profile-password-eye,
+body .profile-password-control button.profile-password-eye:is(:hover, :active, :focus-visible) {
+  border: 0 !important;
+  box-shadow: none !important;
+  transform: translateY(-50%) !important;
+  transition: none !important;
+  background: transparent !important;
+  color: #173e32 !important;
+}
+body .profile-password-control .profile-password-eye svg { stroke-width: 2.8; }
