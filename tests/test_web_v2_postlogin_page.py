@@ -8,12 +8,13 @@ def test_postlogin_defaults_to_live_tour_but_preserves_page_on_reverification():
     source = (ROOT / "web-v2/src/App.jsx").read_text(encoding="utf-8")
 
     assert "TOUR_DEFAULT_ROLES" not in source
-    assert "ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'" in source
-    assert "const readActivePage = () => 'live-tour'" in source
+    navigation = (ROOT / "web-v2/src/lib/activePage.js").read_text(encoding="utf-8")
+    assert "target.sessionStorage.getItem(key(user))" in navigation
+    assert "target.sessionStorage.setItem(key(user), page)" in navigation
+    assert "validPages.has(page) ? page : 'live-tour'" in navigation
     assert "verifiedUser.current !== nextSession.user.id" in source
-    assert "window.localStorage.setItem(activePageStorageKey(user), page)" in source
-    assert "standaloneRequest.enabled ? standaloneRequest.page : readNotificationPage() || readActivePage(nextSession.user)" in source
-    assert "rememberActivePage(user, nextPage)" in source
+    assert "standaloneRequest.enabled ? standaloneRequest.page : readNotificationPage() || readActivePage(nextSession.user, VALID_PAGES)" in source
+    assert "rememberActivePage(user, nextPage, VALID_PAGES)" in source
 
 
 def test_first_login_still_forces_profile_page():
