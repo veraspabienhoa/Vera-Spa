@@ -1,3 +1,4 @@
+import { readActivePage, rememberActivePage, forgetActivePage } from './lib/activePage'
 import PagePermissionActions, { PagePermissionProvider } from './components/PagePermissionActions'
 import { clearSystemDialogs } from './lib/systemDialogs'
 import { invalidateSharedReads } from './lib/sharedRead'
@@ -24,18 +25,9 @@ import { ensureGrantedPushSubscription, setPushAccount } from './lib/pushNotific
 import { getCurrentSession, isAuthConfigured, onVeraAuthStateChange, signOutVera } from './lib/supabase'
 
 
-const ACTIVE_PAGE_STORAGE_PREFIX = 'vera-v2-active-page:'
 const VALID_PAGES = new Set(['online-bookings', 'system', 'hr', 'leave', 'schedule', 'long-leave', 'residence', 'employees', 'contract-1', 'rules', 'hc-rules', 'profile', 'permissions', 'payroll', 'department-payroll', 'payroll-config', 'revenue', 'quang-ngai', 'purchases', 'training', 'snapshot', 'devices', 'checkin-history', 'birthday', 'tour', 'live-tour', 'milk-tea', 'reports', 'customers', 'settings', 'appearance', 'notifications', 'auto-check', 'changes', 'storage'])
 
-const activePageStorageKey = (user) => `${ACTIVE_PAGE_STORAGE_PREFIX}${user?.id || 'anonymous'}`
-
-const readActivePage = () => 'live-tour'
 const readNotificationPage = () => new URLSearchParams(window.location.search).get('page') === 'changes' ? 'changes' : ''
-
-const rememberActivePage = (user, page) => {
-  if (!user?.id || !VALID_PAGES.has(page)) return
-  try { window.localStorage.setItem(activePageStorageKey(user), page) } catch { /* storage may be unavailable in private mode */ }
-}
 
 const readStandalonePageRequest = () => {
   try {
@@ -143,7 +135,7 @@ export default function App() {
         if (mounted && attempt === verification) {
           setProfile(me)
           if (me.must_change_password || verifiedUser.current !== nextSession.user.id) {
-            setPage(me.must_change_password ? 'profile' : standaloneRequest.enabled ? standaloneRequest.page : readNotificationPage() || readActivePage(nextSession.user))
+            setPage(me.must_change_password ? 'profile' : standaloneRequest.enabled ? standaloneRequest.page : readNotificationPage() || readActivePage(nextSession.user, VALID_PAGES))
           }
           verifiedUser.current = nextSession.user.id
         }
@@ -213,7 +205,7 @@ export default function App() {
   const user = session?.user
   if (!user && !sessionRecoveryError) return <LoginPage externalError={authError} />
 
-  const signOut = async () => { void setPushAccount(''); setProfile(null); await signOutVera() }
+  const signOut = async () => { forgetActivePage(user); void setPushAccount(''); setProfile(null); await signOutVera() }
   const applyPageChange = (nextPage) => {
     if (standaloneRequest.enabled) {
       const url = new URL(window.location.href)
@@ -221,7 +213,12 @@ export default function App() {
       url.searchParams.set('page', nextPage)
       window.history.replaceState({}, '', url)
     }
-    rememberActivePage(user, nextPage)
+    if (!standaloneRequest.enabled && readNotificationPage()) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('page')
+      window.history.replaceState({}, '', url)
+    }
+    rememberActivePage(user, nextPage, VALID_PAGES)
     setPage(nextPage)
   }
   const changePage = (nextPage) => {
