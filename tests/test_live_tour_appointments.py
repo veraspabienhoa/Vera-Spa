@@ -225,3 +225,15 @@ def test_online_booking_projection_excludes_leave_and_keeps_other_booking_time()
     state = state_with(a)
     live._sync_online_booking_requests(state, [{'requested_staff':'A','appointment_time':'19:30'}], '2026-10-01')
     assert a['appointment'] == 'Khách riêng'
+
+
+def test_multi_staff_booking_reconciles_each_employee_and_removes_deselected():
+    a, b = employee('e1', 'A'), employee('e2', 'B')
+    for row, username in [(a, 'A'), (b, 'B')]:
+        row.update(username=username, work_status='Đi làm', roster_eligible=True, appointment='Khách riêng')
+    state = state_with(a, b)
+    live._sync_online_booking_requests(state, [{'requested_staff':'A · B · A','appointment_time':'19:30'}], '2026-10-01')
+    assert a['appointment'] == b['appointment'] == 'Khách riêng · YC 19:30'
+    live._sync_online_booking_requests(state, [{'requested_staff':'B','appointment_time':'19:30'}], '2026-10-01')
+    assert a['appointment'] == 'Khách riêng'
+    assert b['appointment'] == 'Khách riêng · YC 19:30'

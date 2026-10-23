@@ -1047,3 +1047,6 @@ body :is(.login-password-eye, .password-eye-button):is(:hover, :active, :focus-v
   transform: translateY(-50%) !important;
   transition-property: background-color, color, filter, box-shadow;
 }
+
+body .booking-requested-staff { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+body .booking-requested-staff button { max-width:100%; white-space:normal; overflow-wrap:anywhere; padding:8px 12px; }
