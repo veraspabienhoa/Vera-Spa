@@ -621,6 +621,10 @@ export const veraApi = {
     return request(`/v2/live-tour?${params}`, options)
   },
   liveTourCollection: (panel, query = {}, options = {}) => request(`/v2/live-tour/collections/${encodeURIComponent(panel)}?${new URLSearchParams(Object.entries(query).filter(([,value])=>value !== '' && value != null))}`, options),
+  exportSelectedInvoices: async (format, body) => {
+    const response = await binaryResponse(`/v2/live-tour/invoice-export/${format}`, { method: 'POST', body: JSON.stringify(body), cache: 'no-store' }, 'Không xuất được hóa đơn')
+    return response.blob()
+  },
   liveTourAction: async (body) => {
     // Release the operator UI if the network or a database connection stalls.
     // The caller retains body.idempotency_key for a safe retry after a reload.
