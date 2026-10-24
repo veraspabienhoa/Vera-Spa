@@ -21,3 +21,12 @@
 .invoice-export-receipt h2{font-family:Arial,sans-serif;font-weight:700}
 .invoice-export-brand{font-family:VeraInvoiceBrand,Georgia,serif;font-weight:900}
 .invoice-export-signature{text-align:right;font-weight:700;margin-top:24px;padding-right:16px;min-height:100px}
+
+.employee-profile-modal-backdrop:has(.invoice-file-modal){z-index:11020}
+.employee-profile-modal.invoice-file-modal{width:min(1200px,96vw);max-width:96vw;max-height:94dvh;padding:16px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden}
+.invoice-file-modal header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex:none;margin-bottom:12px}
+.invoice-file-modal header h2{margin:0}.invoice-file-modal header button{flex-shrink:0}
+.invoice-file-modal .invoice-export-preview{overflow:auto;min-height:0}
+.invoice-file-modal .invoice-export-preview iframe{display:block;width:100%;height:74dvh;border:0}
+.invoice-file-modal .invoice-export-preview img{display:block;width:100%;height:auto}
+@media(max-width:600px){.employee-profile-modal.invoice-file-modal{padding:10px}.invoice-file-modal .invoice-export-preview iframe{height:70dvh}}

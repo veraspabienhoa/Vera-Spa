@@ -58,7 +58,7 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
   const chosen = Object.values(selected)
   const sums = chosen.reduce((sum, row) => { const v = invoiceMoneyValues(row); return {service:sum.service+v.service, discount:sum.discount+v.discount, tip:sum.tip+v.tip, total:sum.total+v.total} }, {service:0,discount:0,tip:0,total:0})
   const disabled = busy || !valid || !count || (!service && !tip)
-  return <EmployeeProfileModal className="invoice-export-modal" labelledBy="invoice-export-title" onClose={onClose} busy={busy}>
+  return <><EmployeeProfileModal className="invoice-export-modal" labelledBy="invoice-export-title" onClose={onClose} busy={busy}>
     <header><h2 id="invoice-export-title">Xuất hóa đơn</h2><button type="button" onClick={onClose} disabled={busy}>Đóng</button></header>
     <div className="invoice-export-layout"><div className="invoice-export-selection">
     <div className="invoice-export-tools">
@@ -86,7 +86,13 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
         <dl>{service && <><dt>Tiền dịch vụ</dt><dd>{money(sums.service)}</dd><dt>Giảm giá</dt><dd>{money(sums.discount)}</dd></>}{tip && <><dt>Tiền tip</dt><dd>{money(sums.tip)}</dd></>}<dt><strong>Tổng tiền</strong></dt><dd><strong>{money(service ? sums.total-(tip ? 0 : sums.tip) : tip ? sums.tip : 0)}</strong></dd></dl>
         <div className="invoice-export-signature">Vera Spa</div>
       </article>}
-    {preview && <section className="invoice-export-preview"><h3>Xem trước</h3>{preview.format === 'png' ? <img src={preview.url} alt="Các hóa đơn đã chọn"/> : <><iframe title="Xem hóa đơn PDF" src={preview.url} onLoad={e=>{if(preview.print) { try { e.currentTarget.contentWindow.focus();e.currentTarget.contentWindow.print() } catch { setError('Hãy mở PDF và chọn In trong trình xem của thiết bị.') } }}}/><a href={preview.url} target="_blank" rel="noopener noreferrer">Mở PDF để xem / in trên thiết bị</a></>}</section>}
+
     </aside></div>
   </EmployeeProfileModal>
+  {preview && <EmployeeProfileModal className="invoice-file-modal" labelledBy="invoice-file-title" onClose={()=>setPreview(null)}>
+    <header><h2 id="invoice-file-title">Xem {preview.format.toUpperCase()}</h2><button type="button" onClick={()=>setPreview(null)}>Đóng xem trước</button></header>
+    <section className="invoice-export-preview">
+      {preview.format === 'png' ? <img src={preview.url} alt="Các hóa đơn đã chọn"/> : <><iframe title="Xem hóa đơn PDF" src={preview.url} onLoad={e=>{if(preview.print) { try { e.currentTarget.contentWindow.focus();e.currentTarget.contentWindow.print() } catch { setError('Hãy mở PDF và chọn In trong trình xem của thiết bị.') } }}}/><a href={preview.url} target="_blank" rel="noopener noreferrer">Mở PDF để xem / in trên thiết bị</a></>}
+    </section>
+  </EmployeeProfileModal>}</>
 }
