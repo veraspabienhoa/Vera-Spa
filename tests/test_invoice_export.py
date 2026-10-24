@@ -9,9 +9,10 @@ INVOICE = {'id':'i1','bill_no':'VERA-1','customer_name':'Linh Đan <test>', 'sub
 @pytest.mark.parametrize('service,tip,total',[(True,True,'300.000 đ'),(True,False,'200.000 đ'),(False,True,'100.000 đ')])
 def test_selected_components(service,tip,total):
     headers,rows=invoice_rows([INVOICE,INVOICE],service,tip,lambda _: '25-10-2026 10:00')
-    assert len(rows)==2
+    assert rows[0][0]=='1' and rows[1][0]=='2'
+    assert rows[-1][-1] == {'300.000 đ':'600.000 đ','200.000 đ':'400.000 đ','100.000 đ':'200.000 đ'}[total]
     assert rows[0][-1]==total
-    assert ('Tiền tip' in headers)==tip
+    assert any(row[1]=='Tiền tip' for row in rows)==tip
     assert ('Dịch vụ' in headers)==service
     if not service: assert 'Tiêu chuẩn' not in str(rows)
 
@@ -19,7 +20,7 @@ def test_selected_components(service,tip,total):
 def test_prepaid_combo_not_charged_again():
     inv={**INVOICE,'payment_method':'COMBO','combo_extra_subtotal':20000,'discount':0,'total':120000}
     headers,rows=invoice_rows([inv],True,False,lambda _: '')
-    assert rows[0][headers.index('Tiền dịch vụ')]=='20.000 đ'
+    assert next(row[-1] for row in rows if row[1]=='Tiền dịch vụ')=='20.000 đ'
     assert rows[0][-1]=='20.000 đ'
 
 @pytest.mark.parametrize('body',[{'ids':[]},{'ids':['a','a']},{'ids':['a'],'service':False,'tip':False},{'ids':[str(i) for i in range(51)]}])
@@ -60,3 +61,11 @@ def test_http_export_selected_ids_and_rejects_missing(monkeypatch,role):
     assert client.post('/v2/live-tour/invoice-export/pdf',json={'ids':['missing'],'preset':'all'}).status_code==409
     # A row outside the granted/requested day is never exported.
     assert client.post('/v2/live-tour/invoice-export/pdf',json={'ids':['i1'],'preset':'today'}).status_code==409
+
+
+def test_combined_receipt_omits_private_staff_and_room():
+    inv = {**INVOICE, 'employee_name':'PRIVATE STAFF', 'room':'PRIVATE ROOM', 'entries':[{'service':'VIP','employee_name':'PRIVATE STAFF','room':'PRIVATE ROOM'}]}
+    headers,rows = invoice_rows([inv,inv],True,True,lambda _: '')
+    assert [r[0] for r in rows if r[0]] == ['1','2']
+    assert rows[-1] == ['', 'Tổng tiền', '600.000 đ']
+    assert 'PRIVATE' not in str(rows)
