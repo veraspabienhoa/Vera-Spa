@@ -36,6 +36,7 @@ from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid4, uuid5
 from zoneinfo import ZoneInfo
 
+from vera_invoice_export import InvoiceExportRequest, invoice_rows, render_invoice_export
 from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
@@ -5052,6 +5053,31 @@ def install_live_tour_routes(
             if not row:
                 raise HTTPException(503, "Dữ liệu giao diện chưa sẵn sàng. Hãy mở Live Tour và thử lại.")
             return {"appearance_settings": row.get("appearance_settings") or {}, "revision": int(row["revision"])}
+
+    @app.post("/v2/live-tour/invoice-export/{format}")
+    def export_selected_invoices(format: Literal["pdf", "png"], body: InvoiceExportRequest,
+                                 ident: identity_type = Depends(current_identity)):
+        if ident.role not in {"admin", "quanly", "letan"}:
+            raise HTTPException(403, "Chỉ Admin, Quản lý và Lễ tân được xuất hóa đơn.")
+        now = datetime.now(timezone)
+        with engine_instance().begin() as conn:
+            require_feature(conn, ident, "live_tour_view")
+            require_feature(conn, ident, "live_tour_paid_invoice_view")
+            grants = permissions(conn, ident, now)
+            selection = authorize_dates(grants, "invoices", now, body.preset, body.date_from, body.date_to, "")
+            state, _ = read_collections_view(conn, now, {"invoices"})
+            selected = {str(row.get("id")): row for row in state.get("invoices", [])
+                        if str(row.get("id")) in body.ids and not row.get("deleted_at") and not row.get("voided_at")
+                        and list_queries.matches(row, date_from=selection['date_from'], date_to=selection['date_to'], invoice_dates=True)}
+            if len(selected) != len(body.ids):
+                raise HTTPException(409, "Có hóa đơn đã thay đổi hoặc ngoài phạm vi được xem. Hãy tải lại danh sách.")
+        headers, rows = invoice_rows([selected[key] for key in body.ids], body.service, body.tip, _display_datetime)
+        try:
+            content = render_invoice_export(headers, rows, format)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return Response(content, media_type="application/pdf" if format == "pdf" else "image/png",
+                        headers={"Content-Disposition": f'inline; filename="VERA_HoaDon.{format}"', "Cache-Control": "no-store"})
 
     @app.get("/v2/live-tour/collections/{panel}")
     def live_tour_collection(
