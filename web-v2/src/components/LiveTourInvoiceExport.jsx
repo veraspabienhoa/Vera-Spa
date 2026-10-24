@@ -81,9 +81,10 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
     </div><aside className="invoice-export-receipt-panel">
       <h3>Xem trước hóa đơn gộp ({count} hóa đơn)</h3>
       {!count ? <p>Chọn hóa đơn bên trái để xem trước.</p> : <article className="invoice-export-receipt">
-        <h2>VERA SPA</h2><p>193 Trương Định, Tam Hiệp, Đồng Nai</p><h3>HÓA ĐƠN DỊCH VỤ</h3>
+        <h2><span className="invoice-export-brand">VERA SPA</span></h2><p>193 Trương Định, Tam Hiệp, Đồng Nai</p><h3>HÓA ĐƠN DỊCH VỤ</h3>
         <div className="invoice-export-receipt-scroll"><table><thead><tr><th>STT</th><th>{service ? 'Dịch vụ' : 'Nội dung'}</th><th>Thành tiền</th></tr></thead><tbody>{chosen.map((row,index)=>{const v=invoiceMoneyValues(row);return <tr key={row.id}><td>{index+1}</td><td>{service ? serviceLabel(row) : 'Tiền tip'}</td><td>{money(service ? v.total-(tip ? 0 : v.tip) : tip ? v.tip : 0)}</td></tr>})}</tbody></table></div>
         <dl>{service && <><dt>Tiền dịch vụ</dt><dd>{money(sums.service)}</dd><dt>Giảm giá</dt><dd>{money(sums.discount)}</dd></>}{tip && <><dt>Tiền tip</dt><dd>{money(sums.tip)}</dd></>}<dt><strong>Tổng tiền</strong></dt><dd><strong>{money(service ? sums.total-(tip ? 0 : sums.tip) : tip ? sums.tip : 0)}</strong></dd></dl>
+        <div className="invoice-export-signature">Vera Spa</div>
       </article>}
     {preview && <section className="invoice-export-preview"><h3>Xem trước</h3>{preview.format === 'png' ? <img src={preview.url} alt="Các hóa đơn đã chọn"/> : <><iframe title="Xem hóa đơn PDF" src={preview.url} onLoad={e=>{if(preview.print) { try { e.currentTarget.contentWindow.focus();e.currentTarget.contentWindow.print() } catch { setError('Hãy mở PDF và chọn In trong trình xem của thiết bị.') } }}}/><a href={preview.url} target="_blank" rel="noopener noreferrer">Mở PDF để xem / in trên thiết bị</a></>}</section>}
     </aside></div>
