@@ -52,7 +52,7 @@ test('Đã xem survives remount, empty refresh and account changes; new day stil
   const seen=[...w.document.querySelectorAll('button')].find(button=>button.textContent==='Đã xem')
   assert.ok(seen)
   await w.act(async()=>seen.click())
-  assert.deepEqual(JSON.parse(w.localStorage.getItem('vera-missing-checkin-seen:viewer')),[today.tag])
+  assert.equal(JSON.parse(w.localStorage.getItem('vera-missing-checkin-seen:viewer'))[0][0],today.tag)
   await publish(w,[]);await publish(w,[today]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
   await w.mount({role:'letan',employee_username:'other'});await publish(w,[today]);assert.ok(w.document.querySelector('.missing-checkin-popup'))
   await w.mount({role:'admin',employee_username:'viewer'});await publish(w,[today]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
@@ -63,7 +63,7 @@ test('Đã xem survives remount, empty refresh and account changes; new day stil
 test('seen state synchronizes tabs and tolerates unavailable storage',async()=>{
  const dom=await mount('admin'),w=dom.window
  try {
-  await publish(w,[row()]);w.localStorage.setItem('vera-missing-checkin-seen:viewer',JSON.stringify([row().tag]))
+  await publish(w,[row()]);w.localStorage.setItem('vera-missing-checkin-seen:viewer',JSON.stringify([[row().tag,Date.now()+900_000]]))
   await w.act(async()=>w.dispatchEvent(new w.StorageEvent('storage',{key:'vera-missing-checkin-seen:viewer'})))
   assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
   await publish(w,[row('new')])
@@ -98,7 +98,7 @@ test('hide/show preserves unread rows and each employee is acknowledged independ
   assert.deepEqual([...w.document.querySelectorAll('li strong')].map(el=>el.textContent),['B'])
   await publish(w,[row('A'),row('B')])
   assert.deepEqual([...w.document.querySelectorAll('li strong')].map(el=>el.textContent),['B'])
-  assert.deepEqual(JSON.parse(w.localStorage.getItem('vera-missing-checkin-seen:viewer')),['missing-A'])
+  assert.equal(JSON.parse(w.localStorage.getItem('vera-missing-checkin-seen:viewer'))[0][0],'missing-A')
  }finally{await w.unmount();w.close()}
 })
 
@@ -111,4 +111,26 @@ test('hide/show preserves unread rows and each employee is acknowledged independ
   assert.equal(w.document.querySelector('header button').getAttribute('aria-expanded'),'true')
   assert.equal(w.document.querySelector('.missing-checkin-popup [hidden]'),null)
  }finally{await w.unmount();w.close()}
+})
+
+for (const closeSelector of ['.missing-checkin-seen', '.missing-checkin-close']) test(`15-minute repeat after ${closeSelector} requires a fresh unresolved absence`, async()=>{
+ const dom=await mount('admin'),w=dom.window
+ const start=Date.now(); let now=start; w.Date.now=()=>now
+ const fresh=()=>({...row(),expires_at:new Date(now+60_000).toISOString()})
+ try {
+  await publish(w,[fresh()])
+  await w.act(async()=>w.document.querySelector(closeSelector).click())
+  now=start+899_999
+  await publish(w,[fresh()]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+  await w.mount({role:'letan',employee_username:'viewer'})
+  await publish(w,[fresh()]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+  now=start+900_000
+  await publish(w,[fresh()]);assert.ok(w.document.querySelector('.missing-checkin-popup'))
+  await w.act(async()=>w.document.querySelector(closeSelector).click())
+  now+=900_000
+  // Check-in or leave removes the employee from the server feed.
+  await publish(w,[]);assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+  await w.act(async()=>w.document.dispatchEvent(new w.Event('visibilitychange')))
+  assert.equal(w.document.querySelector('.missing-checkin-popup'),null)
+ } finally {await w.unmount();w.close()}
 })
