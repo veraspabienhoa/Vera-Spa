@@ -9,11 +9,14 @@ w.MessageChannel=class {constructor(){this.port1={};this.port2={postMessage:()=>
 try {
  await w.mount();await w.act(async()=>new Promise(r=>setTimeout(r,350)))
  for(const label of ['Chọn VERA-A','Chọn VERA-B']) await w.act(async()=>w.document.querySelector(`[aria-label="${label}"]`).click())
+ assert.equal(w.document.querySelectorAll('.invoice-export-receipt').length,1)
+ assert.equal(w.document.querySelectorAll('.invoice-export-receipt tbody tr').length,2)
+ assert.match(w.document.querySelector('.invoice-export-receipt dl').textContent,/700/)
  await w.act(async()=>w.document.querySelector('.invoice-export-options input').click())
  const view=[...w.document.querySelectorAll('button')].find(b=>b.textContent==='Xem PNG')
  await w.act(async()=>view.click())
  assert.deepEqual(Array.from(w.exported.body.ids),['a','b']);assert.equal(w.exported.body.service,false);assert.equal(w.exported.body.tip,true)
- assert.equal(w.document.querySelectorAll('tbody tr').length,2)
+ assert.equal(w.document.querySelectorAll('.invoice-export-table tbody tr').length,2)
  assert.ok(w.document.querySelector('img[alt="Các hóa đơn đã chọn"]'))
  assert.equal(w.document.querySelector('.live-tour-payment-qr'),null)
 }finally{await w.unmount();w.close()}

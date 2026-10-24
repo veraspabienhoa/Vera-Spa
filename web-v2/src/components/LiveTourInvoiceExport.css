@@ -1,4 +1,18 @@
-.employee-profile-modal.invoice-export-modal{width:min(1280px,96vw);max-width:96vw;padding:20px;box-sizing:border-box}
+.employee-profile-modal.invoice-export-modal{width:min(1600px,96vw);max-width:96vw;padding:20px;box-sizing:border-box}
 .invoice-export-modal header,.invoice-export-tools,.invoice-export-options{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px}
 .invoice-export-modal header{justify-content:space-between}.invoice-export-tools label{display:grid;gap:5px;min-width:0}.invoice-export-options label{display:flex;align-items:center;gap:6px}.invoice-export-table{overflow:auto;max-height:45vh}.invoice-export-table table{width:100%;border-collapse:collapse}.invoice-export-table th,.invoice-export-table td{padding:8px;font-size:13px;text-align:left;overflow-wrap:anywhere}.invoice-export-table td{min-width:90px}.invoice-export-table td:first-child{min-width:32px}.invoice-export-preview iframe{width:100%;height:65vh;border:0}.invoice-export-preview img{display:block;max-width:100%;height:auto}.invoice-export-tools input,.invoice-export-tools select{max-width:100%;min-width:0}.invoice-export-tools button{min-height:42px}
 @media(max-width:600px){.employee-profile-modal.invoice-export-modal{padding:12px}.invoice-export-tools label{flex:1 1 140px}.invoice-export-tools button{flex:1 1 100px}}
+
+.invoice-export-layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(320px,1fr);gap:20px;align-items:start}
+.invoice-export-selection,.invoice-export-receipt-panel{min-width:0}
+.invoice-export-receipt-panel{padding:16px;border:1px solid #37634f;border-radius:12px;background:#fffdf1;max-height:75vh;overflow:auto}
+.invoice-export-receipt-panel>h3{margin:0 0 16px}
+.invoice-export-receipt{background:white;color:#173e32;border:1px solid #37634f;border-radius:10px;padding:20px}
+.invoice-export-receipt h2,.invoice-export-receipt h3,.invoice-export-receipt>p{text-align:center;margin:8px 0 16px}
+.invoice-export-receipt h2{font-family:Georgia,serif;font-size:30px}
+.invoice-export-receipt-scroll{overflow:auto}.invoice-export-receipt table{width:100%;border-collapse:collapse}
+.invoice-export-receipt th,.invoice-export-receipt td{border:1px solid #37634f;padding:8px;font-size:13px;overflow-wrap:anywhere}
+.invoice-export-receipt td:last-child{text-align:right;white-space:nowrap}
+.invoice-export-receipt dl{display:grid;grid-template-columns:1fr auto;gap:10px}.invoice-export-receipt dd{margin:0;text-align:right}
+.invoice-export-table tr:has(input:checked){background:#e9f4e6}
+@media(max-width:900px){.invoice-export-layout{grid-template-columns:1fr}.invoice-export-receipt-panel{max-height:none}.invoice-export-receipt{max-width:560px;margin:auto}}
