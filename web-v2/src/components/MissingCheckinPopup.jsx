@@ -7,18 +7,24 @@ import './MissingCheckinPopup.css'
 
 import { canSeeMissingCheckins } from '../lib/missingCheckinAudience'
 const keyOf = row => row.tag || row.key
+const REMIND_AFTER_MS = 15 * 60 * 1000
 const savedKeys = storageKey => {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || '[]')
-    return new Set(Array.isArray(saved) ? saved.filter(key => typeof key === 'string').slice(-200) : [])
-  } catch { return new Set() }
+    // Old permanent acknowledgements have no timestamp: let the next fresh
+    // feed verify whether these employees still need a reminder.
+    return new Map(Array.isArray(saved) ? saved.filter(entry => Array.isArray(entry)
+      && typeof entry[0] === 'string' && Number.isFinite(entry[1])
+      && entry[1] > Date.now()).slice(-200) : [])
+  } catch { return new Map() }
 }
+const snoozed = (entries, key) => (entries.get(key) || 0) > Date.now()
 
 export default function MissingCheckinPopup({ user }) {
   const [alerts, setAlerts] = useState([])
   const [collapsed, setCollapsed] = useState(false)
   const contentId = useId()
-  const dismissed = useRef(new Set())
+  const dismissed = useRef(new Map())
   const visibleKeys = useRef(new Set())
   const role = user?.role, username = user?.username || user?.employee_username || user?.id
   const locked = Boolean(user?.must_change_password)
@@ -33,7 +39,7 @@ export default function MissingCheckinPopup({ user }) {
       const config = (result.settings || []).find(item => item.key === 'missing_checkin')
       const rows = config?.enabled === false || config?.channel_enabled?.popup === false ? [] : (result.missing_checkins || []).filter(valid)
       const unique = new Map(rows.map(row => [keyOf(row), row]))
-      const next = [...unique.values()].filter(row => !dismissed.current.has(keyOf(row)))
+      const next = [...unique.values()].filter(row => !snoozed(dismissed.current, keyOf(row)))
       if (next.some(row => !visibleKeys.current.has(keyOf(row)))) setCollapsed(false)
       visibleKeys.current = new Set(next.map(keyOf))
       setAlerts(next)
@@ -46,7 +52,7 @@ export default function MissingCheckinPopup({ user }) {
     const seenChanged = event => {
       if (event.key !== storageKey) return
       dismissed.current = savedKeys(storageKey)
-      setAlerts(rows => rows.filter(row => !dismissed.current.has(keyOf(row))))
+      setAlerts(rows => rows.filter(row => !snoozed(dismissed.current, keyOf(row))))
     }
     window.addEventListener('storage', seenChanged)
     window.addEventListener('vera-notification-settings-changed', settingsChanged)
@@ -54,7 +60,10 @@ export default function MissingCheckinPopup({ user }) {
   }, [role, username, locked, storageKey])
   const dismissRows = rows => {
     const keys = new Set(rows.map(keyOf))
-    dismissed.current = new Set([...savedKeys(storageKey), ...dismissed.current, ...keys].slice(-200))
+    visibleKeys.current = new Set([...visibleKeys.current].filter(key => !keys.has(key)))
+    const until = Date.now() + REMIND_AFTER_MS
+    dismissed.current = new Map([...savedKeys(storageKey), ...dismissed.current,
+      ...[...keys].map(key => [key, until])].filter(([, expiry]) => expiry > Date.now()).slice(-200))
     try { localStorage.setItem(storageKey, JSON.stringify([...dismissed.current])) } catch { /* Keep dismissal in memory if storage is unavailable. */ }
     setAlerts(current => current.filter(item => !keys.has(keyOf(item))))
   }
