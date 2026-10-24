@@ -206,7 +206,8 @@ def current_missing_checkins(conn, ident, now, *, include_expiry=False):
     owner = '' if view_team else viewer_username
     schedules = _merge_schedules(_staff_scheduled_rows(conn, day, owner), _scheduled_rows(conn, day, owner))
     leave_rows = conn.execute(text("""SELECT employee_name,leave_reason FROM leave_records
-        WHERE leave_date=:day AND COALESCE(source_sheet_id,'') <> 'postgres:auto_check'"""),
+        WHERE leave_date=:day AND (COALESCE(source_sheet_id,'') <> 'postgres:auto_check'
+          OR lower(btrim(leave_reason)) IN ('nghỉ không phép', 'nghỉ cuối tuần không phép'))"""),
         {'day': day}).mappings().all()
     late = {_norm(row.get('employee_name')) for row in leave_rows if 'di tre' in _norm(row.get('leave_reason'))}
     leave = {_norm(row.get('employee_name')) for row in leave_rows if 'di tre' not in _norm(row.get('leave_reason'))}
@@ -296,7 +297,7 @@ def _merge_schedules(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _has_leave_schedule(conn, work_day: date, employee: str, employee_name: str = "") -> bool:
-    """Any non-Auto-Check leave registration suppresses the absence alert."""
+    """Registered leave or a recorded automatic full-day absence suppresses the alert."""
     from vera_holiday_leave import approved_day as holiday_approved_day
     if holiday_approved_day(conn, employee, work_day):
         return True
@@ -304,7 +305,8 @@ def _has_leave_schedule(conn, work_day: date, employee: str, employee_name: str 
         SELECT employee_name,source_sheet_id
         FROM leave_records
         WHERE leave_date=:work_day
-          AND COALESCE(source_sheet_id,'') <> 'postgres:auto_check'
+          AND (COALESCE(source_sheet_id,'') <> 'postgres:auto_check'
+          OR lower(btrim(leave_reason)) IN ('nghỉ không phép', 'nghỉ cuối tuần không phép'))
     """), {"work_day": work_day}).mappings().all()
     aliases = {_norm(employee), _norm(employee_name)} - {""}
     return any(_norm(row.get("employee_name")) in aliases for row in rows)
