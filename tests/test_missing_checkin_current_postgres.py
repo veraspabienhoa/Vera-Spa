@@ -82,6 +82,18 @@ def test_current_absence_uses_fresh_cache_roster_and_one_caller_connection(datab
             payload([]);assert read()==[]
             payload(base)
             conn.execute(text("INSERT INTO leave_records(employee_name,leave_date,source_sheet_id) VALUES ('Test Employee','2026-09-27','postgres:auto_check')"));assert len(read())==1
+            for reason in ('Nghỉ KHÔNG phép', 'Nghỉ CUỐI TUẦN KHÔNG phép'):
+                conn.execute(text("UPDATE leave_records SET leave_reason=:reason"), {'reason': reason})
+                assert read()==[]
+                assert read('nhanvien', username='Test Employee')==[]
+                # An absence belonging to another day must not suppress today.
+                conn.execute(text("UPDATE leave_records SET leave_date='2026-09-26'"))
+                assert len(read())==1
+                conn.execute(text("UPDATE leave_records SET leave_date='2026-09-27',leave_reason='Đi trễ KHÔNG phép'"))
+                assert len(read())==1
+            # Deleting the recorded absence makes an unresolved absence alert again.
+            conn.execute(text('DELETE FROM leave_records'))
+            assert len(read())==1
             conn.execute(text("INSERT INTO leave_records(employee_name,leave_date,source_sheet_id) VALUES ('Test Employee','2026-09-27','manual')"));assert read()==[]
             assert read('nhanvien', username='Test Employee')==[]
             conn.execute(text('DELETE FROM leave_records'))

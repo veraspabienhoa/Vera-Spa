@@ -135,11 +135,15 @@ def test_alert_is_wired_into_the_single_five_minute_timesoft_sync():
     assert "https://app.veraspa.vn/" in alert_source
 
 
-def test_leave_check_excludes_auto_check_rows_at_the_query_boundary():
+def test_leave_check_excludes_other_auto_check_rows_but_accepts_recorded_absence():
     source = (ROOT / "vera_missing_checkin_notifications.py").read_text(encoding="utf-8")
     leave_check = source.split("def _has_leave_schedule", 1)[1].split("def _audience_subscriptions", 1)[0]
     assert "FROM leave_records" in leave_check
     assert "COALESCE(source_sheet_id,'') <> 'postgres:auto_check'" in leave_check
+    assert "lower(btrim(leave_reason)) IN ('nghỉ không phép', 'nghỉ cuối tuần không phép')" in leave_check
+    current = source.split("def current_missing_checkins", 1)[1].split("def viewer_missing_checkins", 1)[0]
+    assert "lower(btrim(leave_reason)) IN ('nghỉ không phép', 'nghỉ cuối tuần không phép')" in current
+
 
 
 def test_notification_audience_is_exactly_employee_reception_manager_and_admin():
