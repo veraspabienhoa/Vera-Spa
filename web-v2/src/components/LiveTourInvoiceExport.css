@@ -30,3 +30,9 @@
 .invoice-file-modal .invoice-export-preview iframe{display:block;width:100%;height:74dvh;border:0}
 .invoice-file-modal .invoice-export-preview img{display:block;width:100%;height:auto}
 @media(max-width:600px){.employee-profile-modal.invoice-file-modal{padding:10px}.invoice-file-modal .invoice-export-preview iframe{height:70dvh}}
+
+.invoice-export-receipt th{font-weight:700;text-align:center}
+.invoice-export-receipt td:first-child,.invoice-export-receipt td:last-child{text-align:center}
+.invoice-export-receipt>p,.invoice-export-receipt h3{font-weight:700;text-align:center}
+
+.invoice-export-receipt .invoice-export-total td{font-weight:700;text-align:center;background:#edf3ef}

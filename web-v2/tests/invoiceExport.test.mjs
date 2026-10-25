@@ -11,7 +11,7 @@ try {
  for(const label of ['Chọn VERA-A','Chọn VERA-B']) await w.act(async()=>w.document.querySelector(`[aria-label="${label}"]`).click())
  assert.equal(w.document.querySelectorAll('.invoice-export-receipt').length,1)
  assert.equal(w.document.querySelectorAll('.invoice-export-receipt tbody tr').length,2)
- assert.match(w.document.querySelector('.invoice-export-receipt dl').textContent,/700/)
+ assert.match(w.document.querySelector('.invoice-export-receipt tfoot').textContent,/700/)
  await w.act(async()=>w.document.querySelector('.invoice-export-options input').click())
  const view=[...w.document.querySelectorAll('button')].find(b=>b.textContent==='Xem PNG')
  await w.act(async()=>view.click())

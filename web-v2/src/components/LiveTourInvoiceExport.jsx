@@ -82,8 +82,8 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
       <h3>Xem trước hóa đơn gộp ({count} hóa đơn)</h3>
       {!count ? <p>Chọn hóa đơn bên trái để xem trước.</p> : <article className="invoice-export-receipt">
         <h2><span className="invoice-export-brand">VERA SPA</span></h2><p>193 Trương Định, Tam Hiệp, Đồng Nai</p><h3>HÓA ĐƠN DỊCH VỤ</h3>
-        <div className="invoice-export-receipt-scroll"><table><thead><tr><th>STT</th><th>{service ? 'Dịch vụ' : 'Nội dung'}</th><th>Thành tiền</th></tr></thead><tbody>{chosen.map((row,index)=>{const v=invoiceMoneyValues(row);return <tr key={row.id}><td>{index+1}</td><td>{service ? serviceLabel(row) : 'Tiền tip'}</td><td>{money(service ? v.total-(tip ? 0 : v.tip) : tip ? v.tip : 0)}</td></tr>})}</tbody></table></div>
-        <dl>{service && <><dt>Tiền dịch vụ</dt><dd>{money(sums.service)}</dd><dt>Giảm giá</dt><dd>{money(sums.discount)}</dd></>}{tip && <><dt>Tiền tip</dt><dd>{money(sums.tip)}</dd></>}<dt><strong>Tổng tiền</strong></dt><dd><strong>{money(service ? sums.total-(tip ? 0 : sums.tip) : tip ? sums.tip : 0)}</strong></dd></dl>
+        <div className="invoice-export-receipt-scroll"><table><thead><tr><th>STT</th><th>{service ? 'Dịch vụ' : 'Nội dung'}</th><th>Thành tiền</th></tr></thead><tbody>{chosen.map((row,index)=>{const v=invoiceMoneyValues(row);return <tr key={row.id}><td>{index+1}</td><td>{service ? serviceLabel(row) : 'Tiền tip'}</td><td>{money(service ? v.total-(tip ? 0 : v.tip) : tip ? v.tip : 0)}</td></tr>})}</tbody><tfoot>{tip && <tr><td></td><td>Tiền tip</td><td>{money(sums.tip)}</td></tr>}<tr className="invoice-export-total"><td colSpan={2}>Tổng tiền</td><td>{money(service ? sums.total-(tip ? 0 : sums.tip) : tip ? sums.tip : 0)}</td></tr></tfoot></table></div>
+
         <div className="invoice-export-signature">Vera Spa</div>
       </article>}
 
