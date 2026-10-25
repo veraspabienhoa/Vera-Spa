@@ -20,7 +20,7 @@ def test_selected_components(service,tip,total):
 def test_prepaid_combo_not_charged_again():
     inv={**INVOICE,'payment_method':'COMBO','combo_extra_subtotal':20000,'discount':0,'total':120000}
     headers,rows=invoice_rows([inv],True,False,lambda _: '')
-    assert next(row[-1] for row in rows if row[1]=='Tiền dịch vụ')=='20.000 đ'
+    assert not any(row[1] in ('Tiền dịch vụ', 'Giảm giá') for row in rows)
     assert rows[0][-1]=='20.000 đ'
 
 @pytest.mark.parametrize('body',[{'ids':[]},{'ids':['a','a']},{'ids':['a'],'service':False,'tip':False},{'ids':[str(i) for i in range(51)]}])
