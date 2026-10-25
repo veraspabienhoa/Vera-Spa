@@ -180,3 +180,18 @@ def test_installed_policy_cannot_repair_facegate_from_legacy_tour(monkeypatch, f
     monkeypatch.setattr(alerts, '_tour_break_map', lambda *_: pytest.fail('Legacy Tour break fallback after cutover'))
     rows = [record()]
     assert alerts._apply_tour_fallback(object(), rows, DAY, DAY) is rows
+
+
+def test_worker_reports_blocked_arrivals_without_weakening_evidence_guards(monkeypatch, facegate):
+    monkeypatch.setattr(source, 'health', lambda c: {'cache_fresh': True})
+    monkeypatch.setattr(runtime, 'records', lambda *a: [
+        {**record(), 'identity_verified': True, 'attendance_fine_evidence_ready': False,
+         'attendance_fine_evidence_reasons': ['stale_archive', 'PRIVATE_REASON']},
+        {**record(), 'check_in': '', 'identity_verified': True},
+    ])
+    _, frame = runtime.worker_frames(object(), [DAY])[0]
+    assert frame.empty
+    assert frame.attrs['arrival_diagnostics'] == {
+        'considered': 1, 'evidence_blocked': 1,
+        'reason_counts': {'stale_archive': 1, 'unknown_evidence': 1}}
+    assert 'Employee' not in str(frame.attrs) and 'PRIVATE' not in str(frame.attrs)

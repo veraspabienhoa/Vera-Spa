@@ -216,8 +216,10 @@ def sync_day(engine, day, *, apply=False, fetch=None):
         import io
         from contextlib import redirect_stdout
         try:
+            result['reconciliation_results'] = []
             with redirect_stdout(io.StringIO()):
-                result['reconciliation_failures'] = reconcile_day(date.fromisoformat(day), engine=engine)
+                result['reconciliation_failures'] = reconcile_day(
+                    date.fromisoformat(day), engine=engine, report=result['reconciliation_results'])
         except Exception as exc:
             result['reconciliation_failures'] = [{'date': day, 'stage': 'reconciliation', 'reason': type(exc).__name__}]
     return result

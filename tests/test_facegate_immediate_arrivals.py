@@ -128,3 +128,42 @@ def test_apply_reconciles_only_after_archive_commit_without_waiting_for_auto_che
     assert not state['calls']
     archive.sync_day(engine, '2026-10-14', apply=True, fetch=lambda *a: {'total_count':0})
     assert state['calls'] == [date(2026,10,14)]
+
+
+def test_reconciliation_report_exposes_counts_and_blockers_without_private_payloads(monkeypatch):
+    from contextlib import nullcontext
+    import vera_attendance_source as source
+    import vera_missing_checkin_absence as absence
+    import vera_hc_rules as hc
+    monkeypatch.setattr(source, 'enabled', lambda: True)
+    monkeypatch.setattr(runtime, 'publish', lambda *a: [])
+    monkeypatch.setattr(sync, 'process_arrival_penalties', lambda *a: {
+        'eligible': 2, 'added': 1, 'errors': 1, 'evidence_blocked': 3,
+        'employee': 'PRIVATE_EMPLOYEE', 'sql': 'PRIVATE_SQL',
+        'reason_counts': {'stale_archive': 3, 'PRIVATE_REASON': 4},
+        'error_counts': {'database_error': 1, 'PRIVATE_SQL': 2}})
+    monkeypatch.setattr(sync, 'process_break_penalties', lambda *a: {'added': 0})
+    monkeypatch.setattr(absence, 'process', lambda c: {'added': 0, 'reason': 'stale_evidence'})
+    monkeypatch.setattr(hc, 'process', lambda c: {'added': 0})
+    report = []
+    failures = sync.reconcile_day(date(2026, 10, 25),
+        engine=SimpleNamespace(begin=lambda: nullcontext(object())), report=report)
+    arrival = next(r for r in report if r['stage'] == 'arrival_rule')
+    assert arrival['added'] == arrival['errors'] == 1
+    assert arrival['reason_counts'] == {'stale_archive': 3}
+    assert arrival['error_counts'] == {'database_error': 1}
+    assert report[-1]['reason'] == 'stale_evidence'
+    assert 'PRIVATE' not in str(report)
+    assert failures == [{'date': '2026-10-25', 'stage': 'arrival_rule', 'reason': 'rule_errors'}]
+
+
+def test_archive_forwards_rule_summary_even_when_no_new_scans(monkeypatch, capsys):
+    import json
+    report = {'stage': 'arrival_rule', 'added': 0, 'considered': 4,
+              'evidence_blocked': 4, 'reason_counts': {'unresolved_evidence': 4}}
+    monkeypatch.setattr(sync.subprocess, 'run', lambda *a, **kw: SimpleNamespace(
+        returncode=0, stdout=json.dumps({'ok': True, 'inserted_count': 0,
+            'stored_day_count': 145, 'reconciliation_results': [report], 'reconciliation_failures': []})))
+    assert sync.archive_days() == 0
+    summaries = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [r['reconciliation'] for r in summaries if 'reconciliation' in r] == [report, report]
