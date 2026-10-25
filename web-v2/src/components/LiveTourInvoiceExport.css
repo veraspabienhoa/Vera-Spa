@@ -36,3 +36,16 @@
 .invoice-export-receipt>p,.invoice-export-receipt h3{font-weight:700;text-align:center}
 
 .invoice-export-receipt .invoice-export-total td{font-weight:700;text-align:center;background:#edf3ef}
+
+.invoice-export-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px;align-items:end}
+.invoice-export-filters label{display:grid;gap:6px;min-width:0}
+.invoice-export-filters input,.invoice-export-filters select{box-sizing:border-box;width:100%;min-width:0;max-width:100%}
+.invoice-export-search{grid-column:1/-1}
+.invoice-export-filters button{max-width:100%;white-space:normal}
+.invoice-export-modal .invoice-export-options label{white-space:nowrap;gap:8px}
+.invoice-export-modal .invoice-export-options input{width:20px;height:20px;flex:0 0 20px;margin:0}
+.invoice-export-modal .invoice-export-table{max-width:100%;overflow:auto}
+.invoice-export-modal .invoice-export-table table{min-width:900px;table-layout:auto}
+.invoice-export-modal .invoice-export-table th,.invoice-export-modal .invoice-export-table td{word-break:normal;overflow-wrap:normal}
+.invoice-export-modal .invoice-export-table td:nth-child(2),.invoice-export-modal .invoice-export-table td:nth-child(3){white-space:nowrap}
+@media(max-width:400px){.invoice-export-filters{grid-template-columns:minmax(0,1fr)}}

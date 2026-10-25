@@ -8,6 +8,16 @@ const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',runScrip
 w.MessageChannel=class {constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}};w.IS_REACT_ACT_ENVIRONMENT=true;w.URL.createObjectURL=()=> 'blob:test';w.URL.revokeObjectURL=()=>{};w.eval(result.outputFiles[0].text)
 try {
  await w.mount();await w.act(async()=>new Promise(r=>setTimeout(r,350)))
+ const inputValue=Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set
+ for(const [label,value] of [['Lọc tên nhân viên','Thảo Linh'],['Lọc phòng','6.1']]) {
+   const input=w.document.querySelector(`[aria-label="${label}"]`)
+   await w.act(async()=>{inputValue.call(input,value);input.dispatchEvent(new w.Event('input',{bubbles:true}))})
+ }
+ await w.act(async()=>new Promise(r=>setTimeout(r,350)))
+ assert.equal(w.query.employee,'Thảo Linh');assert.equal(w.query.room,'6.1');assert.equal(w.query.page,1)
+ await w.act(async()=>[...w.document.querySelectorAll('button')].find(b=>b.textContent==='Xóa bộ lọc tìm kiếm').click())
+ await w.act(async()=>new Promise(r=>setTimeout(r,350)))
+ assert.equal(w.query.employee,'');assert.equal(w.query.room,'')
  for(const label of ['Chọn VERA-A','Chọn VERA-B']) await w.act(async()=>w.document.querySelector(`[aria-label="${label}"]`).click())
  assert.equal(w.document.querySelectorAll('.invoice-export-receipt').length,1)
  assert.equal(w.document.querySelectorAll('.invoice-export-receipt tbody tr').length,2)

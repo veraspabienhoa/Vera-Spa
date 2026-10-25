@@ -5085,7 +5085,7 @@ def install_live_tour_routes(
         search: str = Query(default="", max_length=200), customer_id: str = "",
         customer_ids: str = Query(default="", max_length=8000),
         date_from: str = "", date_to: str = "", preset: str = "",
-        selected_date: Annotated[str, Query(alias="date")] = "", employee: str = "", customer: str = "", service: str = "", bill_no: str = "",
+        selected_date: Annotated[str, Query(alias="date")] = "", employee: str = "", room: str = Query(default="", max_length=100), customer: str = "", service: str = "", bill_no: str = "",
         ident: identity_type = Depends(current_identity),
     ):
         groups = {"customers": ("customers",), "pending": ("pending",), "invoices": ("invoices",),
@@ -5115,7 +5115,7 @@ def install_live_tour_routes(
             queried = query_store.read_collection(conn, panel, page=page, page_size=page_size,
                 filters=dict(search=search, customer_id=customer_id, customer_ids=selected_customer_ids,
                              date_from=date_from, date_to=date_to, employee=employee, customer=customer,
-                             service=service, bill_no=bill_no), grants=grants) if safe_indexed_history else None
+                             service=service, bill_no=bill_no, room=room), grants=grants) if safe_indexed_history else None
             if queried is not None:
                 state, revision = queried['state'], int(queried['revision'])
             elif resource_store.enabled():
@@ -5157,7 +5157,7 @@ def install_live_tour_routes(
                     # A hidden customer name must not become a count lookup via
                     # fallback filtering. Match the indexed permission gate.
                     values = []
-                values = [row for row in values if list_queries.matches(row,date_from=date_from,date_to=date_to,employee=employee,customer=customer,service=service,bill_no=bill_no,history=panel=="history",invoice_dates=panel in {"reports","invoices"})]
+                values = [row for row in values if list_queries.matches(row,date_from=date_from,date_to=date_to,employee=employee,customer=customer,service=service,bill_no=bill_no,room=room,history=panel=="history",invoice_dates=panel in {"reports","invoices"})]
             # Preserve source ordering inside each page, newest pages first.
             totals[key] = len(values)
             if key == "reports":

@@ -37,7 +37,7 @@ def invoice_numbers(row):
     return [row.get('bill_no',''), *row.get('bill_numbers',[]), *[number for key in ('before','after','invoice','pending','payload') for number in invoice_numbers(row.get(key))]]
 
 
-def matches(row, *, date_from='', date_to='', employee='', customer='', service='', bill_no='', history=False, invoice_dates=False):
+def matches(row, *, date_from='', date_to='', employee='', customer='', service='', bill_no='', room='', history=False, invoice_dates=False):
     if history:
         row = {**row, 'effective_at':row.get('effective_at') or row.get('at') or row.get('created_at') or row.get('timestamp'),
                'customer_name':row.get('customer_name') or (row.get('before') or {}).get('name') or (row.get('after') or {}).get('name'),
@@ -53,6 +53,8 @@ def matches(row, *, date_from='', date_to='', employee='', customer='', service=
             return False
         if date_from and day < date_from or date_to and day > date_to:
             return False
+    if room and not any(str(room).strip().lower() in str(entry.get('room') or row.get('room') or '').lower() for entry in row.get('entries') or [row]):
+        return False
     if customer and not customer_matches(row,customer):
         return False
     return any(phrase(entry.get('employee_name'),employee) and phrase(entry.get('service'),service) for entry in row.get('entries') or [row])

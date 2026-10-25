@@ -16,6 +16,7 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
   const [from, setFrom] = useState(tourDateRange('today').date_from)
   const [to, setTo] = useState(tourDateRange('today').date_to)
   const [search, setSearch] = useState(''), [searchBy, setSearchBy] = useState('bill_no')
+  const [employee, setEmployee] = useState(''), [room, setRoom] = useState('')
   const [page, setPage] = useState(1), [pages, setPages] = useState(1)
   const [rows, setRows] = useState([]), [selected, setSelected] = useState({})
   const [service, setService] = useState(true), [tip, setTip] = useState(true)
@@ -32,13 +33,13 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
     setRows([]); setLoading(true); setError('')
     const timer = setTimeout(() => {
       if (!valid) { setLoading(false); return }
-      veraApi.liveTourCollection('invoices', { preset, ...(preset === 'custom' ? { date_from: from, date_to: to } : {}), [searchBy]: search, page, page_size: 25 }, { signal: controller.signal })
+      veraApi.liveTourCollection('invoices', { preset, ...(preset === 'custom' ? { date_from: from, date_to: to } : {}), [searchBy]: search, employee, room, page, page_size: 25 }, { signal: controller.signal })
         .then(result => { if (!controller.signal.aborted) { setRows(result.data?.state?.invoices || []); setPages(result.pages || 1) } })
         .catch(err => { if (!controller.signal.aborted) setError(err.message) })
         .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     }, 250)
     return () => { clearTimeout(timer); controller.abort() }
-  }, [preset, from, to, searchBy, search, page, valid])
+  }, [preset, from, to, searchBy, search, employee, room, page, valid])
   const choose = (invoice, checked) => {
     setPreview(null)
     setSelected(old => { const next = { ...old }; if (checked) { if (Object.keys(next).length >= 50) return old; next[invoice.id] = invoice } else delete next[invoice.id]; return next })
@@ -61,11 +62,14 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
   return <><EmployeeProfileModal className="invoice-export-modal" labelledBy="invoice-export-title" onClose={onClose} busy={busy}>
     <header><h2 id="invoice-export-title">Xuất hóa đơn</h2><button type="button" onClick={onClose} disabled={busy}>Đóng</button></header>
     <div className="invoice-export-layout"><div className="invoice-export-selection">
-    <div className="invoice-export-tools">
+    <div className="invoice-export-filters">
       <label>Thời gian<select value={preset} disabled={busy} onChange={e => setPreset(e.target.value)}>{TOUR_DATE_PRESETS.filter(([id]) => allowed.includes(id)).map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label>
       {preset === 'custom' && <><label>Từ ngày<VeraDateInput value={from} onChange={e=>setFrom(e.target.value)} disabled={busy}/></label><label>Đến ngày<VeraDateInput value={to} onChange={e=>setTo(e.target.value)} disabled={busy}/></label></>}
       <label>Tìm theo<select value={searchBy} disabled={busy} onChange={e=>{setSearchBy(e.target.value);setPage(1)}}><option value="bill_no">Mã hóa đơn</option><option value="customer">Khách hàng</option></select></label>
-      <label>Tìm kiếm<input value={search} disabled={busy} placeholder="Nhập mã hóa đơn hoặc tên khách…" onChange={e=>{setSearch(e.target.value);setPage(1)}}/></label>
+      <label className="invoice-export-search">Tìm kiếm<input value={search} disabled={busy} placeholder="Nhập mã hóa đơn hoặc tên khách…" onChange={e=>{setSearch(e.target.value);setPage(1)}}/></label>
+      <label>Tên nhân viên<input aria-label="Lọc tên nhân viên" value={employee} disabled={busy} placeholder="Nhập tên nhân viên…" onChange={e=>{setEmployee(e.target.value);setPage(1)}}/></label>
+      <label>Phòng<input aria-label="Lọc phòng" value={room} disabled={busy} placeholder="Nhập số phòng…" onChange={e=>{setRoom(e.target.value);setPage(1)}}/></label>
+      <button type="button" disabled={busy || (!search && !employee && !room)} onClick={()=>{setSearch('');setEmployee('');setRoom('');setPage(1)}}>Xóa bộ lọc tìm kiếm</button>
     </div>
     <div className="invoice-export-options"><label><input type="checkbox" checked={service} disabled={busy} onChange={e=>{setService(e.target.checked);setPreview(null)}}/> Dịch vụ</label><label><input type="checkbox" checked={tip} disabled={busy} onChange={e=>{setTip(e.target.checked);setPreview(null)}}/> Tiền tip</label></div>
     {!valid && <p role="alert">Chọn khoảng ngày hợp lệ trong phạm vi được cấp quyền.</p>}
