@@ -262,6 +262,9 @@ def predicate(kind, filters, params, *, alias='r', prefix='', customer_pii=True,
         employee = _phrase("entry->>'employee'", filters.get('employee'), params, prefix + 'employee', report=report_mode)
         service = _phrase("entry->>'service'", filters.get('service'), params, prefix + 'service', report=report_mode)
         where.append(f"EXISTS (SELECT 1 FROM jsonb_array_elements({q}->'{field_prefix}entries') entry WHERE {employee} AND {service})")
+    if filters.get('room'):
+        params[prefix + 'room'] = str(filters['room']).strip().lower()
+        where.append(f"EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof({alias}.payload->'entries')='array' AND {alias}.payload->'entries'<>'[]'::jsonb THEN {alias}.payload->'entries' ELSE jsonb_build_array({alias}.payload) END) room_entry WHERE strpos(lower(COALESCE(NULLIF(room_entry->>'room',''),{alias}.payload->>'room','')), :{prefix}room)>0)")
     for name in ('total_amount', 'tip_amount'):
         if filters.get(name) is not None:
             params[prefix + name] = filters[name]
