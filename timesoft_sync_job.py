@@ -1433,7 +1433,44 @@ def _facegate_arrival_current(conn, row, work_date, employee, *, basis=None):
         return False
 
 
-def process_timesoft_penalties(
+def process_timesoft_penalties(engine, cfg, employee_map, catalog, checkin_by_date,
+                              *, include_synced_history=False):
+    """A failed employee must not starve later arrivals on every scheduled retry.
+
+    Each row retains the canonical writer's transactions and write-time evidence
+    checks. Merge counts only after that row has returned (and committed).
+    """
+    from sqlalchemy.exc import DBAPIError
+
+    failure_counts = {}
+    result = {"eligible": 0, "added": 0, "skipped": 0, "errors": 0}
+    for day, frame in checkin_by_date:
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            continue
+        for index in range(len(frame)):
+            try:
+                outcome = _process_timesoft_penalty_rows(
+                    engine, cfg, employee_map, catalog, [(day, frame.iloc[index:index + 1])],
+                    include_synced_history=include_synced_history,
+                )
+            except Exception as exc:
+                result["errors"] += 1
+                category = ('database_error' if isinstance(exc, DBAPIError) else
+                            'timeout' if isinstance(exc, TimeoutError) else
+                            'invalid_data' if isinstance(exc, (TypeError, ValueError)) else 'unexpected_error')
+                failure_counts[category] = failure_counts.get(category, 0) + 1
+                # Never put SQL parameters, employee data or device payloads in
+                # the scheduled error log. The failed row retries next pass.
+                _log(f"AUTO ARRIVAL ERROR: employee transaction failed ({type(exc).__name__})")
+                continue
+            for key in result:
+                result[key] += outcome[key]
+    if failure_counts:
+        result['error_counts'] = failure_counts
+    return result
+
+
+def _process_timesoft_penalty_rows(
     engine,
     cfg: dict,
     employee_map: dict,

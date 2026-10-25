@@ -55,7 +55,15 @@ def process_arrival_penalties(engine, today):
                  for name in frame.get('employeeInfo.Name', [])}
     # The minute job reports aggregate counts only, never employee/device data.
     with redirect_stdout(io.StringIO()):
-        return ts.process_timesoft_penalties(engine, cfg, employees, catalog, frames, include_synced_history=True)
+        result = ts.process_timesoft_penalties(engine, cfg, employees, catalog, frames, include_synced_history=True)
+    diagnostics = {'considered': 0, 'evidence_blocked': 0, 'reason_counts': {}}
+    for _, frame in frames:
+        counts = frame.attrs.get('arrival_diagnostics', {})
+        for key in ('considered', 'evidence_blocked'):
+            diagnostics[key] += counts.get(key, 0)
+        for reason, count in counts.get('reason_counts', {}).items():
+            diagnostics['reason_counts'][reason] = diagnostics['reason_counts'].get(reason, 0) + count
+    return {**result, **diagnostics}
 
 
 def process_break_penalties(engine, day):
@@ -68,10 +76,12 @@ def process_break_penalties(engine, day):
         return ts.process_break_return_penalties(engine, catalog, work_date=day)
 
 
-def reconcile_day(day, engine=None):
+def reconcile_day(day, engine=None, *, report=None):
     """Commit one successful archive projection before its canonical writers."""
     from vera_attendance_source import enabled
     if not enabled():
+        if report is not None:
+            report.append({'stage': 'source', 'reason': 'facegate_not_selected'})
         return []
     from vera_facegate_runtime import publish
     from vera_facegate_cutover import runtime_engine
@@ -98,11 +108,33 @@ def reconcile_day(day, engine=None):
         ):
             try:
                 result = operation()
-                print(json.dumps({'date': day.isoformat(), name: result}))
+                # Only bounded aggregate fields leave this process. Never
+                # forward employee names, SQL errors or raw device evidence.
+                summary = {'stage': name}
+                if isinstance(result, dict):
+                    for key in ('eligible', 'added', 'skipped', 'errors', 'considered', 'evidence_blocked'):
+                        if type(result.get(key)) is int:
+                            summary[key] = result[key]
+                    if result.get('reason') in {'disabled', 'future_work_date', 'facegate_not_selected',
+                                               'incomplete_or_ambiguous_evidence', 'stale_evidence'}:
+                        summary['reason'] = result['reason']
+                    allowed = {'future_evidence', 'unmapped_employee', 'unresolved_evidence',
+                               'incomplete_archive', 'stale_archive', 'missing_vera_shift', 'unknown_evidence'}
+                    summary['reason_counts'] = {k: v for k, v in result.get('reason_counts', {}).items()
+                                                if k in allowed and type(v) is int}
+                    if result.get('error_counts'):
+                        summary['error_counts'] = {k: v for k, v in result['error_counts'].items()
+                            if k in {'database_error', 'timeout', 'invalid_data', 'unexpected_error'} and type(v) is int}
+                if report is not None:
+                    report.append(summary)
+                print(json.dumps({'date': day.isoformat(), **summary}))
                 if isinstance(result, dict) and result.get('errors', 0):
                     failures.append({'date': day.isoformat(), 'stage': name, 'reason': 'rule_errors'})
             except Exception as exc:
-                failures.append({'date': day.isoformat(), 'stage': name, 'reason': type(exc).__name__})
+                failure = {'date': day.isoformat(), 'stage': name, 'reason': type(exc).__name__}
+                failures.append(failure)
+                if report is not None:
+                    report.append(failure)
     finally:
         if owns_engine:
             engine.dispose()
@@ -131,6 +163,8 @@ def archive_days():
             continue
         print(json.dumps({'date': day.isoformat(), 'inserted_count': summary['inserted_count'],
                           'stored_day_count': summary['stored_day_count']}))
+        for report in summary.get('reconciliation_results', []):
+            print(json.dumps({'date': day.isoformat(), 'reconciliation': report}))
         failures.extend(summary.get('reconciliation_failures', []))
     print(json.dumps({'ok': not failures, 'source': 'facegate', 'failures': failures}))
     return int(bool(failures))

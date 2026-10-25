@@ -3012,3 +3012,38 @@ separate from confirmed-empty results; filters reset pages and abort stale reads
 Regression coverage includes read-only PostgreSQL execution, midnight boundaries,
 expiry, deterministic ID ordering, role denial, pagination, export overflow and
 slow/error UI responses. Production timings and deployment are unverified.
+
+## 25-10-2026 — Isolate arrival failures and retain scheduled rule diagnostics
+
+The operator reports missing automatic fines. Read-only GitHub archive-job logs
+(run 40189153965, job 121156232584) show a successful FaceGate capture at
+18:30 Vietnam time on 25-10-2026, with no reconciliation exceptions reported.
+That log exposes archive counts only; it does not establish that any specific
+employee met the fine criteria or that a financial write occurred. Authenticated
+production evidence and the running deployment SHA have not been verified.
+
+Confirmed source defect: process_timesoft_penalties lets a per-employee read,
+write, cleaning-supplement or commit exception terminate the whole arrival batch.
+A repeatedly failing first row prevents later eligible arrivals from being
+processed on every scheduled pass. Synthetic tests reproduce this with the
+original loop, including rollback of the arrival when its cleaning write fails.
+The public runner now isolates each employee, retains the existing transactions
+and exact write-time evidence checks, counts only successful returns, and permits
+the next scheduled pass to retry the failed employee without duplicating committed
+fines. No historical backfill or financial record changes are performed.
+
+Confirmed observability gap: sync_day captures/discards reconciliation stdout and
+archive_days forwards only failures, hiding successful zero-write runs caused by
+blocked evidence. Return and forward allowlisted stage counts, failure categories
+and aggregate evidence-blocker codes. No employee identifiers, SQL parameters,
+raw scans or exception messages enter these scheduled summaries. Raw capture
+success remains separate from rule execution; existing incomplete/stale/ambiguous
+source guards, roles, thresholds, permissions and notification outbox are intact.
+
+Validation: 272 focused tests passed; 12 PostgreSQL integration tests skipped
+without a configured isolated database. Includes standalone worker import order,
+failed-row retry/deduplication, connection reuse, auth pool, notifications and VPS
+diagnostics. Python compilation and diff whitespace checks passed. These findings
+confirm a source-level failure mode, not the root cause of an identified missing
+production fine. Merge, deployment, PostgreSQL CI and production readback remain
+pending.

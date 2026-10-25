@@ -277,9 +277,22 @@ def worker_frames(conn, dates):
         if source_for(day) != 'facegate':
             continue
         frame = []
+        considered = blocked = 0
+        reasons = Counter()
+        allowed_reasons = {'future_evidence', 'unmapped_employee', 'unresolved_evidence',
+                           'incomplete_archive', 'stale_archive', 'missing_vera_shift'}
         for row in records(conn, day, day):
-            if (not row.get('check_in') or not row.get('identity_verified')
+            if not row.get('check_in'):
+                continue
+            considered += 1
+            if (not row.get('identity_verified')
                     or row.get('attendance_fine_evidence_ready') is not True):
+                blocked += 1
+                codes = set(row.get('attendance_fine_evidence_reasons') or [])
+                if not row.get('identity_verified'):
+                    codes.add('unmapped_employee')
+                for code in codes or {'unknown_evidence'}:
+                    reasons[code if code in allowed_reasons else 'unknown_evidence'] += 1
                 continue
             frame.append({'WorkDateStr': day.strftime('%d/%m/%Y'),
                           'employeeInfo.Name': row['employee_name'],
@@ -289,7 +302,12 @@ def worker_frames(conn, dates):
                           '_vera_checkin_at': row['check_in_at'],
                           'StartWorkTime': row.get('shift_start', ''),
                           'TotalMinuteInGoLate': row.get('late_minutes', 0)})
-        output.append((day, pd.DataFrame(frame)))
+        dataset = pd.DataFrame(frame)
+        dataset.attrs['arrival_diagnostics'] = {
+            'considered': considered, 'evidence_blocked': blocked,
+            'reason_counts': dict(sorted(reasons.items())),
+        }
+        output.append((day, dataset))
     return output
 
 
