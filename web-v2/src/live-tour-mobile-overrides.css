@@ -387,3 +387,9 @@ html body .live-tour-page .tour-room-panel .tour-room-grid .tour-room-private-ba
     text-size-adjust: 100%;
   }
 }
+
+@media (max-width: 820px) {
+  html body .live-tour-page .live-tour-invoice-export-button {
+    display: none !important;
+  }
+}
