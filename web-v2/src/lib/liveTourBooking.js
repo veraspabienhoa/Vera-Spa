@@ -43,7 +43,7 @@ export function bookingEmployees(employees, now = Date.now(), configuredMinutes 
 }
 
 export function bookingServiceItems(worker, catalog) {
-  if (worker?.service_items?.length) return worker.service_items.map((item) => ({ service_id: item.service_id, quantity: item.quantity }))
+  if (worker?.service_items?.length) return [...worker.service_items.map((item) => ({ service_id: item.service_id, quantity: item.quantity })), ...(worker.additional_ktv_item ? [worker.additional_ktv_item] : [])]
   const name = worker?.service || ''
   if (!name) return []
   const exact = catalog.find((item) => tourNameKey(item.name) === tourNameKey(name))

@@ -148,6 +148,10 @@ function LiveTourSingleBookingDialog({ data, sourceRevision = data.revision, sou
   const catalog = orderedCatalog(data.services || [])
   const [employeeId, setEmployeeId] = useState(initial?.id || '')
   const [items, setItems] = useState(() => bookingServiceItems(initial, catalog))
+  const [additionalKtvId, setAdditionalKtvId] = useState(initial?.additional_ktv_id || '')
+  const additionalItems = items.filter(row => tourNameKey(catalog.find(item => item.id === row.service_id)?.name) === 'them 1 ktv')
+  const mainItems = items.filter(row => !additionalItems.includes(row))
+  const hasAdditionalKtv = additionalItems.length > 0
   const [room, setRoom] = useState(initial?.service ? initial.room : '')
   const [request, setRequest] = useState(() => defaultBookingRequest(initial, data.payment_settings?.shift_ready_times))
   const [customerId, setCustomerId] = useState(initial?.service ? initial.customer_id || '' : '')
@@ -168,7 +172,7 @@ function LiveTourSingleBookingDialog({ data, sourceRevision = data.revision, sou
   const selectedCustomer = (data.customers || []).find((row) => row.id === customerId)
   const purchases = customerPurchases(selectedCustomer).map((purchase) => availableBookingPurchase(purchase, employee ? [employee] : []))
   const selectedCombo = purchases.find((purchase) => purchase.id === comboId)
-  const comboError = canCustomers && comboId ? (selectedCombo ? comboBookingError(selectedCombo, items, catalog) : 'Không tìm thấy combo đã mua. Hãy chọn lại khách hàng hoặc combo.') : ''
+  const comboError = canCustomers && comboId ? (selectedCombo ? comboBookingError(selectedCombo, mainItems, catalog) : 'Không tìm thấy combo đã mua. Hãy chọn lại khách hàng hoặc combo.') : ''
   const selectCustomer = (id) => {
     const customer = (data.customers || []).find((row) => row.id === id)
     const purchase = preferredBookingCombo(customer, catalog)
@@ -181,12 +185,14 @@ function LiveTourSingleBookingDialog({ data, sourceRevision = data.revision, sou
   }
   const bookingPayload = () => ({
     employee_id: employeeId, service_items: items, room, request, note,
+    additional_ktv_id: hasAdditionalKtv ? additionalKtvId : '',
     share_private_room: sharePrivateRoom,
     ...(canCustomers ? { customer_id: customerId || null, customer_name: selectedCustomer?.name || '', customer_phone: selectedCustomer?.phone || '', combo_purchase_id: comboId || '' } : {}),
   })
   const selectEmployee = (id) => {
     const worker = employees.find((row) => row.id === id)
     setSource({ employee: structuredClone(worker), revision: sourceRevision })
+    setAdditionalKtvId(worker?.additional_ktv_id || '')
     setEmployeeId(id); setItems(bookingServiceItems(worker, catalog)); setServiceId('')
     setRoom(worker?.service ? worker.room : ''); setRequest(defaultBookingRequest(worker, data.payment_settings?.shift_ready_times))
     setCustomerId(worker?.service ? worker.customer_id || '' : ''); setNote(worker?.service ? worker.note || '' : '')
@@ -194,6 +200,8 @@ function LiveTourSingleBookingDialog({ data, sourceRevision = data.revision, sou
   }
   const submit = async (event) => {
     event.preventDefault(); setMessage('')
+    if (hasAdditionalKtv && !mainItems.length) { setMessage('Hãy chọn dịch vụ chính trước khi thêm KTV.'); return }
+    if (hasAdditionalKtv && (!additionalKtvId || additionalKtvId === employeeId)) { setMessage('Hãy chọn KTV thêm khác KTV chính.'); return }
     if (roomState.error || comboError) { setMessage(roomState.error || comboError); return }
     if (items.some((row) => !Number.isInteger(Number(row.quantity)) || Number(row.quantity) < 1 || Number(row.quantity) > 30)) { setMessage('Số lượng mỗi dịch vụ phải từ 1 đến 30.'); return }
     if (!employeeId || !room || !items.length) { setMessage('Hãy chọn nhân viên, ít nhất một dịch vụ và phòng/giường.'); return }
@@ -230,7 +238,7 @@ function LiveTourSingleBookingDialog({ data, sourceRevision = data.revision, sou
   }
   const finish = async () => {
     setMessage('')
-    const changed = JSON.stringify(items) !== JSON.stringify(bookingServiceItems(employee, catalog))
+    const changed = additionalKtvId !== (employee.additional_ktv_id || '') || JSON.stringify(items) !== JSON.stringify(bookingServiceItems(employee, catalog))
       || room !== employee.room || request !== (employee.request || '') || note !== (employee.note || '')
       || (canCustomers && (customerId !== (employee.customer_id || '') || comboId !== (employee.combo_purchase_id || '')))
     if (changed && roomState.error) { setMessage(roomState.error); return }
@@ -278,11 +286,12 @@ function LiveTourSingleBookingDialog({ data, sourceRevision = data.revision, sou
           <StableFeedback>{comboError && <p className="error-box" role="alert">{comboError}</p>}</StableFeedback>
         </div>}
         <div className="tour-booking-service-picker">{selectedCombo && <label className="live-tour-field"><span>Dịch vụ trong combo</span><input readOnly value={items.filter(row => !selectedCombo.component_balances || selectedCombo.component_balances.some(part => part.service_id === row.service_id)).map(row => catalog.find(service => service.id === row.service_id)?.name || row.service_id).join(' & ')} placeholder="Chọn dịch vụ dùng vé combo"/></label>}<LiveTourSearchSelect advanceOnSelect label="Dịch vụ" showAllOptions clearOnSelect value={serviceId} options={serviceOptions} onChange={(id) => { setServiceId(''); if (id) setItems((current) => [...current, { service_id: id, quantity: 1 }]) }}/></div>
-        <div className="tour-booking-items"><LiveTourPageItems items={items} label="Dịch vụ đã chọn">{(row, i) => <div className="tour-booking-item" key={row.service_id}><div><strong>{catalog.find((item) => item.id === row.service_id)?.name || row.service_id}</strong><small>{money(catalog.find((item) => item.id === row.service_id)?.price)}</small></div><label>Số lượng<input type="number" min="1" max="30" required value={row.quantity} onChange={(event) => setItems((current) => current.map((item, index) => index === i ? { ...item, quantity: Number(event.target.value) } : item))}/></label><button data-ui-key="u-cc7af269f540" type="button" className="icon-button" aria-label={`Bỏ dịch vụ ${i + 1}`} onClick={() => setItems((current) => current.filter((_, index) => index !== i))}><Trash2 size={17}/></button></div>}</LiveTourPageItems>{!items.length && <p><Plus size={14}/> Chọn một hoặc nhiều dịch vụ phía trên.</p>}</div>
+        <div className="tour-booking-items"><LiveTourPageItems items={items} label="Dịch vụ đã chọn">{(row, i) => <div className="tour-booking-item" key={row.service_id}><div><strong>{catalog.find((item) => item.id === row.service_id)?.name || row.service_id}</strong><small>{money(catalog.find((item) => item.id === row.service_id)?.price)}</small></div><label>Số lượng<input type="number" min="1" max={additionalItems.includes(row) ? "1" : "30"} required value={row.quantity} onChange={(event) => setItems((current) => current.map((item, index) => index === i ? { ...item, quantity: Number(event.target.value) } : item))}/></label><button data-ui-key="u-cc7af269f540" type="button" className="icon-button" aria-label={`Bỏ dịch vụ ${i + 1}`} onClick={() => setItems((current) => current.filter((_, index) => index !== i))}><Trash2 size={17}/></button></div>}</LiveTourPageItems>{!items.length && <p><Plus size={14}/> Chọn một hoặc nhiều dịch vụ phía trên.</p>}</div>
+        {hasAdditionalKtv && <div className="wide"><LiveTourSearchSelect label="KTV thêm *" placeholder="Tìm và chọn KTV thêm" value={additionalKtvId} required options={employeeOptions.filter(option => option.value !== employeeId && !employees.find(row => row.id === option.value)?.service).concat(employee?.additional_ktv_id ? [{ value: employee.additional_ktv_id, label: employees.find(row => row.id === employee.additional_ktv_id)?.name || employee.additional_ktv_id }] : [])} onChange={setAdditionalKtvId}/><small>Thời lượng bằng dịch vụ chính. Tiền Thêm 1 KTV ghi nhận cho nhân viên được chọn thêm.</small></div>}
         <LiveTourSearchSelect advanceOnSelect invalid={Boolean(roomState.error)} label="Phòng / giường *" value={room} required options={roomState.options} showAllOptions filterOption={roomOptionMatches} onChange={(value) => { setRoom(value); setMessage('') }}/>
         <label className="live-tour-field"><span>Yêu cầu</span><select data-booking-step value={request} disabled={doing} onChange={(event) => { setRequest(event.target.value); advanceBookingField(event.currentTarget) }}><option value="">Để trống</option><option value="YC">YC</option></select></label>
         <label className="live-tour-field tour-booking-note"><span>Ghi chú</span><textarea data-booking-step value={note} onChange={(event) => setNote(event.target.value)}/></label>
-        <div className="wide tour-booking-total"><span>{selectedCombo ? 'Tiền dịch vụ mua thêm ngoài combo' : 'Tiền dịch vụ'}</span><strong>{money(selectedCombo ? comboExtraSubtotal(selectedCombo, [{ service_items: items }], catalog) : bookingTotal(items, catalog))}</strong></div>
+        <div className="wide tour-booking-total"><span>{selectedCombo ? 'Tiền dịch vụ mua thêm ngoài combo' : 'Tiền dịch vụ'}</span><strong>{money(selectedCombo ? comboExtraSubtotal(selectedCombo, [{ service_items: mainItems }], catalog) + bookingTotal(additionalItems, catalog) : bookingTotal(items, catalog))}</strong></div>
         <UiToolbar data-ui-key="u-3a1ba2545645" className="live-tour-modal-actions wide"><button data-dialog-close="true" data-ui-key="u-69fd82acb894" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-69fd82acb894">Đóng</UiCustomText></button>{(editing ? canOperate : canBook) && <><button data-ui-key="u-49b55bee36a7" type="submit" className="primary-button" value="book" disabled={!employeeId || Boolean(comboError || roomState.error)}>{editing ? 'Lưu dịch vụ' : 'Đặt lịch'}</button>{doing && canOperate && <button data-ui-key="u-c0dee8d2b164" data-ui-label-default="Hoàn thành" type="button" className="primary-button" onClick={finish}><UiCustomText uiKey="u-c0dee8d2b164">Hoàn thành</UiCustomText></button>}</>}</UiToolbar>
       </fieldset></form>}
   </LiveTourTransactionDialog>

@@ -1080,11 +1080,12 @@ def _catalog_referenced(state: dict[str, Any], kind: str, item: dict[str, Any]) 
 
 
 def _check_room_collision(state: dict[str, Any], candidate: dict[str, Any], room: str, service: str, *, share_private_room: bool = False) -> None:
+    from vera_live_tour_additional_ktv import paired
     wanted_room = _norm(room)
     wanted_group = _norm(_catalog_room_group(state, room))
     wanted_private = _catalog_private_service(state, service)
     for employee in state["employees"]:
-        if employee is candidate or not _active_booking(employee):
+        if employee is candidate or not _active_booking(employee) or paired(candidate, employee):
             continue
         current_room = str(employee.get("room") or "")
         same_bed = _norm(current_room) == wanted_room
@@ -1127,6 +1128,8 @@ def _clear_assignment(employee: dict[str, Any], now: datetime) -> None:
     # prices and combo reservations must never become a second payable service.
     record = _employee_record(employee, now)
     employee["last_assignment_display"] = {column: record[column] for column in RETAINED_ASSIGNMENT_COLUMNS}
+    for field in ("paired_booking_id", "additional_ktv_id", "additional_ktv_item", "primary_ktv_id"):
+        employee.pop(field, None)
     employee.pop("service_items", None)
     employee.pop("pre_start_tour_position", None)
     employee.pop("employee_change_minutes", None)
@@ -2117,6 +2120,16 @@ def _appearance_settings_update(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _apply_action(state: dict[str, Any], action: str, payload: dict[str, Any], actor: str, now: datetime, *, admin_invoice_override: bool = False) -> dict[str, Any]:
     action = str(action or "").strip().lower()
+    if action in {"booking", "update_booking"}:
+        import sys
+        from vera_live_tour_additional_ktv import apply_booking
+        paired_result = apply_booking(sys.modules[__name__], state, action, payload, actor, now)
+        if paired_result is not None:
+            return paired_result
+    if action in {"change_employee", "replace_service", "add_service", "add_minutes"}:
+        selected = set(payload.get("employee_ids") or [payload.get("employee_id")])
+        if any(row.get("paired_booking_id") for row in state["employees"] if row["id"] in selected):
+            raise HTTPException(409, "Hãy sửa dịch vụ và thời lượng tại Booking của KTV chính.")
     # Preserve legacy display values when an action replaces booking/backup data.
     # Start/reorder write board times; replacing a standard-tour worker restores
     # their pre-start clock so the cancelled turn does not consume their position.
@@ -3640,6 +3653,7 @@ def _state_response(
         # Occupancy must include hidden/retained staff without exposing customer data.
         "room_assignments": [{"id": row["id"], "room": row.get("room", ""),
                               "private_room_share_group": row.get("private_room_share_group", ""),
+                              **({key: row.get(key, "") for key in ("paired_booking_id", "additional_ktv_id", "primary_ktv_id")} if row.get("paired_booking_id") else {}),
                               "service": row.get("service", ""), "status": row.get("status", ""),
                               "private": _catalog_private_service(state, row.get("service"))}
                              for row in state["employees"] if _active_booking(row)],
@@ -5493,8 +5507,17 @@ def install_live_tour_routes(
             # A defensive copy guarantees multi-step actions never leak a partial
             # mutation into the value written after an exception.
             working = deepcopy(state)
-            if action in HOLIDAY_ACTIONS:
-                refresh_action_holidays(conn, working, action, payload, now)
+            if action in {"update_booking", "finish_to_pending"} and payload.get("additional_ktv_id"):
+                owner = _employee(working, payload.get("employee_id"))
+                if payload["additional_ktv_id"] != owner.get("additional_ktv_id"):
+                    require_feature(conn, ident, "live_tour_booking")
+            if action in HOLIDAY_ACTIONS or (action == "finish_to_pending" and payload.get("additional_ktv_id")):
+                holiday_payload = payload
+                if payload.get("additional_ktv_id"):
+                    holiday_payload = {**payload, "employee_ids": list(set(
+                        [str(item) for item in payload.get("employee_ids", [])]
+                        + [str(payload["additional_ktv_id"])]))}
+                refresh_action_holidays(conn, working, "update_booking" if action == "finish_to_pending" else action, holiday_payload, now)
             payload.pop("_manual_break_allowed", None)
             payload.pop("_admin_start", None)
             payload.pop("_booking_outside_shift", None)
