@@ -20,7 +20,10 @@ export function isPrivateBooking(service, catalog) {
     || catalog.some(item => item.private && name.split(/\s*&\s*/).includes(tourNameKey(item.name)))
 }
 export function bookingRoomState(rooms, employees, catalog, employeeId, selectedRoom, items = [], sharePrivateRoom = false) {
-  const active = employees.filter(row => row.id !== employeeId && row.room && ['dang cho', 'dang thuc hien', 'dang su dung'].includes(tourNameKey(row.status)))
+  const current = employees.find(row => row.id === employeeId)
+  const samePair = row => current?.paired_booking_id && current.paired_booking_id === row.paired_booking_id
+    && (current.additional_ktv_id === row.id || current.primary_ktv_id === row.id)
+  const active = employees.filter(row => !samePair(row) && row.id !== employeeId && row.room && ['dang cho', 'dang thuc hien', 'dang su dung'].includes(tourNameKey(row.status)))
   const group = bookingRoomGroup(selectedRoom, rooms)
   const occupants = active.filter(row => bookingRoomGroup(row.room, rooms) === group)
   const requestedPrivate = items.some(item => {

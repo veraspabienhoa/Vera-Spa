@@ -188,6 +188,11 @@ def action_resources(state, action, payload, idempotency_key):
     if action == 'start_room':
         from vera_web_v2_live_tour import _room_action_members
         ids.update(str(row['id']) for row in _room_action_members(state, str(payload.get('room') or '').strip(), action))
+    ids.update(str(part['additional_ktv_id']) for part in parts if part.get('additional_ktv_id'))
+    # Protect both current and newly selected workers; rediscovery after locking
+    # rejects concurrent pair changes using the same canonical resource set.
+    ids.update(str(row[field]) for row in state['employees'] if str(row.get('id')) in ids
+               for field in ('additional_ktv_id', 'primary_ktv_id') if row.get(field))
     parts.extend(row for row in state['employees'] if str(row.get('id')) in ids)
     resources.update(('live_tour_employee', value) for value in ids)
     for part in parts:
