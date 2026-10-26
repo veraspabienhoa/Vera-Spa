@@ -953,7 +953,8 @@ def test_manual_work_status_overrides_daily_projection_for_the_current_day_only(
     assert "manual_work_status_by" not in worker
 
 
-def test_manual_shift_overrides_automatic_checkin_for_current_day_only():
+@pytest.mark.parametrize("manual_shift", ["Ca 2", ""])
+def test_manual_shift_overrides_automatic_checkin_for_current_day_only(manual_shift):
     day = NOW.astimezone(live.VN_TZ).date().isoformat()
     next_day = (NOW.astimezone(live.VN_TZ).date() + timedelta(days=1)).isoformat()
     worker = employee("e1", "An", shift="Ca 1")
@@ -965,12 +966,12 @@ def test_manual_shift_overrides_automatic_checkin_for_current_day_only():
     }]
 
     live._apply_action(state, "set_shift", {
-        "employee_id": "e1", "shift": "Ca 2",
+        "employee_id": "e1", "shift": manual_shift,
     }, "admin", NOW)
     live._reconcile_roster(state, directory, live._new_directory_employee, today=day)
     live._sync_daily(state, directory, [], automatic=False, today=day)
 
-    assert worker["shift"] == "Ca 2"
+    assert worker["shift"] == manual_shift
     assert worker["assigned_shift"] == "Ca 1"
     assert worker["manual_shift_date"] == day
 
