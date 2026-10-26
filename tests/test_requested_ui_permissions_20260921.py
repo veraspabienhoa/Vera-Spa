@@ -12,13 +12,16 @@ def test_weekly_shift_badge_is_in_quick_tools_without_circled_number():
     assert "live-tour-weekly-shift" in quick
     assert "CA TUẦN NÀY ①" not in page
     assert "Ca tuần ①" not in page
-    assert ">CA TUẦN NÀY{" in page
-    assert ">Ca tuần này{" in page
+    assert ">CA TUẦN NÀY</span>" in quick
+    assert ">Ca tuần này</span>" in quick
     assert "selectedWeeklyShift" in page
     assert "Ca 1" in page and "Ca 2" in page
     assert 'className="live-tour-shift-controls"' in quick
     assert ".live-tour-page .live-tour-weekly-shift .weekly-desktop{display:none}" in controls
-    assert ".tour-quick-tools .live-tour-shift-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.55fr)" in controls
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.55fr);" in controls
+    assert "{canSetShift && <div" in quick
+    assert "['Ca 1', 'Ca 2', ''].map" in quick
+    assert "{shift || 'Xoá ca'}" in quick
 
 
 def test_revenue_ledger_filters_match_visible_ledger_columns():
