@@ -6,6 +6,8 @@ import VeraMoneyInput from './VeraMoneyInput'
 import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
 import { searchTextMatches } from '../lib/searchText'
 
+import { violationDisplayText } from '../lib/scheduleTableRows'
+
 const money = value => `${Number(value || 0).toLocaleString('vi-VN')}đ`
 
 export default function ScheduleViolations({ department, departmentLabel, employees = [], canEdit, canManage = false, personal = false, openSequence, request, onSaved, onExport }) {
@@ -153,14 +155,14 @@ export default function ScheduleViolations({ department, departmentLabel, employ
     {approvalSupported === false && <p className="info-box" role="status">Máy chủ chưa hỗ trợ Đi trễ có phép. Cần cập nhật backend để bật ô Có phép; dữ liệu vi phạm và các thao tác phạt thủ công vẫn giữ nguyên.</p>}
     <p>{visible.length} vi phạm · {hasHcLate ? 'Tổng mức ghi nhận' : 'Tổng tiền phạt'}: <strong>{money(visible.reduce((sum, row) => sum + Number(row.amount), 0))}</strong></p>
     <div className="schedule-scroll"><table><thead><tr><th>Nhân viên</th><th>Ngày vi phạm</th><th>Nội dung vi phạm</th><th>Có phép</th><th>{hasHcLate ? 'Mức ghi nhận' : 'Tiền phạt'}</th><th>Ghi chú</th><th>Người nhập</th><th>Ngày ghi nhận</th>{canManage && <th>Thao tác</th>}</tr></thead><tbody>
-      {visible.map((row, index) => <tr key={row.id || index}><td>{row.employee_name}<small>{row.employee_username}</small></td><td>{formatVeraDate(row.violation_date)}</td><td>{row.reason}</td><td>{row.hc_late_approval_eligible || row.hc_late_approval_unavailable || row.hc_late_approved
+      {visible.map((row, index) => <tr key={row.id || index}><td>{row.employee_name}<small>{row.employee_username}</small></td><td>{formatVeraDate(row.violation_date)}</td><td>{violationDisplayText(row.reason)}</td><td>{row.hc_late_approval_eligible || row.hc_late_approval_unavailable || row.hc_late_approved
         ? <><input type="checkbox" aria-label={`Đi trễ có phép ${row.employee_name} ${formatVeraDate(row.violation_date)}`} checked={row.hc_late_approved === true}
           disabled={!canManage || approvalSupported !== true || busy || !row.hc_late_approval_eligible || !row.id || !row.updated_at}
           title={row.hc_late_approval_unavailable || 'Có phép: phạt 0đ, chỉ không tính lương thời gian đi trễ. Không phép: áp dụng mức phạt theo quy định.'}
           onChange={event => void approveLate(row, event.target.checked)} />
           {row.hc_late_minutes != null && <small>{Number(row.hc_late_minutes).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} phút trễ</small>}
           {row.hc_late_approved_by && <small>{row.hc_late_approved_by} · {formatVeraDateTime(row.hc_late_approved_at)}</small>}
-          {row.hc_late_approval_unavailable && <small>{row.hc_late_approval_unavailable}</small>}</> : '—'}</td><td>{money(row.amount)}</td><td>{row.note}</td><td>{row.updated_by}</td><td>{formatVeraDateTime(row.created_at)}</td>{canManage && <td><div className="schedule-violation-row-actions"><button type="button" className="secondary-button" disabled={busy || !row.id || !row.updated_at} onClick={() => edit(row)}>Sửa</button><button type="button" className="danger-button" disabled={busy || !row.id || !row.updated_at} onClick={() => void remove(row)}>Xóa</button></div></td>}</tr>)}
+          {row.hc_late_approval_unavailable && <small>{row.hc_late_approval_unavailable}</small>}</> : '—'}</td><td>{money(row.amount)}</td><td>{violationDisplayText(row.note)}</td><td>{row.updated_by}</td><td>{formatVeraDateTime(row.created_at)}</td>{canManage && <td><div className="schedule-violation-row-actions"><button type="button" className="secondary-button" disabled={busy || !row.id || !row.updated_at} onClick={() => edit(row)}>Sửa</button><button type="button" className="danger-button" disabled={busy || !row.id || !row.updated_at} onClick={() => void remove(row)}>Xóa</button></div></td>}</tr>)}
       {!visible.length && <tr><td colSpan={canManage ? 9 : 8}>{loading ? 'Đang tải…' : 'Không có vi phạm theo bộ lọc.'}</td></tr>}
     </tbody></table></div>
     <dialog ref={dialog} className="schedule-violation-dialog" onCancel={e => { if (busy) e.preventDefault() }}>
