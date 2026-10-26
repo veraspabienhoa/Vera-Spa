@@ -1039,3 +1039,27 @@ test('weekly shift opens on click, stays open after mouseleave and restores scro
     assert.equal(document.body.style.overflow, '')
   } finally { await f.dispose() }
 })
+
+for (const role of ['admin', 'quanly', 'letan']) test(`${role} can clear the selected shift using the existing revision-checked action`, async () => {
+  const f = await fixture({ role })
+  try {
+    const controls = document.querySelector('.live-tour-shift-controls')
+    const buttons = [...controls.querySelectorAll('button')]
+    assert.deepEqual(buttons.slice(0, 3).map(b => b.textContent), ['Ca 1', 'Ca 2', 'Xoá ca'])
+    assert.equal(buttons.length, 4)
+    assert.ok(buttons[3].classList.contains('live-tour-weekly-shift-button'))
+    assert.equal(buttons[2].disabled, true)
+    await act(async () => document.querySelector('.tour-records-panel tbody input[type=checkbox]').click())
+    assert.equal(buttons[2].disabled, false)
+    await act(async () => buttons[2].click())
+    assert.equal(f.writes.length, 1)
+    assert.equal(f.writes[0].action, 'set_shift')
+    assert.equal(f.writes[0].payload.employee_id, 'e1')
+    assert.equal(f.writes[0].payload.shift, '')
+  } finally { await f.dispose() }
+})
+for (const role of ['nhanvien', 'leader', 'locker', 'giamdoc', 'support']) test(`${role} cannot see shift editing or weekly controls`, async () => {
+  const f = await fixture({ role })
+  try { assert.equal(document.querySelector('.live-tour-shift-controls'), null) }
+  finally { await f.dispose() }
+})

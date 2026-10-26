@@ -402,3 +402,26 @@
     transform: none !important;
   }
 }
+
+/* Keep all four role-restricted shift controls on one bounded row. */
+.live-tour-page .tour-quick-tools .live-tour-shift-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.55fr);
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.live-tour-page .tour-quick-tools .live-tour-shift-controls .tour-shift-filter { display: contents; }
+.live-tour-page .tour-quick-tools .live-tour-shift-controls .live-tour-weekly-shift { min-width: 0; width: 100%; }
+.live-tour-page .tour-quick-tools .live-tour-shift-controls button {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 5px 3px;
+  font-size: 11px;
+  white-space: nowrap;
+}
