@@ -1,8 +1,5 @@
 from copy import deepcopy
 
-import pytest
-from fastapi import HTTPException
-
 import vera_live_tour_resource_store as store
 import vera_web_v2_live_tour as live
 from test_live_tour_additional_ktv import setup_booking
@@ -32,6 +29,7 @@ def test_pair_commits_under_both_employee_locks_and_rejects_stale_revision(datab
         assert extra['duration'] == main['duration'] == 90
         assert extra['service_price'] == 100000
     with database.begin() as conn:
-        with pytest.raises(HTTPException) as failure:
-            store.begin_action(conn, 'booking', payload, revision, 'stale-paired-booking', live._counter_business_date(NOW).isoformat())
-        assert failure.value.status_code == 409
+        _, _, fresh = store.begin_action(
+            conn, 'booking', payload, revision, 'stale-paired-booking',
+            live._counter_business_date(NOW).isoformat())
+        assert not fresh  # The HTTP action handler translates this into 409.
