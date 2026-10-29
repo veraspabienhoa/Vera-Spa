@@ -1,3 +1,5 @@
+import RevenueEntryWindowPermission from './RevenueEntryWindowPermission'
+import { revenueEntryDays, revenueEntryWindowValue } from '../lib/revenueEntryWindow'
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { veraApi } from '../lib/api'
@@ -99,6 +101,7 @@ function PermissionLauncher({ scope, scopes, attachToTitle }) {
   </>
 }
 function PermissionDialog({ page, label, features, viewFeatures, adminOnly, mode, onClose }) {
+  const [entryDays, setEntryDays] = useState(null)
   const [data, setData] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [query, setQuery] = useState(''), [target, setTarget] = useState(''), [allowed, setAllowed] = useState([])
   useEffect(() => { let active = true; setBusy(true); veraApi.permissions().then(result => { if (active) setData(result) }).catch(err => { if (active) setError(err.message) }).finally(() => { if (active) setBusy(false) }); return () => { active = false } }, [])
@@ -109,7 +112,7 @@ function PermissionDialog({ page, label, features, viewFeatures, adminOnly, mode
   const fixed = adminOnly ? 'Tab này chỉ dành cho Admin theo quy tắc máy chủ.' : fixedPages[page]
   const accounts = (data?.accounts || []).filter(account => searchTextMatches([account.username, account.full_name, account.role], query))
   const canView = account => fixed ? (adminOnly || !['online-bookings', 'milk-tea'].includes(page) ? account.role === 'admin' : (page === 'online-bookings' ? ['admin', 'quanly', 'letan', 'locker'] : ['leader', 'nhanvien']).includes(account.role)) : required.some(key => catalogFeatureAllowed(key, account.role, account.username, data))
-  const choose = account => { setTarget(account.username); setAllowed(catalogAllowedFeatures(account.role, account.username, data)); setError(''); setNotice('') }
+  const choose = account => { setEntryDays(revenueEntryDays(data, 'account', account.username, account.role)); setTarget(account.username); setAllowed(catalogAllowedFeatures(account.role, account.username, data)); setError(''); setNotice('') }
   const account = data?.accounts?.find(item => item.username === target)
   const save = async () => {
     setBusy(true); setError(''); setNotice('')
@@ -117,11 +120,15 @@ function PermissionDialog({ page, label, features, viewFeatures, adminOnly, mode
       if (data.scoped_permission_policy_version !== 1) throw new Error('Máy chủ cần được cập nhật để lưu quyền theo trang. Hãy tải lại sau khi triển khai.')
       const baseline = catalogAllowedFeatures(account.role, target, data)
       const edited = [...new Set([...baseline, ...allowed])].filter(key => baseline.includes(key) !== allowed.includes(key))
+      const windowChanged = keys.includes('revenue_entry_create') && data.revenue_entry_window_policy_version === 1 && revenueEntryWindowValue(entryDays) !== revenueEntryDays(data, 'account', target, account.role)
+      if (windowChanged && !edited.includes('revenue_entry_create')) edited.push('revenue_entry_create')
       if (!edited.length) { setNotice('Không có thay đổi phân quyền.'); return }
-      const result = await veraApi.savePermissions('account', target, {allowed_features: allowed, edited_features: edited, inherit: false, expected_revision: data.revision, preserve_unchanged: true, ...(supportsDateFilterPolicy(data) ? {date_filter_policy_version: 1} : {})})
+      const result = await veraApi.savePermissions('account', target, {allowed_features: allowed, edited_features: edited, inherit: false, expected_revision: data.revision, preserve_unchanged: true, ...(windowChanged ? {revenue_entry_window_days: revenueEntryWindowValue(entryDays)} : {}), ...(supportsDateFilterPolicy(data) ? {date_filter_policy_version: 1} : {})})
       const refreshed = await veraApi.permissions()
+      if (windowChanged && (result.revenue_entry_window_policy_version !== 1 || refreshed.revenue_entry_window_policy_version !== 1 || revenueEntryDays(refreshed, 'account', target, account.role) !== revenueEntryWindowValue(entryDays))) throw new Error('Chưa xác minh được phạm vi nhập doanh thu vừa lưu. Hãy tải lại phân quyền.')
       const problem = supportsDateFilterPolicy(data) ? datePermissionSaveProblem(result, refreshed) : ''
       setData(refreshed)
+      setEntryDays(revenueEntryDays(refreshed, 'account', target, account.role))
       setAllowed(catalogAllowedFeatures(account.role, target, refreshed))
       if (problem) throw new Error(problem)
       if (result.scoped_permission_policy_version !== 1 || refreshed.scoped_permission_policy_version !== 1) throw new Error('Chưa xác minh được quyền vừa lưu. Hãy tải lại phân quyền.')
@@ -138,7 +145,7 @@ function PermissionDialog({ page, label, features, viewFeatures, adminOnly, mode
     {busy && <p role="status">Đang xử lý…</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     <div className="permission-account-results">{accounts.filter(item => mode !== 'list' || canView(item)).map(item => <button type="button" key={item.username} disabled={busy || mode === 'list'} aria-pressed={target === item.username} onClick={() => choose(item)}><strong>{item.username}</strong> · {item.full_name} · {item.role}<small>{item.role === 'admin' ? 'Admin' : Object.keys(data.account_overrides?.[item.username] || {}).length ? 'Quyền riêng tài khoản' : 'Kế thừa nhóm'}</small></button>)}</div>
     {data && !accounts.filter(item => mode !== 'list' || canView(item)).length && <p>Không có tài khoản phù hợp.</p>}
-    {mode === 'edit' && account && <fieldset disabled={busy || account.role === 'admin' || Boolean(fixed) || Boolean(missingView)}><legend>Quyền của {target}</legend>{pages.map(item => <div key={item.id}><h3>{item.label}</h3>{Object.entries(item.features).map(([key, text]) => <label className="context-permission-check" key={key}><input type="checkbox" checked={allowed.includes(key)} disabled={!hasAnyDateParent(key, allowed, data)} onChange={() => setAllowed(current => toggleScopedPermission(current, key, data))}/>{text}</label>)}</div>)}{keys.length > 0 && <button type="button" className="primary-button" onClick={save}>Lưu phân quyền</button>}</fieldset>}
+    {mode === 'edit' && account && <fieldset disabled={busy || account.role === 'admin' || Boolean(fixed) || Boolean(missingView)}><legend>Quyền của {target}</legend>{pages.map(item => <div key={item.id}><h3>{item.label}</h3>{Object.entries(item.features).map(([key, text]) => <label className="context-permission-check" key={key}><input type="checkbox" checked={allowed.includes(key)} disabled={!hasAnyDateParent(key, allowed, data)} onChange={() => setAllowed(current => toggleScopedPermission(current, key, data))}/>{text}</label>)}{Object.hasOwn(item.features, 'revenue_entry_create') && data.revenue_entry_window_policy_version === 1 && <RevenueEntryWindowPermission key={target} value={entryDays} disabled={!allowed.includes('revenue_entry_create')} onChange={setEntryDays} />}</div>)}{keys.length > 0 && <button type="button" className="primary-button" onClick={save}>Lưu phân quyền</button>}</fieldset>}
     {data && !keys.length && !fixed && <p>Trang này chưa có quyền riêng trong danh mục máy chủ.</p>}
   </section></EmployeeProfileModal>
 }

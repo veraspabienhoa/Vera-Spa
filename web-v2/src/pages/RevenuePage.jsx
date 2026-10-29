@@ -1,3 +1,4 @@
+import { revenueEntryDateAllowed } from '../lib/revenueEntryWindow'
 import PagePermissionActions from '../components/PagePermissionActions'
 import { confirmDialog } from '../lib/systemDialogs'
 import EmployeeProfileModal from '../components/EmployeeProfileModal'
@@ -491,6 +492,7 @@ export default function RevenuePage({ user }) {
     setNotice('')
     try {
       if (!entryDate) throw new Error('Hãy chọn ngày giao dịch.')
+      if (!revenueEntryDateAllowed(entryDate, data?.entry_date_window)) throw new Error('Ngày giao dịch nằm ngoài phạm vi được phân quyền. Hãy chọn lại ngày hoặc liên hệ Admin.')
       const incomeAmount = Number(entryIncomeAmount || 0)
       const expenseAmount = Number(entryExpenseAmount || 0)
       if (!Number.isFinite(incomeAmount) || incomeAmount < 0) throw new Error('Số tiền Thu không hợp lệ.')
@@ -721,8 +723,9 @@ export default function RevenuePage({ user }) {
     {entryModalOpen && canCreateEntry && <EmployeeProfileModal className="revenue-entry-modal" labelledBy="revenue-entry-title" busy={savingEntry} onClose={() => setEntryModalOpen(false)}>
       <div className="revenue-entry-modal-heading"><h2 id="revenue-entry-title">NHẬP DOANH THU - CHI PHÍ</h2><button data-dialog-close="true" type="button" className="secondary-button" disabled={savingEntry} onClick={() => setEntryModalOpen(false)} aria-label="Đóng nhập doanh thu">✕</button></div>
       {entryError && <div className="error-box" role="alert">{entryError}</div>}
+      {data?.entry_date_window?.days && <p className="entry-date-scope">Được nhập {data.entry_date_window.days} ngày gần nhất: {formatVeraDate(data.entry_date_window.min_date)} – {formatVeraDate(data.entry_date_window.max_date)} (gồm hôm nay, giờ Việt Nam).</p>}
       <form className="revenue-entry-form" onSubmit={submitRevenueEntry}>
-      <label className="entry-date">Ngày giao dịch<VeraDateInput aria-label="Ngày giao dịch" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
+      <label className="entry-date">Ngày giao dịch<VeraDateInput aria-label="Ngày giao dịch" value={entryDate} min={data?.entry_date_window?.min_date || ''} max={data?.entry_date_window?.max_date || ''} onChange={(event) => setEntryDate(event.target.value)} disabled={savingEntry}/></label>
       <label className="entry-amount">Số tiền Thu<VeraMoneyInput value={entryIncomeAmount} onChange={(event) => setEntryIncomeAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>
       <label className="entry-note">Ghi chú Thu<input className={!entryIncomeAmount && !incomeNoteEdited ? 'auto-note-empty' : ''} type="text" maxLength={1000} value={entryIncomeNote} onChange={(event) => { setIncomeNoteEdited(true); setEntryIncomeNote(event.target.value) }} placeholder="Doanh thu + ngày giao dịch" disabled={savingEntry}/></label>
       <label className="entry-amount entry-expense">Số tiền Chi<VeraMoneyInput value={entryExpenseAmount} onChange={(event) => setEntryExpenseAmount(event.target.value)} placeholder="0" disabled={savingEntry}/></label>

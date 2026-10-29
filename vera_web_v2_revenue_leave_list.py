@@ -1,5 +1,6 @@
 """Revenue summary and leave-list read enhancements for VERA SPA Web V2."""
 from __future__ import annotations
+from vera_revenue_entry_window import entry_window, require_entry_date
 from vera_notification_delivery import route_event as route_notification, enqueue as enqueue_notification
 
 import csv
@@ -570,12 +571,12 @@ def install_revenue_leave_list_routes(
     revenue_group = permissions.FEATURE_GROUPS.setdefault("Doanh thu", {})
     revenue_group[REVENUE_FEATURE] = "Xem Doanh thu"
     revenue_group[REVENUE_TIP_FEATURE] = "Nhập Tiền TIP trong kỳ"
-    revenue_group[REVENUE_ENTRY_FEATURE] = "Nhập Thu Chi"
+    revenue_group[REVENUE_ENTRY_FEATURE] = "Nhập doanh thu - chi phí"
     revenue_group[REVENUE_ENTRY_EDIT_FEATURE] = "Sửa bản ghi nhập trong ngày hiện tại"
     revenue_group[REVENUE_ENTRY_DELETE_FEATURE] = "Xóa bản ghi nhập trong ngày hiện tại"
     permissions.FEATURES[REVENUE_FEATURE] = "Xem Doanh thu"
     permissions.FEATURES[REVENUE_TIP_FEATURE] = "Nhập Tiền TIP trong kỳ"
-    permissions.FEATURES[REVENUE_ENTRY_FEATURE] = "Nhập Thu Chi"
+    permissions.FEATURES[REVENUE_ENTRY_FEATURE] = "Nhập doanh thu - chi phí"
     permissions.FEATURES[REVENUE_ENTRY_EDIT_FEATURE] = "Sửa bản ghi nhập trong ngày hiện tại"
     permissions.FEATURES[REVENUE_ENTRY_DELETE_FEATURE] = "Xóa bản ghi nhập trong ngày hiện tại"
     permissions.DEFAULT_ROLE_FEATURES.setdefault("admin", set()).update({REVENUE_FEATURE, REVENUE_TIP_FEATURE, REVENUE_ENTRY_FEATURE, REVENUE_ENTRY_EDIT_FEATURE, REVENUE_ENTRY_DELETE_FEATURE})
@@ -636,6 +637,7 @@ def install_revenue_leave_list_routes(
     def period_report_permissions(conn, ident, result):
         manual = result["source"] != "auto"
         return {**result,
+            "entry_date_window": entry_window(conn, ident, datetime.now(VN_TZ).date()),
             "can_edit_tip": bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE)),
             "can_create_entry": manual and bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE)),
             "can_edit_entry": manual and bool(feature_allowed(conn, ident, REVENUE_ENTRY_EDIT_FEATURE)),
@@ -708,6 +710,7 @@ def install_revenue_leave_list_routes(
             source = shared["source"]  # Never let a client override the global mode.
             can_edit_tip = bool(feature_allowed(conn, ident, REVENUE_TIP_FEATURE))
             can_create_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_FEATURE))
+            date_window = entry_window(conn, ident, datetime.now(VN_TZ).date())
             can_edit_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_EDIT_FEATURE))
             can_delete_entry = bool(feature_allowed(conn, ident, REVENUE_ENTRY_DELETE_FEATURE))
             if source == "auto":
@@ -750,6 +753,7 @@ def install_revenue_leave_list_routes(
             "current_date_label": (report_date or datetime.now(VN_TZ).date()).strftime("%d-%m-%Y"),
             "current_date_source": "last_ledger_transaction" if report_date else "server_date_fallback",
             "business_date": datetime.now(VN_TZ).date().isoformat(),
+            "entry_date_window": date_window,
             "can_edit_tip": can_edit_tip, "can_create_entry": can_create_entry,
             "can_edit_entry": can_edit_entry, "can_delete_entry": can_delete_entry,
             "can_admin_crud": can_edit_entry or can_delete_entry, "entries": entries, "transaction_count": len(entries),
@@ -778,6 +782,7 @@ def install_revenue_leave_list_routes(
             entries.append(("Chi", expense_amount, body.expense_note))
         with engine_instance().begin() as conn:
             require_feature(conn, ident, REVENUE_ENTRY_FEATURE)
+            require_entry_date(conn, ident, body.transaction_date, datetime.now(VN_TZ).date())
             revenue_auto.require_manual(conn)
             duplicate_rows = revenue_store.find_duplicate_web_entries(conn, entries=entries)
             if duplicate_rows and not body.confirm_duplicate:
