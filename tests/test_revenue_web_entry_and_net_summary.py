@@ -6,8 +6,8 @@ def test_revenue_net_summary_and_web_entry_permission_contract():
     page = Path("web-v2/src/pages/RevenuePage.jsx").read_text(encoding="utf-8")
 
     assert 'REVENUE_ENTRY_FEATURE = "revenue_entry_create"' in backend
-    assert 'revenue_group[REVENUE_ENTRY_FEATURE] = "Nhập Thu Chi"' in backend
-    assert 'permissions.FEATURES[REVENUE_ENTRY_FEATURE] = "Nhập Thu Chi"' in backend
+    assert 'revenue_group[REVENUE_ENTRY_FEATURE] = "Nhập doanh thu - chi phí"' in backend
+    assert 'permissions.FEATURES[REVENUE_ENTRY_FEATURE] = "Nhập doanh thu - chi phí"' in backend
     assert '@app.post("/v2/revenue/entry")' in backend
     assert 'require_feature(conn, ident, REVENUE_ENTRY_FEATURE)' in backend
     assert 'revenue_store.insert_web_entries(' in backend

@@ -1,3 +1,5 @@
+import RevenueEntryWindowPermission from '../components/RevenueEntryWindowPermission'
+import { revenueEntryDays, revenueEntryWindowValue } from '../lib/revenueEntryWindow'
 import usePageRefresh from '../lib/usePageRefresh'
 import StableFeedback from '../components/StableFeedback'
 import UiToolbar from '../components/UiToolbar'
@@ -16,6 +18,7 @@ export default function PermissionsPage() {
   const [scope, setScope] = useState('role')
   const [target, setTarget] = useState('quanly')
   const [allowed, setAllowed] = useState([])
+  const [entryDays, setEntryDays] = useState(null)
   const [inherit, setInherit] = useState(false)
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
@@ -47,6 +50,7 @@ export default function PermissionsPage() {
   const applyTarget = (nextScope, nextTarget, source = data) => {
     if (!source) return
     setRefreshDirty(false)
+    setEntryDays(revenueEntryDays(source, nextScope, nextTarget, source.accounts?.find(item => item.username === nextTarget)?.role))
     if (nextScope === 'role') {
       setAllowed(roleAllowed(nextTarget, source))
       setInherit(false)
@@ -106,6 +110,7 @@ export default function PermissionsPage() {
     if (scope !== 'account') return
     const account = data?.accounts?.find((item) => item.username === target)
     setAllowed(roleAllowed(account?.role))
+    setEntryDays(revenueEntryDays(data, 'role', account?.role))
     setInherit(true)
   }
   const save = async () => {
@@ -115,9 +120,11 @@ export default function PermissionsPage() {
       // inherited legacy actions over an existing explicit view denial.
       const normalizedAllowed = allowed
       const editsDatePolicy = supportsDateFilterPolicy(data)
-      const result = await veraApi.savePermissions(scope, target, { allowed_features: normalizedAllowed, inherit, expected_revision: data.revision, preserve_unchanged: true, ...(editsDatePolicy ? { date_filter_policy_version: 1 } : {}) })
+      const result = await veraApi.savePermissions(scope, target, { allowed_features: normalizedAllowed, inherit, expected_revision: data.revision, preserve_unchanged: true, ...(data.revenue_entry_window_policy_version === 1 ? { revenue_entry_window_days: revenueEntryWindowValue(entryDays) } : {}), ...(editsDatePolicy ? { date_filter_policy_version: 1 } : {}) })
+      const expectedEntryDays = inherit && scope === 'account' ? revenueEntryDays(data, 'role', data.accounts?.find(item => item.username === target)?.role) : revenueEntryWindowValue(entryDays)
       const refreshed = await load({ keepNotice: true })
       if (refreshed) applyTarget(scope, target, refreshed)
+      if (data.revenue_entry_window_policy_version === 1 && (result.revenue_entry_window_policy_version !== 1 || refreshed?.revenue_entry_window_policy_version !== 1 || revenueEntryDays(refreshed, scope, target, refreshed.accounts?.find(item => item.username === target)?.role) !== expectedEntryDays)) throw new Error('Chưa xác minh được phạm vi nhập doanh thu vừa lưu. Hãy tải lại phân quyền.')
       const verificationProblem = editsDatePolicy ? datePermissionSaveProblem(result, refreshed) : ''
       if (verificationProblem) {
         setNotice({ status: 'error', message: verificationProblem })
@@ -169,6 +176,7 @@ export default function PermissionsPage() {
         <UiToolbar data-ui-key="u-96946da0cd4c" className="permission-check-grid permission-page-actions">
           {page.items.map(([key, value]) => <label key={key} className={`${allowed.includes(key) ? 'checked' : ''} ${page.view_feature === key ? 'permission-view-permission' : ''}`.trim()}><input type="checkbox" checked={allowed.includes(key)} disabled={!hasAnyDateParent(key, allowed, data)} onChange={() => toggle(key)} /><span><strong>{value}</strong><small>{key}</small>{!hasAnyDateParent(key, allowed, data) && <small>Cần Xem lịch sử hoặc Sao lưu</small>}</span></label>)}
         </UiToolbar>
+        {page.items.some(([key]) => key === 'revenue_entry_create') && data?.revenue_entry_window_policy_version === 1 && <RevenueEntryWindowPermission key={`${scope}:${target}:${inherit}`} value={entryDays} disabled={busy || !allowed.includes('revenue_entry_create') || (scope === 'account' && data.accounts?.find(item => item.username === target)?.role === 'admin')} onChange={value => { setEntryDays(value); setRefreshDirty(true); if (scope === 'account') setInherit(false) }} />}
       </section>)}
     </div>
     <div className="sticky-save-bar"><button data-ui-key="u-0ec9baa2f9fd" className="primary-button" onClick={save} disabled={busy || !target}><Save size={16} /> {busy ? 'Đang lưu…' : 'Lưu phân quyền'}</button></div>

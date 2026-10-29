@@ -9,7 +9,8 @@ from typing import Any, Callable, Literal
 
 import gspread
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
+from vera_revenue_entry_window import POLICY_KEY, save_window
 from sqlalchemy import text
 from vera_web_v2_live_tour_permissions import (
     DATE_FILTER_DEPENDENCIES, DATE_FILTER_FEATURES, DATE_FILTER_PARENT_ANY,
@@ -531,6 +532,7 @@ class PermissionUpdate(BaseModel):
     preserve_unchanged: bool = False
     edited_features: list[str] | None = Field(default=None, max_length=1000)
     date_filter_policy_version: Literal[1] | None = None
+    revenue_entry_window_days: StrictInt | None = Field(default=None, ge=1, le=36500)
 
 
 def _payload(raw: Any) -> dict[str, Any]:
@@ -572,6 +574,8 @@ def install_permission_routes(
                 ORDER BY lower(username)
             """)).mappings().all()
         return {
+            "revenue_entry_window_policy_version": 1,
+            "revenue_entry_windows": payload.get(POLICY_KEY, {}),
             "groups": FEATURE_GROUPS, "pages": permission_pages(), "roles": ROLES, "accounts": [dict(item) for item in accounts],
             "role_overrides": {role: _scope_rows(payload, "role", role) for role in ROLES},
             "account_overrides": {item["username"]: _scope_rows(payload, "account", item["username"]) for item in accounts},
@@ -671,6 +675,9 @@ def install_permission_routes(
                 else:
                     allowed = permission_closure(set(body.allowed_features))
                 keep.extend({"target": target, "feature": feature, "allowed": feature in allowed} for feature in FEATURES if feature in saved_features)
+            save_window(payload, scope, target, inherit=body.inherit,
+                        supplied="revenue_entry_window_days" in body.model_fields_set,
+                        days=body.revenue_entry_window_days, edited_features=body.edited_features)
             payload[key] = keep
             payload["date_filter_policy_version"] = DATE_FILTER_POLICY_VERSION
             payload.setdefault("roles" if key == "accounts" else "accounts", [])
@@ -715,6 +722,7 @@ def install_permission_routes(
             return {
                 "ok": True,
                 "message": "Đã lưu phân quyền THÀNH CÔNG. Các quyền nền bắt buộc đã được tự động bổ sung.",
+                "revenue_entry_window_policy_version": 1,
                 "allowed_features": sorted(allowed) if not (scope == "account" and body.inherit) else [],
                 "revision": revision + 1,
                 "date_filter_policy_version": DATE_FILTER_POLICY_VERSION,
