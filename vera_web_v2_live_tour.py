@@ -393,7 +393,7 @@ def _combo_extra_subtotal(state, purchase, entries):
                 resolved.append({"service_id": service["id"], "name": service["name"], "unit_price": service.get("price", 0), "quantity": 1})
             entry["service_items"] = resolved
         entry["combo_extra_subtotal"] = sum(item["unit_price"] * item["quantity"]
-            for item in entry["service_items"] if item["service_id"] not in covered)
+            for item in entry["service_items"] if item.get("combo_retail") or item["service_id"] not in covered)
     return sum(entry["combo_extra_subtotal"] for entry in entries)
 
 
@@ -1666,6 +1666,9 @@ def _quick_booking_entry(state, booking, now, payment=None):
         raise HTTPException(400, "Danh sách dịch vụ thêm không hợp lệ.")
     if booking.get("extra_service_items"):
         extra_name, extra_duration, extra_price, extra_items = _service_selection(state, {"service_items": booking["extra_service_items"]}, booked, quick=True)
+        if (payment or {}).get("combo_purchase_id"):
+            for item in extra_items:
+                item["combo_retail"] = True
         service += " & " + extra_name
         duration = (duration or 0) + (extra_duration or 0)
         price += extra_price

@@ -148,6 +148,8 @@ def component_debits(purchase, entries, services, day, *, check_balance=True, al
     for entry in entries:
         if entry.get("service_items"):
             for item in entry["service_items"]:
+                if allow_extras and item.get("combo_retail"):
+                    continue
                 required[item["service_id"]] += item["quantity"]
             continue
         name = str(entry.get("service") or "")

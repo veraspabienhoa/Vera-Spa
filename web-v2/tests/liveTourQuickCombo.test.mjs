@@ -14,7 +14,7 @@ test('automatic combo preview, required date, customer switch and live refresh',
   const keys = ['window', 'document', 'navigator', 'IS_REACT_ACT_ENVIRONMENT', '__quickApi']
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   const services = [{ id: 'body', name: 'Body 90', price: 200000, ticket_units: 1, active: true }, { id: 'extra', name: 'Mua thêm 30', price: 30000, ticket_units: 0, active: true }]
-  const customers = [{ id: 'c1', name: 'Khách Combo', phone: '0901234567', combo_purchases: [{ id: 'p1', combo_name: 'Combo Body', remaining: 3, component_balances: [{ service_id: 'body', total: 3, remaining: 3 }] }] }, { id: 'c2', name: 'Khách thường', combo_purchases: [] }]
+  const customers = [{ id: 'c1', name: 'Khách Combo', phone: '0901234567', combo_purchases: [{ id: 'p1', combo_name: 'Combo Body', remaining: 1, component_balances: [{ service_id: 'body', total: 3, remaining: 1 }] }] }, { id: 'c2', name: 'Khách thường', combo_purchases: [] }]
   const data = { revision: 1, columns: ['Tên nhân viên', 'Vào ca'], records: [{ _id: 'e1', 'Tên nhân viên': 'An', 'Vào ca': 'Ca 1' }], state: { employees: [{ id: 'e1', name: 'An', work_status: 'Đi làm', shift: 'Ca 1' }], services, customers }, customers, services, catalogs: { rooms: [{ id: 'r1', name: '1.1' }] }, capabilities: { payment: true, booking: true, customers: true }, payment_settings: {} }
   let reads = 0
   for (const [key, value] of Object.entries({ window: dom.window, document: dom.window.document, navigator: dom.window.navigator, IS_REACT_ACT_ENVIRONMENT: true, __quickApi: { liveTourCollection:async()=>({data,revision:data.revision,page:1,pages:1,total:0}), liveTour: async () => { reads++; return data } } })) Object.defineProperty(globalThis, key, { value, configurable: true })
@@ -36,6 +36,17 @@ test('automatic combo preview, required date, customer switch and live refresh',
     assert.equal(input('Dịch vụ (tự động từ combo)').required, false)
     assert.match(document.querySelector('.live-tour-checkout-preview').textContent, /Body 90/)
     assert.match(document.querySelector('.live-tour-combo-deduction').textContent, /1 lượt/)
+    await choose('Dịch vụ (tự động từ combo)', 'Body 90')
+    await choose('Thêm dịch vụ', 'Body 90')
+    assert.equal(input('Thêm dịch vụ').value, '', 'retail selector clears for the next addition')
+    assert.match(document.querySelector('.live-tour-checkout-preview').textContent, /200\.000/)
+    assert.match(document.querySelector('.live-tour-combo-deduction').textContent, /1 lượt/)
+    assert.doesNotMatch(document.querySelector('.tour-payment-dialog').textContent, /Đang xác minh combo đã chọn/)
+    await choose('Thêm dịch vụ', 'Body 90')
+    assert.equal(document.querySelector('[aria-label="Số lượng Body 90"]').value, '2')
+    assert.match(document.querySelector('.live-tour-checkout-preview').textContent, /400\.000/)
+    await click(document.querySelector('[aria-label="Xóa dịch vụ thêm Body 90"]'))
+    assert.equal(document.querySelector('[aria-label="Số lượng Body 90"]'), null)
     await choose('Thêm dịch vụ', 'Mua thêm 30')
     const quantity = document.querySelector('[aria-label="Số lượng Mua thêm 30"]')
     await act(async () => {
