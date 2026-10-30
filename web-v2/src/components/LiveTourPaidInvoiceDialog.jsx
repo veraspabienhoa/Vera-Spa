@@ -1,3 +1,4 @@
+import { invoiceServiceSubtotal } from '../lib/liveTourInvoiceMoney'
 import StableFeedback from './StableFeedback'
 import UiToolbar from './UiToolbar'
 import UiCustomText from './UiCustomText'
@@ -37,8 +38,8 @@ export default function LiveTourPaidInvoiceDialog({ context, catalog = [], busy,
   const [reason, setReason] = useState('')
   const [invoiceAt, setInvoiceAt] = useState(() => invoiceLocalTime(item))
   const covered = isComboRedemption(item)
-  const subtotal = covered ? 0 : prices.reduce((sum, price) => sum + Number(price || 0), 0)
-  const total = covered ? Number(tip || 0) : subtotal - Number(discount || 0) + Number(tip || 0)
+  const subtotal = covered ? invoiceServiceSubtotal(item) : prices.reduce((sum, price) => sum + Number(price || 0), 0)
+  const total = subtotal - Number(discount || 0) + Number(tip || 0)
   const submit = async (event) => {
     event.preventDefault()
     if (busy) return
@@ -80,7 +81,7 @@ export default function LiveTourPaidInvoiceDialog({ context, catalog = [], busy,
             </div>)}
             {!serviceItems[index].length && <small>{initialItems[index].length ? 'Chọn ít nhất một dịch vụ để lưu thay đổi.' : `Dịch vụ gốc: ${entry.service}. Chọn dịch vụ nếu cần thay đổi.`}</small>}
           </>}
-          {deleting ? <span>{money(covered ? 0 : entry.price)}</span> : <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><VeraMoneyInput max="10000000000" required disabled={covered} value={covered ? '0' : prices[index]} onChange={(event) => setPrices((current) => current.map((price, i) => i === index ? event.target.value : price))}/></label>}
+          {deleting ? <span>{money(covered ? entry.combo_extra_subtotal || 0 : entry.price)}</span> : <label className="live-tour-field"><span>Giá dòng dịch vụ (đ)</span><VeraMoneyInput max="10000000000" required disabled={covered} value={covered ? String(entry.combo_extra_subtotal || 0) : prices[index]} onChange={(event) => setPrices((current) => current.map((price, i) => i === index ? event.target.value : price))}/></label>}
         </div>)}
         {!deleting && <>
           <label className="live-tour-field"><span>Giảm giá (đ)</span><VeraMoneyInput max={subtotal} required disabled={covered} value={discount} onChange={(event) => setDiscount(event.target.value)}/></label>

@@ -3069,3 +3069,28 @@ existing fallback even when their payload hash matches; explicit repair can
 rebuild them. No request performs DDL, no nested connection or network delivery
 is added, and invoice financial payloads/permissions/date scopes are unchanged.
 Merge, deployment and production business verification remain pending.
+
+## 30-10-2026 — Paid combo edits drop extra-service revenue (source reproduction)
+
+The supplied paid receipt shows 200,000 in extra services and 500,000 TIP but
+500,000 total/QR. No production invoice or audit ledger was read or changed.
+Source reproduction confirms change_paid_invoice resets every COMBO redemption
+subtotal to zero and total to TIP, including note-only corrections, while the
+original combo_extra_subtotal remains 200,000. The paid editor repeats that
+assumption. Synthetic original-code output is 500,000; corrected output is
+700,000. This reproduces the symptom, without establishing the particular
+production invoice's edit history.
+
+Use the original extra-service snapshot as the corrected payable subtotal,
+include it in total and report updates, and retain the prepaid covered amount
+separately. Keep discount restrictions, original ticket/component debits,
+account/date/revision controls, audit-before snapshots and commission refresh.
+The paid editor displays the same locked extra subtotal and payable total.
+Legacy redemptions without an extra-service snapshot remain TIP-only. Reading,
+printing or scanning existing invoices does not implicitly rewrite financial
+history; an existing wrong total requires an explicit audited correction.
+
+Validation: 126 focused Python tests and 18 frontend tests passed, including
+note/TIP edits, zero TIP, legacy combo, rejection rollback, receipt/QR amount,
+report updates, permissions and no extra ticket debit. JSX ESLint and production
+build passed. No merge, deployment or production correction performed.
