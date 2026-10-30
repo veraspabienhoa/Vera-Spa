@@ -77,7 +77,7 @@ export function showSystemDialog(options = {}) {
     const button = (label, action, primary = false) => {
       const node = doc.createElement('button')
       node.type = 'button'; node.textContent = label
-      if (label === 'Đóng') node.dataset.dialogClose = 'true'
+      if (/^(đóng|close)$/i.test(label.trim())) node.dataset.dialogClose = 'true'
       node.className = primary ? 'primary-button' : 'secondary-button'
       node.addEventListener('click', action)
       footer.append(node)
@@ -87,7 +87,7 @@ export function showSystemDialog(options = {}) {
       button(action.label, () => { close(); action.run?.() }).disabled = Boolean(action.disabled)
     }
     const cancel = interactive ? button('Hủy', () => dismiss()) : null
-    const accept = button(interactive ? 'Xác nhận' : (options.dismissLabel || 'Đã hiểu'), () => dismiss(input ? input.value : true), true)
+    const accept = button(interactive ? 'Xác nhận' : (options.dismissLabel || 'Đóng'), () => dismiss(input ? input.value : true), true)
     dialog.append(footer)
     doc.body.append(dialog)
     const onKeyDown = event => {

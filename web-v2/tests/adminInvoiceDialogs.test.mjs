@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import test, { afterEach } from 'node:test'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -13,6 +13,9 @@ const dom = new JSDOM('<body><div id="root"></div></body>', { url: 'https://exam
 Object.defineProperties(globalThis, {
   window: { value: dom.window, configurable: true }, document: { value: dom.window.document, configurable: true },
   navigator: { value: dom.window.navigator, configurable: true }, IS_REACT_ACT_ENVIRONMENT: { value: true, configurable: true },
+})
+afterEach(() => {
+  for (const button of [...document.querySelectorAll('.system-dialog .primary-button')].reverse()) button.click()
 })
 const { createRoot } = await import('react-dom/client')
 const require = createRequire(import.meta.url)
@@ -61,6 +64,7 @@ for (const role of ['admin', 'letan']) test(`reports page passes ${role} authori
     assert.equal(writes.length, role === 'admin' ? 1 : 0)
     if (role === 'admin') {
       assert.equal(writes[0].action, 'report_invoice_delete')
+      assert.ok(document.querySelector('.system-dialog-success'), 'report cancellation shows success modal')
       assert.equal(writes[0].payload.reason, '')
       assert.ok(writes[0].idempotency_key)
       assert.equal(writes[0].expected_revision, 7)
@@ -90,6 +94,12 @@ for (const kind of ['PaidInvoice', 'Pending']) for (const mode of ['delete', 'ed
         if (kind === 'PaidInvoice' && mode === 'delete') assert.match(document.querySelector('[role="dialog"]').textContent, /số dư và booking combo được giữ nguyên/)
         await act(() => submit.click())
         assert.equal(writes.length, 1)
+        const notice = document.querySelector('.system-dialog-success')
+        assert.ok(notice, 'committed invoice changes show a success modal')
+        assert.match(notice.textContent, mode === 'delete' ? /Đã (hủy|xóa)/ : /Đã lưu/)
+        assert.equal(notice.querySelector('button').dataset.dialogClose, 'true')
+        assert.equal([...document.querySelectorAll('.live-tour-modal-actions button')].at(-1).dataset.dialogClose, 'true')
+        notice.querySelector('button').click()
         assert.equal(writes[0][0], `${kind === 'Pending' ? 'pending' : 'paid_invoice'}_${mode === 'edit' ? 'update' : 'delete'}`)
         assert.equal(writes[0][1].reason, '')
         assert.deepEqual(writes[0][3], { expectedRevision: 7 })
@@ -169,7 +179,7 @@ test('report editor opens without rescanning history and closes on receipt befor
     assert.equal(writes.length, 1)
     assert.equal(writes[0].response_view, 'receipt')
     assert.equal(reloads, 2)
-    assert.equal(document.querySelector('[role="dialog"]'), null, 'must not wait for the report GET after commit')
+    assert.equal(document.querySelector('.tour-booking-dialog'), null, 'must not wait for the report GET after commit')
     assert.match(document.body.textContent, /Đang cập nhật báo cáo/)
     await act(async () => finishReload({ ...data, revision: 8 }))
     assert.doesNotMatch(document.body.textContent, /Đang cập nhật báo cáo/)

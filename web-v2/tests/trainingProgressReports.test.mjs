@@ -242,9 +242,9 @@ test('training saves show repeatable modals and use the Booking time picker', as
   assert.equal(sent.start_time,'13:17');assert.equal(sent.end_time,'14:59')
   assert.match(document.querySelector('.system-dialog-success').textContent,/Đã lưu nhật ký đào tạo/)
   assert.equal(document.querySelector('.training-notice'),null)
-  await f.click(f.button('Đã hiểu'));assert.equal(document.querySelector('.system-dialog'),null)
+  await f.click(f.button('Đóng'));assert.equal(document.querySelector('.system-dialog'),null)
   await submit();assert.ok(document.querySelector('.system-dialog-success'),'same success opens again')
-  await f.click(f.button('Đã hiểu'));fail=true
+  await f.click(f.button('Đóng'));fail=true
   await submit();assert.match(document.querySelector('.system-dialog-error').textContent,/Không lưu được/)
   await f.render({...user,id:'new-account'});assert.equal(document.querySelector('.system-dialog'),null)
  }finally{await f.dispose()}
