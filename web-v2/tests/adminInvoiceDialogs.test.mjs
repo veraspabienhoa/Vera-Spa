@@ -175,3 +175,25 @@ test('report editor opens without rescanning history and closes on receipt befor
     assert.doesNotMatch(document.body.textContent, /Đang cập nhật báo cáo/)
   } finally { await act(() => root.unmount()) }
 })
+
+test('paid combo editor includes 200,000 extra service plus 500,000 TIP in preview', async () => {
+  const root = createRoot(document.querySelector('#root'))
+  const writes = []
+  const item = { id:'synthetic-combo', bill_no:'SYNTHETIC', payment_method:'COMBO', combo_purchase_id:'ticket',
+    subtotal:0, combo_extra_subtotal:200000, discount:0, tip:500000, total:500000,
+    entries:[{employee_name:'Synthetic',service:'Covered + extra',price:550000,combo_extra_subtotal:200000}] }
+  try {
+    await act(() => root.render(React.createElement(dialogs.PaidInvoice, { context:{mode:'edit',revision:7,item},
+      catalog:[],isAdmin:true,busy:false,onClose(){},onAction:async(...args)=>{writes.push(args);return false} })))
+    const total = document.querySelector('.tour-booking-total strong').textContent.replace(/[^0-9]/g,'')
+    assert.equal(total,'700000')
+    const price = [...document.querySelectorAll('label')].find(node=>node.textContent.startsWith('Giá dòng dịch vụ')).querySelector('input')
+    assert.equal(price.value.replace(/[^0-9]/g,''),'200000')
+    assert.ok(price.disabled)
+    await act(() => document.querySelector('button[type="submit"]').click())
+    assert.equal(writes[0][0],'paid_invoice_update')
+    assert.equal(writes[0][1].tip,500000)
+    assert.deepEqual(writes[0][1].entries,[])
+    assert.equal(item.total,500000)
+  } finally { await act(() => root.unmount()) }
+})

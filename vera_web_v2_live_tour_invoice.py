@@ -4,6 +4,7 @@ from datetime import date
 from uuid import uuid4
 
 from fastapi import HTTPException
+from vera_web_v2_live_tour_payment import service_subtotal
 
 
 def change_paid_invoice(state, action, payload, actor, now, *, money, payment_values, canonical_method, available_combo, iso, max_money, invoice_date=None, allowed_delete_date=None, admin_override=False, service_selection=None):
@@ -119,14 +120,14 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
                 entry.update(price=money(edit["price"], label="Giá dịch vụ"), price_source="paid_correction")
         catalog_subtotal = money(sum(int(row.get("price") or 0) for row in invoice["entries"]), label="Tạm tính")
         covered = invoice.get("payment_method") == "COMBO" and not invoice.get("purchased_combo_id")
-        subtotal = 0 if covered else catalog_subtotal
+        subtotal = money(service_subtotal(invoice), label="Dịch vụ mua thêm") if covered else catalog_subtotal
         discount, tip, _ = payment_values(working, {"discount": payload.get("discount", invoice.get("discount", 0)), "tip": payload.get("tip", invoice.get("tip", 0))}, subtotal, money, max_money)
         method = canonical_method(payload.get("payment_method", invoice.get("payment_method")), quick=True)
         if (method == "COMBO") != (invoice.get("payment_method") == "COMBO"):
             raise HTTPException(400, "Không đổi qua lại COMBO trên hóa đơn đã thanh toán. Hãy hủy hóa đơn và lập lại để đối soát vé.")
         if covered and discount:
             raise HTTPException(400, "Lượt combo đã trả tiền khi mua, không giảm giá thêm khi dùng lượt.")
-        total = money(tip if covered else subtotal - discount + tip, label="Tổng thanh toán")
+        total = money(subtotal - discount + tip, label="Tổng thanh toán")
         if "note" in payload:
             if not isinstance(payload["note"], str) or len(payload["note"]) > 2000:
                 raise HTTPException(400, "Ghi chú không hợp lệ hoặc vượt quá 2000 ký tự.")
@@ -138,7 +139,7 @@ def change_paid_invoice(state, action, payload, actor, now, *, money, payment_va
         invoice.update(subtotal=subtotal, discount=discount, tip=tip, total=total, payment_method=method,
                        updated_at=iso(now), updated_by=actor)
         if covered:
-            invoice["combo_covered_amount"] = catalog_subtotal
+            invoice["combo_covered_amount"] = max(0, catalog_subtotal - subtotal)
         if invoice.get("purchased_combo_id"):
             purchase.update(price=subtotal - discount, updated_at=iso(now))
         for index, report in enumerate(reports):
