@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import test, { afterEach } from 'node:test'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -12,6 +12,9 @@ const dom = new JSDOM('<body><div id="root"></div></body>', { url: 'https://exam
 Object.defineProperties(globalThis, {
   window: { value: dom.window, configurable: true }, document: { value: dom.window.document, configurable: true },
   navigator: { value: dom.window.navigator, configurable: true }, IS_REACT_ACT_ENVIRONMENT: { value: true, configurable: true },
+})
+afterEach(() => {
+  for (const button of [...document.querySelectorAll('.system-dialog .primary-button')].reverse()) button.click()
 })
 const { createRoot } = await import('react-dom/client')
 const require = createRequire(import.meta.url)
@@ -319,6 +322,9 @@ test('a committed edit refreshes the current filters and keeps its original expe
     await type('Tìm tên nhân viên', 'After edit')
     await act(async () => mutation.resolve({ ok: true, revision: 8, result: { invoice: reportRow('one') } }))
     assert.deepEqual(requests.map(query => query.employee || ''), ['', 'After edit', 'After edit'])
+    assert.equal(document.querySelector('.tour-booking-dialog'), null)
+    assert.match(document.querySelector('.system-dialog-success').textContent, /Đã lưu điều chỉnh/)
+    document.querySelector('.system-dialog-success button').click()
     assert.equal(document.querySelector('[role="dialog"]'), null)
   } finally { await fixture.close() }
 })
