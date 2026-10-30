@@ -69,3 +69,41 @@ def test_combined_receipt_omits_private_staff_and_room():
     assert [r[0] for r in rows if r[0]] == ['1','2']
     assert rows[-1] == ['', 'Tổng tiền', '600.000 đ']
     assert 'PRIVATE' not in str(rows)
+
+
+def test_invoice_date_label_uses_vietnam_calendar_and_selected_date_range():
+    from vera_invoice_export import invoice_date_label
+    assert invoice_date_label([{'effective_at':'2026-10-28T18:00:00Z'}]) == 'Ngày 29-10-2026'
+    assert invoice_date_label([{'business_date':'2026-10-29'}, {'business_date':'2026-10-30'}]) == 'Ngày 29-10-2026 – 30-10-2026'
+    assert invoice_date_label([{'created_at':'2026-10-30T00:00:00Z'}]) == 'Ngày —'
+
+
+def test_receipt_pdf_header_spacing_and_signature_alignment():
+    pdfplumber = pytest.importorskip('pdfplumber')
+    headers, rows = invoice_rows([INVOICE], True, True, lambda _: '')
+    content = render_invoice_export(headers, rows, 'pdf', date_label='Ngày 29-10-2026')
+    with pdfplumber.open(BytesIO(content)) as pdf:
+        page = pdf.pages[0]
+        lines = page.extract_text_lines()
+        find = lambda text: next(line for line in lines if line['text'] == text)
+        address = find('193 Trương Định, Tam Hiệp, Đồng Nai')
+        title = find('HÓA ĐƠN DỊCH VỤ')
+        day = find('Ngày 29-10-2026')
+        signature = find('Vera Spa')
+        hint = find('Ký ghi rõ họ tên')
+        assert title['top'] - address['bottom'] >= 12
+        assert day['top'] > title['bottom']
+        money_header = next(line for line in page.crop((page.width*.6, 0, page.width, page.height)).extract_text_lines() if line['text'] == 'Thành tiền')
+        center = lambda line: (line['x0'] + line['x1']) / 2
+        assert center(signature) == pytest.approx(center(money_header), abs=1)
+        assert center(hint) == pytest.approx(center(money_header), abs=1)
+        assert hint['top'] > signature['bottom']
+        chars = [char for char in page.chars if hint['top'] <= char['top'] <= hint['bottom']]
+        assert chars and all('Oblique' in char['fontname'] and 'Bold' not in char['fontname'] for char in chars)
+
+
+def test_png_table_header_has_distinct_background():
+    headers, rows = invoice_rows([INVOICE], True, True, lambda _: '')
+    image = Image.open(BytesIO(render_invoice_export(headers, rows, 'png', date_label='Ngày 29-10-2026')))
+    vertical_margin = round(.75 * (1600 / (210 / 25.4)))
+    assert image.getpixel((150, vertical_margin + 220)) == (200, 220, 209)

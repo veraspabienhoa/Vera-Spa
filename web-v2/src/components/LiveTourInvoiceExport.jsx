@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import EmployeeProfileModal from './EmployeeProfileModal'
 import VeraDateInput from './VeraDateInput'
 import { veraApi } from '../lib/api'
-import { formatVeraDateTime } from '../lib/veraDate'
-import { TOUR_DATE_PRESETS, tourDateRange } from '../lib/liveTourFilters'
+import { formatVeraDate, formatVeraDateTime } from '../lib/veraDate'
+import { TOUR_DATE_PRESETS, tourDateRange, invoiceRowDate } from '../lib/liveTourFilters'
 import { allowedTourPresets } from '../lib/liveTourDatePermissions'
 import { invoiceMoneyValues } from '../lib/liveTourInvoiceMoney'
 import './LiveTourInvoiceExport.css'
@@ -62,6 +62,8 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
   }
   const count = Object.keys(selected).length
   const chosen = Object.values(selected)
+  const invoiceDays = [...new Set(chosen.map(invoiceRowDate).filter(Boolean))].sort()
+  const dateLabel = invoiceDays.length ? `Ngày ${formatVeraDate(invoiceDays[0])}${invoiceDays.at(-1) !== invoiceDays[0] ? ` – ${formatVeraDate(invoiceDays.at(-1))}` : ''}` : 'Ngày —'
   const sums = chosen.reduce((sum, row) => { const v = invoiceMoneyValues(row); return {service:sum.service+v.service, discount:sum.discount+v.discount, tip:sum.tip+v.tip, total:sum.total+v.total} }, {service:0,discount:0,tip:0,total:0})
   const disabled = busy || !valid || !count || (!service && !tip)
   return <><EmployeeProfileModal className="invoice-export-modal" labelledBy="invoice-export-title" onClose={onClose} busy={busy}>
@@ -91,10 +93,10 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
     </div><aside className="invoice-export-receipt-panel">
       <h3>Xem trước hóa đơn gộp ({count} hóa đơn)</h3>
       {!count ? <p>Chọn hóa đơn bên trái để xem trước.</p> : <article className="invoice-export-receipt">
-        <h2><span className="invoice-export-brand">VERA SPA</span></h2><p>193 Trương Định, Tam Hiệp, Đồng Nai</p><h3>HÓA ĐƠN DỊCH VỤ</h3>
-        <div className="invoice-export-receipt-scroll"><table><thead><tr><th>STT</th><th>{service ? 'Dịch vụ' : 'Nội dung'}</th><th>Thành tiền</th></tr></thead><tbody>{chosen.map((row,index)=>{const v=invoiceMoneyValues(row);return <tr key={row.id}><td>{index+1}</td><td>{service ? serviceLabel(row) : 'Tiền tip'}</td><td>{money(service ? v.total-(tip ? 0 : v.tip) : tip ? v.tip : 0)}</td></tr>})}</tbody><tfoot>{tip && <tr><td></td><td>Tiền tip</td><td>{money(sums.tip)}</td></tr>}<tr className="invoice-export-total"><td colSpan={2}>Tổng tiền</td><td>{money(service ? sums.total-(tip ? 0 : sums.tip) : tip ? sums.tip : 0)}</td></tr></tfoot></table></div>
+        <h2><span className="invoice-export-brand">VERA SPA</span></h2><p>193 Trương Định, Tam Hiệp, Đồng Nai</p><h3>HÓA ĐƠN DỊCH VỤ</h3><p className="invoice-export-date">{dateLabel}</p>
+        <div className="invoice-export-receipt-scroll"><table><colgroup><col style={{width: '10%'}}/><col style={{width: '60%'}}/><col style={{width: '30%'}}/></colgroup><thead><tr><th>STT</th><th>{service ? 'Dịch vụ' : 'Nội dung'}</th><th>Thành tiền</th></tr></thead><tbody>{chosen.map((row,index)=>{const v=invoiceMoneyValues(row);return <tr key={row.id}><td>{index+1}</td><td>{service ? serviceLabel(row) : 'Tiền tip'}</td><td>{money(service ? v.total-(tip ? 0 : v.tip) : tip ? v.tip : 0)}</td></tr>})}</tbody><tfoot>{tip && <tr><td></td><td>Tiền tip</td><td>{money(sums.tip)}</td></tr>}<tr className="invoice-export-total"><td colSpan={2}>Tổng tiền</td><td>{money(service ? sums.total-(tip ? 0 : sums.tip) : tip ? sums.tip : 0)}</td></tr></tfoot></table></div>
 
-        <div className="invoice-export-signature">Vera Spa</div>
+        <div className="invoice-export-signature"><strong>Vera Spa</strong><em>Ký ghi rõ họ tên</em></div>
       </article>}
 
     </aside></div>
