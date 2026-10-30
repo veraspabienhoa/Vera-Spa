@@ -49,3 +49,14 @@
 .invoice-export-modal .invoice-export-table th,.invoice-export-modal .invoice-export-table td{word-break:normal;overflow-wrap:normal}
 .invoice-export-modal .invoice-export-table td:nth-child(2),.invoice-export-modal .invoice-export-table td:nth-child(3){white-space:nowrap}
 @media(max-width:400px){.invoice-export-filters{grid-template-columns:minmax(0,1fr)}}
+
+/* Keep the receipt layout aligned with the PDF/PNG exports. */
+.invoice-export-table thead th{background:#37634f!important;color:#fff!important}
+.invoice-export-receipt thead th{background:#c8dcd1!important;color:#173e32!important}
+.invoice-export-receipt>p:not(.invoice-export-date){margin-bottom:24px}
+.invoice-export-receipt>h3{margin-bottom:8px}
+.invoice-export-receipt>.invoice-export-date{margin:0 0 20px;font-weight:400}
+.invoice-export-receipt table{table-layout:fixed}
+.invoice-export-signature{width:30%;margin:24px 0 0 70%;padding:0;text-align:center;min-height:100px}
+.invoice-export-signature strong,.invoice-export-signature em{display:block}
+.invoice-export-signature em{font-weight:400;font-style:italic;font-size:12px;margin-top:8px;overflow-wrap:anywhere}

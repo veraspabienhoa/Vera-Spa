@@ -36,7 +36,7 @@ from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid4, uuid5
 from zoneinfo import ZoneInfo
 
-from vera_invoice_export import InvoiceExportRequest, invoice_rows, render_invoice_export
+from vera_invoice_export import InvoiceExportRequest, invoice_rows, render_invoice_export, invoice_date_label
 from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
@@ -5087,7 +5087,7 @@ def install_live_tour_routes(
                 raise HTTPException(409, "Có hóa đơn đã thay đổi hoặc ngoài phạm vi được xem. Hãy tải lại danh sách.")
         headers, rows = invoice_rows([selected[key] for key in body.ids], body.service, body.tip, _display_datetime)
         try:
-            content = render_invoice_export(headers, rows, format)
+            content = render_invoice_export(headers, rows, format, date_label=invoice_date_label([selected[key] for key in body.ids]))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return Response(content, media_type="application/pdf" if format == "pdf" else "image/png",
