@@ -1,3 +1,4 @@
+import { alertDialog } from '../lib/systemDialogs'
 import { usesComboTicket } from '../lib/paymentPresentation'
 import CompactCode from './CompactCode'
 import { availableBookingPurchase, customerPurchases, customerTicketLabel } from '../lib/liveTourComboBooking'
@@ -49,7 +50,10 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
       ...(!deleting && canEditDate && invoiceAt !== invoiceLocalTime(item) ? { invoice_at: `${invoiceAt}:00+07:00` } : {}), ...(editing ? { entries, ...(note !== checkoutNote(item) ? { note } : {}) } : {}),
       ...(editing && canChangeCustomer && (customerId !== (item.customer_id || '') || comboId !== (item.combo_purchase_id || '')) ? { customer_id: customerId, combo_purchase_id: comboId } : {}),
     }, [], { expectedRevision: revision })
-    if (result) onClose()
+    if (result) {
+      onClose()
+      void alertDialog(deleting ? 'Đã xóa hóa đơn chờ thanh toán.' : 'Đã lưu sửa hóa đơn chờ thanh toán.', { kind: 'success', dismissLabel: 'Đóng' })
+    }
   }
   return <div className="live-tour-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section data-ui-key="u-6ed55d105540" ref={dialog} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={deleting ? 'Xóa hóa đơn chờ thanh toán' : editing ? 'Sửa hóa đơn chờ thanh toán' : 'Xem hóa đơn chờ thanh toán'} onClick={(event) => event.stopPropagation()}>
@@ -90,7 +94,7 @@ export default function LiveTourPendingDialog({ context, catalog, busy, error, o
         <LiveTourBookingNotes entries={item.entries} className="wide"/>
         {editing ? <label className="live-tour-field wide"><span>Ghi chú hóa đơn</span><textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)}/></label> : <p className="wide tour-invoice-note">Ghi chú hóa đơn: {checkoutNote(item) || '—'}</p>}
         {(editing || deleting) && <label className="live-tour-field wide"><span>Lý do {deleting ? 'xóa' : 'sửa'}{isAdmin ? ' (không bắt buộc)' : ' *'}</span><textarea required={!isAdmin} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label>}
-        <UiToolbar data-ui-key="u-d0011b71d66a" className="live-tour-modal-actions wide"><button data-dialog-close="true" data-ui-key="u-dd40d0ed9435" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-dd40d0ed9435">Đóng</UiCustomText></button>{(editing || deleting) && <button data-ui-key="u-5412073eb050" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!isAdmin && !reason.trim()}>{deleting ? 'Xác nhận xóa hóa đơn chờ' : 'Lưu sửa hóa đơn'}</button>}</UiToolbar>
+        <UiToolbar data-ui-key="u-d0011b71d66a" className="live-tour-modal-actions wide">{(editing || deleting) && <button data-ui-key="u-5412073eb050" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={!isAdmin && !reason.trim()}>{deleting ? 'Xác nhận xóa hóa đơn chờ' : 'Lưu sửa hóa đơn'}</button>}<button data-dialog-close="true" data-ui-key="u-dd40d0ed9435" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-dd40d0ed9435">Đóng</UiCustomText></button></UiToolbar>
       </fieldset></form>
     </section>
   </div>

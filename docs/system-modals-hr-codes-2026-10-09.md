@@ -28,3 +28,18 @@ Validation covers queueing, safe confirmation/cancellation, prompt values, focus
 feedback replay, failed acknowledgements and restored custom/default HR codes.
 The existing business fixtures drive the actual modal with their original yes/no
 choices. Full PostgreSQL regression coverage runs in repository CI.
+
+## Invoice action feedback (30-10-2026)
+
+Pending and paid invoice edit/delete dialogs now show an acknowledged success
+modal after a successful action response. The paid dialog is also shared by the
+Reports menu, including service, TIP and combo invoices. Failed actions retain
+the editor and use the existing shared error-feedback modal. Success does not
+wait for report refresh and does not change financial calculation or permissions.
+Dismissal controls follow submit controls in invoice form keyboard order and
+retain the shared right-edge styling. System feedback defaults to “Đóng”; both
+“Đóng” and “Close” are marked as dismissal controls.
+
+Source validation: 22 invoice/system-dialog tests, targeted ESLint and production
+frontend build passed. Production deployment and business operation verification
+have not been performed.

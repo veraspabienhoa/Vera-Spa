@@ -1,3 +1,4 @@
+import { alertDialog } from '../lib/systemDialogs'
 import { invoiceServiceSubtotal } from '../lib/liveTourInvoiceMoney'
 import StableFeedback from './StableFeedback'
 import UiToolbar from './UiToolbar'
@@ -54,7 +55,10 @@ export default function LiveTourPaidInvoiceDialog({ context, catalog = [], busy,
       ...(!deleting ? { entries, discount: Number(discount), tip: Number(tip), payment_method: method } : {}),
       ...(!deleting && note !== (item.note ?? '') ? { note } : {}),
     }, [], { expectedRevision: revision })
-    if (result) onClose()
+    if (result) {
+      onClose()
+      void alertDialog(deleting ? 'Đã hủy hóa đơn đã thanh toán.' : 'Đã lưu điều chỉnh hóa đơn đã thanh toán.', { kind: 'success', dismissLabel: 'Đóng' })
+    }
   }
   return <div className="live-tour-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section data-ui-key="u-022439885343" ref={dialog} tabIndex="-1" className="live-tour-modal tour-booking-dialog" role="dialog" aria-modal="true" aria-label={`${deleting ? 'Hủy' : 'Sửa'} hóa đơn đã thanh toán`} onClick={(event) => event.stopPropagation()}>
@@ -92,7 +96,7 @@ export default function LiveTourPaidInvoiceDialog({ context, catalog = [], busy,
         </>}
         {deleting && item.note && <p className="wide" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>Ghi chú hóa đơn: {item.note}</p>}
         <label className="live-tour-field wide"><span>Lý do {deleting ? 'hủy' : 'sửa'}{isAdmin ? ' (không bắt buộc)' : ' *'}</span><textarea required={!isAdmin} maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)}/></label>
-        <UiToolbar data-ui-key="u-04c00bbd323b" className="live-tour-modal-actions wide"><button data-dialog-close="true" data-ui-key="u-ad34181f38ce" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-ad34181f38ce">Đóng</UiCustomText></button><button data-ui-key="u-03d2b0024e0c" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={(!isAdmin && !reason.trim()) || (!deleting && canChangeServices && serviceItems.some((items, index) => !items.length && editedRows[index]))}>{deleting ? 'Xác nhận hủy hóa đơn' : 'Lưu điều chỉnh hóa đơn'}</button></UiToolbar>
+        <UiToolbar data-ui-key="u-04c00bbd323b" className="live-tour-modal-actions wide"><button data-ui-key="u-03d2b0024e0c" className={deleting ? 'secondary-button danger-button' : 'primary-button'} type="submit" disabled={(!isAdmin && !reason.trim()) || (!deleting && canChangeServices && serviceItems.some((items, index) => !items.length && editedRows[index]))}>{deleting ? 'Xác nhận hủy hóa đơn' : 'Lưu điều chỉnh hóa đơn'}</button><button data-dialog-close="true" data-ui-key="u-ad34181f38ce" data-ui-label-default="Đóng" type="button" className="secondary-button" onClick={onClose}><UiCustomText uiKey="u-ad34181f38ce">Đóng</UiCustomText></button></UiToolbar>
       </fieldset></form>
     </section>
   </div>
