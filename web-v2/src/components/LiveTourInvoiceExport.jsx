@@ -9,6 +9,11 @@ import { invoiceMoneyValues } from '../lib/liveTourInvoiceMoney'
 import './LiveTourInvoiceExport.css'
 
 const serviceLabel = row => (row.entries || []).map(e=>e.service).filter(Boolean).join(' · ') || row.service || row.services || 'Dịch vụ'
+const invoiceAssignments = row => {
+  const entries = Array.isArray(row.entries) && row.entries.length ? row.entries : [row]
+  const labels = key => [...new Set(entries.filter(entry => entry && typeof entry === 'object').map(entry => String(key === 'employee_name' ? entry.employee_name || (entry !== row && entry.type !== 'combo_purchase' ? entry.name : '') || row.employee_name || '' : entry.room || row.room || '').trim()).filter(Boolean))].join(' · ') || '—'
+  return { employees: labels('employee_name'), rooms: labels('room') }
+}
 const money = value => Number(value || 0).toLocaleString('vi-VN') + ' đ'
 export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
   const allowed = allowedTourPresets(datePolicy, 'invoices')
@@ -75,9 +80,10 @@ export default function LiveTourInvoiceExport({ datePolicy, onClose }) {
     {!valid && <p role="alert">Chọn khoảng ngày hợp lệ trong phạm vi được cấp quyền.</p>}
     {!service && !tip && <p role="alert">Chọn ít nhất Dịch vụ hoặc Tiền tip.</p>}
     {error && <p role="alert" data-system-feedback>{error}</p>}
-    <div className="invoice-export-table"><table><thead><tr><th><input aria-label="Chọn tất cả hóa đơn trang này" type="checkbox" disabled={busy || loading || !rows.length} checked={rows.length > 0 && rows.every(row=>selected[row.id])} onChange={e=>rows.forEach(row=>choose(row,e.target.checked))}/></th><th>Mã hóa đơn</th><th>Ngày</th><th>Khách hàng</th>{service && <><th>Dịch vụ</th><th>Tiền dịch vụ</th><th>Giảm giá</th></>}{tip && <th>Tiền tip</th>}<th>Tổng tiền đã chọn</th></tr></thead><tbody>{rows.map(row=>{
+    <div className="invoice-export-table"><table><thead><tr><th><input aria-label="Chọn tất cả hóa đơn trang này" type="checkbox" disabled={busy || loading || !rows.length} checked={rows.length > 0 && rows.every(row=>selected[row.id])} onChange={e=>rows.forEach(row=>choose(row,e.target.checked))}/></th><th>Mã hóa đơn</th><th>Ngày</th><th>Khách hàng</th><th>Nhân viên</th><th>Phòng</th>{service && <><th>Dịch vụ</th><th>Tiền dịch vụ</th><th>Giảm giá</th></>}{tip && <th>Tiền tip</th>}<th>Tổng tiền đã chọn</th></tr></thead><tbody>{rows.map(row=>{
       const values = invoiceMoneyValues(row)
-      return <tr key={row.id}><td><input type="checkbox" aria-label={`Chọn ${row.bill_no}`} checked={Boolean(selected[row.id])} disabled={busy || (!selected[row.id] && count>=50)} onChange={e=>choose(row,e.target.checked)}/></td><td>{row.bill_no}</td><td>{formatVeraDateTime(row.effective_at || row.recorded_at || row.created_at)}</td><td>{row.customer_name || 'Khách lẻ'}</td>{service && <><td>{serviceLabel(row)}</td><td>{money(values.service)}</td><td>{money(values.discount)}</td></>}{tip && <td>{money(values.tip)}</td>}<td>{money(service ? values.total-(tip ? 0 : values.tip) : tip ? values.tip : 0)}</td></tr>
+      const assignment = invoiceAssignments(row)
+      return <tr key={row.id}><td><input type="checkbox" aria-label={`Chọn ${row.bill_no}`} checked={Boolean(selected[row.id])} disabled={busy || (!selected[row.id] && count>=50)} onChange={e=>choose(row,e.target.checked)}/></td><td>{row.bill_no}</td><td>{formatVeraDateTime(row.effective_at || row.recorded_at || row.created_at)}</td><td>{row.customer_name || 'Khách lẻ'}</td><td>{assignment.employees}</td><td>{assignment.rooms}</td>{service && <><td>{serviceLabel(row)}</td><td>{money(values.service)}</td><td>{money(values.discount)}</td></>}{tip && <td>{money(values.tip)}</td>}<td>{money(service ? values.total-(tip ? 0 : values.tip) : tip ? values.tip : 0)}</td></tr>
     })}</tbody></table></div>
     {loading ? <p role="status">Đang tải hóa đơn…</p> : !rows.length && <p>Không có hóa đơn phù hợp.</p>}
     <div className="invoice-export-tools"><button disabled={busy || loading || page<=1} onClick={()=>setPage(page-1)}>Trang trước</button><span>Trang {page}/{pages}</span><button disabled={busy || loading || page>=pages} onClick={()=>setPage(page+1)}>Trang sau</button><strong>Đã chọn {count}/50 hóa đơn</strong><button disabled={busy || !count} onClick={()=>{setSelected({});setPreview(null)}}>Bỏ chọn tất cả</button></div>

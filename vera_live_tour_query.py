@@ -20,7 +20,7 @@ import vera_live_tour_relational as relational
 import vera_versioned_schema as versioned
 
 COMPONENT = 'live_tour_query'
-VERSION = 1
+VERSION = 2
 GROUPS = {
     'customers': ('customers',), 'pending': ('pending',), 'invoices': ('invoices',),
     'reports': ('reports',),
@@ -113,6 +113,7 @@ def project(kind, raw):
         'customer_id': str(raw.get('id') or '') if kind == 'customers' else str(raw.get('customer_id') or ''),
         'customer': lists.normalize(row.get('name') or row.get('customer_name')),
         'phone': phone, 'local_phone': '0' + phone[2:] if re.fullmatch(r'84\d{9}', phone) else phone,
+        'invoice_entries': [{'employee': lists.normalize(entry.get('employee_name')), 'service': lists.normalize(entry.get('service')), 'room': lists.room_search(entry.get('room'))} for entry in lists.invoice_entries(raw)] if kind == 'invoices' else [],
         'entries': [{'employee': lists.normalize(entry.get('employee_name')), 'service': lists.normalize(entry.get('service'))}
                     for entry in row.get('entries') or [row]],
         'bills': [str(number).lower() for number in lists.invoice_numbers(row)],
@@ -166,6 +167,14 @@ def ensure_schema(conn):
     repair_projections(conn)
 
 
+def _projection_stale(kind, alias=''):
+    prefix = alias + '.' if alias else ''
+    stale = f'{prefix}query_hash IS DISTINCT FROM {prefix}payload_hash'
+    if kind == 'invoices':
+        stale += f" OR NOT ({prefix}query_data ? 'invoice_entries')"
+    return '(' + stale + ')'
+
+
 def repair_projections(conn, *, max_batches=1000):
     """Explicit, bounded repair. Hash CAS prevents projecting over newer data."""
     if not schema_ready(conn):
@@ -173,14 +182,14 @@ def repair_projections(conn, *, max_batches=1000):
     repaired = 0
     for kind, table in sorted(relational.RESOURCE_TABLES.items(), key=lambda item: item[1]):
         for _ in range(max_batches):
-            rows = conn.execute(text(f"SELECT resource_id,payload,payload_hash FROM {table} WHERE deleted_at IS NULL AND query_hash IS DISTINCT FROM payload_hash ORDER BY resource_id LIMIT 250")).mappings().all()
+            rows = conn.execute(text(f"SELECT resource_id,payload,payload_hash FROM {table} WHERE deleted_at IS NULL AND {_projection_stale(kind)} ORDER BY resource_id LIMIT 250")).mappings().all()
             if not rows:
                 break
             batch = [{'id': row['resource_id'], 'hash': row['payload_hash'], 'query': project(kind, row['payload'])} for row in rows]
             result = conn.execute(text(f"""UPDATE {table} AS target SET query_data=source.query,query_hash=source.hash
                 FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS source(id text,hash text,query jsonb)
                 WHERE target.resource_id=source.id AND target.payload_hash=source.hash
-                  AND target.query_hash IS DISTINCT FROM target.payload_hash"""), {'rows': relational._json(batch)})
+                  AND {_projection_stale(kind, "target")}"""), {'rows': relational._json(batch)})
             repaired += result.rowcount
         else:
             raise RuntimeError('Live Tour query repair batch limit reached; retry in a quiet maintenance window')
@@ -190,7 +199,7 @@ def repair_projections(conn, *, max_batches=1000):
 def verify_projections(conn):
     if not schema_ready(conn):
         return {'ok': False, 'schema_ready': False}
-    parts = [f"SELECT COUNT(*) AS count FROM {table} WHERE deleted_at IS NULL AND query_hash IS DISTINCT FROM payload_hash" for table in relational.RESOURCE_TABLES.values()]
+    parts = [f"SELECT COUNT(*) AS count FROM {table} WHERE deleted_at IS NULL AND {_projection_stale(kind)}" for kind, table in relational.RESOURCE_TABLES.items()]
     stale = int(conn.execute(text('SELECT SUM(count) FROM (' + ' UNION ALL '.join(parts) + ') counts')).scalar_one())
     return {'ok': stale == 0, 'schema_ready': True, 'stale_rows': stale}
 
@@ -259,10 +268,14 @@ def predicate(kind, filters, params, *, alias='r', prefix='', customer_pii=True,
         else:
             where.append(_customer(q, filters['customer'], params, prefix + 'customer', report=report_mode))
     if filters.get('employee') or filters.get('service'):
+        search_entries = 'invoice_entries' if kind == 'invoices' and not report_mode else field_prefix + 'entries'
         employee = _phrase("entry->>'employee'", filters.get('employee'), params, prefix + 'employee', report=report_mode)
         service = _phrase("entry->>'service'", filters.get('service'), params, prefix + 'service', report=report_mode)
-        where.append(f"EXISTS (SELECT 1 FROM jsonb_array_elements({q}->'{field_prefix}entries') entry WHERE {employee} AND {service})")
-    if filters.get('room'):
+        where.append(f"EXISTS (SELECT 1 FROM jsonb_array_elements({q}->'{search_entries}') entry WHERE {employee} AND {service})")
+    if filters.get('room') and kind == 'invoices' and not report_mode:
+        room = _phrase("room_entry->>'room'", lists.room_search(filters['room']), params, prefix + 'room')
+        where.append(f"EXISTS (SELECT 1 FROM jsonb_array_elements({q}->'invoice_entries') room_entry WHERE {room})")
+    elif filters.get('room'):
         params[prefix + 'room'] = str(filters['room']).strip().lower()
         where.append(f"EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof({alias}.payload->'entries')='array' AND {alias}.payload->'entries'<>'[]'::jsonb THEN {alias}.payload->'entries' ELSE jsonb_build_array({alias}.payload) END) room_entry WHERE strpos(lower(COALESCE(NULLIF(room_entry->>'room',''),{alias}.payload->>'room','')), :{prefix}room)>0)")
     for name in ('total_amount', 'tip_amount'):
@@ -277,7 +290,7 @@ def predicate(kind, filters, params, *, alias='r', prefix='', customer_pii=True,
 
 
 def _guard(kinds):
-    stale = ' OR '.join(f'EXISTS (SELECT 1 FROM {relational.RESOURCE_TABLES[kind]} WHERE deleted_at IS NULL AND query_hash IS DISTINCT FROM payload_hash)' for kind in sorted(set(kinds))) or 'FALSE'
+    stale = ' OR '.join(f'EXISTS (SELECT 1 FROM {relational.RESOURCE_TABLES[kind]} WHERE deleted_at IS NULL AND {_projection_stale(kind)})' for kind in sorted(set(kinds))) or 'FALSE'
     return f"ready AS MATERIALIZED (SELECT NOT ({stale}) AND COALESCE((SELECT payload->>'_resource_ready'='true' FROM {relational.META_TABLE} WHERE singleton=1),false) AS ok)"
 
 

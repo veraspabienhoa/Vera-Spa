@@ -2,18 +2,24 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {build} from 'esbuild'
 import {JSDOM} from 'jsdom'
-const result=await build({stdin:{contents:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Export from './src/components/LiveTourInvoiceExport';window.act=act;const root=createRoot(document.getElementById('root'));window.mount=()=>act(async()=>root.render(<Export datePolicy={{sections:{invoices:['all','today']}}} onClose={()=>{}}/>));window.unmount=()=>act(async()=>root.unmount());`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'mock',setup(b){b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={liveTourCollection:async(panel,query)=>{window.query=query;return {data:{state:{invoices:[{id:'a',bill_no:'VERA-A',total:300,tip:100,subtotal:200,entries:[{service:'VIP'}]},{id:'b',bill_no:'VERA-B',total:400,tip:150,subtotal:250,entries:[{service:'Body'}]}]}},pages:1}},exportSelectedInvoices:async(format,body)=>{window.exported={format,body};return new Blob(['file'])}};`}))}}]})
+const result=await build({stdin:{contents:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import Export from './src/components/LiveTourInvoiceExport';window.act=act;const root=createRoot(document.getElementById('root'));window.mount=()=>act(async()=>root.render(<Export datePolicy={{sections:{invoices:['all','today']}}} onClose={()=>{}}/>));window.unmount=()=>act(async()=>root.unmount());`,resolveDir:process.cwd(),loader:'jsx'},bundle:true,write:false,format:'iife',jsx:'automatic',loader:{'.css':'empty'},plugins:[{name:'mock',setup(b){b.onResolve({filter:/\/lib\/api$/},()=>({path:'api',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const veraApi={liveTourCollection:async(panel,query)=>{window.query=query;const rows=[{id:'a',bill_no:'VERA-A',total:300,tip:100,subtotal:200,entries:[{service:'VIP',employee_name:'Thảo Linh',room:'6.1'},{service:'VIP',employee_name:'An An',room:'6.2'}]},{id:'b',bill_no:'VERA-B',total:400,tip:150,subtotal:250,entries:[{service:'Body',name:'Bình Minh',room:'7.1'}]}];const invoices=rows.filter(row=>(!query.employee || row.entries.some(e=>(e.employee_name||e.name||'').includes(query.employee)))&&(!query.room || row.entries.some(e=>(e.room||'').includes(query.room))));return {data:{state:{invoices}},pages:1}},exportSelectedInvoices:async(format,body)=>{window.exported={format,body};return new Blob(['file'])}};`}))}}]})
 test('select multiple invoices, choose tip only and export without QR',async()=>{
 const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true});const w=dom.window
 w.MessageChannel=class {constructor(){this.port1={};this.port2={postMessage:()=>setTimeout(()=>this.port1.onmessage?.(),0)}}};w.IS_REACT_ACT_ENVIRONMENT=true;w.URL.createObjectURL=()=> 'blob:test';w.URL.revokeObjectURL=()=>{};w.eval(result.outputFiles[0].text)
 try {
  await w.mount();await w.act(async()=>new Promise(r=>setTimeout(r,350)))
+ assert.deepEqual(Array.from(w.document.querySelectorAll('.invoice-export-table th')).slice(3,6).map(el=>el.textContent),['Khách hàng','Nhân viên','Phòng'])
+ assert.match(w.document.querySelector('.invoice-export-table tbody').textContent,/Thảo Linh · An An/)
+ assert.match(w.document.querySelector('.invoice-export-table tbody').textContent,/6.1 · 6.2/)
+ assert.match(w.document.querySelector('.invoice-export-table tbody').textContent,/Bình Minh/)
  const inputValue=Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set
  for(const [label,value] of [['Lọc tên nhân viên','Thảo Linh'],['Lọc phòng','6.1']]) {
    const input=w.document.querySelector(`[aria-label="${label}"]`)
    await w.act(async()=>{inputValue.call(input,value);input.dispatchEvent(new w.Event('input',{bubbles:true}))})
  }
  await w.act(async()=>new Promise(r=>setTimeout(r,350)))
+ assert.equal(w.document.querySelectorAll('.invoice-export-table tbody tr').length,1)
+ assert.match(w.document.querySelector('.invoice-export-table tbody').textContent,/VERA-A/)
  assert.equal(w.query.employee,'Thảo Linh');assert.equal(w.query.room,'6.1');assert.equal(w.query.page,1)
  await w.act(async()=>[...w.document.querySelectorAll('button')].find(b=>b.textContent==='Xóa bộ lọc tìm kiếm').click())
  await w.act(async()=>new Promise(r=>setTimeout(r,350)))

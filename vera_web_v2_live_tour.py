@@ -5171,7 +5171,7 @@ def install_live_tour_routes(
                     # A hidden customer name must not become a count lookup via
                     # fallback filtering. Match the indexed permission gate.
                     values = []
-                values = [row for row in values if list_queries.matches(row,date_from=date_from,date_to=date_to,employee=employee,customer=customer,service=service,bill_no=bill_no,room=room,history=panel=="history",invoice_dates=panel in {"reports","invoices"})]
+                values = [row for row in values if list_queries.matches(row,date_from=date_from,date_to=date_to,employee=employee,customer=customer,service=service,bill_no=bill_no,room=room,history=panel=="history",invoice_dates=panel in {"reports","invoices"},invoice=panel=="invoices")]
             # Preserve source ordering inside each page, newest pages first.
             totals[key] = len(values)
             if key == "reports":

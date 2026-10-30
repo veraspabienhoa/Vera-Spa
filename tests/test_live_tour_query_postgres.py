@@ -298,3 +298,29 @@ def test_report_service_catalog_is_current_and_only_loaded_for_editors(populated
         read_only = {**GRANTS, 'can_reports_edit': False}
         result = query.read_reports(conn, tab='revenue', page=1, page_size=7, filters=FILTERS, grants=read_only)
         assert result['state']['services'] == []
+
+
+def test_invoice_export_assignment_filters_match_fallback_and_count(populated):
+    from test_invoice_export_assignment_filters import INVOICES
+    with populated.begin() as conn:
+        store.lock(conn)
+        before, _, _ = store.read(conn)
+        after = deepcopy(before)
+        after['invoices'] = deepcopy(INVOICES)
+        store.write(conn, before, after, 'admin')
+    with populated.begin() as conn:
+        for filters in ({'employee': 'thao li'}, {'room': 'Phòng 6.1'}, {'room': '6'}, {'employee': 'binh', 'room': 'P.16.1'}):
+            expected = [r for r in INVOICES if query.lists.matches(r, invoice=True, **filters)]
+            result = query.read_collection(conn, 'invoices', page=1, page_size=1, filters=filters, grants=GRANTS)
+            assert result['totals']['invoices'] == len(expected)
+            assert [r['id'] for r in result['state']['invoices']] == [r['id'] for r in expected[-1:]]
+
+
+def test_old_worker_assignment_projection_falls_back_even_with_matching_payload_hash(populated):
+    with populated.begin() as conn:
+        conn.execute(text("UPDATE vera_live_tour_invoice SET query_data=query_data-'invoice_entries' WHERE resource_id='i0'"))
+    with populated.begin() as conn:
+        assert query.read_collection(conn, 'invoices', page=1, page_size=10, filters={'employee':'dang'}, grants=GRANTS) is None
+        assert query.verify_projections(conn)['ok'] is False
+        assert query.repair_projections(conn)['repaired'] == 1
+        assert query.verify_projections(conn)['ok']
