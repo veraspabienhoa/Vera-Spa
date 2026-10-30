@@ -236,3 +236,43 @@ def test_report_metrics_projection_exposes_invoice_totals_without_customer_detai
     assert reports[-1]['invoice_total'] == invoice['total']
     assert reports[-1]['invoice_discount'] == 10_000
     assert 'entries' not in reports[-1]
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+def test_quick_combo_retail_same_service_charges_cash_without_extra_ticket(automatic):
+    state, skin, body, customer, owned = combo_setup()
+    # Only one matching ticket remains; retail quantities must not block it.
+    for part in owned['component_balances']:
+        part['remaining'] = 1 if part['service_id'] == body['id'] else 0
+    owned['remaining'] = 1
+    before_staff = deepcopy(state['employees'])
+    payload = {'payment_method': 'COMBO', 'customer_id': customer['id'],
+               'combo_purchase_id': owned['id'], 'tip': 500_000,
+               'quick_booking': {'employee_id': 'e1', 'room': '1.1', 'booked_at': live._iso(NOW),
+                   'service_items': [] if automatic else [{'service_id': body['id'], 'quantity': 1}],
+                   'extra_service_items': [{'service_id': body['id'], 'quantity': 2}]}}
+    invoice = live._apply_action(state, 'quick_checkout', payload, 'letan', NOW)['invoice']
+    expected = body['price'] * 2
+    assert invoice['subtotal'] == invoice['combo_extra_subtotal'] == expected
+    assert invoice['total'] == expected + 500_000
+    assert invoice['combo_units'] == state['reports'][-1]['combo_units'] == 1
+    assert owned['remaining'] == 0
+    assert state['employees'] == before_staff
+    items = invoice['entries'][0]['service_items']
+    assert sum(item['quantity'] for item in items if item.get('combo_retail')) == 2
+    assert invoice['entries'][0]['combo_extra_subtotal'] == expected
+
+
+def test_client_cannot_mark_combo_base_service_as_retail_to_skip_ticket_validation():
+    state, skin, body, customer, owned = combo_setup()
+    for part in owned['component_balances']:
+        part['remaining'] = 1 if part['service_id'] == body['id'] else 0
+    owned['remaining'] = 1
+    before = deepcopy(state)
+    payload = {'payment_method': 'COMBO', 'customer_id': customer['id'],
+               'combo_purchase_id': owned['id'], 'quick_booking': {
+                   'employee_id': 'e1', 'room': '1.1', 'booked_at': live._iso(NOW),
+                   'service_items': [{'service_id': body['id'], 'quantity': 2, 'combo_retail': True}]}}
+    with pytest.raises(HTTPException):
+        live._apply_action(state, 'quick_checkout', payload, 'letan', NOW)
+    assert state == before

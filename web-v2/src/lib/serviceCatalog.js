@@ -67,7 +67,7 @@ export function comboExtraSubtotal(purchase, entries, services) {
       const service = services.find(row => key(row.name) === key(name.trim()))
       return { service_id: service?.id, quantity: 1 }
     })
-    return total + items.reduce((sum, item) => sum + (covered.has(item.service_id) ? 0 : Number(item.unit_price ?? services.find(row => row.id === item.service_id)?.price ?? 0) * Number(item.quantity)), 0)
+    return total + items.reduce((sum, item) => sum + (covered.has(item.service_id) && !item.combo_retail ? 0 : Number(item.unit_price ?? services.find(row => row.id === item.service_id)?.price ?? 0) * Number(item.quantity)), 0)
   }, 0)
 }
 
@@ -77,7 +77,9 @@ export function comboUsagePreview(purchase, entries, services, day = vietnamDate
   const required = new Map()
   for (const entry of entries) {
     if (entry.service_items?.length) {
-      for (const item of entry.service_items) required.set(item.service_id, (required.get(item.service_id) || 0) + Number(item.quantity))
+      for (const item of entry.service_items) {
+        if (!item.combo_retail) required.set(item.service_id, (required.get(item.service_id) || 0) + Number(item.quantity))
+      }
       continue
     }
     const exact = services.find((service) => key(service.name) === key(entry.service))

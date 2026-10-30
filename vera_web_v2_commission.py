@@ -57,7 +57,7 @@ def record_commission(invoice, state, context):
     basis = []
     for index, entry in enumerate(invoice['entries']):
         items = entry.get('service_items') or []
-        cash_items = entry.get('commission_cash_items', []) if invoice.get('combo_purchase_id') and not covered_ids else [item for item in items if not invoice.get('combo_purchase_id') or item.get('service_id') not in covered_ids]
+        cash_items = entry.get('commission_cash_items', []) if invoice.get('combo_purchase_id') and not covered_ids else [item for item in items if not invoice.get('combo_purchase_id') or item.get('combo_retail') or item.get('service_id') not in covered_ids]
         item_total = sum(number(item.get('unit_price')) * number(item.get('quantity', 1)) for item in cash_items)
         product_total = sum(number(item.get('unit_price')) * number(item.get('quantity', 1)) for item in cash_items if item.get('revenue_kind') == 'product')
         # Names in Live Tour are system usernames, matching the existing TIP adapter.

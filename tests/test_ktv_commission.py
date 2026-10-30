@@ -201,3 +201,18 @@ def test_paid_correction_and_void_change_commission_in_same_ledger(monkeypatch):
     result = live._apply_action(st, 'paid_invoice_delete', {'invoice_id': inv['id'], 'reason': 'Test void'}, 'admin', NOW, admin_invoice_override=True)
     assert result['voided'] is True
     assert st['invoices'] == []
+
+
+def test_component_combo_retail_marker_preserves_cash_product_commission():
+    row = entry('a', 600000, 'product')
+    row['combo_extra_subtotal'] = 400000
+    row['service_items'] = [
+        {'service_id': 'product', 'quantity': 1, 'unit_price': 200000, 'revenue_kind': 'product'},
+        {'service_id': 'product', 'quantity': 2, 'unit_price': 200000, 'revenue_kind': 'product', 'combo_retail': True},
+    ]
+    inv = invoice([row], customer_id='customer', combo_purchase_id='p', subtotal=400000)
+    purchase = {'id': 'p', 'price': 1000000, 'total': 10,
+                'component_balances': [{'service_id': 'product'}]}
+    record_commission(inv, state(inv, purchase, [1]), context())
+    assert inv['commission']['rows'][0]['product'] == 40000
+    assert inv['commission']['rows'][0]['service'] == 20000

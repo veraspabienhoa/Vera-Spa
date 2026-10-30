@@ -3094,3 +3094,29 @@ Validation: 126 focused Python tests and 18 frontend tests passed, including
 note/TIP edits, zero TIP, legacy combo, rejection rollback, receipt/QR amount,
 report updates, permissions and no extra ticket debit. JSX ESLint and production
 build passed. No merge, deployment or production correction performed.
+
+
+## 31-10-2026 — Quick combo checkout with separately purchased services (source only)
+
+Confirmed source reproduction: adding a retail quantity of a service also listed
+in the purchased combo merges its preview quantity into the ticket requirement.
+A one-ticket purchase can become ineligible, while automatic selection can
+misclassify the added service as prepaid and omit its cash amount. The supplied
+screenshot also shows an unresolved selected combo; its production account and
+historical catalog dates have not been inspected, so that particular state is
+not attributed to this reproduction.
+
+Quick checkout now keeps base and retail service lines distinct. The server
+marks retail lines only after canonical catalog validation; a client-supplied
+marker on base services is ignored. Component debit planning excludes explicit
+retail quantities, while cash totals, invoice entry snapshots, report totals and
+commission include them even when the service ID matches a combo component.
+Generic-ticket behavior and historical invoices without this marker are retained.
+The extra-service selector clears after adding an item and explains separate
+cash charging. No production invoice or ticket ledger was modified.
+
+Source validation: 144 Python business tests and 8 frontend checkout/receipt
+tests passed, including one remaining ticket plus two retail quantities of the
+same service, explicit/automatic base selection, client marker rejection and
+retail product commission. Targeted ESLint and frontend build passed. Production
+deployment and the affected operation are unverified.
