@@ -37,7 +37,21 @@ def invoice_numbers(row):
     return [row.get('bill_no',''), *row.get('bill_numbers',[]), *[number for key in ('before','after','invoice','pending','payload') for number in invoice_numbers(row.get(key))]]
 
 
-def matches(row, *, date_from='', date_to='', employee='', customer='', service='', bill_no='', room='', history=False, invoice_dates=False):
+def invoice_entries(row):
+    """Read immutable assignment snapshots, never current employee/room state."""
+    entries = row.get('entries')
+    entries = entries if isinstance(entries, list) and entries else [row]
+    return [{**entry,
+             'employee_name': entry.get('employee_name') or (entry.get('name') if entry is not row and entry.get('type') != 'combo_purchase' else '') or row.get('employee_name') or '',
+             'room': entry.get('room') or row.get('room') or ''}
+            for entry in entries if isinstance(entry, dict)]
+
+
+def room_search(value):
+    return re.sub(r'^(?:phong|p)\s+(?=\d)', '', normalize(value))
+
+
+def matches(row, *, date_from='', date_to='', employee='', customer='', service='', bill_no='', room='', history=False, invoice_dates=False, invoice=False):
     if history:
         row = {**row, 'effective_at':row.get('effective_at') or row.get('at') or row.get('created_at') or row.get('timestamp'),
                'customer_name':row.get('customer_name') or (row.get('before') or {}).get('name') or (row.get('after') or {}).get('name'),
@@ -53,8 +67,11 @@ def matches(row, *, date_from='', date_to='', employee='', customer='', service=
             return False
         if date_from and day < date_from or date_to and day > date_to:
             return False
-    if room and not any(str(room).strip().lower() in str(entry.get('room') or row.get('room') or '').lower() for entry in row.get('entries') or [row]):
+    entries = invoice_entries(row) if invoice else row.get('entries') or [row]
+    if invoice and room and not any(phrase(room_search(entry.get('room')), room_search(room)) for entry in entries):
+        return False
+    if not invoice and room and not any(str(room).strip().lower() in str(entry.get('room') or row.get('room') or '').lower() for entry in row.get('entries') or [row]):
         return False
     if customer and not customer_matches(row,customer):
         return False
-    return any(phrase(entry.get('employee_name'),employee) and phrase(entry.get('service'),service) for entry in row.get('entries') or [row])
+    return any(phrase(entry.get('employee_name'),employee) and phrase(entry.get('service'),service) for entry in entries)

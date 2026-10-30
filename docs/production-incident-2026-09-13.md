@@ -3047,3 +3047,25 @@ diagnostics. Python compilation and diff whitespace checks passed. These finding
 confirm a source-level failure mode, not the root cause of an identified missing
 production fine. Merge, deployment, PostgreSQL CI and production readback remain
 pending.
+
+## 30-10-2026 — Invoice export staff/room selection list (source fix)
+
+The supplied screenshot confirms the invoice selection table omitted employee
+and room columns. The UI sent both filter values, but source filtering only
+used employee_name in entry snapshots, whereas other existing projections also
+accept the historical entry name field. This reproduces missing employee
+matches on that historical shape; production invoice contents were not read.
+
+The selection list now displays distinct staff and room snapshot values,
+including multiple assignments and top-level fallbacks, without using today's
+staff assignments. Invoice collection filtering uses the same snapshot fields
+in fallback and indexed reads. Room searches accept accent/case variants and
+Phòng/P. prefixes, and distinguish room 6 from 16. Customer names and combo
+sale names are not inferred as staff. Selected receipt PDF/PNG remains unchanged.
+
+Query schema v2 rebuilds only read projections at the existing explicit deploy
+gate. Old-worker projections without invoice assignment fields trigger the
+existing fallback even when their payload hash matches; explicit repair can
+rebuild them. No request performs DDL, no nested connection or network delivery
+is added, and invoice financial payloads/permissions/date scopes are unchanged.
+Merge, deployment and production business verification remain pending.
