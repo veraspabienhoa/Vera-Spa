@@ -3,6 +3,11 @@ import './fitPayrollTables.css'
 
 // Scale the whole table together: all columns and full amounts remain visible.
 export function fitPayrollTable(table) {
+  // The accumulation ledger scrolls independently; never inherit an old zoom.
+  if (table.dataset?.payrollLayout === 'scroll') {
+    table.style.zoom = '1'
+    return
+  }
   // A user column drag already preserves the fitted outer width and zoom.
   if (table.classList?.contains('vera-columns-sized')) return
   // Editable configuration tables scroll at full size and keep names sticky.
