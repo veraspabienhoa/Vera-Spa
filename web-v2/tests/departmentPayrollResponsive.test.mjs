@@ -36,7 +36,7 @@ for (const width of [320, 360, 375, 390, 430, 1024, 1440]) {
       const actual = declaration(panelCss, width, table, property)
       assert.equal(actual.value, value); assert.equal(actual.important, true, 'must beat the shared payroll fitter')
     }
-    const shared = declaration(sharedCss, width, 'body :is(.payroll-tabs-page,.department-payroll-page) table', 'width')
+    const shared = declaration(sharedCss, width, 'body :is(.payroll-tabs-page,.department-payroll-page) table:where(:not([data-payroll-layout="scroll"]))', 'width')
     assert.equal(shared.value, 'max-content'); assert.equal(shared.important, true)
     // Scoped source selector has two classes; shared fitter has one :is class.
     assert.equal(declaration(panelCss, width, cells, 'white-space').value, 'normal')

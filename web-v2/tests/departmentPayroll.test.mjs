@@ -699,3 +699,12 @@ test('payroll pending reason button opens exact server blockers in the shared mo
   assert.equal(f.requests.length, calls)
   assert.equal(button('Hoàn thành bảng lương').disabled, true)
 })
+
+
+test('accumulation scroll table bypasses payroll fitting and clears prior zoom after column resizing',()=>{
+ const table={dataset:{payrollLayout:'scroll'},classList:{contains:()=>true},
+   parentElement:{clientWidth:320},scrollWidth:2000,style:{zoom:'0.16'}}
+ fitPayrollTable(table);assert.equal(table.style.zoom,'1')
+ table.parentElement.clientWidth=0;table.style.zoom='0.4'
+ fitPayrollTable(table);assert.equal(table.style.zoom,'1')
+})
