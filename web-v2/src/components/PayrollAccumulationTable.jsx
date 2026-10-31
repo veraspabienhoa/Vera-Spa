@@ -1,7 +1,7 @@
 import { formatVeraDate } from '../lib/veraDate'
 const money = value => `${Number(value || 0).toLocaleString('vi-VN')}đ`
 export default function PayrollAccumulationTable({ rows, onAdd, onEdit, onDelete, onRemoveRefund, busyEmployee, disabled }) {
-  return <div className="responsive-data-table payroll-personal-admin-table"><table aria-label="Tích lũy và hoàn trả nhân viên">
+  return <div className="responsive-data-table payroll-personal-admin-table payroll-accumulation-table" role="region" aria-label="Bảng tích lũy và hoàn trả, cuộn ngang để xem thêm" tabIndex={0}><table aria-label="Tích lũy và hoàn trả nhân viên">
     <thead><tr><th>Nhân viên</th><th>Trạng thái</th><th>Mục tiêu</th><th>Đã đóng</th><th>Còn phải đóng</th><th>Đã hoàn trả</th><th>Hoàn trả đã cài đặt</th><th>Kỳ / Ghi chú hoàn trả</th><th>Điều chỉnh tích lũy</th><th>Chi tiết</th></tr></thead>
     <tbody>{rows.map(item => <tr key={item.employee_name}>
       <td><div className="payroll-accumulation-cell-lines"><strong>{item.employee_name}</strong><small>{item.full_name}</small></div></td>
